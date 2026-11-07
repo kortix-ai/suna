@@ -19,7 +19,7 @@ const HOVER_OPEN_DELAY_MS = 400;
 const HOVER_CLOSE_DELAY_MS = 150;
 
 /**
- * The hover card of a sidebar nav row (Apps, Customize): a mouse that rests on
+ * The hover card of a sidebar nav row (Apps, Artifacts, Settings): a mouse that rests on
  * the row opens a list of where the row leads, so one click lands on the
  * thing instead of two. The row stays a plain link: the card is a Popover
  * anchored to it (`anchorRef` as `PopoverAnchor virtualRef`), not a menu

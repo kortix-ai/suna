@@ -198,7 +198,7 @@ describe('hideDotfiles', () => {
     expect(rows.map((row) => row.name)).toEqual(['.kortix', 'agents', 'README.md']);
   });
 
-  test('.kortix and .opencode are always visible', () => {
+  test('.kortix is always visible', () => {
     const rows = hideDotfiles(flatten(treeWithDots()));
     expect(rows.some((row) => row.name === '.kortix')).toBe(true);
     expect(rows.some((row) => row.name === '.git')).toBe(false);

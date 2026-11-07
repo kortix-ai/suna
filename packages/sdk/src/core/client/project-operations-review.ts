@@ -21,13 +21,20 @@ export function bindProjectOperationsReview(projectId: string) {
         P.claimWarmProjectSession(projectId, input),
     },
 
-    /** Channels and the caller's DMs (`project_channels` flag). A session joins one with `sessions.create({ space_id })`. */
+    /** Channels and the caller's DMs (`chat` flag). A session joins one with `sessions.create({ space_id })`. */
     spaces: {
       list: () => P.listProjectSpaces(projectId),
       create: (input: Parameters<typeof P.createProjectSpace>[1]) => P.createProjectSpace(projectId, input),
       update: (...a: DropFirst<Parameters<typeof P.updateProjectSpace>>) => P.updateProjectSpace(projectId, ...a),
+      /** `setTabs(spaceId, tabs)`: replace the space's tabs after Chat, in order. */
+      setTabs: (...a: DropFirst<Parameters<typeof P.setProjectSpaceTabs>>) => P.setProjectSpaceTabs(projectId, ...a),
       /** The caller's DM with an agent, created on the first call. */
       dm: (agentName: string) => P.getOrCreateProjectDm(projectId, agentName),
+      /** A space's watcher settings (`spaces_proactive`): `proactive.get(spaceId)`, `proactive.set(spaceId, input)`. */
+      proactive: {
+        get: (spaceId: string) => P.getProjectSpaceProactive(projectId, spaceId),
+        set: (...a: DropFirst<Parameters<typeof P.setProjectSpaceProactive>>) => P.setProjectSpaceProactive(projectId, ...a),
+      },
       /** The channel's Apps: deployed from one of its threads, only those the caller may open. */
       apps: (spaceId: string) => P.listProjectSpaceApps(projectId, spaceId),
       /** A channel's links: added ("Add link", pinned) or shared in its threads. Agents read the pinned ones. Only the creator or a project manager may remove one. */

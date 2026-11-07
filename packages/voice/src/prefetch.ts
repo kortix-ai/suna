@@ -9,7 +9,7 @@ import { CARD_HOSTS, card } from './cards'
 import * as source from './cards' // filled() read off it: a stand-in card source (the proofs') has only card()
 import { type Card, decided, route } from './route'
 import { asking, heard, judge, provide, routing } from './judge'
-import { lookup as chunks, namedFiles, repoMap } from './workspace'
+import { lookup as chunks, identity, namedFiles, outline, repoMap } from './workspace'
 import { content, firstUseful, pageBlocks, readPages } from './pages'
 import { router, routed } from './models'
 
@@ -67,11 +67,29 @@ function cardOf(c: Card): Promise<string | undefined> {
   return result
 }
 
-function search(q: string): Promise<string> {
+// pages: the top results' pages are read behind it (src/pages.ts), each a paid scrape ($0.01 through the Kortix router).
+function search(q: string, pages = true): Promise<string> {
   const key = norm(q).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim()
   const hit = searches.get(key)
   if (hit && Date.now() - hit.at < ttl(key)) return hit.result
-  const result = race(q)
+  const result = race(q, pages)
+  searches.set(key, { at: Date.now(), words: content(q), result })
+  result.then((r) => r || searches.delete(key))
+  return result
+}
+
+/** The search beside the router, before it has decided a lookup is needed at all: one provider, the cheapest at hand
+ * (Serper, $0.001 through the Kortix router, against Tavily's $0.005 and Firecrawl's $0.01), and no page read. The full
+ * race of all three ran on every turn of two content words, "12 times 11" and "change your name" too: about two thirds
+ * of a call's model cost. A web turn still races them all once the router says so. */
+// A lookup ahead (src/anticipate.ts: the likely next questions, "Who is the CEO of Meta?" after Microsoft's) is a glance
+// too: it runs before anyone asks, so one provider's tail costs nothing, and four of them raced 3 providers each.
+function glance(q: string): Promise<string> {
+  const key = norm(q).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim()
+  const hit = searches.get(key)
+  if (hit && Date.now() - hit.at < ttl(key)) return hit.result
+  const one = router() || process.env.SERPER_API_KEY ? serper : process.env.TAVILY_API_KEY ? tavily : firecrawl
+  const result = one(q, AbortSignal.timeout(BUDGET + 3000)).catch(() => '')
   searches.set(key, { at: Date.now(), words: content(q), result })
   result.then((r) => r || searches.delete(key))
   return result
@@ -92,7 +110,7 @@ function reuse(q: string): Promise<string> | undefined {
 
 // The providers, raced, the first usable result wins: Tavily, Serper (Google results) and Firecrawl. Alone each
 // is ~1.26–1.35 s p50, 2.0–3.1 s p90; raced, 1.14 s / 1.48 s with the fact in the data 81% (n = 21, measured).
-async function race(q: string): Promise<string> {
+async function race(q: string, pages = true): Promise<string> {
   const ac = new AbortController()
   const tries = [tavily(q, ac.signal), serper(q, ac.signal), firecrawl(q, ac.signal)].map((p) => p.catch(() => ''))
   const first = await new Promise<string>((resolve) => {
@@ -100,7 +118,7 @@ async function race(q: string): Promise<string> {
     for (const t of tries) t.then((r) => (r ? resolve(r) : --left || resolve('')))
   })
   ac.abort()
-  if (first) readPages(first)
+  if (first && pages) readPages(first)
   return first
 }
 
@@ -108,6 +126,7 @@ async function race(q: string): Promise<string> {
 async function serper(q: string, signal: AbortSignal): Promise<string> {
   const to = routed('serper', '/search') ?? (process.env.SERPER_API_KEY ? { url: 'https://google.serper.dev/search', headers: { 'X-API-KEY': process.env.SERPER_API_KEY } } : undefined)
   if (!to) return ''
+  //codeql[js/file-access-to-http] Non-exploit, by design: the web-search call goes to the session's own Kortix router (KORTIX_API_URL config) or the fixed https://google.serper.dev host; the spoken query is body text, never the request target.
   const res = await fetch(to.url, { method: 'POST', signal, headers: { ...to.headers, 'content-type': 'application/json' }, body: JSON.stringify({ q, num: 5 }) })
   if (res.ok) chargeSearch('serper') // answered: billed, even when another provider wins the race
   type R = { answerBox?: { answer?: string; snippet?: string; title?: string }; knowledgeGraph?: { title?: string; description?: string }; organic?: { title: string; link: string; snippet?: string; date?: string }[] }
@@ -128,6 +147,7 @@ async function tavily(q: string, signal: AbortSignal): Promise<string> {
     headers: { ...to.headers, 'content-type': 'application/json' },
     // Basic depth, no answer: Tavily's own answer added ~1 s and was right 52% of the time, the agent reads the
     // snippets better; "fast" and "ultra-fast" (0.4–0.7 s) had the fact 29–33% of the time (n = 21, measured).
+    //codeql[js/file-access-to-http] Non-exploit, by design: the web-search call goes to the session's own Kortix router (KORTIX_API_URL config) or the fixed https://api.tavily.com host; the spoken query is body text, never the request target.
     body: JSON.stringify({ query: q, search_depth: 'basic', max_results: 5 }),
   })
   if (res.ok) chargeSearch('tavily')
@@ -138,11 +158,16 @@ async function tavily(q: string, signal: AbortSignal): Promise<string> {
 async function firecrawl(q: string, signal: AbortSignal): Promise<string> {
   const to = routed('firecrawl', '/v2/search') ?? (process.env.FIRECRAWL_API_KEY ? { url: 'https://api.firecrawl.dev/v2/search', headers: { Authorization: `Bearer ${process.env.FIRECRAWL_API_KEY}` } } : undefined)
   if (!to) return ''
+  //codeql[js/file-access-to-http] Non-exploit, by design: the web-search call goes to the session's own Kortix router (KORTIX_API_URL config) or the fixed https://api.firecrawl.dev host; the spoken query is body text, never the request target.
   const res = await fetch(to.url, { method: 'POST', signal, headers: { ...to.headers, 'content-type': 'application/json' }, body: JSON.stringify({ query: q, limit: 5 }) })
   if (res.ok) chargeSearch('firecrawl')
   const web = ((await res.json()) as { data?: { web?: { title: string; url: string; description?: string }[] } }).data?.web ?? []
   return web.map((r) => `${r.title} (${r.url}): ${(r.description ?? '').slice(0, 300)}`).join('\n')
 }
+
+// A search to make: a provider's key here, or the Kortix router in a box (it holds the keys). Keys alone left a box with
+// no web lookup at all: the router's search went unused and each web question waited on the agent's own tools.
+const searchOn = () => !!(router() || process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY || process.env.FIRECRAWL_API_KEY)
 
 const HOSTS = () => [...((r = router()) => (r ? [`${r.base}/health`] : ['https://api.tavily.com/', 'https://google.serper.dev/', 'https://api.firecrawl.dev/']))(), ...CARD_HOSTS]
 let warmed = 0
@@ -182,8 +207,24 @@ async function git(root: string): Promise<string> {
 /** The repo map for a call's first workspace question ('' without a workspace). */
 export const workspaceMap = () => (repo ? repoMap(repo) : '')
 
-// What the router is told the workspace is: its folder name and the package's description.
-const project = repo ? [basename(repo), (() => { try { return JSON.parse(require('node:fs').readFileSync(`${repo}/package.json`, 'utf8')).description ?? '' } catch { return '' } })()].filter(Boolean).join(': ') : ''
+// What the router is told the workspace is: what the project calls itself (else its folder's name), what it says it is,
+// and its root folders (a Kortix project's memory notes are files there: a question on them is a workspace question,
+// answered from the files in a second, not handed to the agent).
+/** Text for inside a data envelope's attribute or body: no quote to close the attribute, no data tag to close it. */
+// No angle bracket at all: stripping "</data>" alone left one from a nested "</da</data>ta>" (Strix on #11771).
+const envelope = (s: string) => s.replace(/"/g, "'").replace(/[<>]/g, '')
+// Read when asked, kept 30 s: in a Kortix box the voice loads with kortixd, before the project's files are in /workspace
+// (read at load, the name was the folder's, "workspace", and the router was told no folders and no notes).
+let known: { at: number; named: string; project: string } | undefined
+const workspace = () => {
+  if (known && Date.now() - known.at < 30_000) return known
+  const named = repo ? identity(repo) || basename(repo) : ''
+  const o = repo ? outline(repo) : { about: '', folders: '', notes: '' }
+  const project = repo ? envelope(`${named}${o.about ? `: ${o.about}` : ''}${o.folders ? `; its folders: ${o.folders}` : ''}${o.notes ? `; its memory notes (memory/): ${o.notes}` : ''}`) : ''
+  return (known = { at: Date.now(), named, project })
+}
+/** The workspace as the router is told it (for evals). */
+export const workspaceProject = () => workspace().project
 
 // And the files of it the words name: "What does the cascade file do?" was routed none (the router had only the name and
 // description, and "cascade" read as a general idea), and the agent's opener made up what it does (bench/namedfile-proof.ts).
@@ -192,6 +233,7 @@ const project = repo ? [basename(repo), (() => { try { return JSON.parse(require
 // (~150 ms, every 30 s) never lands on an ordinary turn's routing.
 const projectFor = (q: string) => {
   const files = repo && /\b(file|module|script)\b|\w\.\w{1,4}\b|\bdot\s+[a-z]{1,4}\b/i.test(q) ? namedFiles(repo, q) : []
+  const { project } = workspace()
   return files.length ? `${project}; the turn names its file ${files.slice(0, 3).join(', ')}` : project
 }
 
@@ -218,10 +260,17 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
   const remaining = () => Math.max(0, deadline - performance.now())
   // The words themselves are searched at once, beside the router: a web turn no longer waits for routing, then search
   // (and a turn routed to no lookup has it ready if the agent reaches for the web itself).
-  const searching = !!(process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY || process.env.FIRECRAWL_API_KEY)
+  const searching = searchOn()
   // ahead: a question looked up before it is asked (src/anticipate.ts) waits for its route; no extra search on its words.
-  const raw = searching && !ahead && content(q).size >= 2 ? search(q) : undefined
+  // (words: the search itself, the full race; else a glance beside the routing, see glance()).
+  const raw = searching && !ahead && content(q).size >= 2 ? (words ? search(q) : glance(q)) : undefined
+  let glanced = false // the glance is in, with something in it
+  void raw?.then((r) => (glanced = !!r))
   // words: a search on the words themselves, no routing (the agent is about to search on its own; ours is faster).
+  // Words searched as they are (the search kept ready for an agent's turn, cascade standby()) need something to search:
+  // the glance's own gate. "You decide." went around it (words mode is a web route) and raced three providers and read
+  // two pages on a Kortix dev call, $0.03 for a hand-back.
+  if (words && content(q).size < 2) return ''
   const r = words ? { need: 'web' as const, query: q } : await within(route(q, context, projectFor(q)), remaining())
   if (!words) mark?.('routed')
   if (!r || r.need === 'none') return ''
@@ -231,12 +280,18 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
     const data = code(`${q} ${r.query}`)
     // Named: the workspace is one project (this machine's), not whatever repository the call talks about. Unnamed, the
     // voice-agent's own git log answered "categorize what is being pushed" right after the agent had opened another repo.
-    const of = basename(repo ?? '')
-    return [state && `<data source="git of ${of}, read just now">\n${state}\n</data>`, data && `<data source="workspace: ${of}">\n${data}\n</data>`].filter(Boolean).join('\n')
+    // Named inside the data too: "What is the name of this project?" with the name only in the label got "I don't see a
+    // project name in those files" (a Kortix dev call, its chunks a sub-project's).
+    // Escaped as the web-search query is: a README title cannot close the data envelope and speak as instructions.
+    const of = envelope(workspace().named)
+    return [state && `<data source="git of ${of}, read just now">\n${state}\n</data>`, data && `<data source="workspace: ${of}">\nThis project: ${of}\n${data}\n</data>`].filter(Boolean).join('\n')
   }
-  const hasSearch = !!(process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY || process.env.FIRECRAWL_API_KEY)
   let fallback: Promise<string> | undefined
-  const searchNow = () => fallback ??= hasSearch ? (raw ? firstUseful([words ? raw : reuse(r.query) ?? search(r.query), raw]) : reuse(r.query) ?? search(r.query)) : Promise.resolve('')
+  // A web turn: the glance when it is in and useful; else the full race on the router's query beside it (the glance is one
+  // provider, its p90 2-3 s; raced, 1.5 s), never the glance taken for the search (a query inside its words reused it).
+  const searchNow = () => fallback ??= searching
+    ? (raw ? (words ? raw : glanced ? raw : firstUseful([raw, search(r.query)])) : reuse(r.query) ?? (ahead ? glance(r.query) : search(r.query)))
+    : Promise.resolve('')
   const web = async () => {
     const data = await searchNow()
     const found = data ? `<data source="web search" query="${r.query.replace(/"/g, "'")}">\n${data.replace(/<\/?data\b[^>]*>/gi, '')}\n</data>` : '' // untrusted: cannot close its envelope
@@ -246,7 +301,7 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
     if (r.card) {
       // Prefer exact primary facts briefly, but keep a late primary eligible while search is pending.
       const primary = primaryOf(r.card)
-      const hedge = hasSearch ? setTimeout(searchNow, 250) : undefined
+      const hedge = searching ? setTimeout(searchNow, 250) : undefined
       let got: string | undefined
       try { got = await within(primary, Math.min(800, remaining())) }
       finally { clearTimeout(hedge) }
@@ -255,7 +310,9 @@ export async function prefetch(q: string, context = '', mark?: (stage: 'routed')
       // card alone the answer was "I don't have the specific changelog for Bun 1.4.4" (a traced real round).
       if (got && r.card.type === 'version' && CHANGES.test(r.query)) return [got, await web()].filter(Boolean).join('\n')
       if (got) return got
-      return firstUseful([primary, web()])
+      // Late, the primary races the search; the search yields a tick, so an exact fact already in hand when the snippets
+      // land wins ("1 CAD = 0.72 USD", not "this estimate is not a live quote": the one-provider glance settles sooner).
+      return firstUseful([primary, web().then((w) => new Promise<string>((ok) => setImmediate(ok, w)))])
     }
     return web()
   }

@@ -101,11 +101,11 @@ const PREVIEW_ORIGIN_URL_REGEX =
 
 /**
  * Ports that should NOT be rewritten — they're already exposed/handled natively
- * by the sandbox infrastructure (VNC, OpenCode Web, presentation viewer, etc.)
+ * by the sandbox infrastructure (SSH, the daemon, an old box's OpenCode API).
  */
 const EXCLUDED_PORTS = new Set([
   22, // SSH daemon — never preview/probe as HTTP
-  4096, // OpenCode API (proxied by Kortix Master)
+  4096, // The OpenCode API on a box that still runs a daemon built before 2026-10-30
   parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10), // Kortix Master itself
 ]);
 
@@ -753,8 +753,8 @@ const WEB_PROXY_PATH_PREFIX = '/web-proxy/';
  * Build a web proxy URL that routes through the Kortix Master (port 8000)
  * which hosts the /web-proxy/ forward proxy.
  *
- * The web proxy lives on Kortix Master, NOT the OpenCode server, so we
- * construct a URL targeting port 8000 via the standard sandbox preview proxy.
+ * The web proxy lives on Kortix Master (the daemon), so we construct a URL
+ * targeting port 8000 via the standard sandbox preview proxy.
  */
 export function buildWebProxyUrl(
   targetUrl: string,

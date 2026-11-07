@@ -12,7 +12,7 @@ const realPlacement = await import('./inbox-placement');
 const realAdmission = await import('./inbox-admission');
 const { mintWireMessageId } = await import('../wire-message-id');
 
-let awake: { externalId: string; opencodeSessionId: string; stage: string } | null = null;
+let awake: { externalId: string; runtimeSessionId: string; stage: string } | null = null;
 let answer: () => Promise<string> = async () => 'accepted';
 const posts: Array<{ key: string; opts: Record<string, unknown> }> = [];
 const forwarded: Array<{ wireMessageId: string; opts: unknown }> = [];
@@ -94,7 +94,7 @@ const payload = {
 const steer = () => deliverSteer(row, payload, payload.text, 'msg_turn1', new ProvisionTimeline('t', 'deliver'));
 
 beforeEach(() => {
-  awake = { externalId: 'box-1', opencodeSessionId: 'ses_1', stage: 'ready' };
+  awake = { externalId: 'box-1', runtimeSessionId: 'ses_1', stage: 'ready' };
   answer = async () => 'accepted';
   for (const list of [posts, forwarded, fallbacks, requeues, failures]) list.length = 0;
   remints = 0;

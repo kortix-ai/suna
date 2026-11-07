@@ -8,6 +8,9 @@ import { ISO, family, serbianLatin } from './lang'
 import { b64 } from './model'
 import { modelsHeaders, sttFetch, speechUrl, viaModels, voicesUrl } from './models'
 
+// Vendor error text reaches stderr verbatim: drop line breaks so it cannot forge log lines (CodeQL js/log-injection).
+const oneline = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
+
 export type Stt = { feed(pcm: Uint8Array, loud: boolean): void; commit(): void; peek?(): Promise<string>; speculate?(): void; close(): void }
 export type SttEvents = { ready(): void; text(t: string, lang?: string, conf?: number): void; close(why: string): void; keep?(t: string): boolean; lang?: string; guess?(t: string): void; names?(): string[]; model?: string; engine?: 'groq' | 'gemini' } // names: said in this call, for the prompt // guess: a speculative transcript // keep: a short result too precious to drop (the wake name); lang: the call's starting language
 // Voiced speech crosses zero far less often than noise: median zero-crossing rate 0.05-0.14 per sample for
@@ -28,9 +31,9 @@ const MIN_LOUD = 120, MIN_VOICED = 80 // ms of a piece above the gate, and voice
 const CAPTURE = process.env.VOICE_TRACE_AUDIO === '1' && process.env.VOICE_TRACE_DIR ? `${process.env.VOICE_TRACE_DIR}/audio` : undefined
 const repo = process.env.VOICE_WORKSPACE ?? process.env.KORTIX_WORKSPACE
 // Code files only, not tests, benches or notes: their names ("named-evidence-proof", "personas") took prompt slots real words need.
-const files = repo ? Bun.spawnSync(['git', '-C', repo, 'ls-files']).stdout.toString().split('\n').filter((f) => /\.(?:tsx?|jsx?|mjs|py|go|rs|rb|java|kt|swift|cs|php|vue|svelte)$/.test(f) && !/(?:^|\/)(?:bench|tests?|__tests__|fixtures|runs|spec)\/|\.(?:test|spec)\.[^/]+$/.test(f)) : []
+const files = repo ? Bun.spawnSync(['git', '-C', repo, 'ls-files']).stdout.toString().split('\n').filter((f) => /\.(?:tsx?|jsx?|mjs|py|go|rs|rb|java|kt|swift|cs|php|vue|svelte)$/.test(f) && !/(?:^|\/)(?:bench|tests?|__tests__|fixtures|runs|spec)\//.test(f) && !/\.(?:test|spec)\.[^/]+$/.test(f)) : []
 const names = files.sort((a, b) => a.split('/').length - b.split('/').length).map((f) => f.split('/').pop()!.replace(/\.\w+$/, ''))
-const terms = [...(process.env.VOCAB ?? `${NAME},Kortix,OpenCode,Bun,TypeScript`).split(',').map((t) => t.trim()), ...names.filter((n) => /^\w[\w-]{2,23}$/.test(n))]
+const terms = [...(process.env.VOCAB ?? `${NAME},Kortix,Bun,TypeScript`).split(',').map((t) => t.trim()), ...names.filter((n) => /^\w[\w-]{2,23}$/.test(n))]
 const VOCAB = terms.filter((t, i) => terms.findIndex((u) => u.toLowerCase() === t.toLowerCase()) === i).slice(0, 40)
 /** The names Whisper is biased toward (the product's and the project's), for reading a turn as it was said. */
 export const vocab = () => VOCAB
@@ -157,7 +160,7 @@ export const stts: Record<string, (e: SttEvents) => Stt> = {
       const d = JSON.parse(String(m.data))
       if (d.message_type === 'session_started') e.ready()
       else if (d.message_type === 'committed_transcript') e.text(d.text ?? '')
-      else if (d.message_type?.endsWith('error')) console.error('[cascade stt]', d.message_type, d.error)
+      else if (d.message_type?.endsWith('error')) console.error('[cascade stt]', oneline(d.message_type), oneline(d.error))
     }
     ws.onclose = (m) => e.close(`scribe ${m.code} ${m.reason}`)
     return {
@@ -215,12 +218,9 @@ async function transcribe(pcm: Uint8Array, strict = true, keep?: (t: string) => 
   ).catch(() => undefined)
   if (!res?.ok) return console.error('[cascade whisper]', res?.status, await res?.text()), { text: '', conf: -9 }
   // Whisper invents text for noise and echo. Keep only segments it believes are speech.
-  type Seg = { text: string; no_speech_prob: number; avg_logprob: number; compression_ratio: number }
   const { segments = [], language } = (await res.json()) as { segments?: Seg[]; language?: string }
   const detected = language && (ISO[language.toLowerCase()] ?? language.toLowerCase())
-  // Whisper's own skip rule (no speech AND low confidence), plus repetition loops and very low confidence.
-  const real = (s: Seg) => !(s.no_speech_prob > 0.6 && s.avg_logprob < -1) && s.compression_ratio <= 2.4 && s.avg_logprob > -1.5
-  let text = segments.filter(real).map((s) => s.text).join('').trim()
+  let text = segments.filter(heard).map((s) => s.text).join('').trim()
   // One or two words is where hallucinations live ("CometEdit" from echo): demand more confidence,
   // except for a command, which is never a stock hallucination and costs more to miss than to mishear.
   // Short real words score -0.5 to -0.9 ("Thanks, bye." -0.54, "Hey, what?" -0.59, "Sweet!" -0.75, all with no-speech
@@ -229,7 +229,7 @@ async function transcribe(pcm: Uint8Array, strict = true, keep?: (t: string) => 
   const sure = segments.every((s) => (s.no_speech_prob < 0.3 && s.avg_logprob > -0.8) || s.avg_logprob > -0.4)
   if (strict && text.split(/\s+/).length <= 2 && !sure && !COMMAND.test(text) && !keep?.(text)) text = ''
   if (process.env.DEBUG && !text) console.error('whisper dropped', JSON.stringify(segments.map((s) => [s.text, s.no_speech_prob.toFixed(2), s.avg_logprob.toFixed(2), s.compression_ratio.toFixed(1)])))
-  // On unclear audio Whisper can read back its own prompt ("OpenCode, Bun, TypeScript").
+  // On unclear audio Whisper can read back its own prompt ("Kortix, Bun, TypeScript").
   const said = text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []
   // Whisper's stock phrases on noise ("Thank you.") are also what callers say last: kept when Whisper is certain.
   const certain = segments.every((s) => s.no_speech_prob < 0.1 && s.avg_logprob > -0.7)
@@ -257,7 +257,12 @@ const PROMPT = new Set(VOCAB.join(' ').toLowerCase().match(/[a-z0-9']+/g))
 // Top non-speech outputs of large-v3 (Barański et al. 2025): "thank you" 24.8%, "thanks for watching" 10.3%, ...
 // Whisper's stock words for noise ("and so on.", "and more." from a noisy room, a live call), not things people said.
 // A text of nothing but them, once or repeated ("Thank you for watching! Thank you for watching!", a noisy room).
-const HALLUCINATION = /^((thank you( (so much|very much))?( for watching)?|thanks for watching|so|the|you|oh|bye|uh|um|and so on|and more|and so forth|subtitles by[^.!]*|\.+)[.!]?\s*)+$/i
+// Punctuation and space between the words are one run, so a long "..." or a repeated phrase cannot backtrack (CodeQL js/redos).
+// A subtitle credit ("Subtitles by the Amara.org community") is cut out first: its open-ended words inside the
+// pattern could each be read as one of the words above, and that backtracked exponentially.
+const CREDIT = /subtitles by[^.!]*/gi
+const HALLUCINATION_WORDS = /^[\s.!]*(?:(?:thank you(?: (?:so much|very much))?(?: for watching)?|thanks for watching|so|the|you|oh|bye|uh|um|and so on|and more|and so forth)[\s.!]*)*$/i
+const HALLUCINATION = { test: (text: string) => HALLUCINATION_WORDS.test(text.replace(CREDIT, ' ')) }
 // The ones from video subtitles: never what a caller says to an assistant, however sure Whisper is of them.
 const SUBTITLE = /\b(for watching|subtitles|subscribe)\b/i
 const REPEATED = /^(.{4,}?[.!?])\s*\1/i // the same sentence again at once: Whisper's loop on noise
@@ -270,6 +275,29 @@ export type Utterance = { response: Response; add(text: string): void; end(): vo
 export type Tts = { speak: Speak; stream?(voice: string | undefined, signal: AbortSignal): Utterance; close(): void }
 
 const httpTts = (speak: Speak) => (): Tts => ({ speak, close() {} })
+
+/** A Whisper segment (verbose_json). */
+export type Seg = { text: string; no_speech_prob: number; avg_logprob: number; compression_ratio: number }
+/** A segment Whisper believes is speech: its own skip rule (no speech AND low confidence), no repetition loop, and not
+ * very low confidence. Whisper invents text for noise and echo. */
+export const heard = (s: Seg) => !(s.no_speech_prob > 0.6 && s.avg_logprob < -1) && s.compression_ratio <= 2.4 && s.avg_logprob > -1.5
+
+/** The voice a call speaks with unless it picks one: VOICE_TTS, else the models base (a Kortix box), else Inworld with its
+ * key, else xAI. */
+export const ttsDefault = (): string => process.env.VOICE_TTS ?? (viaModels() ? 'models' : process.env.INWORLD_API_KEY ? 'inworld' : 'xai-ws')
+
+/** Speech through the models base (VOICE_MODELS_URL): OpenAI-shaped, streamed back as PCM16 24 kHz (a call's) or MP3 (a
+ * file's, src/speech-api.ts). INWORLD_MODEL picks the model, INWORLD_VOICE the voice when none is given. */
+export function modelsSpeech(text: string, voice: string | undefined, signal: AbortSignal, o: { rate?: number; model?: string; format?: 'pcm' | 'mp3' } = {}): Promise<Response> {
+  const id = o.model ?? process.env.INWORLD_MODEL ?? 'inworld-tts-2'
+  chargeTts(id, text)
+  return fetch(speechUrl(), {
+    method: 'POST',
+    signal,
+    headers: { ...modelsHeaders(), 'content-type': 'application/json' },
+    body: JSON.stringify({ model: id, input: text, voice: (voice && inworldId(voice)) || process.env.INWORLD_VOICE || 'Ashley', response_format: o.format ?? 'pcm', ...(o.format === 'mp3' ? {} : { sample_rate: 24000 }), ...(o.rate && o.rate !== 1 ? { speed: o.rate } : {}) }),
+  })
+}
 
 // xAI's documented TTS languages (ISO 639-1 → its code). German, Spanish, French: Whisper reads the audio back
 // word for word, first audio ~345 ms vs ~585 ms for Gemini Flash-Lite (measured). Serbian is not on the list and
@@ -321,7 +349,7 @@ export const ttss: Record<string, (lang?: string, model?: string) => Tts> = {
         const j = jobs[0]
         if (m.type === 'audio.delta' && j && !j.signal.aborted) j.out.enqueue(new Uint8Array(Buffer.from(m.delta, 'base64')))
         else if (m.type === 'audio.done' || m.type === 'audio.clear') jobs.shift()?.out.close(), next()
-        else if (m.type === 'error') console.error('[tts xai-ws]', m.message)
+        else if (m.type === 'error') console.error('[tts xai-ws]', oneline(m.message))
       }
       ws.onclose = () => {
         for (const j of jobs.splice(0)) j.out.close()
@@ -426,7 +454,7 @@ export const ttss: Record<string, (lang?: string, model?: string) => Tts> = {
           buf += dec.decode(value, { stream: true })
         }
       },
-      cancel: () => void reader.cancel(),
+      cancel: () => void reader.cancel().catch(() => {}), // an aborted stream rejects its cancel (Bun 1.4): never an unhandled rejection
     }))
   } }),
   // A voice for conversation-flow tests: no provider, no characters spent. First audio after VOICE_MOCK_TTS_MS (180,
@@ -437,16 +465,7 @@ export const ttss: Record<string, (lang?: string, model?: string) => Tts> = {
   'inworld-flash': (lang = 'en') => ttss.inworld!(lang, 'inworld-tts-2-flash'),
   // The same voices through the models base (VOICE_MODELS_URL, a Kortix box): OpenAI-shaped speech that answers the
   // PCM itself, streamed. The default there; INWORLD_MODEL picks the model, as above.
-  models: (_lang = 'en', model?: string) => ({ close() {}, speak: async (text, _voice, signal, rate) => {
-    const id = model ?? process.env.INWORLD_MODEL ?? 'inworld-tts-2'
-    chargeTts(id, text)
-    return fetch(speechUrl(), {
-      method: 'POST',
-      signal,
-      headers: { ...modelsHeaders(), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: id, input: text, voice: (_voice && inworldId(_voice)) || process.env.INWORLD_VOICE || 'Ashley', response_format: 'pcm', sample_rate: 24000, ...(rate && rate !== 1 ? { speed: rate } : {}) }),
-    })
-  } }),
+  models: (_lang = 'en', model?: string) => ({ close() {}, speak: (text, voice, signal, rate) => modelsSpeech(text, voice, signal, { rate, model }) }),
   mock: httpTts(async (text, _voice, signal) => {
     chargeTts('mock', text) // free: the count of characters a real voice would bill
     await new Promise((r) => setTimeout(r, Number(process.env.VOICE_MOCK_TTS_MS ?? 180)))
@@ -457,7 +476,7 @@ export const ttss: Record<string, (lang?: string, model?: string) => Tts> = {
   }),
   eleven: httpTts((text, voice, signal) => {
     chargeTts(process.env.ELEVEN_TTS_MODEL ?? 'eleven_flash_v2_5', text)
-    return fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice ?? 'EXAVITQu4vr4xnSDxMaL'}/stream?output_format=pcm_24000&optimize_streaming_latency=3`, {
+    return fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice ?? 'EXAVITQu4vr4xnSDxMaL')}/stream?output_format=pcm_24000&optimize_streaming_latency=3`, {
       method: 'POST',
       signal,
       headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY!, 'content-type': 'application/json' },
@@ -475,12 +494,12 @@ export const inworldVoices = (): Promise<Voice[]> =>
   (voiceList ??= viaModels()
     ? fetch(voicesUrl(), { headers: modelsHeaders(), signal: AbortSignal.timeout(5000) })
         .then((r) => (r.ok ? (r.json() as Promise<{ data?: { id: string; description?: string; tags?: string[]; languages?: string[] }[] }>) : Promise.reject(Error(`voices ${r.status}`))))
-        .then((j) => (known = (j.data ?? []).map((v) => ({ id: v.id, about: `${v.description ?? ''} ${(v.tags ?? []).join(' ')} ${(v.languages ?? []).join(' ')}`.toLowerCase() }))))
+        .then((j) => (known = (j.data ?? []).map((v) => ({ id: v.id, about: `${voiceName(v.id)} ${v.description ?? ''} ${(v.tags ?? []).join(' ')} ${(v.languages ?? []).join(' ')}`.toLowerCase() }))))
         .catch(() => ((voiceList = undefined), []))
     : process.env.INWORLD_API_KEY
     ? fetch('https://api.inworld.ai/tts/v1/voices', { headers: { Authorization: `Basic ${process.env.INWORLD_API_KEY}` }, signal: AbortSignal.timeout(5000) })
         .then((r) => (r.ok ? (r.json() as Promise<{ voices?: { voiceId: string; description?: string; tags?: string[]; languages?: string[] }[] }>) : Promise.reject(Error(`voices ${r.status}`)))) // a failed fetch is tried again next time, not kept as none
-        .then((j) => (known = (j.voices ?? []).map((v) => ({ id: v.voiceId, about: `${v.description ?? ''} ${(v.tags ?? []).join(' ')} ${(v.languages ?? []).join(' ')}`.toLowerCase() }))))
+        .then((j) => (known = (j.voices ?? []).map((v) => ({ id: v.voiceId, about: `${voiceName(v.voiceId)} ${v.description ?? ''} ${(v.tags ?? []).join(' ')} ${(v.languages ?? []).join(' ')}`.toLowerCase() }))))
         .catch(() => ((voiceList = undefined), []))
     : Promise.resolve([]))
 let known: Voice[] = [] // filled by inworldVoices() (the relay calls it at start)
@@ -499,22 +518,35 @@ export function inworldVoice(want: string): string {
     const has = new Set(v.about.match(/[a-z]+/g) ?? [])
     return words.reduce((s, x) => s + (has.has(x) ? (x === 'male' || x === 'female' ? 3 : 1) : 0) - ((x === 'male' && has.has('female')) || (x === 'female' && has.has('male')) ? 4 : 0), 0)
   }
-  const best = known.map((v) => [v, score(v)] as const).sort((a, b) => b[1] - a[1])[0]
+  const best = known.filter((v) => ours(v.id)).map((v) => [v, score(v)] as const).sort((a, b) => b[1] - a[1])[0]
   return best && best[1] > 0 ? best[0].id : ''
 }
-/** A catalog voice id exactly as named (any case), else ''. What Inworld is sent: never a fuzzy match. */
+/** A voice's name as a person says it: an account's own voices are "<workspace>__<name>" ("mellow-flute-9821__domagoj"
+ * is Domagoj), the stock ones their id. */
+export const voiceName = (id: string): string => ((n) => n.charAt(0).toUpperCase() + n.slice(1))(id.includes('__') ? id.slice(id.lastIndexOf('__') + 2) : id)
+/** This deployment's own workspace in the voice catalog (INWORLD_WORKSPACE, e.g. "mellow-flute-9821"). The managed
+ * catalog lists every workspace's voices, clones of real people among them: only the stock voices and this workspace's
+ * are ever matched or offered, never another's (Strix on #11779). */
+const workspace = () => (process.env.INWORLD_WORKSPACE ?? '').trim().toLowerCase()
+export const ours = (id: string): boolean => !id.includes('__') || (!!workspace() && id.toLowerCase().startsWith(`${workspace()}__`))
+/** A catalog voice id exactly as named (any case; an account's voice by its name too), else ''. What Inworld is sent:
+ * never a fuzzy match. "Change your voice to Domagoj" set nothing while the reply said "Done": the voice is
+ * "mellow-flute-9821__domagoj" in the catalog (a Kortix dev call, 2026-11-04). */
 export function inworldId(v: string): string {
+  const w = v.trim().toLowerCase()
   if (!known.length) return /^[A-Z][a-z]{2,20}$/.test(v.trim()) ? v.trim() : ''
-  return known.find((x) => x.id.toLowerCase() === v.trim().toLowerCase())?.id ?? ''
+  return known.find((x) => ours(x.id) && x.id.toLowerCase() === w)?.id ?? known.find((x) => x.id.includes('__') && ours(x.id) && voiceName(x.id).toLowerCase() === w)?.id ?? ''
 }
+/** Whether the catalog is in (a name it lacks is then really missing, not just unknown yet). */
+export const voicesKnown = () => known.length > 0
 
 const cache = new Map<string, Promise<Uint8Array | undefined>>()
-export function cached(text: string, voice?: string, lang = 'en', via: 'xai' | 'gemini' | 'inworld' | 'mock' = xaiSpeaks(lang) ? 'xai' : 'gemini'): Promise<Uint8Array | undefined> {
+export function cached(text: string, voice?: string, lang = 'en', via: 'xai' | 'gemini' | 'inworld' | 'mock' | 'models' = xaiSpeaks(lang) ? 'xai' : 'gemini'): Promise<Uint8Array | undefined> {
   const key = `${via}|${lang}|${voice ?? ''}|${text}`
   if (!cache.has(key))
     cache.set(
       key,
-      (via === 'xai' ? ttss.xai!(lang) : via === 'inworld' ? ttss.inworld!(lang) : via === 'mock' ? ttss.mock!() : ttss.gemini!())
+      (via === 'xai' ? ttss.xai!(lang) : via === 'inworld' ? ttss.inworld!(lang) : via === 'models' ? ttss.models!(lang) : via === 'mock' ? ttss.mock!() : ttss.gemini!())
         .speak(text, voice, new AbortController().signal)
         .then(async (r) => (r.ok ? trim(new Uint8Array(await r.arrayBuffer())) : undefined))
         .catch(() => undefined),

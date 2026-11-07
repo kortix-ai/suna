@@ -55,7 +55,7 @@ function makeChain(): any {
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
   return chain;
 }
-mock.module('../shared/db', () => ({
+mock.module('../shared/db', () => ({ withDbTransaction: async <T>(action: () => Promise<T>) => action(),
   db: { select: () => makeChain(), insert: () => makeChain(), update: () => makeChain(), delete: () => makeChain() },
   hasDatabase: () => true,
 }));
@@ -352,7 +352,7 @@ describe('Slack authorization matrix — project access and session visibility',
       [project], // createOrJoinThreadSession project lookup
       [{ eventId: 'claim' }], // claimThreadCreate won
       [], // re-check chat_threads -> none
-      [{ projectId: 'proj-1', agentName: null, opencodeModel: null, conversationPolicy: 'owner_approval' }],
+      [{ projectId: 'proj-1', agentName: null, sessionModel: null, conversationPolicy: 'owner_approval' }],
       [], // remember owner participant
     ];
 
@@ -500,7 +500,7 @@ describe('spawnAgentTurn — permanent 1:1 thread↔session, never a second sess
     followUpPlans.length = 0;
     dbResults = [
       [project],
-      [{ sessionId: 'sess-1', createdBy: 'user-1', metadata: { opencode_model: 'kortix/codex/gpt-6-astra' }, agentName: 'reviewer' }],
+      [{ sessionId: 'sess-1', createdBy: 'user-1', metadata: { model: 'kortix/codex/gpt-6-astra' }, agentName: 'reviewer' }],
       [],
     ];
     await spawnAgentTurn('proj-1', envelope, event);

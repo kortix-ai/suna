@@ -5,7 +5,6 @@
  */
 
 import { useMemo } from 'react';
-import { ScrollView } from 'react-native';
 import { ListChecksIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import { webSpace } from '@/lib/session/user-message';

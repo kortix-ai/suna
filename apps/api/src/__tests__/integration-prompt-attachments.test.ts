@@ -732,7 +732,7 @@ test('a dead-lettered command keeps its references', async () => {
   const forwarded = await ready();
   await settleCommand((await enqueue(deadLettered)).row.commandId, 'dead_lettered', {}, old);
   await settleCommand((await enqueue(retryable)).row.commandId, 'queued', {}, old);
-  // On the wire at OpenCode, not yet consumed by a turn: still undelivered.
+  // On the wire at the runtime, not yet consumed by a turn: still undelivered.
   await settleCommand((await enqueue(forwarded)).row.commandId, 'succeeded', { status: 'forwarded' }, old);
   await cleanupExpiredPromptAttachments();
   for (const id of [deadLettered, retryable, forwarded]) {

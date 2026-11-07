@@ -2,6 +2,8 @@
 
 import { Button } from '../../primitives/button';
 import Loading from '../../primitives/loading';
+import { CountBadge } from '../../primitives/count-badge';
+import { parseNoticeBatch } from '../turn/subagent-notice';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import {
@@ -15,6 +17,7 @@ import {
   ArrowClockwiseIcon,
   ArrowUpIcon,
   CaretUpIcon,
+  CaretRightIcon,
   DotsThreeIcon,
   PencilSimpleIcon,
   StopIcon,
@@ -76,6 +79,114 @@ export function queuedRowActions(
   return actions;
 }
 
+/** The SDK owns parsing; this disclosure shows only the report's readable content. */
+function QueuedMessageText({ row }: { row: QueueRow }) {
+  const copy = useTranslations('multiAgent.notice');
+  const t = useTranslations('threads');
+  const [open, setOpen] = useState(false);
+  const contentId = useId();
+  const notices = row.synthetic ? parseNoticeBatch(row.rawText) : null;
+  const reports = notices?.flatMap((item) => (item.kind === 'peer_idle' ? [] : [item.notice]));
+  const parsed = reports?.length && reports.length === notices?.length ? reports : null;
+  const reportTitle = (notice: NonNullable<typeof parsed>[number]) =>
+    notice.title || notice.handle || notice.agent || notice.excerpt || copy('source');
+  const title = parsed
+    ? parsed.length > 1
+      ? copy('updateCount', { count: parsed.length })
+      : reportTitle(parsed[0]!)
+    : row.synthetic
+      ? copy('source')
+      : row.text.split('\n').find((line) => line.trim()) || t('queued');
+  const expandable = Boolean(
+    parsed || (!row.synthetic && (row.text.includes('\n') || row.text.length > 100)),
+  );
+  const secondary =
+    parsed &&
+    (parsed.length > 1
+      ? parsed.map(reportTitle).join(', ')
+      : [
+          copy('source'),
+          parsed[0]!.status === 'failed'
+            ? copy('statusFailedShort')
+            : parsed[0]!.status === 'stopped'
+              ? copy('statusStoppedShort')
+              : null,
+          !open && parsed[0]!.excerpt !== title && parsed[0]!.excerpt,
+        ]
+          .filter(Boolean)
+          .join(' · '));
+  const heading = (
+    <span className="min-w-0 flex-1">
+      <span
+        id={!parsed ? contentId : undefined}
+        className={cn(
+          'block',
+          parsed
+            ? 'truncate'
+            : open
+              ? 'break-words whitespace-pre-wrap'
+              : 'line-clamp-2 break-words',
+        )}
+      >
+        {open && !parsed ? row.text : title}
+      </span>
+      {secondary && (
+        <span className="text-muted-foreground block truncate text-xs">{secondary}</span>
+      )}
+    </span>
+  );
+  return (
+    <div className="min-w-0">
+      {expandable ? (
+        <button
+          type="button"
+          className="focus-visible:outline-ring flex w-full min-w-0 items-start gap-2 rounded-sm text-left focus-visible:outline-2"
+          aria-expanded={open}
+          aria-controls={contentId}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {heading}
+          <CaretRightIcon
+            aria-hidden="true"
+            className={cn('text-muted-foreground mt-0.5 size-3.5 shrink-0', open && 'rotate-90')}
+          />
+        </button>
+      ) : (
+        <p className="break-words whitespace-pre-wrap">{title}</p>
+      )}
+      {open && parsed && (
+        <div
+          id={contentId}
+          className="text-muted-foreground mt-2 space-y-3 text-sm leading-relaxed break-words whitespace-pre-wrap"
+        >
+          {parsed
+            ? parsed.map((notice) => (
+                <div key={notice.sessionId}>
+                  {parsed.length > 1 && (
+                    <p className="text-foreground font-medium">{reportTitle(notice)}</p>
+                  )}
+                  {parsed.length > 1 && (
+                    <p className="text-xs">
+                      {copy('source')}
+                      {notice.status !== 'completed' &&
+                        ` · ${copy(notice.status === 'failed' ? 'statusFailedShort' : 'statusStoppedShort')}`}
+                    </p>
+                  )}
+                  {notice.result}
+                  {notice.ownedTasks && (
+                    <p className="mt-2 text-xs">
+                      {copy('ownsTasks', { tasks: notice.ownedTasks })}
+                    </p>
+                  )}
+                </div>
+              ))
+            : row.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export interface QueuedPromptListProps {
   rows: readonly QueueRow[];
   heldCount: number;
@@ -117,6 +228,10 @@ export function QueuedPromptList({
   // Collapse only hides the rows. Nothing is removed, and the count stays.
   const [collapsed, setCollapsed] = useState(false);
   const listed = rows.length;
+  const sharedSteer =
+    heldCount === 0 &&
+    listed > 0 &&
+    rows.every((row) => row.state !== 'failed' && row.steer && !row.steerFallback);
   if (listed === 0 && heldCount === 0) return null;
   // One edit at a time: the composer holds a single draft.
   const editRow = editing ? undefined : onEdit;
@@ -186,8 +301,12 @@ export function QueuedPromptList({
           {...(heldCount > 0 ? { 'data-queue-held': true } : {})}
           className="flex items-center gap-2 py-0.5 pr-1 pl-2"
         >
-          <span className="text-muted-foreground flex min-w-0 flex-1 items-center self-stretch text-xs leading-none">
-            {heldCount > 0 ? copy.raw('text1eb132d9d4da') : t('queuedCount', { count: listed })}
+          <span className="text-muted-foreground flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+            <span className="text-foreground font-medium">
+              {heldCount > 0 ? copy.raw('text1eb132d9d4da') : t('queued')}
+            </span>
+            <CountBadge count={listed} />
+            {sharedSteer && <span data-queued-delivery>{t('steerNextStep')}</span>}
           </span>
           <div className="flex items-center gap-0">
             {heldCount > 0 && heldActions}
@@ -207,10 +326,9 @@ export function QueuedPromptList({
         </div>
       )}
       {listed > 0 && !collapsed && (
-        <ul id={listId} className="max-h-40 overflow-y-auto">
-          {rows.map((row, index) => {
+        <ul id={listId} className="max-h-40 overflow-y-auto overscroll-contain">
+          {rows.map((row) => {
             const failed = row.state === 'failed';
-            const long = row.text.length > 240 || row.text.split('\n').length > 4;
             const actions = queuedRowActions(row, {
               onEdit: editRow,
               onRetry,
@@ -228,18 +346,7 @@ export function QueuedPromptList({
                     className="group/queued hover:bg-hover flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-transparent px-2 py-0.5"
                   >
                     <div className="text-foreground min-w-0 flex-1 text-sm break-words">
-                      {long ? (
-                        <details>
-                          <summary className="focus-visible:outline-ring cursor-pointer truncate rounded-sm focus-visible:outline-2">
-                            {row.text.split('\n').find((line) => line.trim()) || t('queued')}
-                          </summary>
-                          <pre className="mt-2 max-h-40 overflow-auto font-mono text-xs whitespace-pre">
-                            {row.text}
-                          </pre>
-                        </details>
-                      ) : (
-                        <p className="whitespace-pre-wrap">{row.text}</p>
-                      )}
+                      <QueuedMessageText row={row} />
                       {row.attachmentCount > 0 && (
                         <span className="text-muted-foreground text-xs">
                           {t('queuedFiles', { count: row.attachmentCount })}
@@ -255,13 +362,16 @@ export function QueuedPromptList({
                           {t('commandRunsWhenDone')}
                         </p>
                       )}
-                      {!failed && (row.steer || row.steerFallback) && (
-                        <p className="text-muted-foreground text-xs" data-queued-delivery>
-                          {row.steerFallback
-                            ? t(STEER_FALLBACK_KEY[row.steerFallback])
-                            : t('steerNextStep')}
-                        </p>
-                      )}
+                      {heldCount === 0 &&
+                        !sharedSteer &&
+                        !failed &&
+                        (row.steer || row.steerFallback) && (
+                          <p className="text-muted-foreground text-xs" data-queued-delivery>
+                            {row.steerFallback
+                              ? t(STEER_FALLBACK_KEY[row.steerFallback])
+                              : t('steerNextStep')}
+                          </p>
+                        )}
                       {failed && (
                         <p className="text-kortix-red text-xs" role="status" title={row.lastError}>
                           {copy.raw('textcd5f943d5863')}

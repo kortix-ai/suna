@@ -1,3 +1,4 @@
+import { isSessionPromptReason, type SessionPromptReason } from '@kortix/api-contract';
 import type { PromptRow } from './session-prompt-view';
 import { isForwarded, isHeld } from '../session-lifecycle/delivery-state';
 
@@ -5,7 +6,7 @@ import { isForwarded, isHeld } from '../session-lifecycle/delivery-state';
  * Map a durable command row onto the inbox's four user-visible states.
  *
  * `succeeded` no longer means "never appears". A FORWARDED row is `succeeded`
- * so the drain can never re-claim it, and still unanswered: OpenCode has
+ * so the drain can never re-claim it, and still unanswered: the runtime has
  * persisted the message and queued it behind the turn in flight. It reads
  * `delivering` until the `session_turns` ledger confirms a turn consumed it —
  * which is what keeps the composer working across that interval instead of
@@ -14,7 +15,7 @@ import { isForwarded, isHeld } from '../session-lifecycle/delivery-state';
  */
 export function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   state: 'queued' | 'delivering' | 'waiting' | 'failed';
-  reason: string | null;
+  reason: SessionPromptReason | null;
 } {
   const result = (row.result ?? {}) as Record<string, unknown>;
   // TERMINAL FIRST, above every marker on the row. A row can be given up on
@@ -33,14 +34,18 @@ export function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   if (isHeld(result)) return { state: 'waiting', reason: 'held' };
   // Then FORWARDED, above `running`: this is a `succeeded` row, so every branch
   // below would otherwise fall through to `queued` and show a prompt that is
-  // already at OpenCode as if it had never been sent.
+  // already at the runtime as if it had never been sent.
   if (isForwarded(result)) return { state: 'delivering', reason: 'forwarded' };
   // A claim only checks admission. It must not flash Sending during a live turn.
   if (row.status === 'running' && typeof result.delivery_started_at === 'string') {
     return { state: 'delivering', reason: null };
   }
   const admission = result.admission_reason;
-  if (typeof admission === 'string') return { state: 'waiting', reason: admission };
+  // A row written by an older API may carry an admission reason outside the set.
+  // It still waits on admission, so it reads as the generic one.
+  if (typeof admission === 'string') {
+    return { state: 'waiting', reason: isSessionPromptReason(admission) ? admission : 'turn_active' };
+  }
   // Parked on a DOWN runtime. Still `queued` — the row IS in line and the server
   // re-attempts it (on a wake, or on its backoff ladder), so anything else would
   // be a lie in the direction that lost the message before: `failed` invited a

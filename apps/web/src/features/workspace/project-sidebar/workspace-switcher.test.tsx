@@ -43,4 +43,18 @@ describe('WorkspaceSwitcher account menu', () => {
     expect(settings).toBeGreaterThan(identity);
     expect(logout).toBeGreaterThan(settings);
   });
+
+  test('the Inbox is a menu row with the unread count, between the identity and Settings (KRTX-1742)', async () => {
+    const code = await source();
+    expect(code).toContain('useInboxSummary(projectId)');
+    const identity = code.indexOf('account.loggedInAs');
+    const inbox = code.indexOf("'inbox.title'");
+    const settings = code.indexOf("openUserSettings('profile')");
+    expect(inbox).toBeGreaterThan(identity);
+    expect(settings).toBeGreaterThan(inbox);
+    expect(code).toContain('<Link href={inbox.href} prefetch>');
+    expect(code).toContain('count={inbox.count}');
+    // The tile's dot shows only for "needs you", not for any unread update.
+    expect(code).toContain('{inbox.needsYou ? (');
+  });
 });

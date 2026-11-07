@@ -15,7 +15,7 @@
 
 import { parse as parseToml } from 'smol-toml';
 import { parse as parseYaml } from 'yaml';
-import { KORTIX_TOOL_NAMES, kortixToolRef, REGISTRY_NAME_RE, selectedKortixTools } from './constants';
+import { EVERY_GRANT, EVERY_GRANT_KEYS, isEveryGrant, KORTIX_TOOL_NAMES, kortixToolRef, REGISTRY_NAME_RE, selectedKortixTools } from './constants';
 import { fixManifestText } from './deprecations';
 import { parseManifestText, serializeManifestObject } from './format';
 import { AGENTS_DIR, safeAgentFile, safeRepoPath, SKILLS_DIR } from './layout';
@@ -178,12 +178,12 @@ function toolsGrant(value: unknown, removed: string[]): unknown {
 
 /** `permission.task` as a `subagents` grant: undefined (none) when it denies every agent. */
 function subagentsGrant(task: unknown): unknown {
-  if (task === undefined || task === 'allow' || task === 'ask') return 'all';
+  if (task === undefined || task === 'allow' || task === 'ask') return EVERY_GRANT;
   if (task === 'deny') return undefined;
   const rules = table(task);
-  if (!rules) return 'all';
+  if (!rules) return EVERY_GRANT;
   const named = Object.entries(rules).filter(([name, action]) => name !== '*' && action !== 'deny').map(([name]) => name);
-  if (rules['*'] !== undefined && rules['*'] !== 'deny') return 'all';
+  if (rules['*'] !== undefined && rules['*'] !== 'deny') return EVERY_GRANT;
   return named.length > 0 ? named : undefined;
 }
 
@@ -238,10 +238,10 @@ function v1AsV2(raw: Table, repo: ReturnType<typeof tree>): Table {
     const { name, env, ...grants } = (table(entry) ?? {}) as Table;
     if (typeof name === 'string') agents[name] = { ...grants, ...(env === undefined ? {} : { secrets: env }) };
   }
-  // A grant v1 omitted meant `all`.
+  // A grant v1 omitted meant every name.
   for (const block of Object.values(agents)) {
-    if (block.kortix_permissions === undefined && block.kortix_cli === undefined) block.kortix_permissions = 'all';
-    for (const key of ['connectors', 'secrets', 'skills']) block[key] ??= 'all';
+    if (block.kortix_permissions === undefined && block.kortix_cli === undefined) block.kortix_permissions = EVERY_GRANT;
+    for (const key of ['connectors', 'secrets', 'skills']) block[key] ??= EVERY_GRANT;
   }
   const jsonc = ['opencode.jsonc', 'opencode.json'].map((name) => `${dir}/${name}`).find(repo.exists);
   const jsoncText = jsonc ? repo.read(jsonc) : null;
@@ -255,43 +255,42 @@ function v1AsV2(raw: Table, repo: ReturnType<typeof tree>): Table {
   return { ...raw, agents, default_agent: raw.default_agent ?? defaultAgent };
 }
 
-/**
- * Convert a legacy manifest (`from` 1 or 2) and the files it points at into
- * the latest shape. `manifestPath` is the file it was read from
- * (`kortix.yaml` or `kortix.toml`); the result is written to `kortix.yaml`
- * beside it, and a `kortix.toml` is deleted.
- */
-export function convertLegacyManifest(input: Table, from: 1 | 2, manifestPath: string, repo: LegacyRepo): LegacyConversion {
-  const fs = tree(repo);
-  const raw = from === 1 ? v1AsV2(input, fs) : input;
-  const changes: LegacyChange[] = [];
-  const overlay: Record<string, string> = {};
-  const dropped: string[] = [];
-  const rewrite = (path: string, content: string, note: string) => {
-    changes.push({ path, action: 'rewrite', note, content });
-    overlay[path] = content;
-  };
-  const harnesses = table(raw.harnesses) ?? {};
+/** What a conversion collects as its sections run: the file changes, the content later reads see, and what was not carried over. */
+interface Conversion {
+  fs: ReturnType<typeof tree>;
+  changes: LegacyChange[];
+  overlay: Record<string, string>;
+  dropped: string[];
+  rewrite: (path: string, content: string, note: string) => void;
+}
+
+/** Where the OpenCode config lives, and where the legacy folder (explicit or default) is. */
+function resolveOpencodeDirs(raw: Table, fs: ReturnType<typeof tree>) {
   const explicitDir = safeRepoPath(table(raw.opencode)?.config_dir);
   const dirCandidates = explicitDir ? [explicitDir] : [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR];
   const opencodeDir = dirCandidates.find(fs.exists) ?? dirCandidates[0]!;
   const legacyDir = explicitDir ?? LEGACY_OPENCODE_CONFIG_DIR;
+  return { opencodeDir, legacyDir };
+}
 
-  // v2 also ran agents that only the OpenCode folder declared, with no skill restriction.
+/** v2 also ran agents that only the OpenCode folder declared, with no skill restriction. */
+function collectFolderAgents(raw: Table, opencodeDir: string, ctx: Conversion) {
   const agents: Table = { ...(table(raw.agents) ?? {}) };
   const folderAgents = new Map<string, string>();
   for (const sub of ['agents', 'agent']) {
-    for (const entry of fs.list(`${opencodeDir}/${sub}`)) {
+    for (const entry of ctx.fs.list(`${opencodeDir}/${sub}`)) {
       const name = entry.name.replace(/\.md$/, '');
       if (entry.dir || !entry.name.endsWith('.md') || agents[name] !== undefined) continue;
-      agents[name] = { skills: 'all' };
+      agents[name] = { skills: EVERY_GRANT };
       folderAgents.set(name, `${opencodeDir}/${sub}/${entry.name}`);
     }
   }
-  const names = Object.keys(agents);
-  const defaultAgent = typeof raw.default_agent === 'string' ? raw.default_agent : names[0];
+  return { agents, folderAgents };
+}
 
-  // opencode.json[c]: its `permission` moves onto every agent that sets none.
+/** opencode.json[c]: its `permission` moves onto every agent that sets none. */
+function readOpencodeConfig(opencodeDir: string, ctx: Conversion): unknown {
+  const { fs, changes, dropped } = ctx;
   let projectPermission: unknown;
   for (const name of ['opencode.jsonc', 'opencode.json']) {
     const path = `${opencodeDir}/${name}`;
@@ -308,8 +307,12 @@ export function convertLegacyManifest(input: Table, from: 1 | 2, manifestPath: s
     if (lost.length > 0) dropped.push(`${path}: ${lost.join(', ')} (no project-wide harness config any more)`);
     changes.push({ path, action: 'delete', note: 'permission copied onto each agent that sets none' });
   }
+  return projectPermission;
+}
 
-  // Skills: every folder with a SKILL.md; Kortix skills are always there.
+/** Skills: every folder with a SKILL.md; Kortix skills are always there. */
+function collectSkills(legacyDir: string, ctx: Conversion): Table {
+  const { fs, dropped } = ctx;
   const skills: Table = {};
   for (const dir of [SKILLS_DIR, `${legacyDir}/skills`]) {
     for (const entry of fs.list(dir)) {
@@ -319,8 +322,12 @@ export function convertLegacyManifest(input: Table, from: 1 | 2, manifestPath: s
       else dropped.push(`${dir}/${name}: "${name}" is not a valid skill name (lowercase words joined by "-")`);
     }
   }
+  return skills;
+}
 
-  // Commands: each enabled on its frontmatter's agent, else the default agent.
+/** Commands: each enabled on its frontmatter's agent, else the default agent. */
+function collectCommands(opencodeDir: string, agents: Table, defaultAgent: string | undefined, ctx: Conversion) {
+  const { fs, changes, dropped, rewrite } = ctx;
   const commands: Table = {};
   const commandsOf = new Map<string, string[]>();
   for (const sub of ['commands', 'command']) {
@@ -340,8 +347,12 @@ export function convertLegacyManifest(input: Table, from: 1 | 2, manifestPath: s
       if (target !== path) changes.push({ path, action: 'delete', note: `moved to ${target}` });
     }
   }
+  return { commands, commandsOf };
+}
 
-  // Extensions: pi packages. OpenCode plugins did nothing once every session ran pi: reported, not carried over.
+/** Extensions: pi packages. OpenCode plugins did nothing once every session ran pi: reported, not carried over. */
+function collectExtensions(opencodeDir: string, harnesses: Table, agents: Table, names: string[], ctx: Conversion) {
+  const { fs, dropped } = ctx;
   const extensions: Table = {};
   const extensionsOf = new Map<string, string[]>(names.map((name) => [name, []]));
   const taken = new Set<string>();
@@ -370,71 +381,93 @@ export function convertLegacyManifest(input: Table, from: 1 | 2, manifestPath: s
     }
   }
   if (fs.exists('harnesses/pi') || fs.exists('.kortix/pi')) dropped.push('harnesses/pi (or .kortix/pi): no pi config folder is read; register a pi extension under `extensions` with `pi: <repo path>`');
+  return { extensions, extensionsOf };
+}
 
-  // Tools: project modules stay; the Kortix tools v2 left out become a per-agent exclude.
+/** Tools: project modules stay; the Kortix tools v2 left out become a per-agent exclude. */
+function collectTools(raw: Table) {
   const toolMap = table(raw.tools);
   const tools = toolMap ? Object.fromEntries(Object.entries(toolMap).filter(([, value]) => kortixToolRef(value) === null)) : {};
   const removedTools = toolMap ? KORTIX_TOOL_NAMES.filter((name) => !selectedKortixTools(toolMap).includes(name)) : [];
+  return { tools, removedTools };
+}
 
-  // Agents.
-  const codemodeTop = table(harnesses.pi)?.codemode;
-  const nextAgents: Table = {};
-  for (const name of names) {
-    const block = table(agents[name]) ?? {};
-    const next: Table = {};
-    const folderPath = folderAgents.get(name);
-    const explicitFile = block.file !== undefined ? safeAgentFile(block.file) : undefined;
-    const candidates = explicitFile !== undefined ? (explicitFile ? [explicitFile] : []) : [`${AGENTS_DIR}/${name}.md`, `${legacyDir}/agents/${name}.md`];
-    const mdPath = folderPath ?? candidates.find(fs.exists);
-    let frontmatter: Table = {};
-    if (mdPath) {
-      const split = splitFrontmatter(fs.read(mdPath));
-      frontmatter = split.frontmatter;
-      if (split.loose) dropped.push(`${mdPath}: the frontmatter is not valid YAML; its single-line keys were read, any nested key was not`);
-      const moved = Object.keys(frontmatter).filter((key) => key !== 'name');
-      const target = folderPath && !fs.exists(`${AGENTS_DIR}/${name}.md`) ? `${AGENTS_DIR}/${name}.md` : mdPath;
-      next.prompt_file = target;
-      rewrite(target, split.body, `${folderPath ? 'declared from the OpenCode folder; ' : ''}frontmatter → agents.${name}${moved.length ? ` (${moved.join(', ')})` : ''}`);
-      if (target !== mdPath) changes.push({ path: mdPath, action: 'delete', note: `moved to ${target}` });
-    }
-    for (const key of BEHAVIOR_KEYS) if (frontmatter[key] !== undefined) next[key] = frontmatter[key];
-    const permission = frontmatter.permission ?? projectPermission;
-    const permissionTable = table(permission);
-    next.permission = permissionTable ? Object.fromEntries(Object.entries(permissionTable).filter(([key]) => key !== 'skill' && key !== 'task')) : permission;
-    if (permissionTable && Object.keys(next.permission as Table).length === 0) next.permission = undefined;
-    if (next.permission === 'allow') next.permission = undefined;
-    next.subagents = subagentsGrant(permissionTable?.task);
-    for (const key of KEEP_KEYS) if (block[key] !== undefined) next[key] = block[key];
-    if (frontmatter.disable === true || block.disable === true) next.enabled = false;
-    if (block.kortix_cli !== undefined && next.kortix_permissions === undefined) next.kortix_permissions = block.kortix_cli;
-    if (block.connectors_personal !== undefined && next.connectors_required === undefined) next.connectors_required = block.connectors_personal;
-    // v2 cloned the repository when the key was omitted; the latest shape does not: pin the v2 value.
-    const repository = projectRepository(block);
-    next.workspace = repository === undefined ? undefined : { project_repository: repository };
-    const skillGrant = block.skills;
-    next.skills = Array.isArray(skillGrant) ? skillGrant.filter((skill) => typeof skill === 'string' && (skill.startsWith('kortix-') || skills[skill] !== undefined)) : skillGrant;
-    if (Array.isArray(skillGrant) && (next.skills as unknown[]).length !== skillGrant.length) {
-      dropped.push(`agents.${name}.skills: ${skillGrant.filter((skill) => !(next.skills as unknown[]).includes(skill)).join(', ')} (no such skill folder)`);
-    }
-    next.tools = toolsGrant(block.tools ?? frontmatter.tools, removedTools) ?? 'all';
-    if (commandsOf.get(name)?.length) next.commands = commandsOf.get(name);
-    if (extensionsOf.get(name)?.length) next.extensions = extensionsOf.get(name);
-    const codemode = table(table(block.harnesses)?.pi)?.codemode ?? codemodeTop;
-    if (codemode !== undefined) next.codemode = codemode;
-    // A key the conversion does not read is kept as written: a typo is reported at its line, and a deprecated shape converts below.
-    for (const [key, value] of Object.entries(block)) {
-      if (CONVERTED_BLOCK_KEYS.has(key) || next[key] !== undefined || value === undefined) continue;
-      if (key === 'prompt' && next.prompt_file !== undefined) {
-        dropped.push(`agents.${name}.prompt: ${next.prompt_file as string} is this agent's prompt`);
-        continue;
-      }
-      next[key] = value;
-    }
-    const lostKeys = Object.keys(frontmatter).filter((key) => ![...BEHAVIOR_KEYS, 'permission', 'disable', 'tools', 'name'].includes(key));
-    if (lostKeys.length > 0) dropped.push(`${mdPath}: ${lostKeys.join(', ')} (not an agent key)`);
-    nextAgents[name] = ordered(next, AGENT_ORDER);
+/** What the sections before the agents collected, as one agent's conversion reads it. */
+interface AgentParts {
+  folderAgents: Map<string, string>;
+  legacyDir: string;
+  projectPermission: unknown;
+  skills: Table;
+  removedTools: string[];
+  commandsOf: Map<string, string[]>;
+  extensionsOf: Map<string, string[]>;
+  codemodeTop: unknown;
+}
+
+/** One agent: its block and its prompt file's frontmatter in the latest shape. */
+function convertAgentBlock(name: string, block: Table, parts: AgentParts, ctx: Conversion): Table {
+  const { fs, changes, dropped, rewrite } = ctx;
+  const { folderAgents, legacyDir, projectPermission, skills, removedTools, commandsOf, extensionsOf, codemodeTop } = parts;
+  const next: Table = {};
+  const folderPath = folderAgents.get(name);
+  const explicitFile = block.file !== undefined ? safeAgentFile(block.file) : undefined;
+  const candidates = explicitFile !== undefined ? (explicitFile ? [explicitFile] : []) : [`${AGENTS_DIR}/${name}.md`, `${legacyDir}/agents/${name}.md`];
+  const mdPath = folderPath ?? candidates.find(fs.exists);
+  let frontmatter: Table = {};
+  if (mdPath) {
+    const split = splitFrontmatter(fs.read(mdPath));
+    frontmatter = split.frontmatter;
+    if (split.loose) dropped.push(`${mdPath}: the frontmatter is not valid YAML; its single-line keys were read, any nested key was not`);
+    const moved = Object.keys(frontmatter).filter((key) => key !== 'name');
+    const target = folderPath && !fs.exists(`${AGENTS_DIR}/${name}.md`) ? `${AGENTS_DIR}/${name}.md` : mdPath;
+    next.prompt_file = target;
+    rewrite(target, split.body, `${folderPath ? 'declared from the OpenCode folder; ' : ''}frontmatter → agents.${name}${moved.length ? ` (${moved.join(', ')})` : ''}`);
+    if (target !== mdPath) changes.push({ path: mdPath, action: 'delete', note: `moved to ${target}` });
   }
+  for (const key of BEHAVIOR_KEYS) if (frontmatter[key] !== undefined) next[key] = frontmatter[key];
+  const permission = frontmatter.permission ?? projectPermission;
+  const permissionTable = table(permission);
+  next.permission = permissionTable ? Object.fromEntries(Object.entries(permissionTable).filter(([key]) => key !== 'skill' && key !== 'task')) : permission;
+  if (permissionTable && Object.keys(next.permission as Table).length === 0) next.permission = undefined;
+  if (next.permission === 'allow') next.permission = undefined;
+  next.subagents = subagentsGrant(permissionTable?.task);
+  for (const key of KEEP_KEYS) if (block[key] !== undefined) next[key] = block[key];
+  if (frontmatter.disable === true || block.disable === true) next.enabled = false;
+  if (block.kortix_cli !== undefined && next.kortix_permissions === undefined) next.kortix_permissions = block.kortix_cli;
+  if (block.connectors_personal !== undefined && next.connectors_required === undefined) next.connectors_required = block.connectors_personal;
+  // v2 cloned the repository when the key was omitted; the latest shape does not: pin the v2 value.
+  const repository = projectRepository(block);
+  next.workspace = repository === undefined ? undefined : { project_repository: repository };
+  const skillGrant = block.skills;
+  next.skills = Array.isArray(skillGrant) ? skillGrant.filter((skill) => typeof skill === 'string' && (skill.startsWith('kortix-') || skills[skill] !== undefined)) : skillGrant;
+  if (Array.isArray(skillGrant) && (next.skills as unknown[]).length !== skillGrant.length) {
+    dropped.push(`agents.${name}.skills: ${skillGrant.filter((skill) => !(next.skills as unknown[]).includes(skill)).join(', ')} (no such skill folder)`);
+  }
+  next.tools = toolsGrant(block.tools ?? frontmatter.tools, removedTools) ?? EVERY_GRANT;
+  // The latest shape spells "every name" `"*"`: an `all` the old file wrote is written as `"*"`.
+  for (const key of EVERY_GRANT_KEYS) if (typeof next[key] === 'string' && isEveryGrant(next[key])) next[key] = EVERY_GRANT;
+  if (commandsOf.get(name)?.length) next.commands = commandsOf.get(name);
+  if (extensionsOf.get(name)?.length) next.extensions = extensionsOf.get(name);
+  const codemode = table(table(block.harnesses)?.pi)?.codemode ?? codemodeTop;
+  if (codemode !== undefined) next.codemode = codemode;
+  // A key the conversion does not read is kept as written: a typo is reported at its line, and a deprecated shape converts below.
+  for (const [key, value] of Object.entries(block)) {
+    if (CONVERTED_BLOCK_KEYS.has(key) || next[key] !== undefined || value === undefined) continue;
+    if (key === 'prompt' && next.prompt_file !== undefined) {
+      dropped.push(`agents.${name}.prompt: ${next.prompt_file as string} is this agent's prompt`);
+      continue;
+    }
+    next[key] = value;
+  }
+  const lostKeys = Object.keys(frontmatter).filter((key) => ![...BEHAVIOR_KEYS, 'permission', 'disable', 'tools', 'name'].includes(key));
+  if (lostKeys.length > 0) dropped.push(`${mdPath}: ${lostKeys.join(', ')} (not an agent key)`);
+  return ordered(next, AGENT_ORDER);
+}
 
+/** The top-level manifest: what the sections collected, in key order, rendered; the changes get its file first. */
+function assembleManifest(raw: Table, from: 1 | 2, manifestPath: string, collected: { skills: Table; tools: Table; commands: Table; extensions: Table; agents: Table }, ctx: Conversion): LegacyConversion {
+  const { changes, overlay, dropped } = ctx;
+  const { skills, tools, commands, extensions, agents: nextAgents } = collected;
   // `runtime` is a harness name that selects nothing; a table there (the one-day `[runtime]` control plane) never ran.
   const runtime = typeof raw.runtime === 'string' ? raw.runtime : undefined;
   if (raw.runtime !== undefined && runtime === undefined) dropped.push('runtime: not a harness name; every session runs pi');
@@ -457,10 +490,47 @@ export function convertLegacyManifest(input: Table, from: 1 | 2, manifestPath: s
   );
   const target = manifestPath.replace(/\.(toml|ya?ml)$/i, '.yaml');
   // A deprecated shape the file kept (an agent's `env`, `runtime`) is rewritten like any other file's.
-  const content = fixManifestText(renderManifest(next)).text;
+  const content = fixManifestText(renderManifest(next), { canonical: true }).text;
   changes.unshift({ path: target, action: 'rewrite', note: `the kortix_version ${from} manifest in the current shape`, content });
   if (target !== manifestPath) changes.push({ path: manifestPath, action: 'delete', note: `replaced by ${target}` });
   return { from, raw: parseManifestText(content), changes, overlay, dropped };
+}
+
+/**
+ * Convert a legacy manifest (`from` 1 or 2) and the files it points at into
+ * the latest shape. `manifestPath` is the file it was read from
+ * (`kortix.yaml` or `kortix.toml`); the result is written to `kortix.yaml`
+ * beside it, and a `kortix.toml` is deleted.
+ */
+export function convertLegacyManifest(input: Table, from: 1 | 2, manifestPath: string, repo: LegacyRepo): LegacyConversion {
+  const fs = tree(repo);
+  const raw = from === 1 ? v1AsV2(input, fs) : input;
+  const changes: LegacyChange[] = [];
+  const overlay: Record<string, string> = {};
+  const ctx: Conversion = {
+    fs,
+    changes,
+    overlay,
+    dropped: [],
+    rewrite: (path, content, note) => {
+      changes.push({ path, action: 'rewrite', note, content });
+      overlay[path] = content;
+    },
+  };
+  const harnesses = table(raw.harnesses) ?? {};
+  const { opencodeDir, legacyDir } = resolveOpencodeDirs(raw, fs);
+  const { agents, folderAgents } = collectFolderAgents(raw, opencodeDir, ctx);
+  const names = Object.keys(agents);
+  const defaultAgent = typeof raw.default_agent === 'string' ? raw.default_agent : names[0];
+  const projectPermission = readOpencodeConfig(opencodeDir, ctx);
+  const skills = collectSkills(legacyDir, ctx);
+  const { commands, commandsOf } = collectCommands(opencodeDir, agents, defaultAgent, ctx);
+  const { extensions, extensionsOf } = collectExtensions(opencodeDir, harnesses, agents, names, ctx);
+  const { tools, removedTools } = collectTools(raw);
+  const parts: AgentParts = { folderAgents, legacyDir, projectPermission, skills, removedTools, commandsOf, extensionsOf, codemodeTop: table(harnesses.pi)?.codemode };
+  const nextAgents: Table = {};
+  for (const name of names) nextAgents[name] = convertAgentBlock(name, table(agents[name]) ?? {}, parts, ctx);
+  return assembleManifest(raw, from, manifestPath, { skills, tools, commands, extensions, agents: nextAgents }, ctx);
 }
 
 /** Thrown by the reader `convertLegacyManifestAsync` gives the conversion when a file is not loaded yet. */

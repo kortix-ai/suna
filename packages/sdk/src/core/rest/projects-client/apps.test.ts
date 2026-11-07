@@ -15,6 +15,9 @@ import {
   getAppDeploymentLogs,
   listAppAgents,
   listAppDeployments,
+  listAppEvents,
+  sendAppTestEvent,
+  getAppEventCredentials,
   listApps,
   registerAppArtifact,
   rollbackApp,
@@ -38,6 +41,7 @@ import {
   type AppAuth,
   type AppCapability,
   type AppToken,
+  type AppEventList,
   createAppToken,
 } from './apps';
 
@@ -166,6 +170,19 @@ test('Apps CRUD uses the project-scoped API contract', async () => {
 
   await deleteApp('project-1', 'app-1');
   expect(last().method).toBe('DELETE');
+});
+
+test('a test event can name the one trigger it is for', async () => {
+  responses.push({ status: 202, body: { triggers: 1, accepted: 1, deduped: 0, suppressed: 0, unmatched: 0, ids: ['test-1'] } });
+  await sendAppTestEvent('project-1', 'app-1', { name: 'status.changed', trigger: 'status-work' });
+  expect(last()).toMatchObject({ method: 'POST', body: { name: 'status.changed', trigger: 'status-work' } });
+});
+
+test('an App delete names the triggers that went with it', async () => {
+  responses.push({ body: { ok: true, images: { released: 1, pending: 0 }, triggers_removed: ['status-check', 'status-work'] } });
+  const deleted = await deleteApp('project-1', 'app-1');
+  const removed: string[] | undefined = deleted.triggers_removed;
+  expect(removed).toEqual(['status-check', 'status-work']);
 });
 
 test('an App names the Apps it uses and the Apps that use it; create and update send `uses`', async () => {
@@ -522,4 +539,60 @@ test('an external App: created and moved by external_url, carried on the App', a
   await updateApp('project-1', 'app-ext', { external_url: 'https://grafana.example.org' });
   expect(calls[1]!.method).toBe('PATCH');
   expect(calls[1]!.body).toEqual({ external_url: 'https://grafana.example.org' });
+});
+
+test('listAppEvents reads the App event log with its filters and cursor', async () => {
+  const page: AppEventList = {
+    events: [
+      {
+        log_id: '00000000-0000-4000-a000-000000000001',
+        name: 'reply.received',
+        id: 'msg-1',
+        data: { subject: 'Term sheet' },
+        truncated: false,
+        raw: null,
+        test: false,
+        trigger: 'handle-reply',
+        status: 'fired',
+        reason: null,
+        session_id: 'ses_1',
+        attempts: 1,
+        emitted_at: '2026-11-05T10:00:00.000Z',
+        received_at: '2026-11-05T10:00:00.000Z',
+        fired_at: '2026-11-05T10:00:01.000Z',
+      },
+    ],
+    next_cursor: 'c2',
+  };
+  responses.push({ body: page }, { body: { events: [], next_cursor: null } });
+
+  expect(await listAppEvents('project-1', 'app-1')).toEqual(page);
+  expect(last()).toMatchObject({ method: 'GET', url: 'http://backend.test/v1/projects/project-1/apps/app-1/events' });
+  await listAppEvents('project-1', 'app-1', { limit: 20, cursor: 'c2', status: 'unmatched', trigger: 'handle-reply', id: 'test-1' });
+  expect(last().url).toBe(
+    'http://backend.test/v1/projects/project-1/apps/app-1/events?limit=20&cursor=c2&status=unmatched&trigger=handle-reply&id=test-1',
+  );
+});
+
+test('sendAppTestEvent posts one event or a batch to the test route and returns the test ids', async () => {
+  const answer = { triggers: 1, accepted: 1, deduped: 0, suppressed: 0, unmatched: 0, ids: ['test-msg-1'] };
+  responses.push({ status: 202, body: answer }, { status: 202, body: { ...answer, ids: ['test-a', 'test-b'] } });
+
+  expect(await sendAppTestEvent('project-1', 'app-1', { name: 'reply.received', id: 'msg-1', data: { subject: 'Hi' } })).toEqual(answer);
+  expect(last()).toMatchObject({
+    method: 'POST',
+    url: 'http://backend.test/v1/projects/project-1/apps/app-1/events/test',
+    body: { name: 'reply.received', id: 'msg-1', data: { subject: 'Hi' } },
+  });
+  await sendAppTestEvent('project-1', 'app-1', { events: [{ name: 'a' }, { name: 'b' }] });
+  expect(last().body).toEqual({ events: [{ name: 'a' }, { name: 'b' }] });
+});
+
+test('getAppEventCredentials reads the URL and token an App posts with', async () => {
+  responses.push({ body: { url: 'http://backend.test/v1/projects/project-1/apps/app-1/events', token: 'a'.repeat(64) } });
+  expect(await getAppEventCredentials('project-1', 'app-1')).toEqual({
+    url: 'http://backend.test/v1/projects/project-1/apps/app-1/events',
+    token: 'a'.repeat(64),
+  });
+  expect(last()).toMatchObject({ method: 'GET', url: 'http://backend.test/v1/projects/project-1/apps/app-1/events/credentials' });
 });

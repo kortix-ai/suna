@@ -26,11 +26,14 @@ import React, { useCallback, useMemo } from 'react';
  * A path that resolves but doesn't exist is not this function's problem — the
  * viewer reports "couldn't be opened", the same as any dead absolute path, and
  * that beats refusing to try.
+ *
+ * A session drive path (`/drives/me/…`) is outside /workspace and stays as it
+ * is: the file client reads it through the drive API (`session-drive-files`).
  */
 export function resolveOpenablePath(filePath: string): string | null {
   const trimmed = filePath.trim();
   if (!trimmed) return null;
-  return toSandboxAbsolutePath(trimmed);
+  return trimmed.startsWith('/drives/') ? trimmed : toSandboxAbsolutePath(trimmed);
 }
 
 // ---------------------------------------------------------------------------

@@ -88,6 +88,7 @@ export type FeatureFlagKey =
   | 'agent_principal'
   | 'us_region'
   | 'event_triggers'
+  /** @deprecated Graduated 2026-11-06 — notifications (the inbox, push, session watch, alerts, per-kind notification settings) are on for every project. The API sends `true` for every project, so `useFeatureFlag(id, 'notification_center')` reports `enabled: true`. Removed in the next major. */
   | 'notification_center'
   /** @deprecated Graduated 2026-11-02 — every project has a Drive. The API sends `true` wherever the platform stores a Drive (Platinum). Removed in the next major. */
   | 'volumes'
@@ -99,16 +100,23 @@ export type FeatureFlagKey =
   | 'ephemeral_sandboxes'
   /** Not a flag since P8.2 (2026-10-22): the session log is every session's saved history, and the API sends `true` for every project. Absent from {@link FEATURE_FLAG_KEYS}. */
   | 'session_log'
+  /** @deprecated Graduated 2026-11-05 — every box restores the conversation from the session log when its own copy is missing or behind. The API sends `true` for every project. Removed in the next major. */
   | 'session_log_restore'
   /** @deprecated Graduated — the Kortix connectors catalog is the only connectors path. Removed in the next major. */
   | 'connectors_v2'
+  /** Chat: a Slack-style chat with Kortix. Every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and spaces are shared with people. Experimental, off by default. */
+  | 'chat'
+  /** @deprecated Withdrawn — merged into `chat` (2026-11). The API sends it equal to `chat` and writes `chat` for it; it is not in the catalog. Read `chat`. Removed in the next major. */
   | 'project_channels'
+  /** @deprecated Withdrawn — Rooms were removed (2026-11). The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'agent_rooms'
   /** Shared Drives: an admin makes a Drive and adds agents to it. Off by default: people have only My files. */
   | 'shared_drives'
   | 'goals'
   | 'workspace_volume'
+  /** @deprecated Graduated 2026-11-06 — every project has Artifacts wherever the platform stores Files (Platinum). The API sends `true` there, so `useFeatureFlag(id, 'artifacts')` reads Artifacts availability. Removed in the next major. */
   | 'artifacts'
+  /** @deprecated Withdrawn 2026-11-06 — artifact comments, live presence, co-editing and the activity feed were removed. The API sends `false`. Removed in the next major. */
   | 'artifact_comments'
   /** The email channel: a Resend inbox that starts and continues sessions. Experimental, off by default. */
   | 'email_channel'
@@ -120,10 +128,16 @@ export type FeatureFlagKey =
   | 'agent_teams'
   /** Voice calls: talk with the session's agent from the session page, with screen share. Off by default. */
   | 'voice_call'
+  /** Chat input: one composer control for the agent and every session override (model, effort, secrets, provider keys, sandbox). Experimental, off by default. */
+  | 'chat_input'
+  /** Talk-only threads: with `chat` on, a new space thread's agent only talks and hands the work to one hidden My Kortix session. Experimental, off by default. */
+  | 'chat_front'
+  /** Proactive spaces: with `chat` on, a space's watcher reads what happens in the space and posts, starts a thread or asks only when it matters. Experimental, off by default. */
+  | 'spaces_proactive'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
-/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `pi_harness`, `genui`, `meta_agent`) sends a constant `true`, or (`volumes`, `drives`) sends whether the platform stores a Drive. */
+/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `session_log_restore`, `pi_harness`, `genui`, `meta_agent`, `notification_center`) sends a constant `true`, or (`volumes`, `drives`, `artifacts`) sends whether the platform stores a Drive, or (`artifact_comments`) sends a constant `false`. */
 type GraduatedFeatureFlagKey =
   | 'agent_tunnel'
   | 'teams'
@@ -131,6 +145,8 @@ type GraduatedFeatureFlagKey =
   | 'session_transcript_history'
   | 'agent_principal'
   | 'human_messaging'
+  | 'project_channels'
+  | 'agent_rooms'
   | 'pi_worker'
   | 'config_releases'
   | 'apps'
@@ -138,6 +154,7 @@ type GraduatedFeatureFlagKey =
   | 'stateless_sessions'
   | 'ephemeral_sandboxes'
   | 'session_log'
+  | 'session_log_restore'
   | 'pi_harness'
   | 'genui'
   | 'agentmail_email'
@@ -147,7 +164,10 @@ type GraduatedFeatureFlagKey =
   | 'meta_agent'
   | 'warm_sessions'
   | 'volumes'
-  | 'drives';
+  | 'drives'
+  | 'notification_center'
+  | 'artifacts'
+  | 'artifact_comments';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -163,20 +183,18 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'pooled_provider_secrets',
   'us_region',
   'event_triggers',
-  'notification_center',
-  'session_log_restore',
-  'project_channels',
-  'agent_rooms',
+  'chat',
   'shared_drives',
   'goals',
   'workspace_volume',
-  'artifacts',
-  'artifact_comments',
   'email_channel',
   'session_groups',
   'chrome',
   'agent_teams',
   'voice_call',
+  'chat_input',
+  'chat_front',
+  'spaces_proactive',
 ] as const;
 
 /**
@@ -199,8 +217,7 @@ export interface FeatureFlagView {
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
   /**
-   * True for an internal-only flag (`session_log`, `session_log_restore`,
-   * `workspace_volume`). The
+   * True for an internal-only flag (`workspace_volume`). The
    * catalog lists one only while it is on, so agents and people can see it.
    * Only a Kortix platform operator can change it: `PATCH /features` answers
    * `403` with `feature_operator_only`. Absent on servers older than this field.
@@ -287,17 +304,23 @@ export interface ProjectConfigSummary {
   manifest_raw: string | null;
   /** kortix.yaml problems for this project. Absent from an API released before the one-schema manifest. */
   manifest_health?: ProjectManifestHealth;
-  /** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
-  open_code_raw: string | null;
-  /** Provider-neutral project default. The SDK derives this from legacy servers. */
+  /** @deprecated The API no longer sends it (an older API sends `null`). Removed in the next major. */
+  open_code_raw?: string | null;
+  /** The project's default agent (`kortix.yaml` `default_agent`), or null. */
   default_agent?: string | null;
-  /** @deprecated Use `default_agent`. */
-  open_code_default_agent: string | null;
+  /** @deprecated The API no longer sends it; read `default_agent`. Removed in the next major. */
+  open_code_default_agent?: string | null;
   /** Which built-in agents the project runs (`builtin_agents` in kortix.yaml;
    *  `true` = on, absent = off). `my_kortix` is My Kortix, the agent named `mykortix`.
    *  Absent from an older API. */
   builtin_agents?: { my_kortix: boolean };
-  agent_discovery: 'opencode' | 'declarative';
+  /**
+   * Where `agents` comes from. The API sends `declarative` (the agents
+   * `kortix.yaml` declares) for every project; a response filtered by the
+   * caller's `project.agent.read` access sends `null`.
+   * `opencode` is `@deprecated`: no API sends it. It stays in the union until the next major.
+   */
+  agent_discovery: 'declarative' | 'opencode';
   agents: Array<{
     name: string;
     path: string;
@@ -308,7 +331,8 @@ export interface ProjectConfigSummary {
     /** The agent's `model:` frontmatter (`provider/model`); absent on older
      *  servers, null when it follows the project default. */
     model?: string | null;
-    /** The server sends `kortix.yaml`. `kortix.toml` is never sent; it stays in the union until the next major. */
+    /** The server sends `kortix.yaml`. `opencode` and `kortix.toml` are never sent; they stay
+     *  in the union until the next major. */
     source?: 'opencode' | 'kortix.yaml' | 'kortix.toml';
     enabled?: boolean;
     /** True for a platform-owned agent (SUNA — the coordinator) that the API
@@ -322,8 +346,8 @@ export interface ProjectConfigSummary {
      *  null/absent is Project-wide (see `groupBySpace`). */
     space?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
-     *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
-     *  OpenCode-discovered agents (not governed by `agents:`). */
+     *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent when
+     *  `agents:` does not govern the agent. */
     scope?: {
       env: string[] | 'all';
       connectors: string[] | 'all';
@@ -364,7 +388,17 @@ export interface ProjectDetail {
   project: KortixProject;
   git_connection?: ProjectGitConnection | null;
   config: ProjectConfigSummary;
+  /**
+   * @deprecated Use `listProjectFiles(projectId, { path })`. The number of
+   * repository files for a caller with `project.file.read`, else `0`. Removed
+   * in the next major.
+   */
   file_count: number;
+  /**
+   * @deprecated Use `listProjectFiles(projectId, { path })` for the files of
+   * one folder. This list holds only the first 300 paths of the repository,
+   * so on a large repository it misses files. Removed in the next major.
+   */
   files: ProjectFileEntry[];
 }
 
@@ -388,7 +422,7 @@ export interface GatewayCatalogModel {
   /**
    * The REAL upstream provider serving this model ('anthropic', 'openai',
    * 'amazon-bedrock', ...). Every gateway model is registered under the one
-   * synthetic `kortix` opencode provider, so this is the ONLY reliable way to
+   * synthetic `kortix` runtime provider, so this is the ONLY reliable way to
    * group/label a model by who actually serves it — Bedrock ids are
    * dot-namespaced (`us.anthropic.claude-opus-4-8`), so the legacy
    * split-on-slash heuristic cannot recover it.
@@ -688,7 +722,7 @@ export async function getProjectDetail(projectId: string, options?: ApiClientOpt
     ...detail,
     config: {
       ...detail.config,
-      default_agent: detail.config.default_agent ?? detail.config.open_code_default_agent ?? null,
+      default_agent: detail.config.default_agent ?? null,
     },
   };
 }
@@ -705,7 +739,7 @@ export async function getProjectLlmCatalog(projectId: string, options?: ApiClien
 /**
  * Load the compact, connection-aware catalog intended for interactive model
  * selectors. Unlike `getProjectLlmCatalog`, this does not transfer the complete
- * runtime models.dev projection used to configure OpenCode sandboxes.
+ * runtime models.dev projection used to configure sandboxes.
  */
 export async function getProjectModelPicker(projectId: string, options?: ApiClientOptions) {
   return unwrap(

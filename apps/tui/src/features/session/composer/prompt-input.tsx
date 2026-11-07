@@ -67,6 +67,8 @@ export interface PromptInputProps {
   onMetrics?(metrics: PromptInputMetrics): void;
   /** Replace the draft. A new `seq` applies it again (e.g. `/rename ` prefill). */
   seed?: { text: string; seq: number } | null;
+  /** Text added at the cursor once per `seq` (`/shown` → Tab). The draft stays. */
+  insert?: { text: string; seq: number } | null;
   /** Drawn under the box: the tray. */
   footer?: ReactNode;
   /** A click on the input: the host gives it the keyboard (a click never moves focus by itself). */
@@ -134,6 +136,7 @@ export function PromptInput({
   onKey,
   onMetrics,
   seed = null,
+  insert = null,
   footer,
   onActivate,
 }: PromptInputProps) {
@@ -171,6 +174,24 @@ export function PromptInput({
   useEffect(() => {
     if (seed) setText(seed.text);
   }, [seedSeq, setText]);
+
+  // An insert lands at the cursor once per `seq`, after a space when it would
+  // otherwise glue onto the word before it.
+  const insertSeq = insert?.seq;
+  // biome-ignore lint/correctness/useExhaustiveDependencies(insert): only a new seq inserts.
+  useEffect(() => {
+    if (!insert) return;
+    const renderable = textareaRef.current;
+    if (!renderable) {
+      const before = draftRef.current;
+      setText(before && !/\s$/.test(before) ? `${before} ${insert.text}` : `${before}${insert.text}`);
+      return;
+    }
+    const before = renderable.plainText.slice(0, renderable.cursorOffset);
+    renderable.insertText(before && !/\s$/.test(before) ? ` ${insert.text}` : insert.text);
+    draftRef.current = renderable.plainText;
+    setDraft(renderable.plainText);
+  }, [insertSeq, setText]);
 
   const query = menuQuery(draft);
   const entries = useMemo(

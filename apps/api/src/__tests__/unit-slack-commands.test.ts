@@ -13,7 +13,7 @@ function makeChain(): any {
   return chain;
 }
 let deletes = 0;
-mock.module('../shared/db', () => ({
+mock.module('../shared/db', () => ({ withDbTransaction: async <T>(action: () => Promise<T>) => action(),
   db: {
     select: () => makeChain(),
     update: () => makeChain(),
@@ -26,7 +26,7 @@ mock.module('../shared/db', () => ({
 }));
 
 // Controllable selection layer.
-let selection: unknown = { projectId: 'p1', agentName: null, opencodeModel: null };
+let selection: unknown = { projectId: 'p1', agentName: null, sessionModel: null };
 let setAgentResult: { ok: true } | { ok: false; reason: 'no_binding' | 'unknown_agent' } = { ok: true };
 let setModelResult = true;
 const setAgentCalls: Array<string | null> = [];
@@ -164,7 +164,7 @@ function actionIds(resp: any): string[] {
 beforeEach(() => {
   dbResults = [];
   identityRow = null;
-  selection = { projectId: 'p1', agentName: null, opencodeModel: null };
+  selection = { projectId: 'p1', agentName: null, sessionModel: null };
   setAgentResult = { ok: true };
   setModelResult = true;
   setAgentCalls.length = 0;
@@ -311,7 +311,7 @@ describe('/kortix session (singular)', () => {
 
 describe('/kortix whoami', () => {
   test('surfaces the current agent + model', async () => {
-    selection = { projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8' };
+    selection = { projectId: 'p1', agentName: 'reviewer', sessionModel: 'anthropic/claude-opus-4-8' };
     // whoami also fetches the project row.
     dbResults = [[{ projectId: 'p1', name: 'Proj', repoUrl: 'https://github.com/o/r' }]];
     const resp = await handleSlashCommand('whoami', '', ctx);
@@ -386,7 +386,7 @@ describe('repo previews and labels', () => {
     const owner = config.MANAGED_GIT_GITHUB_OWNER;
     (config as any).MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
     try {
-      selection = { projectId: 'p1', agentName: null, opencodeModel: null };
+      selection = { projectId: 'p1', agentName: null, sessionModel: null };
       dbResults = [[{ projectId: 'p1', name: 'Proj', repoUrl: HOSTED }]];
       const txt = allText(await handleSlashCommand('whoami', '', ctx));
       expect(txt).toContain('Hosted by Kortix');

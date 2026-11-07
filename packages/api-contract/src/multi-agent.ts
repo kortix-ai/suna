@@ -26,11 +26,11 @@ import { z } from 'zod';
 
 // ── Limits ───────────────────────────────────────────────────────────────
 
-/** Largest message body, in characters. Same as a room message. */
+/** Largest message body, in characters. */
 export const PEER_MESSAGE_MAX_CHARS = 16_000;
 /** Largest `summary` (the preview line), in characters. */
 export const PEER_MESSAGE_SUMMARY_MAX_CHARS = 200;
-/** Messages one sender session may send in one minute. Same as a room. */
+/** Messages one sender session may send in one minute. */
 export const PEER_MESSAGE_PER_MINUTE = 30;
 /** The same text to the same session within this window is dropped. */
 export const PEER_MESSAGE_DUPLICATE_WINDOW_MS = 60_000;

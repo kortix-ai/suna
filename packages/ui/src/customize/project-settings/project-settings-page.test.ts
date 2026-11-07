@@ -114,13 +114,10 @@ describe('projectSettingsNavTarget', () => {
 });
 
 describe('projectCapabilityNavTarget', () => {
-  test('legacy review navigation reaches the Customize Review tab', () => {
+  test('legacy review navigation reaches the Review page', () => {
     expect(projectCapabilityNavTarget('review')).toBe('review');
-    // #10124 moved the Review row under Customize: the standalone page's
-    // address (`/projects/<id>/review`) redirects to the tab's address now.
-    expect(projectCapabilityNavHref('p1', 'review', 'review')).toBe(
-      '/projects/p1/customize/review',
-    );
+    // Review is its own page since 2026-11-04; `/customize/review` redirects to it.
+    expect(projectCapabilityNavHref('p1', 'review', 'review')).toBe('/projects/p1/review');
   });
 
   test('every legacy llm sub-section is the Models tab', () => {

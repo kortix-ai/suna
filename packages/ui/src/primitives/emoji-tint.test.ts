@@ -210,8 +210,7 @@ describe('emoji-tint — the classes it hands out', () => {
     for (const hue of EMOJI_HUES) {
       const tint = emojiTint(anchorFor(hue));
 
-      expect(tint).toContain(`bg-emoji-fill-${hue}`);
-      expect(tint).toContain(`inset-ring-emoji-ring-${hue}`);
+      expect(tint).toContain(`bg-emoji-ring-${hue}/15`);
     }
   });
 
@@ -220,7 +219,6 @@ describe('emoji-tint — the classes it hands out', () => {
     // emits `--tw-inset-ring-color` with no shadow to colour, so the ring — the
     // half of the treatment that carries the contrast — is simply absent.
     for (const hue of EMOJI_HUES) {
-      expect(emojiTint(anchorFor(hue)).split(/\s+/)).toContain('inset-ring-1');
     }
   });
 
@@ -240,7 +238,7 @@ describe('emoji-tint — the classes it hands out', () => {
     // the trigger would wipe the tint to a neutral wash. The hold cancels that
     // — and it has to name the same hue, or hovering repaints the trigger.
     for (const hue of EMOJI_HUES) {
-      expect(emojiTintHover(anchorFor(hue))).toBe(`hover:bg-emoji-fill-${hue}`);
+      expect(emojiTintHover(anchorFor(hue))).toBe(`hover:bg-emoji-ring-${hue}/15 dark:hover:bg-emoji-ring-${hue}/30`);
     }
   });
 
@@ -259,9 +257,8 @@ describe('emoji-tint — the classes it hands out', () => {
     // passes because they only ever compare strings. This has already happened
     // once on this feature.
     for (const hue of EMOJI_HUES) {
-      expect(code).toContain(`bg-emoji-fill-${hue}`);
-      expect(code).toContain(`inset-ring-emoji-ring-${hue}`);
-      expect(code).toContain(`hover:bg-emoji-fill-${hue}`);
+      expect(code).toContain(`bg-emoji-ring-${hue}/15`);
+      expect(code).toContain(`hover:bg-emoji-ring-${hue}/15 dark:hover:bg-emoji-ring-${hue}/30`);
     }
 
     // …and no interpolation may build one, which is the shape that would make

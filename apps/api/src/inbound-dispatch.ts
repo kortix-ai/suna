@@ -4,6 +4,7 @@ import { runInboundAudit } from './shared/audit-edge';
 import { annotateAuditEvent, setInboundAuditEntrypoint } from './shared/audit-scope';
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { isUuid } from './shared/validate';
+import { clientIpFromHeaders } from './shared/client-ip';
 import { schemaReady } from './bootstrap';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
 import { prepareAppWsUpgrade } from './apps/ws-proxy';
@@ -116,7 +117,7 @@ export async function dispatchInbound(
 
 // The per-request stream-timeout guards, moved verbatim.
 function applyStreamTimeouts(req: Request, url: URL, server: any): void {
-  // Sandbox preview traffic includes OpenCode long-poll and SSE routes. Let
+  // Sandbox preview traffic includes the runtime's long-poll and SSE routes. Let
   // the proxy's own upstream timeout decide instead of Bun closing the client
   // socket early with an empty reply.
   if (url.pathname.includes('/v1/p/')) {

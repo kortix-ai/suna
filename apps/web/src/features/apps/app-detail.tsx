@@ -48,6 +48,7 @@ import {
   appTabLabel,
   childApps,
   deployNotice,
+  appTriggers,
 } from '@kortix/ui/apps';
 import { AppAccessModal } from './app-access';
 import { AppConnectDialog } from './app-connect';
@@ -73,6 +74,7 @@ export function AppDetailModal({
   canWrite,
   canDeploy,
   canAdmin = false,
+  focusEventId = null,
   open,
   onOpenChange,
 }: {
@@ -82,6 +84,8 @@ export function AppDetailModal({
   canDeploy: boolean;
   /** project.app.admin: restore a volume. */
   canAdmin?: boolean;
+  /** Open the App's log on this event id (a trigger run's link). */
+  focusEventId?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -89,6 +93,14 @@ export function AppDetailModal({
   const appCopy = localizedAppCopy(tI18nComplete);
   const apps = useProjectApps(projectId);
   const triggers = useProjectTriggers(projectId);
+  // A delete takes the triggers that name the App (its work and the schedule
+  // that calls it): the confirm says which, so nobody loses one by surprise.
+  const { calledBy, startsOn } = appTriggers(app, triggers.data?.triggers ?? []);
+  const retiring = [...new Set([...calledBy, ...startsOn].map((row) => row.name || row.slug))];
+  const deleteDescription = [
+    tI18nComplete('textb7ddab3f7df8', { value0: app.name }),
+    ...(retiring.length > 0 ? [tI18nComplete('text9c583fa19f1a', { value0: retiring.join(', ') })] : []),
+  ].join(' ');
   // Releases, logs, machines and volumes are operations data: the API answers
   // them only with `deploy`. No id, no request for anyone else.
   const deployments = useAppDeployments(projectId, canDeploy ? app.app_id : null);
@@ -349,10 +361,13 @@ export function AppDetailModal({
               />
             ) : showOverview ? (
               <AppOverview
+                projectId={projectId}
                 app={app}
                 triggers={triggers.data?.triggers ?? []}
                 latest={latest}
                 onVersions={canDeploy && status.deployed ? () => setVersionsOpen(true) : undefined}
+                canDeploy={canDeploy}
+                focusEventId={focusEventId}
               />
             ) : preview || app.external_url ? (
               <AppPreview
@@ -533,7 +548,7 @@ export function AppDetailModal({
         open={overlay === 'delete'}
         onOpenChange={(next) => setOverlay(next ? 'delete' : null)}
         title={tI18nComplete.raw('textd1b0a6e3985a')}
-        description={tI18nComplete('textb7ddab3f7df8', { value0: app.name })}
+        description={deleteDescription}
         confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
         confirmVariant="destructive"
         isPending={apps.remove.isPending}

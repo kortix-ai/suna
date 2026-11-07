@@ -5,6 +5,7 @@ pub mod daemon;
 pub mod error;
 pub mod event_reorder;
 pub mod machine;
+pub mod machine_info;
 pub mod memory;
 pub mod models;
 pub mod os_proc;

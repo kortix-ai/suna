@@ -116,7 +116,6 @@ describe('agents', () => {
   test('thread agents: the project config roster, default first, no runtime built-ins', () => {
     const config = {
       default_agent: 'kortix',
-      open_code_default_agent: 'kortix',
       agents: [
         { name: 'engineering', path: 'a', description: 'Eng', mode: 'primary' },
         { name: 'explore', path: 'b', description: null, mode: 'subagent' },
@@ -136,7 +135,6 @@ describe('agents — the SDK resolver over the thread roster', () => {
   // `/projects/:id/detail` config of a local project (synthetic names), plus edge rows.
   const config = {
     default_agent: 'engineering',
-    open_code_default_agent: 'engineering',
     agents: [
       { name: 'kortix', mode: 'primary', enabled: true, source: 'config' },
       { name: 'engineering', mode: 'primary', enabled: true, source: 'config' },
@@ -149,7 +147,7 @@ describe('agents — the SDK resolver over the thread roster', () => {
   // The roster the thread and project home offer (#8007): `threadAgents`.
   const roster = threadAgents(config);
 
-  test('the Agent tab: config agents only (no OpenCode build/plan), default first, no subagent, no disabled', () => {
+  test('the Agent tab: config agents only (no runtime built-ins build/plan), default first, no subagent, no disabled', () => {
     const names = roster.map((a) => a.name);
     expect(names).toEqual(['engineering', 'kortix', 'no-mode']);
     expect(names).not.toContain('build');
@@ -188,7 +186,7 @@ describe('agents — the SDK resolver over the thread roster', () => {
       modelID: id,
       modelName: id,
     }));
-    const pinned = { metadata: { opencode_model: 'kortix/model-b', opencode_model_source: 'explicit' } };
+    const pinned = { metadata: { model: 'kortix/model-b', model_source: 'explicit' } };
     const thread = (picked: ReturnType<typeof k> | undefined) =>
       resolveComposerModel({
         models,

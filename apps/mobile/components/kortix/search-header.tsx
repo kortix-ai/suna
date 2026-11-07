@@ -8,7 +8,6 @@
  * leaves search mode. The screen swaps its normal header row for this one.
  */
 
-import * as React from 'react';
 import { Keyboard, TextInput, View } from 'react-native';
 import { MagnifyingGlassIcon as Search, XIcon as X } from '@/lib/icons';
 

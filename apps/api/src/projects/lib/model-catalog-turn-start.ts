@@ -8,7 +8,7 @@
  *                          WHEN THE REQUESTED MODEL IS ABSENT.
  *
  * A model catalog is neither of the other two shapes. A catalog that merely
- * CHANGED must not make every prompt wait for an OpenCode restart — that is
+ * CHANGED must not make every prompt wait for a runtime restart — that is
  * `runtime-assets/manifest.ts`'s new `managed-catalog` component, which rides
  * the existing non-blocking asset lane (`scheduleAssetConvergence`) and a
  * plain `POST /kortix/refresh?restart=0` (see `convergeManagedModelCatalog`,
@@ -30,11 +30,13 @@
  * network calls.
  *
  * WHAT IT NEVER DOES. `POST /kortix/catalog/converge` — the one call this
- * gate can make — is idle-gated on the daemon side
- * (`convergeManagedModelCatalog` in the sandbox agent server): it never ends
- * a running turn, and it takes ONE attempt with a bounded timeout, never a
- * retry ladder. The daemon registers the id and reloads OpenCode's config in
- * place; it decides nothing about whether the gateway serves the model.
+ * gate can make — is idle-gated on the daemon side of an old OpenCode box
+ * (`convergeManagedModelCatalog`, deleted from kortixd with the OpenCode
+ * adapter): it never ends a running turn, and it takes ONE attempt with a
+ * bounded timeout, never a retry ladder. That daemon registers the id and
+ * reloads OpenCode's config in place; it decides nothing about whether the
+ * gateway serves the model. A pi daemon answers 404 (`unsupported`): pi has no
+ * catalog to converge.
  */
 
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';

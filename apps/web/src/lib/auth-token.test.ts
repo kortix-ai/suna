@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { afterEach, describe, expect, jest, spyOn, test } from 'bun:test';
+import { AuthClient, type Session } from '@supabase/supabase-js';
 
 import {
   __resetAuthTokenCacheForTests,
@@ -192,6 +193,65 @@ describe('getSupabaseAccessToken: stale in-flight fetch vs. a later invalidation
     await expect(first).resolves.toBe('shared-token');
     await expect(second).resolves.toBe('shared-token');
     expect(fetchCount).toBe(1);
+  });
+});
+
+/** Resolve `promise` while stepping the fake clock through fetchToken's retry backoff. */
+async function settleWithFakeTimers<T>(promise: Promise<T>): Promise<T> {
+  let settled = false;
+  const done = () => {
+    settled = true;
+  };
+  promise.then(done, done);
+  while (!settled) {
+    jest.advanceTimersByTime(1_000);
+    await Promise.resolve();
+  }
+  return promise;
+}
+
+/** A session whose JWT carries `exp`; the signature is never checked client-side. */
+function sessionExpiringAt(exp: number): Session {
+  const payload = btoa(JSON.stringify({ exp }));
+  return {
+    access_token: `header.${payload}.signature`,
+    refresh_token: 'synthetic-refresh-token',
+    expires_in: 0,
+    token_type: 'bearer',
+    user: { id: 'user-1', app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: '' },
+  };
+}
+
+describe('fetchToken: refresh only a session that exists', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  // Better Stack pattern 18213af0: every anonymous token read called
+  // refreshSession() with no stored session, which can only fail with
+  // AuthSessionMissingError; a headless crawler reported it as unhandled.
+  test('an anonymous visitor (no stored session) never calls refreshSession', async () => {
+    jest.useFakeTimers();
+    const refresh = spyOn(AuthClient.prototype, 'refreshSession');
+
+    expect(await settleWithFakeTimers(getSupabaseAccessToken())).toBeNull();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  test('a stored session with an expired access token is still refreshed', async () => {
+    spyOn(AuthClient.prototype, 'getSession').mockResolvedValue({
+      data: { session: sessionExpiringAt(1) },
+      error: null,
+    });
+    const fresh = sessionExpiringAt(4_102_444_800);
+    const refresh = spyOn(AuthClient.prototype, 'refreshSession').mockResolvedValue({
+      data: { session: fresh, user: null },
+      error: null,
+    });
+
+    expect(await getSupabaseAccessToken()).toBe(fresh.access_token);
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 });
 

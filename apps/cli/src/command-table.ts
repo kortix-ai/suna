@@ -127,22 +127,10 @@ export const TIERS: readonly CommandTier[] = [
             blurb: "Talk to a session's agent (REPL or --prompt)",
           },
           {
-            name: 'rooms',
-            args: '<subcommand>',
-            blurb: 'Chat rooms where sessions and people talk (join, send, read, next)',
-            featureFlag: 'agent_rooms',
-          },
-          {
             name: 'tasks',
             args: '[<lead>] <subcommand>',
             blurb: "An agent team's shared task list: ls, add, claim, done, update, rm",
             featureFlag: 'agent_teams',
-          },
-          {
-            name: 'peers',
-            args: '',
-            blurb: 'Sessions and people you can @-mention in a room, with session status',
-            featureFlag: 'agent_rooms',
           },
           {
             name: 'tui',
@@ -277,14 +265,19 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'goals',
             args: '<subcommand>',
-            blurb: 'Work a goal until a verifier confirms it done: new, verify, verdict, handover, ls (in a session)',
+            blurb: 'Work a goal through the Goals API until a verifier passes every criterion: transition, progress, verify, verdict, handover, check, ls, status',
             featureFlag: 'goals',
           },
           {
             name: 'artifacts',
             args: '<subcommand>',
-            blurb: 'Share and review docs and pages: publish, comments, reply, activity',
-            featureFlag: 'artifacts',
+            blurb: 'Share docs and pages: publish, ls, share, versions, pull',
+          },
+          {
+            name: 'spaces',
+            args: '<subcommand>',
+            blurb: 'Post into a space and configure it for its person: post (main chat or a thread, @mentions), rename, describe, tabs, agents, members',
+            featureFlag: 'chat',
           },
           {
             name: 'capture',

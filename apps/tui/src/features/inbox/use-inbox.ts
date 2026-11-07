@@ -1,11 +1,11 @@
 /**
- * The inbox's data: the flag gate, the user key, and the unread count.
+ * The inbox's data: the user key, the query, and the unread count.
  *
  * Both `InboxScreen` and the sidebar badge read `useNotificationInbox` with
  * the same `INBOX_LIMIT`, so they share ONE cache entry and one poll.
  */
 
-import { useFeatureFlag, useNotificationInbox } from '@kortix/sdk/react';
+import { useNotificationInbox } from '@kortix/sdk/react';
 
 import { hostInfo } from '../../kortix.ts';
 
@@ -22,36 +22,21 @@ export function inboxUserId(): string {
 }
 
 /**
- * The web's inbox gate (`useNotificationInboxEnabled`): `notification_center`,
- * or `artifacts` and `artifact_comments` together. Each flag reads the shared
- * project-detail entry, so three calls cost one request. Fail-closed.
+ * The inbox query. Notifications are on for every project (the
+ * `notification_center` flag graduated on 2026-11-06), so no flag is read.
+ * Sends nothing while no project is open: the screen then shows "No project
+ * selected."
  */
-export function useInboxEnabled(projectId: string | null | undefined): {
-  enabled: boolean;
-  isLoading: boolean;
-} {
-  const center = useFeatureFlag(projectId, 'notification_center');
-  const artifacts = useFeatureFlag(projectId, 'artifacts');
-  const comments = useFeatureFlag(projectId, 'artifact_comments');
-  return {
-    enabled: center.enabled || (artifacts.enabled && comments.enabled),
-    isLoading: center.isLoading,
-  };
-}
-
-/** The inbox query for the active project's gate. Sends nothing while the gate is off. */
 export function useInbox(projectId: string | null | undefined) {
-  const gate = useInboxEnabled(projectId);
-  const inbox = useNotificationInbox({
+  return useNotificationInbox({
     userId: inboxUserId(),
     limit: INBOX_LIMIT,
-    enabled: gate.enabled,
+    enabled: !!projectId,
   });
-  return { ...gate, inbox };
 }
 
-/** The unread count for the sidebar. 0 while the gate is off or the first read is in flight. */
+/** The unread count for the sidebar. 0 with no project open or while the first read is in flight. */
 export function useInboxUnread(projectId: string | null | undefined): number {
-  const { enabled, inbox } = useInbox(projectId);
-  return enabled ? inbox.unreadCount : 0;
+  const inbox = useInbox(projectId);
+  return projectId ? inbox.unreadCount : 0;
 }

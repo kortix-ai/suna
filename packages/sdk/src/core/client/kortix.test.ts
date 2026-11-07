@@ -10,11 +10,31 @@ let calls: { url: string; method: string; body?: any }[] = [];
 beforeEach(() => {
   calls = [];
   globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: unknown } = {}) => {
+    const body = typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body;
     calls.push({
       url: String(url),
       method: opts.method ?? 'GET',
-      body: typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body,
+      body,
     });
+    // The coalesced probe (KRTX-4005) POSTs `effective:batch`; answer one
+    // allowed verdict per requested probe so the caller's promise settles.
+    if (String(url).includes('/effective:batch')) {
+      const probes = Array.isArray(body?.probes) ? body.probes : [];
+      return new Response(
+        JSON.stringify({
+          results: probes.map(
+            (probe: { action: string; resourceType?: string; resourceId?: string }) => ({
+              action: probe.action,
+              resource_type: probe.resourceType ?? 'account',
+              resource_id: probe.resourceId ?? null,
+              allowed: true,
+              reason: null,
+            }),
+          ),
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
     return new Response(
       JSON.stringify({
         ok: true,
@@ -213,8 +233,8 @@ test('session presence returns the awake window the server wrote', async () => {
   expect(res.data?.awake_cap_at).toBe('2026-10-12T11:40:00.000Z');
 });
 
-// `useSession` sends an absent report without `keepalive` while the project's
-// `notification_center` flag is off, as before KRTX-1742.
+// `useSession` sends an absent report without `keepalive` when the host passes
+// `presencePageExit: false`, as before KRTX-1742.
 test('session presence takes an explicit keepalive, and the body stays the report', async () => {
   const inits: RequestInit[] = [];
   globalThis.fetch = mock(async (_url: unknown, init: RequestInit = {}) => {
@@ -597,6 +617,12 @@ test('project(id).secrets covers provider OAuth list, start, poll, and removal',
   await kortix.project('PID123').secrets.removeProviderOAuth('chatgpt');
   expect(last().url).toContain('/projects/PID123/oauth/chatgpt');
   expect(last().method).toBe('DELETE');
+});
+
+test('project(id).llmCatalogProviders reads the live provider catalogue', async () => {
+  await kortix.project('PID123').llmCatalogProviders();
+  expect(last().url.endsWith('/projects/PID123/llm-catalog/providers')).toBe(true);
+  expect(last().method).toBe('GET');
 });
 
 test('project(id).claudeSubscription covers status, sign-in, token and disconnect', async () => {
@@ -1087,7 +1113,7 @@ function sessionStartPayload(externalId: string, opencodeSessionId: string) {
     agent_name: 'agent',
     retriable: false,
     sandbox: { external_id: externalId },
-    opencode_session_id: opencodeSessionId,
+    runtime_session_id: opencodeSessionId,
   };
 }
 
@@ -1123,7 +1149,6 @@ test('ensureReady names the runtime session from runtime_session_id first', asyn
       return jsonResponse({
         ...sessionStartPayload('sb-neutral', ''),
         runtime_session_id: 'rs-neutral',
-        opencode_session_id: null,
       });
     }
     return jsonResponse({ ok: true });
@@ -1145,7 +1170,6 @@ function runningSessionRow(sessionId: string, overrides: Record<string, unknown>
     sandbox_provider: 'platinum',
     sandbox_url: 'http://test.local/v1/p/sbx-row/8000',
     runtime_session_id: 'rs-row',
-    opencode_session_id: 'rs-row',
     metadata: {},
     created_at: '2026-10-13T00:00:00.000Z',
     updated_at: '2026-10-13T00:00:00.000Z',
@@ -1243,7 +1267,7 @@ test('send applies persisted session defaults when the OpenCode pin came from a 
       return jsonResponse({
         session_id: 'SESS-INHERITED',
         agent_name: 'kortix',
-        metadata: { opencode_model: 'kortix/glm-5.3-flash' },
+        metadata: { model: 'kortix/glm-5.3-flash' },
       });
     }
     return jsonResponse({ ok: true });
@@ -1284,9 +1308,9 @@ test('changeModel invalidates the persisted default before the next send', async
       return jsonResponse(sessionStartPayload('sb-model-change', 'shared-snapshot-pin'));
     }
     if (url.endsWith('/projects/PROJ/sessions/SESS-MODEL-CHANGE/model')) {
-      persistedModel = body.opencode_model;
+      persistedModel = body.model;
       return jsonResponse({
-        opencode_model: persistedModel,
+        model: persistedModel,
         applied_live: true,
       });
     }
@@ -1294,7 +1318,7 @@ test('changeModel invalidates the persisted default before the next send', async
       return jsonResponse({
         session_id: 'SESS-MODEL-CHANGE',
         agent_name: 'kortix',
-        metadata: { opencode_model: persistedModel },
+        metadata: { model: persistedModel },
       });
     }
     return jsonResponse({ ok: true });
@@ -1323,7 +1347,7 @@ test('changeModel surfaces push_failed so a half-applied change is not read as s
     const url = requestUrl(input);
     if (url.endsWith('/projects/PROJ/sessions/SESS-HALF/model')) {
       return jsonResponse({
-        opencode_model: 'kortix/deepseek-v4-flash',
+        model: 'kortix/deepseek-v4-flash',
         applied_live: false,
         push_failed: true,
         detail: 'stored, but not pushed: env sync failed: 502 upstream-closed-before-headers',
@@ -1357,7 +1381,7 @@ test('per-call and handle prompt choices override persisted session defaults', a
       return jsonResponse({
         session_id: 'SESS-OVERRIDES',
         agent_name: 'persisted-agent',
-        metadata: { opencode_model: 'persisted/model' },
+        metadata: { model: 'persisted/model' },
       });
     }
     return jsonResponse({ ok: true });
@@ -1413,7 +1437,7 @@ test('a failed persisted-default read is retried by the next send', async () => 
       return jsonResponse({
         session_id: 'SESS-DEFAULT-RETRY',
         agent_name: 'persisted-agent',
-        metadata: { opencode_model: 'persisted/model' },
+        metadata: { model: 'persisted/model' },
       });
     }
     return jsonResponse({ ok: true });
@@ -1698,7 +1722,7 @@ test('ensureReady() clears the in-flight entry on failure, so a retry issues a f
           stage: 'failed',
           retriable: true,
           sandbox: null,
-          opencode_session_id: null,
+          runtime_session_id: null,
           agent_name: 'agent',
         });
       return jsonResponse(sessionStartPayload('sb-retry', 'ocs-retry'));
@@ -1795,7 +1819,7 @@ test('ensureReady() polls through provisioning/starting until the runtime report
         agent_name: 'default',
         retriable: !ready,
         sandbox: ready ? { external_id: 'sb-poll' } : null,
-        opencode_session_id: ready ? 'ocs-poll' : null,
+        runtime_session_id: ready ? 'ocs-poll' : null,
       });
     }
     return jsonResponse({ ok: true });
@@ -1818,7 +1842,7 @@ test('ensureReady() throws RUNTIME_UNAVAILABLE when the runtime never becomes re
         agent_name: 'default',
         retriable: true,
         sandbox: null,
-        opencode_session_id: null,
+        runtime_session_id: null,
       });
     }
     return jsonResponse({ ok: true });
@@ -1846,7 +1870,7 @@ test('ensureReady() surfaces the concrete failure reason from a terminal stage:"
         agent_name: 'heartbeat-probe',
         retriable: false,
         sandbox: null,
-        opencode_session_id: null,
+        runtime_session_id: null,
         reason: 'runtime_boot_failed',
         failure: {
           category: 'sandbox-provider',
@@ -1899,7 +1923,7 @@ test('ensureReady() treats a transient null /start result as retriable and resol
         agent_name: 'default',
         retriable: false,
         sandbox: { external_id: 'sb-transient' },
-        opencode_session_id: 'ocs-transient',
+        runtime_session_id: 'ocs-transient',
       });
     }
     return jsonResponse({ ok: true });
@@ -1927,7 +1951,7 @@ test('ensureReady() caps each /start long-poll to the remaining deadline budget'
           agent_name: 'default',
           retriable: true,
           sandbox: null,
-          opencode_session_id: null,
+          runtime_session_id: null,
         });
       }
       return jsonResponse({
@@ -1935,7 +1959,7 @@ test('ensureReady() caps each /start long-poll to the remaining deadline budget'
         agent_name: 'default',
         retriable: false,
         sandbox: { external_id: 'sb-cap' },
-        opencode_session_id: 'ocs-cap',
+        runtime_session_id: 'ocs-cap',
       });
     }
     return jsonResponse({ ok: true });
@@ -1993,13 +2017,18 @@ test('kortix.iam.roles and kortix.iam.groups reach their collections', async () 
 });
 
 test('kortix.iam.can probes one leaf for one principal', async () => {
+  // One leaf, one principal — carried by the coalesced batch POST since
+  // KRTX-4005, so concurrent gates share the request.
   await kortix.iam.can('ACC1', 'U1', {
     action: 'project.write',
     resourceType: 'project',
     resourceId: 'PID1',
   });
-  expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective?');
-  expect(last().url).toContain('action=project.write');
+  expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective:batch');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({
+    probes: [{ action: 'project.write', resourceType: 'project', resourceId: 'PID1' }],
+  });
 });
 
 test('session attachments upload before runtime initialization', async () => {

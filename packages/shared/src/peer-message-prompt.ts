@@ -12,7 +12,7 @@
  * The API writes it (`peerMessagePromptText`); web and mobile read it back
  * (`parsePeerMessagePrompt`) to render a one-line "Message from @reviewer"
  * row, not a turn the person typed. One module owns both sides so they cannot
- * drift, as `room-prompt.ts` does for rooms.
+ * drift.
  */
 
 export type PeerMessageKind = 'message' | 'shutdown_request' | 'shutdown_response' | 'idle_notice';
@@ -30,6 +30,13 @@ export interface PeerMessagePromptInfo {
   /** The message text, without the header and the footer. */
   text: string;
 }
+
+/**
+ * The summary of a message an agent posted into a space's thread
+ * (`kortix spaces post --thread`, apps/api space-posts.ts): a messages-only
+ * thread shows it as that agent's message, where it hides other peer messages.
+ */
+export const SPACE_POST_SUMMARY = 'post in this space';
 
 const FOOTER = '\n\n---\n';
 const LABEL: Record<PeerMessageKind, string> = {

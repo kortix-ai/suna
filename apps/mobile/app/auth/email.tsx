@@ -22,7 +22,7 @@
  */
 
 import * as React from 'react';
-import { BackHandler, View, type TextInput } from 'react-native';
+import { BackHandler, View, type TextInputInstance } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
@@ -115,9 +115,9 @@ export default function EmailAuthScreen() {
   const [otpCode, setOtpCode] = React.useState('');
   const [verifying, setVerifying] = React.useState(false);
 
-  const passwordRef = React.useRef<TextInput>(null);
+  const passwordRef = React.useRef<TextInputInstance>(null);
   // Back from Mail with the code: the keyboard comes back on a tap and on return.
-  const codeRef = React.useRef<TextInput>(null);
+  const codeRef = React.useRef<TextInputInstance>(null);
   const refocusCode = useFieldRefocus(codeRef, !verifying);
   // Set when the user switches to a password, so the new field takes focus.
   const focusPasswordOnMount = React.useRef(false);

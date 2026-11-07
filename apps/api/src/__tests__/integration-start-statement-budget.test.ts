@@ -90,7 +90,7 @@ beforeAll(async () => {
   // The platinum control plane answers on loopback (the sandbox is
   // provider-running); its daemon never does (the session stays in the
   // booting state the long-poll serves). This is the prod-shaped mix for a
-  // wake: the box is up, OpenCode is not answering yet.
+  // wake: the box is up, the runtime is not answering yet.
   stubServer = Bun.serve({
     port: 0,
     idleTimeout: 30,

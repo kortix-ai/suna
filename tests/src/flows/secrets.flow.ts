@@ -43,6 +43,7 @@ flow(
       "GET /v1/accounts/:accountId/secret-resources",
       "PUT /v1/accounts/:accountId/secret-resources/:secretId/value",
       "POST /v1/accounts/:accountId/secret-resources/:secretId/retry",
+      "POST /v1/accounts/:accountId/secret-resources/:secretId/usage",
       "DELETE /v1/accounts/:accountId/secret-resources/:secretId",
     ],
   },
@@ -82,6 +83,13 @@ flow(
       response.status(200).body().has("$.secret_id", ids[1]!).has("$.cooldown_until", null);
       if ("value" in response.json<any>()) throw new Error("secret value leaked in retry response");
       (await ctx.client.as(ctx.P.NONMEMBER).post(`${path}/:secretId/retry`, {}, { params: { ...params, secretId: ids[1]! } })).status([403, 404]);
+    });
+    await ctx.step("an API key has no plan usage: listed as null, the usage route answers 400; a nonmember is denied", async () => {
+      const keys = (await ctx.client.as(ctx.P.OWNER).get(path, { params })).json<any>().secrets as any[];
+      if (keys.find((key) => key.secret_id === ids[1])?.usage !== null) throw new Error("an API key listed plan usage");
+      (await ctx.client.as(ctx.P.OWNER).post(`${path}/:secretId/usage`, {}, { params: { ...params, secretId: ids[1]! } }))
+        .status(400).body().has("$.error", "Not a subscription login");
+      (await ctx.client.as(ctx.P.NONMEMBER).post(`${path}/:secretId/usage`, {}, { params: { ...params, secretId: ids[1]! } })).status([403, 404]);
     });
     await ctx.step("delete primary; backup remains", async () => {
       (await ctx.client.as(ctx.P.OWNER).del(`${path}/:secretId`, { params: { ...params, secretId: ids[0]! } })).status(200);
@@ -184,7 +192,7 @@ flow(
     });
     await ctx.step('an account-key model passes creation preflight with the selected pool', async () => {
       const created = await owner.post('/v1/projects/:projectId/sessions', {
-        opencode_model: 'anthropic/claude-sonnet-4.6', provider_secret_pools: { anthropic: ids },
+        model: 'anthropic/claude-sonnet-4.6', provider_secret_pools: { anthropic: ids },
       }, { params: { projectId: project.id } });
       if (ctx.env.target === 'local') {
         created.status(503).body().has('$.code', 'KORTIX_URL_UNREACHABLE');
@@ -195,7 +203,7 @@ flow(
         (await owner.get(poolPath, { params: { ...poolParams, sessionId: createdId } })).status(200).body().has('$.secret_ids', ids);
       }
       const refused = await owner.post('/v1/projects/:projectId/sessions', {
-        opencode_model: 'anthropic/claude-sonnet-4.6', provider_secret_pools: { anthropic: [] },
+        model: 'anthropic/claude-sonnet-4.6', provider_secret_pools: { anthropic: [] },
       }, { params: { projectId: project.id } });
       refused.status(400).body().has('$.code', 'INVALID_SESSION_MODEL');
     });
@@ -203,7 +211,7 @@ flow(
       // The CLI, the SDK and chat channels name only a model. This used to
       // answer 400 INVALID_SESSION_MODEL; an explicit empty list above still does.
       const created = await owner.post('/v1/projects/:projectId/sessions', {
-        opencode_model: 'anthropic/claude-sonnet-4.6', agent_name: 'worker',
+        model: 'anthropic/claude-sonnet-4.6', agent_name: 'worker',
       }, { params: { projectId: project.id } });
       if (ctx.env.target === 'local') {
         created.status(503).body().has('$.code', 'KORTIX_URL_UNREACHABLE');
@@ -215,14 +223,14 @@ flow(
       }
       (await owner.put(poolPath, { secret_ids: null }, { params: poolParams })).status(200).body().has('$.configured', false);
       (await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', {
-        opencode_model: 'anthropic/claude-sonnet-4.6',
-      }, { params: poolParams })).status(200).body().has('$.opencode_model', 'kortix/anthropic/claude-sonnet-4.6');
+        model: 'anthropic/claude-sonnet-4.6',
+      }, { params: poolParams })).status(200).body().has('$.model', 'kortix/anthropic/claude-sonnet-4.6');
       (await owner.get(poolPath, { params: poolParams })).status(200).body().has('$.configured', true).has('$.secret_ids', ids);
     });
     await ctx.step('an explicit empty selection stays: a model change refuses the model and keeps it', async () => {
       (await owner.put(poolPath, { secret_ids: [] }, { params: poolParams })).status(200).body().has('$.configured', true);
       (await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', {
-        opencode_model: 'anthropic/claude-sonnet-4.6',
+        model: 'anthropic/claude-sonnet-4.6',
       }, { params: poolParams })).status(400).body().has('$.code', 'INVALID_SESSION_MODEL');
       (await owner.get(poolPath, { params: poolParams })).status(200).body().has('$.configured', true).has('$.secret_ids', []);
       (await owner.put(poolPath, { secret_ids: ids }, { params: poolParams })).status(200).body().has('$.secret_ids', ids);
@@ -269,8 +277,8 @@ flow(
           .body().has('$.error', 'Secret unavailable or not granted');
         (await sa.put(poolPath, { secret_ids: null }, { params })).status(200).body().has('$.configured', false);
         (await sa.put('/v1/projects/:projectId/sessions/:sessionId/model', {
-          opencode_model: 'anthropic/claude-sonnet-4.6',
-        }, { params })).status(200).body().has('$.opencode_model', 'kortix/anthropic/claude-sonnet-4.6');
+          model: 'anthropic/claude-sonnet-4.6',
+        }, { params })).status(200).body().has('$.model', 'kortix/anthropic/claude-sonnet-4.6');
         (await owner.get(poolPath, { params })).status(200).body().has('$.configured', true).has('$.secret_ids', [projectKeyId]);
       } finally {
         (await owner.del('/v1/accounts/:accountId/iam/service-accounts/:saId', {
@@ -319,7 +327,7 @@ flow(
         .status(200).body().has('$.personal_user_id', member.userId!).has('$.personal_keys_reason', null);
       // A model only those keys reach is refused, not accepted and then failed on every turn.
       (await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', {
-        opencode_model: 'anthropic/claude-sonnet-4.6',
+        model: 'anthropic/claude-sonnet-4.6',
       }, { params })).status(400).body().has('$.code', 'INVALID_SESSION_MODEL');
       (await owner.get(poolPath, { params })).status(200).body().has('$.configured', false);
     });
@@ -332,8 +340,8 @@ flow(
       (await asMember.put(poolPath, { secret_ids: ids }, { params })).status(200);
       (await asMember.get(poolPath, { params })).status(200).body().has('$.secret_ids', ids);
       (await asMember.put('/v1/projects/:projectId/sessions/:sessionId/model', {
-        opencode_model: 'anthropic/claude-sonnet-4.6',
-      }, { params })).status(200).body().has('$.opencode_model', 'kortix/anthropic/claude-sonnet-4.6');
+        model: 'anthropic/claude-sonnet-4.6',
+      }, { params })).status(200).body().has('$.model', 'kortix/anthropic/claude-sonnet-4.6');
     });
     await ctx.step('sharing a session that runs on keys granted to its owner switches it to keys shared with the project', async () => {
       const privateSession = await createDatabaseSession(ctx.env, {
@@ -344,7 +352,7 @@ flow(
       const asMember = ctx.client.as(member);
       (await asMember.put(poolPath, { secret_ids: ids }, { params })).status(200);
       (await asMember.put(`${sessionPath}/model`, {
-        opencode_model: 'anthropic/claude-sonnet-4.6',
+        model: 'anthropic/claude-sonnet-4.6',
       }, { params })).status(200);
       // A shared session uses nobody's personal keys: with no key shared with
       // the project, the share would leave the model with none. Refused, unchanged.
@@ -364,7 +372,7 @@ flow(
       (await asMember.get(poolPath, { params })).status(200).body().has('$.secret_ids', [projectKey]);
       // The shared session still runs its model, now on the project's key.
       (await asMember.put(`${sessionPath}/model`, {
-        opencode_model: 'anthropic/claude-sonnet-4.6',
+        model: 'anthropic/claude-sonnet-4.6',
       }, { params })).status(200);
       (await owner.del(`${resourcePath}/:secretId`, { params: { ...resourceParams, secretId: projectKey } })).status(200);
     });

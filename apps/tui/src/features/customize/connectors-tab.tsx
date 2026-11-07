@@ -15,8 +15,8 @@
  * (`discover.list()` / Pipedream / Composio, selected by a feature flag) and
  * is out of scope for a terminal client that cannot run the OAuth redirect.
  *
- * No OAuth here by design: connecting needs a browser round-trip back to the
- * web app, so this tab prints that page's URL and stops.
+ * Read-only. Connecting, accounts and sign-in live on the `/connectors`
+ * screen (`features/connectors`); this tab points there.
  */
 
 import type { AdminConnector, Connection } from '@kortix/sdk';
@@ -167,7 +167,7 @@ export function ConnectorsTabView({
                 : `${current.connections} (${current.brokenConnections} not active)`
           }
         />
-        <text fg={theme.faint}>Connect or re-authorize in the web app:</text>
+        <text fg={theme.faint}>Type /connectors to add accounts and sign in. In the web app:</text>
         <text fg={theme.dim}>{`  ${connectUrlFor(current.slug)}`}</text>
       </DetailPane>
     );
@@ -189,10 +189,10 @@ export function ConnectorsTabView({
         }}
         maxRows={Math.max(height - 1, 1)}
         width={width}
-        emptyText="No connectors yet. Add one in the web app under Customize · Connectors."
+        emptyText="No connectors yet. Type /connectors to add one."
       />
       {rows.length > 0 ? (
-        <text fg={theme.faint}>Enter details · ✓ connected · OAuth happens in the web app</text>
+        <text fg={theme.faint}>Enter details · ✓ connected · /connectors to connect</text>
       ) : null}
     </box>
   );

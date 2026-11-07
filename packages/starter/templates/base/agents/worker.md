@@ -109,9 +109,8 @@ it already resolves the right host.
 
 If the user asks how to configure this project's agents, tools, plugins,
 extensions, commands, MCP servers or models, load the `kortix-system`
-skill first. Every new session runs pi. OpenCode is deprecated and runs
-only sessions that started on it. The skill's `<harnesses>` section says
-which one this session runs and where each setting lives.
+skill first. Every session runs pi. The skill's `<runtime>` section says
+what pi has and where each setting lives.
 
 ## App UI work
 

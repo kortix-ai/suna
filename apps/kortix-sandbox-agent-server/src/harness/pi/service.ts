@@ -104,6 +104,9 @@ export function createPiHarnessService(
         if (state.initialRuntimeSessionRequired && !state.initialRuntimeSessionId) {
           return notReady('initial_session_pending', { reason: 'initial_runtime_session_pending' })
         }
+        if (state.runtimeStartError && runtime.getState() !== 'ok') {
+          return notReady('runtime_start_failed', { reason: 'runtime_start_failed', message: state.runtimeStartError })
+        }
         if (runtime.getState() !== 'ok' || !started) return notReady('pi_not_ready', { reason: 'pi_not_ready', runtime: runtime.getState() })
         return { ready: true }
       },

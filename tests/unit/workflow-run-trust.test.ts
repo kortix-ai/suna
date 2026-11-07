@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { REPO_ROOT, readWorkflow } from '../src/fixtures/repo';
 
 // A `workflow_run` trigger matches the triggering workflow by NAME. A pull
 // request can run its own copy of a workflow with that name, and its run then
@@ -8,10 +9,10 @@ import { resolve } from 'node:path';
 // checks out `github.event.workflow_run.head_sha` therefore runs that pull
 // request's code with production credentials unless it pins the branch and
 // proves the commit belongs to it (PR #11646; Mobile OTA had this hole).
-const dir = resolve(import.meta.dirname, '../../.github/workflows');
+const dir = resolve(REPO_ROOT, '.github/workflows');
 const followers = readdirSync(dir)
   .filter((name) => /\.ya?ml$/.test(name))
-  .map((name) => ({ name, source: readFileSync(resolve(dir, name), 'utf8') }))
+  .map((name) => ({ name, source: readWorkflow(name) }))
   .filter(({ source }) => /^ {2}workflow_run:/m.test(source) && source.includes('workflow_run.head_sha'));
 
 describe('workflow_run followers that run the triggering commit', () => {

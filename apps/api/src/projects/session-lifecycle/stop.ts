@@ -142,7 +142,7 @@ export async function stopSession(input: {
   );
   // Close the live turn before powering the box off, but only when the box is
   // actually running one: `cancellingWake` means the row is already stopped
-  // (a wake was mid-flight), so there is no live opencode process to abort.
+  // (a wake was mid-flight), so there is no live runtime process to abort.
   if (!cancellingWake) {
     // Stopping the computer stops its turn too, and that is a stop this person
     // asked for. Stamp it on the open turns BEFORE the abort, as the turn's own

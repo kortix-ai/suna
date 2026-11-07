@@ -205,6 +205,70 @@ describe('/v1/auth headless routes', () => {
     expect(bad.status).toBe(400);
   });
 
+  // KRTX-4024 (CWE-601): the API enforces the redirect_to trust boundary itself.
+  // The safe web origin is FRONTEND_URL's origin (https://app.example here); the
+  // one other escape is http:// loopback. Deny tests use IP 203.0.113.40 so the
+  // matrix and the other tests never share one rate-limit bucket.
+  describe('redirect_to origin allow-list (KRTX-4024)', () => {
+    const post2 = (path: string, body: unknown) => post(path, body, '203.0.113.40');
+
+    test('an off-origin redirect_to is a 400 invalid_request on /sign-in/oauth, GoTrue never called', async () => {
+      respond = () => new Response(null, { status: 302, headers: { location: 'https://provider.example/authorize' } });
+      const res = await post2('/sign-in/oauth', { provider: 'github', redirect_to: 'https://webmail.attacker.test/callback' });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: 'invalid_request' });
+      expect(seen).toHaveLength(0);
+    });
+
+    test('http off loopback, a fragment and a same-host different port are refused on /sign-in/oauth', async () => {
+      respond = () => new Response(null, { status: 302, headers: { location: 'https://provider.example/authorize' } });
+      for (const value of ['http://webmail.attacker.test/callback', 'https://app.example/cb#fragment', 'https://app.example:8443/callback']) {
+        const res = await post2('/sign-in/oauth', { provider: 'github', redirect_to: value });
+        expect(res.status).toBe(400);
+      }
+      expect(seen).toHaveLength(0);
+    });
+
+    test('an off-origin redirect_to is dropped, the on-origin one forwarded, on signup', async () => {
+      const deny = await post2('/signup', { email: 'redir@b.test', password: 'hunter22', redirect_to: 'https://webmail.attacker.test/welcome' });
+      expect(deny.status).toBe(200);
+      expect(new URL(seen[0].url).searchParams.get('redirect_to')).toBeNull();
+      const allow = await post2('/signup', { email: 'redir@b.test', password: 'hunter22', redirect_to: 'https://app.example/welcome' });
+      expect(allow.status).toBe(200);
+      expect(new URL(seen[1].url).searchParams.get('redirect_to')).toBe('https://app.example/welcome');
+    });
+
+    test('an off-origin redirect_to is dropped, the on-origin one forwarded, on magic-link', async () => {
+      respond = () => Response.json({});
+      const deny = await post2('/sign-in/magic-link', { email: 'a@b.test', redirect_to: 'https://webmail.attacker.test/callback' });
+      expect(deny.status).toBe(200);
+      expect(new URL(seen[0].url).searchParams.get('redirect_to')).toBeNull();
+      const allow = await post2('/sign-in/magic-link', { email: 'a@b.test', redirect_to: 'https://app.example/callback' });
+      expect(allow.status).toBe(200);
+      expect(new URL(seen[1].url).searchParams.get('redirect_to')).toBe('https://app.example/callback');
+    });
+
+    test('an off-origin redirect_to is dropped, the on-origin one forwarded, on password reset', async () => {
+      respond = () => Response.json({ code: 404, msg: 'User not found' }, { status: 404 });
+      const deny = await post2('/password/reset', { email: 'ghost@b.test', redirect_to: 'https://webmail.attacker.test/reset' });
+      expect(deny.status).toBe(200);
+      expect(new URL(seen[0].url).searchParams.get('redirect_to')).toBeNull();
+      const allow = await post2('/password/reset', { email: 'ghost@b.test', redirect_to: 'https://app.example/reset' });
+      expect(allow.status).toBe(200);
+      expect(new URL(seen[1].url).searchParams.get('redirect_to')).toBe('https://app.example/reset');
+    });
+
+    test('an off-origin redirect_to is dropped, the on-origin one forwarded, on SSO start', async () => {
+      respond = () => Response.json({ url: 'https://idp.example/saml?RelayState=x' });
+      const deny = await post2('/sign-in/sso', { domain: 'sampleco.example', redirect_to: 'https://webmail.attacker.test/callback' });
+      expect(deny.status).toBe(200);
+      expect(new URL(seen[0].url).searchParams.get('redirect_to')).toBeNull();
+      const allow = await post2('/sign-in/sso', { domain: 'sampleco.example', redirect_to: 'https://app.example/callback' });
+      expect(allow.status).toBe(200);
+      expect(new URL(seen[1].url).searchParams.get('redirect_to')).toBe('https://app.example/callback');
+    });
+  });
+
   test('per-IP rate limit: the 31st attempt in a minute is 429 with retry-after, another IP is unaffected', async () => {
     let last: Response | null = null;
     for (let i = 0; i < 31; i += 1) last = await post('/sign-in/password', { email: 'a@b.test', password: 'x' }, '198.51.100.9');

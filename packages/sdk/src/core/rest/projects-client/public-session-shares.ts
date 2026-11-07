@@ -14,7 +14,7 @@
 // Deliberately NOT built on `backendApi` (platform/api-client.ts): that client
 // wraps every call in the authenticated fetch path, which for a visitor with
 // no token synthesizes a failure WITHOUT ever making the network call (see
-// `opencode/client.ts`'s `getPublicClientForUrl` doc comment for the same
+// `core/runtime/client.ts`'s `getPublicClientForUrl` doc comment for the same
 // footgun on the sandbox side). These routes are genuinely public — no
 // Authorization header is ever sent, and no `configureKortix()` call is
 // required for these functions to work; `getBackendUrl()` degrades to a sane
@@ -86,7 +86,7 @@ export interface PublicSessionTranscript {
   source?: 'live' | 'mirror' | 'none';
   /** When the saved transcript was last written. Null for a live read. */
   captured_at?: string | null;
-  opencode_session_id: string | null;
+  runtime_session_id: string | null;
   message_count: number;
   messages: PublicSessionTranscriptMessage[];
 }

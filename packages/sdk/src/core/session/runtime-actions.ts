@@ -10,7 +10,9 @@ import { ApiError } from '../http/api/errors';
 import { authenticatedFetch } from '../http/auth';
 import type { SessionLogPage } from '../session-log/source';
 import type { SessionLogMessage } from '../session-log/types';
+import { RuntimeNotReadyError } from '../runtime/runtime-not-ready-error';
 import { getActiveRuntimeUrl } from './server-store/active';
+import type { RuntimeThreadStatus } from '../wire-values';
 
 /** The health capability of a box that serves the session-log actions. */
 export const RUNTIME_ACTIONS_CAPABILITY = 'runtime.actions.v1';
@@ -18,8 +20,8 @@ export const RUNTIME_ACTIONS_CAPABILITY = 'runtime.actions.v1';
 /** The health capability of a box whose log reads answer whole pages, with the prompts waiting on it. */
 export const RUNTIME_LOG_CAPABILITY = 'runtime.log.v1';
 
-/** What a thread does now; a retry reads as `busy`. */
-export type RuntimeThreadStatus = 'idle' | 'busy' | 'compacting';
+/** What a thread does now; a retry reads as `busy` (`toRuntimeThreadStatus`). */
+export type { RuntimeThreadStatus } from '../wire-values';
 
 /** One request the runtime waits on: a permission request or a question. */
 export interface RuntimePendingRecord {
@@ -86,45 +88,15 @@ export const runtimeActionPaths = {
   workspaceDiff: (mode: 'branch' | 'git') => `/kortix/runtime/workspace/diff?mode=${mode}`,
 } as const;
 
-const CAPABILITY_TTL_MS = 5 * 60_000;
-const CAPABILITY_MEMO_MAX = 256;
-const served = new Map<string, { served: boolean; at: number }>();
-
-/**
- * Does the box behind `runtimeUrl` serve the session-log actions? One
- * `/kortix/health` read per runtime URL per 5 minutes; a failed read answers
- * false and is not kept, so the compatibility routes serve until a read answers.
- */
-export async function runtimeServesActions(
-  runtimeUrl: string,
-  fetch: typeof globalThis.fetch,
-  now = Date.now(),
-): Promise<boolean> {
-  const base = runtimeUrl.replace(/\/$/, '');
-  const known = served.get(base);
-  if (known && now - known.at < CAPABILITY_TTL_MS) return known.served;
-  try {
-    const response = await fetch(new Request(`${base}/kortix/health`, { method: 'GET' }));
-    if (!response.ok) return false;
-    const body = (await response.json().catch(() => null)) as { capabilities?: unknown } | null;
-    const answer = Array.isArray(body?.capabilities) && body.capabilities.includes(RUNTIME_ACTIONS_CAPABILITY);
-    if (served.size >= CAPABILITY_MEMO_MAX) served.clear();
-    served.set(base, { served: answer, at: now });
-    return answer;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * One action-route request to the ACTIVE session's runtime, as the signed-in
- * user. Null when no runtime is active or its box does not serve the actions:
- * the caller then uses the compatibility client.
+ * user. Every box past the runtime floor serves the actions (`runtime.actions.v1`).
+ * Throws `RuntimeNotReadyError` when no runtime is active.
  */
-export async function activeRuntimeAction(method: string, path: string, body?: unknown): Promise<Response | null> {
+export async function activeRuntimeAction(method: string, path: string, body?: unknown): Promise<Response> {
   const runtimeUrl = getActiveRuntimeUrl().replace(/\/$/, '');
+  if (!runtimeUrl) throw new RuntimeNotReadyError();
   const fetch = authenticatedFetch as typeof globalThis.fetch;
-  if (!runtimeUrl || !(await runtimeServesActions(runtimeUrl, fetch))) return null;
   return fetch(
     new Request(`${runtimeUrl}${path}`, {
       method,
@@ -172,7 +144,3 @@ export async function runtimeActionError(response: Response, what: string): Prom
   return new ApiError(`${what}: ${detail}`, { status: response.status, response });
 }
 
-/** Test-only. */
-export function __resetRuntimeActionsMemo(): void {
-  served.clear();
-}

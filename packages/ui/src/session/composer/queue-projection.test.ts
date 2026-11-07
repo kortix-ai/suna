@@ -387,3 +387,14 @@ describe('cleanPromptText', () => {
     expect(rows[0].text).toBe('summarize');
   });
 });
+test("platform context remains identifiable after projecting a truncated preview", () => {
+  const full = "Synthetic platform report with full accepted content";
+  const { rows } = projectQueueRows({
+    prompts: [prompt({ synthetic: true, text: "Synthetic", full_text: full })],
+  });
+  expect(rows[0].synthetic).toBe(true);
+  expect(rows[0].rawText).toBe(full);
+  expect(
+    projectQueueRows({ prompts: [prompt()] }).rows[0].synthetic,
+  ).toBeUndefined();
+});

@@ -96,6 +96,42 @@ describe('isTransientGitMirrorError', () => {
     expect(isTransientGitMirrorError(err)).toBe(false);
   });
 
+  // KRTX-4016 (2026-11-04): prod API bursts could not fork at all — git's HTTPS
+  // helper failed its own fork (`error: cannot fork() for remote-https:
+  // Resource temporarily unavailable`) and Node's execFile failed to spawn git
+  // itself (code `EAGAIN`). Both are transient container resource pressure, the
+  // same class as the network blips above: bounded retries and a retryable 503,
+  // not a fail-closed refusal per prompt without any retry.
+  test.each([
+    ['git helper fork starved', 'error: cannot fork() for remote-https: Resource temporarily unavailable'],
+    ['POSIX spawn starved (EMFILE)', 'fatal: cannot fork: EMFILE'],
+  ])('classifies a process-limit failure as transient: %s', (_name, stderr) => {
+    const err = classifyGitError({ stderr, code: 128, message: 'Command failed' }, CLONE_ARGS, 90_000);
+    // The cause text survives the classification so the log/runtime refusal
+    // still names what actually happened.
+    expect(err.message).toContain('cannot fork');
+    expect(isTransientGitMirrorError(err)).toBe(true);
+  });
+
+  test('classifies a Node spawn failure (no helper ran at all) as transient, and keeps its code in the message', () => {
+    // Node's spawn failure shape: a string code, an empty stderr, and a
+    // "spawn <cmd> <code>" message. Previously this classified to kind
+    // 'failed' with the message "git clone failed" and, critically, was NOT
+    // retryable — one burst refused every prompt.
+    const err = classifyGitError({ code: 'EAGAIN', message: 'spawn git EAGAIN' }, CLONE_ARGS, 90_000);
+    expect(err.kind).toBe('failed');
+    expect(err.message).toBe('git clone failed (spawn EAGAIN)');
+    expect(isTransientGitMirrorError(err)).toBe(true);
+  });
+
+  test('does NOT classify a permanent spawn-failure code as transient', () => {
+    // Missing binary / wrong path: retrying can never help, and the message
+    // must still name the spawn code rather than a bare "git clone failed".
+    const err = classifyGitError({ code: 'ENOENT', message: 'spawn git ENOENT' }, CLONE_ARGS, 90_000);
+    expect(err.message).toBe('git clone failed (spawn ENOENT)');
+    expect(isTransientGitMirrorError(err)).toBe(false);
+  });
+
   test('does NOT classify a non-GitOperationError as transient', () => {
     expect(isTransientGitMirrorError(new Error('repository not found'))).toBe(false);
     expect(isTransientGitMirrorError('repository not found')).toBe(false);

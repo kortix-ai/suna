@@ -1,5 +1,3 @@
-export type BillingProvider = 'revenuecat' | 'none';
-
 /**
  * Use RevenueCat only when billing is enabled (cloud mode).
  * Self-hosted / local dev: billing is disabled.
@@ -19,8 +17,3 @@ export function shouldUseRevenueCat(): boolean {
   // if (useRC === 'false' || billingEnabled === 'false') return false;
   // return useRC === 'true';
 }
-
-// Legacy aliases for backwards compatibility
-export const isRevenueCatConfigured = shouldUseRevenueCat;
-export const getBillingProvider = (): BillingProvider => 'none';
-export const shouldUseStripe = () => false;

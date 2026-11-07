@@ -313,7 +313,7 @@ async function planEmailSession(projectId: string, email: InboundEmail): Promise
   const [selection] = await db
     .select({
       agentName: chatChannelBindings.agentName,
-      opencodeModel: chatChannelBindings.model,
+      sessionModel: chatChannelBindings.model,
     })
     .from(chatChannelBindings)
     .where(
@@ -340,7 +340,7 @@ async function planEmailSession(projectId: string, email: InboundEmail): Promise
     visibility: privateInbox ? 'private' : 'project',
     body: {
       agent_name: selection?.agentName || 'default',
-      ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
+      ...(selection?.sessionModel ? { model: selection.sessionModel } : {}),
       connector_bindings: {
         email: { connection_id: account.connectionId },
       },
@@ -411,8 +411,8 @@ async function replyNotAccepting(target: ChannelTarget): Promise<void> {
 /**
  * The email as one channel message (`channelPromptText`): the subject is where it
  * was sent, the body is the text. The agent works the inbox with the
- * `kortix connectors` CLI, which every harness's shell has: the MCP face exists
- * only in OpenCode's config, so a prompt that named MCP tools left a pi session
+ * `kortix connectors` CLI, which every harness's shell has: pi serves no MCP
+ * servers, so a prompt that named MCP tools left a pi session
  * unable to read or answer. Every value the sender wrote is quoted in the notes.
  */
 /**

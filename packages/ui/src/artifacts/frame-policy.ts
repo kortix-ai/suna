@@ -17,9 +17,8 @@ export const ARTIFACT_FRAME_PREFIX = 'artifact:';
 export function artifactFrameKey(
   artifact: { artifact_id: string; updated_at: string },
   version?: string | null,
-  annotate = false,
 ): string {
-  return `${ARTIFACT_FRAME_PREFIX}${artifact.artifact_id}:${version ?? artifact.updated_at}${annotate ? ':annotate' : ''}`;
+  return `${ARTIFACT_FRAME_PREFIX}${artifact.artifact_id}:${version ?? artifact.updated_at}`;
 }
 
 /**
@@ -52,30 +51,5 @@ export function printArtifact(viewUrl: string): void {
   document.body.appendChild(frame);
 }
 
-const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
-const IN_PROJECT = new RegExp(`/projects/(${UUID})/artifacts/(${UUID})/?$`, 'i');
-const PUBLIC = new RegExp(`/share/artifact/(${UUID})/?$`, 'i');
-
-/**
- * The artifact an app link names: `/projects/<project>/artifacts/<artifact>`
- * (the app viewer, on any Kortix host) or `/share/artifact/<artifact>` (a
- * public link, no project). Null for any other URL.
- */
-export function parseArtifactUrl(
-  url: string,
-): { projectId: string | null; artifactId: string } | null {
-  let path: string;
-  try {
-    path = new URL(url, 'http://localhost').pathname;
-  } catch {
-    return null;
-  }
-  const inProject = IN_PROJECT.exec(path);
-  if (inProject)
-    return {
-      projectId: inProject[1]!.toLowerCase(),
-      artifactId: inProject[2]!.toLowerCase(),
-    };
-  const shared = PUBLIC.exec(path);
-  return shared ? { projectId: null, artifactId: shared[1]!.toLowerCase() } : null;
-}
+/** The artifact an app link names. Lives in the SDK so every host parses links the same way. */
+export { parseArtifactUrl } from '@kortix/sdk';

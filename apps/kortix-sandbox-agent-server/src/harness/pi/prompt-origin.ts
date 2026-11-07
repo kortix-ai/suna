@@ -7,18 +7,16 @@
  * | Origin | Envelope | Writer |
  * | --- | --- | --- |
  * | `peer` | `[message from … · session … · #…]` | `peerMessagePromptText` (`@kortix/shared/peer-message-prompt`) |
- * | `room` | `[room … · #…]` | `roomPromptText`, `roomDigestText` (`@kortix/shared/room-prompt`) |
- * | `trigger` | `<trigger_event>` block, or `[REMINDER <id> — …]` | a trigger-started session; a reminder or runtime trigger fire |
+ *  * | `trigger` | `<trigger_event>` block, or `[REMINDER <id> — …]` | a trigger-started session; a reminder or runtime trigger fire |
  * | `human` | anything else | the person, a parent agent's task, a platform notice |
  *
  * Two features read it, as Claude Code does for its `origin`: the word
  * `ultracode` opts a turn into a workflow only in a `human` prompt, and the
- * `workflow` tool refuses to start in a `peer`, `room` or `trigger` turn.
+ * `workflow` tool refuses to start in a `peer` or `trigger` turn.
  */
 import { parsePeerMessagePrompt } from '@kortix/shared/peer-message-prompt'
-import { parseRoomDigest, parseRoomPrompt } from '@kortix/shared/room-prompt'
 
-export type PromptOrigin = 'human' | 'peer' | 'room' | 'trigger'
+export type PromptOrigin = 'human' | 'peer' | 'trigger'
 
 /** The head `reminderPromptText` writes (`@kortix/shared/reminder-prompt`). */
 const REMINDER_HEAD = /^\[REMINDER (?:reminder|trigger|automation)\.[0-9a-f]{12} — /
@@ -28,7 +26,6 @@ const TRIGGER_EVENT_TAG = '<trigger_event>'
 export function promptOrigin(text: string | null | undefined): PromptOrigin {
   const value = text ?? ''
   if (parsePeerMessagePrompt(value)) return 'peer'
-  if (parseRoomPrompt(value) || parseRoomDigest(value)) return 'room'
   if (REMINDER_HEAD.test(value) || value.includes(TRIGGER_EVENT_TAG)) return 'trigger'
   return 'human'
 }
@@ -49,6 +46,6 @@ export const ULTRACODE_SYSTEM_LINE =
 /** Why the workflow tool does not start in a turn of this origin. */
 export function workflowOriginRefusal(origin: PromptOrigin): string | null {
   if (origin === 'human') return null
-  const from = origin === 'peer' ? 'a message from another session' : origin === 'room' ? 'a room message' : 'a trigger or reminder'
+  const from = origin === 'peer' ? 'a message from another session' : 'a trigger or reminder'
   return `A workflow starts only from a person's own message, and this turn came from ${from}. Do the work with the agent tool, or tell the person a workflow would help and let them start it.`
 }

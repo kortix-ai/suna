@@ -1,12 +1,14 @@
 import Stripe from 'stripe';
+import { logger } from '../../lib/logger';
 import { wallet } from '../wallet';
-import { applyStripeSync } from './account-write-owner';
+import { applyStripeSync, isClosedBillingAccount } from './account-write-owner';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { upsertCustomer } from '../repositories/customers';
 import { getTier, paidMonthlyUsd } from './tiers';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
+import { captureAccountProductEvent } from '../../iam/account-analytics';
 
 export function planKeyFromMetadata(
   metadata: Stripe.Metadata | null | undefined,
@@ -63,6 +65,16 @@ export async function activateSubscriptionForAccount(params: {
 
   const isYearly = commitmentType === 'yearly' || commitmentType === 'yearly_commitment';
   const existingAccount = await getCreditAccount(accountId);
+  if (isClosedBillingAccount(existingAccount)) {
+    logger.info(`[Webhook] activation skipped: ${accountId} is closed (sub=${subscriptionId})`);
+    return;
+  }
+  // Auto top-up turns on when the account moves ONTO this subscription. A
+  // second activation of the same live subscription (checkout and the first
+  // invoice both activate; Stripe redelivers) keeps the customer's own
+  // choice: a replay must never turn back on what they turned off.
+  const switchesOntoSubscription =
+    existingAccount?.stripeSubscriptionId !== subscriptionId || existingAccount?.stripeSubscriptionStatus !== 'active';
   const previousSubscriptionId = previousSubscriptionIdHint
     ?? (
       existingAccount?.tier === 'free' &&
@@ -92,8 +104,8 @@ export async function activateSubscriptionForAccount(params: {
       commitmentType: commitmentType === 'yearly_commitment' ? commitmentType : null,
       nextCreditGrant: nextCreditGrantTs,
       lastRenewalPeriodStart: subscription.current_period_start,
-      autoTopupEnabled: true,
-      ...(existingAccount?.autoTopupCustomized ? {} : {
+      ...(switchesOntoSubscription ? { autoTopupEnabled: true } : {}),
+      ...(existingAccount?.autoTopupCustomized || !switchesOntoSubscription ? {} : {
         autoTopupThreshold: String(AUTO_TOPUP_DEFAULT_THRESHOLD),
         autoTopupAmount: String(AUTO_TOPUP_DEFAULT_AMOUNT),
       }),
@@ -101,8 +113,11 @@ export async function activateSubscriptionForAccount(params: {
     { account: existingAccount, reason: 'subscription.activated' },
   );
 
+  // Checkout and the first paid invoice both activate. The keyed grant is the
+  // one place that knows which arrived first.
+  let firstActivation = true;
   if (monthlyUsd > 0) {
-    await wallet.grant({
+    const granted = await wallet.grant({
       accountId,
       amount: monthlyUsd,
       kind: 'tier_grant',
@@ -110,6 +125,7 @@ export async function activateSubscriptionForAccount(params: {
       expiring: true,
       key: { event: `subscription_activation:${subscriptionId}` },
     });
+    firstActivation = !granted.replayed;
   }
 
   if (customerId) {
@@ -127,4 +143,20 @@ export async function activateSubscriptionForAccount(params: {
   }
 
   console.log(`[Webhook] Subscription activated: ${tierKey} $${monthlyUsd}/mo for ${accountId} (sub=${subscriptionId})`);
+
+  if (firstActivation) {
+    captureAccountProductEvent({
+      accountId,
+      event: 'subscription_activated',
+      dedupeKey: subscriptionId,
+      properties: {
+        store: 'stripe',
+        via: 'stripe_webhook',
+        tier: tierKey,
+        amount_usd: monthlyUsd,
+        billing_period: isYearly ? 'yearly' : 'monthly',
+        previous_tier: existingAccount?.tier ?? null,
+      },
+    });
+  }
 }

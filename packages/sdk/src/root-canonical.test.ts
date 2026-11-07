@@ -50,18 +50,9 @@ const NOT_ROOT_REACHABLE = new Set([
   './genui/react',
   './server',
   './workspace-search',
-  './internal/sync-store',
-  './internal/server-store',
-  './internal/sandbox-connection-store',
-  './internal/opencode-pending-store',
   './internal/idb-sync-cache',
   './internal/diagnostics-store',
   './internal/managed-storage',
-  './sync-store',
-  './server-store',
-  './sandbox-connection-store',
-  './opencode-pending-store',
-  './idb-sync-cache',
 ]);
 
 function packageExports(): Record<string, string> {

@@ -20,11 +20,11 @@ import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
 import { logger } from '../../lib/logger';
 import { fireGitTrigger, markGitTriggerFired } from '../lib/trigger-fire';
 import type { GitTriggerSpec } from '../triggers';
+import { goalHeartbeatEditRefusal } from '../goals/admission';
 import { serializeSession } from '../lib/serializers';
 import { sessionIsTombstoned } from '../lib/access';
 import {
@@ -126,16 +126,13 @@ export async function createSessionTrigger(
   const inserted = await insertSessionReminderWithinCaps({ projectId, spec, createdBy: loaded.userId, firstFireAt, now });
   if ('error' in inserted) return c.json({ error: inserted.error }, 409);
   // The person who set the reminder hears when it fails (KRTX-1742); an
-  // agent's reminder goes to the person the agent acts for. Only with the
-  // `notification_center` flag on.
-  const watcher = notificationsEnabled(loaded.row.metadata)
-    ? triggerWatcherOf({
-        authType: c.get('authType'),
-        userId: c.get('userId'),
-        sessionId: c.get('sessionId'),
-        onBehalfOfUserId: getRequestOnBehalfOf(c),
-      })
-    : null;
+  // agent's reminder goes to the person the agent acts for.
+  const watcher = triggerWatcherOf({
+    authType: c.get('authType'),
+    userId: c.get('userId'),
+    sessionId: c.get('sessionId'),
+    onBehalfOfUserId: getRequestOnBehalfOf(c),
+  });
   // Best-effort: the reminder is already stored, so a failed write must not
   // fail the route (a retry would set a second reminder).
   if (watcher) {
@@ -145,10 +142,18 @@ export async function createSessionTrigger(
   return { row: inserted.row };
 }
 
+/** 403 when a session credential touches a goal's heartbeat: the API alone manages it (G05). */
+async function goalHeartbeatGuard(c: Context<AppEnv>, access: ReminderAccess, reminderId: string) {
+  const refusal = await goalHeartbeatEditRefusal(access.projectId, reminderId, access.agentCaller);
+  return refusal ? c.json({ error: refusal, code: 'goal_heartbeat' }, 403) : null;
+}
+
 /** Pause or resume one session-target trigger. */
 export async function setReminderEnabledResponse(c: Context<AppEnv>, access: ReminderAccess, reminderId: string, enabled: boolean) {
   const row = await getSessionReminder(access.projectId, access.sessionId, reminderId);
   if (!row) return c.json({ error: 'Loop not found' }, 404);
+  const guarded = await goalHeartbeatGuard(c, access, row.slug);
+  if (guarded) return guarded;
   if (
     enabled &&
     !row.enabled &&
@@ -171,6 +176,8 @@ export async function runReminderResponse(c: Context<AppEnv>, access: ReminderAc
   const { projectId, loaded, visible, agentCaller } = access;
   const row = await getSessionReminder(projectId, access.sessionId, reminderId);
   if (!row) return c.json({ error: 'Loop not found' }, 404);
+  const guarded = await goalHeartbeatGuard(c, access, row.slug);
+  if (guarded) return guarded;
   await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
   const spec = row.scheduleSpec as unknown as GitTriggerSpec;
   const now = new Date();
@@ -196,6 +203,8 @@ export async function runReminderResponse(c: Context<AppEnv>, access: ReminderAc
 export async function deleteReminderResponse(c: Context<AppEnv>, access: ReminderAccess, reminderId: string) {
   const row = await getSessionReminder(access.projectId, access.sessionId, reminderId);
   if (!row) return c.json({ error: 'Loop not found' }, 404);
+  const guarded = await goalHeartbeatGuard(c, access, row.slug);
+  if (guarded) return guarded;
   await deleteSessionReminder(access.projectId, row.slug);
   return c.json({ ok: true }, 200);
 }

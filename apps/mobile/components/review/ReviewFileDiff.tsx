@@ -19,7 +19,6 @@ import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { parsePatchFile, type DiffRow } from '@/lib/diff/parse-patch';
-import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { diffRowPalette, DiffRowView } from '@/components/diff/PatchDiffView';
 
 interface ReviewFileDiffProps {

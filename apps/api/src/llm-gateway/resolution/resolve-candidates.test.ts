@@ -53,6 +53,10 @@ mock.module('../../secrets/account-resource', () => ({
   resolveProjectSharedProviderSecrets,
   encryptAccountSecret: (_accountId: string, value: string) => value,
   decryptAccountSecret: (_accountId: string, value: string) => value,
+  // Imported by modules this suite loads (subscription usage, #11816); never called here.
+  readAccountSecret: () => null,
+  resolveDefaultProviderAccountSecret: async () => null,
+  listUsableGatewaySecrets: async () => [],
 }));
 const getProjectSecretValueForConsumer = mock(async (input: { name: string }) => {
   const name = input.name;
@@ -1003,6 +1007,8 @@ describe('resolveCandidates — codex, unconfigured session, project-shared Chat
     expect(resolveProjectSharedProviderSecrets).toHaveBeenCalledWith({
       accountId: actor.accountId, projectId: 'p1', userId: 'u1', grantUserId: null,
       providerId: 'codex', name: 'CODEX_AUTH_JSON',
+      // The session's call: its pinned shared account serves first (account-routing.ts).
+      sessionId: 'trigger-session', probe: undefined,
     });
     expect(resolveDefaultCodexAccountSecret).not.toHaveBeenCalled();
     expect(resolveCodexCredential).not.toHaveBeenCalled();
@@ -1175,4 +1181,21 @@ describe('Free plan recovery guidance', () => {
         suggestion: 'Your plan includes no Kortix-managed models. Upgrade to Credits, or connect your own provider key or ChatGPT account. List connected models with /v1/llm/v1/models?scope=picker in your project.',
       });
   });
+});
+
+describe('Claude subscription models require session execution', () => {
+  for (const model of ['opus', 'sonnet', 'haiku', 'fable']) {
+    for (const sessionId of [undefined, 'synthetic-session']) {
+      test(`${model}, session ${sessionId ?? 'absent'}: gateway reports the execution boundary`, async () => {
+        const ref = `claude-agent/${model}`;
+        const result = resolveCandidates(principal({ sessionId }), ref);
+        await expect(result).rejects.toBeInstanceOf(GatewayResolutionError);
+        await expect(result).rejects.toMatchObject({
+          code: 'model_not_found',
+          message: `"${ref}" runs through Claude Code inside sessions only. Test it by starting a session with this model; the gateway playground and chat completions cannot execute it.`,
+          suggestion: 'Start a session with this model, or choose a gateway-compatible model for this request.',
+        });
+      });
+    }
+  }
 });

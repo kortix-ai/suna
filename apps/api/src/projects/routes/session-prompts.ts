@@ -23,7 +23,6 @@ import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { annotateAuditEvent } from '../../shared/audit-scope';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { autoWatchSession } from '../../notifications/watchers';
 import { logger } from '../../lib/logger';
 import { personUserId } from './session-watch';
@@ -62,6 +61,7 @@ import {
 } from '../lib/session-prompt-view';
 import { SessionPromptDeliverySchema } from '@kortix/api-contract';
 import { WIRE_MESSAGE_ID, isWireIdAheadOf, mintWireMessageId } from '../wire-message-id';
+import { capturePersonEvent } from './product-events';
 
 // ─── Prompt inbox ───────────────────────────────────────────────────────────
 //
@@ -73,7 +73,7 @@ import { WIRE_MESSAGE_ID, isWireIdAheadOf, mintWireMessageId } from '../wire-mes
 // their own idea of the queue.
 //
 // The client still mints the wire `messageID` and sends it here verbatim.
-// OpenCode decides "has this prompt already been answered?" by id ORDER, and
+// An OpenCode box decides "has this prompt already been answered?" by id ORDER, and
 // only the process holding the transcript can place an id correctly — see
 // `wire-message-id.ts` for the one exception (redelivery, which re-reads the
 // transcript first).
@@ -267,9 +267,9 @@ export function registerSessionPromptsRoutes(): void {
       }
       if (!messageId || !WIRE_MESSAGE_ID.test(messageId)) {
         // Rejected rather than repaired: an id this endpoint cannot verify the
-        // ordering of is one OpenCode may read as already answered, and a
+        // ordering of is one an OpenCode box may read as already answered, and a
         // dropped turn is worse than a refused request.
-        return c.json({ error: 'message_id must be an OpenCode wire message id' }, 400);
+        return c.json({ error: 'message_id must be a wire message id (msg_…)' }, 400);
       }
       const sanitized = sanitizeInboxPromptParts(rawParts);
       if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
@@ -284,9 +284,9 @@ export function registerSessionPromptsRoutes(): void {
 
       const overridesInput = (body.overrides ?? {}) as Record<string, unknown>;
       const model = overridesInput.model as { providerID?: unknown; modelID?: unknown } | null;
-      // A RE-POINTED pin travels ON THE PROMPT: OpenCode keeps its own
-      // per-session model, and `KORTIX_OPENCODE_MODEL` only seeds the default for
-      // a NEW OpenCode session. See `lib/prompt-model.ts` for the measurement.
+      // A RE-POINTED pin travels ON THE PROMPT: the runtime keeps its own
+      // per-session model, and `KORTIX_MODEL` only seeds the default for
+      // a NEW runtime session. See `lib/prompt-model.ts` for the measurement.
       const overrides = {
         agent: typeof overridesInput.agent === 'string' ? overridesInput.agent : null,
         model: promptModelOverride(model, visible.row.metadata as Record<string, unknown> | null),
@@ -332,7 +332,7 @@ export function registerSessionPromptsRoutes(): void {
           projectId,
           sessionId,
           userId: loaded.userId,
-          model: promptModelRef(overrides.model) ?? (typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null),
+          model: promptModelRef(overrides.model) ?? (typeof metadata.model === 'string' ? metadata.model : null),
         });
         if (missing) return c.json(claudeSubscriptionRequiredBody(missing), 409);
       }
@@ -340,6 +340,11 @@ export function registerSessionPromptsRoutes(): void {
       // Same gate as start/wake: a prompt spends compute.
       const billing = await checkBillingAdmission(loaded.row.accountId);
       if (!billing.ok) {
+        capturePersonEvent(c, loaded, projectId, 'billing_gate_hit', {
+          reason: billing.reason,
+          where: 'prompt',
+          session_id: sessionId,
+        });
         return c.json(
           {
             error: billing.message,
@@ -417,21 +422,20 @@ export function registerSessionPromptsRoutes(): void {
         sendState.then((state) => state.held),
       );
       // This prompt runs on the pin the revert restored: drop the marker.
-      if ((visible.row.metadata as Record<string, unknown> | null)?.opencode_model_restored === true) {
+      if ((visible.row.metadata as Record<string, unknown> | null)?.model_restored === true) {
         void clearRestoredModelPin(sessionId);
       }
 
       // KRTX-1742: a person who prompts a session follows its notifications
-      // from now on. Never un-mutes; the creator follows without a row. Only
-      // with the `notification_center` flag on.
-      const prompter = notificationsEnabled(loaded.row.metadata) ? personUserId(c, loaded) : null;
+      // from now on. Never un-mutes; the creator follows without a row.
+      const prompter = personUserId(c, loaded);
       if (prompter && prompter !== visible.row.createdBy) {
         void autoWatchSession(projectId, sessionId, prompter).catch((err) =>
           logger.warn('[notify] auto-watch failed', { sessionId, error: err instanceof Error ? err.message : String(err) }),
         );
       }
 
-      // A person's links join the Links tab of the thread's channel (`project_channels`).
+      // A person's links join the Links tab of the thread's channel (`chat`).
       if (!enqueued.deduped) {
         collectMessageLinksInBackground({
           projectId,
@@ -462,6 +466,24 @@ export function registerSessionPromptsRoutes(): void {
         observed_at: new Date().toISOString(),
       };
       if (enqueued.deduped) return c.json(response, 200);
+
+      // A person's prompt; an agent's session token or an API key is not a person.
+      capturePersonEvent(
+        c,
+        loaded,
+        projectId,
+        'prompt_sent',
+        {
+          session_id: sessionId,
+          model:
+            promptModelRef(overrides.model) ??
+            (typeof (visible.row.metadata as Record<string, unknown> | null)?.model === 'string'
+              ? ((visible.row.metadata as Record<string, unknown>).model as string)
+              : 'default'),
+          attachment_count: parts.filter((part) => (part as { type?: unknown }).type === 'file').length,
+        },
+        idempotencyKey,
+      );
 
       // Fire the targeted drain WITHOUT waiting on it: the response is "your
       // prompt is durable", not "your prompt has been delivered". The drain
@@ -844,14 +866,14 @@ export function registerSessionPromptsRoutes(): void {
       }
 
       // A HOLD IS A STOP SOMEBODY ASKED FOR. Stamp it on the open turn before
-      // anything this Stop sends can reach OpenCode. The hold is the Stop's FIRST
+      // anything this Stop sends can reach the runtime. The hold is the Stop's FIRST
       // request, and its settle (below) can abort the box before the client's
       // own abort leaves the browser. That settle abort does not pass the
       // sandbox proxy that stamps `UserStop`, so without this stamp the turn
       // closed on a bare "Aborted" frame and the user's own Stop read as
       // "stopped before it finished" (prod 2026-09-25). The ledger keeps the
       // stamp only over an abort: a turn that completes drops it, and a named
-      // cause replaces it. Scoped to the session's root OpenCode session, like
+      // cause replaces it. Scoped to the session's root runtime session, like
       // the proxy stamp. The write never throws.
       //
       // A hold over a running turn stops it, so only the turn's prompter, the
@@ -870,7 +892,7 @@ export function registerSessionPromptsRoutes(): void {
         await markTurnStopRequested(
           sessionId,
           'UserStop',
-          { opencodeSessionId: visible.row.runtimeSessionId ?? null },
+          { runtimeSessionId: visible.row.runtimeSessionId ?? null },
           stopper,
         );
       }

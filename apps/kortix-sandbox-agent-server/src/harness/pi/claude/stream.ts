@@ -245,6 +245,16 @@ export class ClaudeReply {
     return this.message
   }
 
+  /**
+   * The step failed on a usage limit before any output: every Claude account the gateway may use
+   * is at its limit (the passthrough tries each one), so another model can take the whole step.
+   */
+  limitedBeforeOutput(result: Extract<SDKMessage, { type: 'result' }>): boolean {
+    if (this.started || !this.resultError(result)) return false
+    const status = (result as { api_error_status?: number }).api_error_status
+    return this.assistantError === 'rate_limit' || (this.rateLimited !== undefined && status === 429)
+  }
+
   /** The turn ended. A result that is an error ends the stream with that error. */
   finishResult(result: Extract<SDKMessage, { type: 'result' }>): AssistantMessage {
     const error = this.resultError(result)

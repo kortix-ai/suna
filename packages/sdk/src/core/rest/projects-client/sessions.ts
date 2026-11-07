@@ -73,13 +73,15 @@ export interface ProjectSession {
   space_id?: string | null;
   /** The session group it is filed in (`session_groups`); null in no group. Absent on older APIs. */
   group_id?: string | null;
-  /** The first 500 characters of the first prompt; stored for sessions created while `project_channels` is on, else null. Absent on older APIs. */
+  /** The first 500 characters of the first prompt; stored for sessions created while `chat` is on, else null. Absent on older APIs. */
   first_prompt?: string | null;
   /**
    * A channel or DM thread list only (`listProjectSessions({ spaceId })`): the
    * messages after the first prompt. Null on every other read. Absent on older APIs.
    */
   reply_count?: number | null;
+  /** A space's thread list: the agent of a child session (a router's hidden worker) working now, else null. Absent from other lists and older APIs. */
+  active_child_agent?: string | null;
   session_id: string;
   account_id: string;
   project_id: string;
@@ -91,8 +93,6 @@ export interface ProjectSession {
   sandbox_url: string | null;
   /** The session's root conversation in its runtime. Served by APIs since W4. */
   runtime_session_id?: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: string | null;
   /**
    * Resolved display name. Precedence: the user-set `custom_name`, then the
    * runtime's own root-conversation title (the `runtime_sessions` snapshot —
@@ -102,7 +102,7 @@ export interface ProjectSession {
   name: string | null;
   /**
    * The user-set name override (metadata.custom_name). Authoritative — when
-   * present it always wins over the server-mirrored OpenCode title. null = no
+   * present it always wins over the server-mirrored runtime title. null = no
    * override (display falls back to the auto title / branch).
    */
   custom_name: string | null;
@@ -124,8 +124,6 @@ export interface ProjectSession {
   metadata: ProjectSessionMetadata;
   /** The runtime's conversation tree. Served by APIs since W4. */
   runtime_sessions?: ProjectRuntimeSession[];
-  /** @deprecated The pre-W4 name of `runtime_sessions`. Same value. */
-  opencode_sessions: ProjectRuntimeSession[];
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
   /** The session that spawned this one, or null for a top-level session. */
@@ -251,7 +249,7 @@ export interface PendingSessionPrompt {
   variant?: string | null;
   attachment_names?: string[];
   /**
-   * Full prompt parts, in OpenCode's wire shape. Lets the first prompt carry
+   * Full prompt parts, in the transcript wire shape (`kortix.transcript.v1`). Lets the first prompt carry
    * attachments as `data:` URLs — the session's sandbox does not exist yet,
    * so there is nowhere to upload into. When present, these are what the
    * server enqueues; `text` remains the flat copy for previews and titling.
@@ -278,9 +276,10 @@ export interface CreateProjectSessionInput {
   fork_from_session_id?: string;
   /**
    * The space (channel or DM, `listProjectSpaces`) to file the session in. Needs
-   * the project's `project_channels` flag. Omitted with the flag on: `#general`.
+   * the project's `chat` flag. Omitted with the flag on: `#general`. `null`:
+   * no space, as with the flag off (the regular new-session composer).
    */
-  space_id?: string;
+  space_id?: string | null;
   base_ref?: string;
   agent_name?: string;
   /** Slug of the sandbox template to boot from. Defaults to "default". */
@@ -294,10 +293,8 @@ export interface CreateProjectSessionInput {
   initial_context?: string;
   /** Durable recovery copy. The server never delivers this field automatically. */
   pending_prompt?: PendingSessionPrompt;
-  /** The session's `provider/model` pin. Accepted by APIs since W4; wins over `opencode_model`. */
+  /** The session's `provider/model` pin. Accepted by APIs since W4; wins over `model`. */
   model?: string;
-  /** @deprecated The pre-W4 name of `model`. Every API version accepts it. */
-  opencode_model?: string;
   name?: string;
   /** Free-form labels: each trimmed, 1..64 characters; at most 20. */
   labels?: string[];
@@ -378,9 +375,6 @@ export interface ProjectRuntimeSession {
   updated_at: number | null;
   archived_at: number | null;
 }
-
-/** @deprecated Renamed to `ProjectRuntimeSession`. Removed in the next major. */
-export type ProjectOpenCodeSession = ProjectRuntimeSession;
 
 /** Default page size the API applies when `limit` is omitted. Mirrors
  *  `SESSION_PAGE_DEFAULT_LIMIT` in `apps/api/src/projects/lib/session-inventory.ts`. */
@@ -1017,7 +1011,7 @@ export interface SessionTranscriptMessage {
 /**
  * Which source answered a transcript read.
  *
- * `live` is the sandbox's own OpenCode endpoint. `mirror` is the durable
+ * `live` is the sandbox's own runtime endpoint. `mirror` is the durable
  * server-side copy the control plane writes at turn end, which is what lets a
  * STOPPED or waking session answer at all. `none` is the honest "nothing could
  * answer" and is the only value that accompanies `available: false`. The two
@@ -1044,14 +1038,12 @@ export interface SessionTranscript {
   captured_at: string | null;
   /** The runtime session this belongs to. Served by APIs since W4. */
   runtime_session_id?: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: string | null;
   message_count: number;
   messages: SessionTranscriptMessage[];
 }
 
 /** One mirrored message in the shape the session sync store hydrates from:
- *  OpenCode's own envelope, with the parts array stripped of tool
+ *  the runtime's own envelope, with the parts array stripped of tool
  *  inputs/outputs and file urls.
  *
  * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
@@ -1078,8 +1070,6 @@ export interface SessionTranscriptSyncEnvelope {
   captured_at: string | null;
   /** The runtime session this belongs to. Served by APIs since W4. */
   runtime_session_id?: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: string | null;
   /** How many messages are in THIS window of the transcript. */
   message_count: number;
   /**
@@ -1121,7 +1111,7 @@ export async function getSessionTranscript(
  * hibernated session can paint its history immediately instead of showing a
  * full-screen loader for the length of the wake (measured 5-240 s).
  *
- * Messages carry OpenCode's real ids, so a client hydrates them provisionally
+ * Messages carry the runtime's real ids, so a client hydrates them provisionally
  * (`hydrate(..., { source: 'cache' })`) and the live runtime read SETTLES them
  * by id rather than duplicating them.
  *
@@ -1142,7 +1132,7 @@ export async function getSessionTranscriptSync(
      */
     before?: string | null;
     /**
-     * A sub-agent's OpenCode session inside this session (`ses_…`, the id a
+     * A sub-agent's runtime session inside this session (`ses_…`, the id a
      * sub-agent row opens). Returns that sub-agent's own saved transcript
      * instead of the conversation; `available: false` when nothing was saved.
      */
@@ -1187,7 +1177,7 @@ export async function getSessionLogPage(
 }
 
 /** 'delivering' — the control plane minted the turn but has not confirmed
- *  OpenCode received it. 'active' — the runtime accepted it and is working. */
+ *  the runtime received it. 'active' — the runtime accepted it and is working. */
 export type SessionTurnState = 'delivering' | 'active';
 
 /** A turn the control plane's lifecycle authority is holding open right now. */
@@ -1197,8 +1187,6 @@ export interface SessionTurn {
   message_id: string | null;
   /** The runtime session this belongs to. Served by APIs since W4. */
   runtime_session_id?: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id: string | null;
   /** Null only for a legacy authority record written before the control plane
    *  recorded a start instant. The turn is running either way — a missing
    *  timestamp is not a reason to read it as idle. */
@@ -1377,10 +1365,6 @@ export type SessionOpenBundleRuntime =
         harness: string | null;
         runtime_session_id: string | null;
         harness_version: string | null;
-        /** @deprecated The pre-W5 name of `runtime_session_id`. */
-        opencode_session_id: string | null;
-        /** @deprecated The pre-W5 name of `harness_version`. */
-        opencode_version: string | null;
         daemon_build: number | null;
         agent_config_etag: string | null;
         head_seq: Record<string, number> | null;
@@ -1449,7 +1433,7 @@ export async function getSessionOpenBundle(
 // and two tabs on one session disagreed about what was pending.
 //
 // The client still mints the wire `messageID` and sends it here verbatim:
-// OpenCode decides "has this prompt already been answered?" by id ORDER, and
+// The runtime decides "has this prompt already been answered?" by id ORDER, and
 // only a process holding the transcript can place an id correctly. The server
 // re-mints one exactly once — when it redelivers a prompt whose turn provably
 // never ran, after re-reading the transcript itself.
@@ -1529,7 +1513,7 @@ export interface SessionPrompt {
   /** The host's own stable submission name — the same value re-POSTing is a
    *  no-op on, and the key an optimistic row is matched by. */
   client_message_id: string;
-  /** The OpenCode wire id this prompt will be delivered under. Moves to the
+  /** The wire id this prompt will be delivered under. Moves to the
    *  server's re-minted id the moment the drain places the prompt — BEFORE
    *  the runtime echoes it. */
   message_id: string;
@@ -1599,7 +1583,7 @@ export interface CreateSessionPromptInput {
    * Ask the server to re-mint `messageId` against the live transcript before
    * it delivers.
    *
-   * OpenCode resolves "has this prompt been answered?" by id ORDER, so an id
+   * The runtime resolves "has this prompt been answered?" by id ORDER, so an id
    * that sorts below what is on record is accepted and then silently never
    * runs. A caller that minted its id where the live transcript was NOT
    * readable — the one-time localStorage migration, which mints at page load
@@ -1978,7 +1962,7 @@ export interface SessionConfigRelease {
  * SAME place a config fallback is (`SessionConfigState`), not a log line: a
  * box can look perfectly healthy (current binaries, a proven config release)
  * and still be serving a managed lineup the control plane retired weeks ago,
- * because OpenCode learns its provider map once, at process start.
+ * because the runtime learns its provider map once, at process start.
  */
 export interface SessionManagedCatalogState {
   /**
@@ -2071,13 +2055,11 @@ export interface SessionReloadResult {
   repo_refreshed: boolean;
   commit_sha: string | null;
   /**
-   * What happened to the agent files opencode ACTUALLY reads.
+   * What happened to the agent files in the session's working tree.
    *
-   * This — not `applied` — decides whether the agent behaves differently.
-   * opencode is spawned with `OPENCODE_CONFIG_DIR` pointing into the session's
-   * working tree, and the agent `.md` files there beat the compiled config the
-   * reload pushes as JSON, so anything but `'updated'` means the hash moved and
-   * the agent did not.
+   * This — not `applied` — decides whether the agent behaves differently: the
+   * API reports it (`ReloadAgentFiles`, apps/api `session-reload.ts`), and
+   * anything but `'updated'` means the hash moved and the agent did not.
    *
    * Three of these are successes (`updated`, `already-current`,
    * `not-applicable`), one is a deliberate refusal to discard the session's own
@@ -2095,7 +2077,7 @@ export interface SessionReloadResult {
     | 'not-requested'
     | 'unknown';
   /** Runtime replacement outcome. Absent when an older API did not report it. */
-  opencode_reload?: 'disposed' | 'restarted' | 'kept-old' | null;
+  runtime_reload?: 'disposed' | 'restarted' | 'kept-old' | null;
   /** True when the replacement ended an incomplete turn. */
   turn_ended?: boolean | null;
   /** Why nothing was applied. Internal wording — map it, don't render it. */
@@ -2156,7 +2138,7 @@ function parseSessionReloadStreamFrame(frame: string): SessionReloadStreamEvent 
 /**
  * Recompile the agent config from git and push it into a RUNNING session.
  *
- * This RESTARTS opencode, which ENDS an in-flight turn. The API refuses by
+ * This RESTARTS the runtime, which ENDS an in-flight turn. The API refuses by
  * default while a turn is running and answers 409 with `code: 'SESSION_BUSY'`
  * and a `reason`; `force: true` overrides and discards that turn, so it belongs
  * behind a confirmation, never behind a silent retry.
@@ -2261,8 +2243,8 @@ export async function reloadProjectSessionConfigStream(
 /**
  * Change the model a session uses, mid-flight.
  *
- * `opencode_model` is set at create; this re-points an existing session. When
- * the sandbox is live the change takes effect immediately (opencode restarts to
+ * `model` is set at create; this re-points an existing session. When
+ * the sandbox is live the change takes effect immediately (the runtime restarts to
  * rebuild its config), which ends any in-flight turn. `applied_live: false`
  * means it was stored and will apply when the sandbox next starts.
  */
@@ -2375,8 +2357,6 @@ export async function setProjectSessionScope(
 export interface SessionModelChangeResult {
   /** The stored model. Served by APIs since W4. */
   model?: string;
-  /** @deprecated The pre-W4 name of `model`. Same value. */
-  opencode_model: string;
   /** True only when a LIVE sandbox took the new model. */
   applied_live: boolean;
   /**
@@ -2393,6 +2373,37 @@ export interface SessionModelChangeResult {
   detail?: string;
 }
 
+export interface SessionModelSwitchInput {
+  model: string;
+  prompt: string;
+  /** Reuse this key for retries of the same switch, never for a different request. */
+  idempotency_key: string;
+}
+
+export interface SessionModelSwitchResult extends SessionModelChangeResult {
+  prompt_id: string;
+  deduped: boolean;
+}
+
+/** Atomically persist a model and queue a continuation after the current turn. */
+export async function switchProjectSessionModel(
+  projectId: string,
+  sessionId: string,
+  input: SessionModelSwitchInput,
+): Promise<SessionModelSwitchResult> {
+  return unwrap(await backendApi.put<SessionModelSwitchResult>(
+    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`, input,
+  ));
+}
+
+/** Read the durable model pin. Null means this session follows its configured default. */
+export async function getProjectSessionModel(
+  projectId: string,
+  sessionId: string,
+): Promise<{ model: string | null }> {
+  return { model: sessionModelPin(await getProjectSession(projectId, sessionId)) };
+}
+
 export async function setProjectSessionModel(
   projectId: string,
   sessionId: string,
@@ -2401,8 +2412,7 @@ export async function setProjectSessionModel(
   return unwrap(
     await backendApi.put<SessionModelChangeResult>(
       `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
-      // `model` since W4; `opencode_model` is the same pin for an older API.
-      { model, opencode_model: model },
+      { model },
     ),
   );
 }
@@ -2410,12 +2420,12 @@ export async function setProjectSessionModel(
 /**
  * The `provider/model` a session is pinned to, or null when it follows the
  * project default. The pin is stored under the pre-W4 metadata key
- * `opencode_model`; read it through this function, not from `metadata`.
+ * `model`; read it through this function, not from `metadata`.
  */
 export function sessionModelPin(session: { metadata?: Record<string, unknown> | null }):
   | string
   | null {
-  const stored = session.metadata?.opencode_model;
+  const stored = session.metadata?.model;
   return typeof stored === 'string' && stored.trim() ? stored.trim() : null;
 }
 

@@ -8,10 +8,10 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { UnifiedMarkdown } from './unified-markdown';
 
 /**
- * Minimal YAML frontmatter rendering for markdown files (opencode-style agent
- * and skill definitions, but generic). The parser handles flat key/value pairs
- * plus a single level of nested objects — enough for the patterns documented
- * at https://opencode.ai/docs/agents/ and similar conventions.
+ * Minimal YAML frontmatter rendering for markdown files (agent and skill
+ * definitions, but generic). The parser handles flat key/value pairs plus a
+ * single level of nested objects — enough for agent and skill frontmatter
+ * (`description`, `mode`, `permission`, ...) and similar conventions.
  */
 
 export type FrontmatterValue = string | Record<string, string>;
@@ -24,6 +24,43 @@ export interface ParsedMarkdown {
 /** Extract a leading `---\n…\n---` frontmatter block. Returns the parsed
  *  object plus the markdown body. If no block is found, returns the original
  *  content untouched. */
+
+/**
+ * `key: value` with a bare `[\w.-]` key at column 0, split at the first colon.
+ * String scanning, not a `\s*:\s*(.*)` regex: that one backtracked
+ * quadratically on a long run of spaces (CodeQL js/polynomial-redos).
+ */
+function topEntry(line: string): [string, string] | null {
+  const colon = line.indexOf(':');
+  if (colon <= 0) return null;
+  const key = line.slice(0, colon).trimEnd();
+  return /^[\w.-]+$/.test(key) ? [key, line.slice(colon + 1)] : null;
+}
+
+/** An indented `key: value`; the key may be quoted (`"*": allow`) or bare: word characters, `.`, `*`, `/` and `-`. */
+function nestedEntry(line: string): [string, string] | null {
+  const rest = line.trimStart();
+  if (rest.length === line.length) return null;
+  const quote = rest[0];
+  let key: string;
+  let after: string;
+  if (quote === '"' || quote === "'") {
+    const close = rest.indexOf(quote, 1);
+    if (close <= 1) return null;
+    key = rest.slice(1, close);
+    after = rest.slice(close + 1).trimStart();
+    if (!after.startsWith(':')) return null;
+    after = after.slice(1);
+  } else {
+    const colon = rest.indexOf(':');
+    if (colon <= 0) return null;
+    key = rest.slice(0, colon).trimEnd();
+    if (!/^[\w.*/-]+$/.test(key)) return null;
+    after = rest.slice(colon + 1);
+  }
+  return [key, after];
+}
+
 export function parseFrontmatter(content: string): ParsedMarkdown {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   if (!match) return { frontmatter: null, body: content };
@@ -40,20 +77,19 @@ export function parseFrontmatter(content: string): ParsedMarkdown {
     const line = rawLine.trimEnd();
     if (!line.trim() || line.trim().startsWith('#')) continue;
 
-    // A nested key may be QUOTED, and in the opencode permission idiom it
+    // A nested key may be QUOTED, and in the agent permission idiom it
     // usually is — `"*": allow`. Matching only [\w.-] dropped that line, left
     // the parent an empty object, and printed a bare em-dash where the
     // permissions belong. Wildcards and path-ish keys are accepted bare too.
-    const nested = line.match(/^\s+(?:"([^"]+)"|'([^']+)'|([\w.*/-]+))\s*:\s*(.*)$/);
+    const nested = nestedEntry(line);
     if (nested && currentParent && typeof result[currentParent] === 'object') {
-      const key = nested[1] ?? nested[2] ?? nested[3];
-      (result[currentParent] as Record<string, string>)[key] = nested[4].trim();
+      (result[currentParent] as Record<string, string>)[nested[0]] = nested[1].trim();
       continue;
     }
 
-    const top = line.match(/^([\w.-]+)\s*:\s*(.*)$/);
+    const top = topEntry(line);
     if (top) {
-      const [, key, value] = top;
+      const [key, value] = top;
       const trimmed = value.trim();
       if (!trimmed) {
         result[key] = {};
@@ -169,8 +205,8 @@ function FrontmatterValueBody({ value }: { value: FrontmatterValue }) {
 
 /**
  * Render markdown content; if a leading YAML frontmatter block is present, it
- * renders as a small metadata card above the prose. Used for opencode-style
- * agent / skill markdown files (and any other frontmatter-prefixed `.md`).
+ * renders as a small metadata card above the prose. Used for agent / skill
+ * markdown files (and any other frontmatter-prefixed `.md`).
  */
 export function MarkdownWithFrontmatter({
   content,

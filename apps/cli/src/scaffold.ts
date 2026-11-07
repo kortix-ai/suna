@@ -15,7 +15,7 @@ export interface ScaffoldInput {
   /**
    * If true, skip writing any file whose path already exists at the
    * destination. Used by `kortix init` against a repo that may already
-   * have a partial layout (e.g. an existing `.opencode/`). Default is
+   * have a partial layout (e.g. an existing `agents/`). Default is
    * false — overwrite everything.
    */
   preserveExisting?: boolean;

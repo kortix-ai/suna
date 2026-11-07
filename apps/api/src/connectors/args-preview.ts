@@ -44,6 +44,14 @@ const MAX_TOTAL_CHARS = 64_000;
 export const REDACTED = '[redacted]';
 
 /**
+ * A tool output field only the caller may read, such as a one-time upload URL
+ * (`youtube.upload_video`). An approved held call stores its outcome where
+ * project reviewers read it: that stored preview leaves this field out, and
+ * only the resume prompt to the calling session carries it.
+ */
+export const CALLER_ONLY_KEY = 'caller_only';
+
+/**
  * Key segments that mean "this value is a credential". Matched per SEGMENT
  * (snake_case, kebab-case, camelCase and dotted keys are all split), so
  * `apiKey`, `api_key` and `auth.token` all redact while `keyword`,

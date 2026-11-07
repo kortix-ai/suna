@@ -50,9 +50,9 @@ mock.module('../../session-open', () => ({
     opens += 1;
     if (opens === 1) {
       signalSessionRuntimeActive(SESSION_ID);
-      return { stage: 'starting', sandbox: null, opencode_session_id: null };
+      return { stage: 'starting', sandbox: null, runtime_session_id: null };
     }
-    return { stage: 'ready', sandbox: { external_id: 'ext-1', provider: 'platinum' }, opencode_session_id: 'oc-1' };
+    return { stage: 'ready', sandbox: { external_id: 'ext-1', provider: 'platinum' }, runtime_session_id: 'oc-1' };
   },
 }));
 mock.module('../../lib/heal-session-token', () => ({ ...realHeal, healSupersededSessionToken: async () => {} }));
@@ -82,7 +82,7 @@ function deliver(input: { turnAgent?: string | null; overrideAgent?: string; awa
     userId: 'user-1',
     ...(input.turnAgent !== undefined ? { turnAgent: input.turnAgent } : {}),
     awakeEarly: Promise.resolve(
-      input.awake ? { stage: 'ready' as const, externalId: 'ext-1', opencodeSessionId: 'oc-1' } : null,
+      input.awake ? { stage: 'ready' as const, externalId: 'ext-1', runtimeSessionId: 'oc-1' } : null,
     ),
     sendPrompt: async () => true,
   });

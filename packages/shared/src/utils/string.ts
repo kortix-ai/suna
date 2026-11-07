@@ -25,3 +25,14 @@ export function capitalizeWords(str: string): string {
   if (!str) return str;
   return str.replace(/(^|[\s-])([a-z])/g, (_match, sep: string, ch: string) => sep + ch.toUpperCase());
 }
+
+/**
+ * Trim trailing slashes without a regex. `/\/+$/` against a long run of
+ * slashes backtracks polynomially, so a value that reaches an exported library
+ * function gets this linear scan instead.
+ */
+export function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  return value.slice(0, end);
+}

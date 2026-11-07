@@ -313,7 +313,7 @@ describe('estimateBreakdown', () => {
 });
 
 describe('sessionStartedAt', () => {
-  const row = { created_at: '2026-10-01T10:00:00.000Z', runtime_session_id: 'ses_root', opencode_session_id: 'ses_root' };
+  const row = { created_at: '2026-10-01T10:00:00.000Z', runtime_session_id: 'ses_root' };
   // A box that booted after the last reply: pi stamps its runtime session at boot.
   const booted = { id: 'ses_root', time: { created: Date.parse('2026-10-20T08:00:00.000Z') } };
 

@@ -1,5 +1,7 @@
 'use client';
 
+// Deprecated: Rooms were removed (2026-11). The API no longer serves these routes.
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createRoom,
@@ -19,7 +21,11 @@ import { qk } from './query-keys';
 const THREAD_POLL_MS = 3_000;
 const LIST_POLL_MS = 15_000;
 
-/** The project's named rooms (flag `agent_rooms`). */
+/**
+ * The project's named rooms (flag `agent_rooms`).
+ *
+ * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+ */
 export function useRooms(projectId: string | null | undefined) {
   return useQuery({
     queryKey: qk.project.roomList(projectId ?? ''),
@@ -33,6 +39,8 @@ export function useRooms(projectId: string | null | undefined) {
  * The room of a space: the project room named like the space's slug, or null
  * before anyone created it. `ensure` creates it (or returns the existing one)
  * on demand, so nothing provisions a room on render.
+ *
+ * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
  */
 export function useSpaceRoom(
   projectId: string | null | undefined,
@@ -53,7 +61,11 @@ export function useSpaceRoom(
   return { ...query, ensure };
 }
 
-/** The rooms the caller is a member of, with unread counts. */
+/**
+ * The rooms the caller is a member of, with unread counts.
+ *
+ * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+ */
 export function useRoomConversations(projectId: string | null | undefined) {
   return useQuery({
     queryKey: qk.project.roomConversations(projectId ?? ''),
@@ -65,7 +77,11 @@ export function useRoomConversations(projectId: string | null | undefined) {
   });
 }
 
-/** One conversation and its members. */
+/**
+ * One conversation and its members.
+ *
+ * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+ */
 export function useRoom(projectId: string | null | undefined, roomId: string | null | undefined) {
   return useQuery({
     queryKey: qk.project.room(projectId ?? '', roomId ?? ''),
@@ -78,6 +94,8 @@ export function useRoom(projectId: string | null | undefined, roomId: string | n
 /**
  * The newest messages of one conversation, polled while the page is visible,
  * with `post` and `markRead` (a person member's read cursor).
+ *
+ * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
  */
 export function useRoomMessages(
   projectId: string | null | undefined,
@@ -108,6 +126,8 @@ export function useRoomMessages(
 /**
  * One thread of a room (Slack-style): the root message and its replies, plus
  * `post` to reply in it. Off while `rootSeq` is null.
+ *
+ * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
  */
 export function useRoomThread(projectId: string | null | undefined, roomId: string | null | undefined, rootSeq: number | null) {
   const queryClient = useQueryClient();

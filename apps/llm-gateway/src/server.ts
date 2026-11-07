@@ -131,6 +131,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       resolveRoute: api.resolveRoute,
       resolveUpstream: api.resolveUpstream,
       notePoolRateLimit: api.notePoolRateLimit,
+      notePoolUsage: api.notePoolUsage,
       refreshCredential: api.refreshCredential,
       claudeCredentials: api.claudeCredentials,
       claudeRefused: api.claudeRefused,
@@ -162,5 +163,20 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
   const inflightRequests = trackInflight(app);
   registerHealth(app, api, inflight, traces, trafficSnapshot, upstreamSignals);
   registerRoutes(app, gateway, inflight, recordOutcome, createTokenRateLimit(config.requestsPerMinutePerCredential));
+  // Register fallbacks after the handlers so supported methods keep their behavior.
+  const methodsByPath = new Map<string, Set<string>>();
+  for (const { path, method } of app.routes) {
+    if (method === 'ALL') continue;
+    const methods = methodsByPath.get(path) ?? new Set<string>();
+    methods.add(method);
+    if (method === 'GET') methods.add('HEAD');
+    methodsByPath.set(path, methods);
+  }
+  for (const [path, methods] of methodsByPath) {
+    app.all(path, (c) => {
+      c.header('Allow', [...methods].join(', '));
+      return c.json({ error: { message: 'Method not allowed' } }, 405);
+    });
+  }
   return { app, traces, inflightRequests };
 }

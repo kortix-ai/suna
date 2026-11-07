@@ -1,4 +1,5 @@
 import { HTTPException } from 'hono/http-exception';
+import { logger } from '../../lib/logger';
 import { ingressTargetUrl } from '../../platform/providers/ingress-url';
 import {
   buildSandboxUpstreamHeaders,
@@ -60,7 +61,7 @@ export async function forwardWithRetry(
   const { sandboxId, port, method, remainingPath, upstreamPort, promptDelivery } = req;
   const state: ForwardState = {
     requestBody,
-    // The wire id OpenCode will actually see, once the placement check has
+    // The wire id the runtime will actually see, once the placement check has
     // run — the client's, or the proxy's re-mint. Echoed on the response so the
     // sender can correlate, and written into `turnIdentity` so the ledger and the
     // daemon's exact-message probe match the message that exists.
@@ -83,7 +84,7 @@ export async function forwardWithRetry(
     // response instead of the generic "sandbox unreachable" one.
     sawLongTurnTimeout: false,
     // A prompt delivery whose failure is AMBIGUOUS — a timeout/abort/reset where
-    // opencode may already hold the message. When true we must NOT release the
+    // the runtime may already hold the message. When true we must NOT release the
     // dedupe claim on the unreachable path below (a retry could double-enqueue).
     // It stays false only when every attempt PROVED nothing was delivered
     // (connection refused), which is the one case a retry may safely re-deliver.
@@ -333,6 +334,28 @@ async function handleUpstreamFailureStatus(
     }
   }
 
+  // A port exposed a moment ago (`resolveIngress` exposes on first use): the
+  // Platinum control plane caches a sandbox's route for 1 s and the edge for
+  // 200 ms, so a request in that window gets the edge's own
+  // `404 port-not-exposed`. A desktop panel opened right after the session
+  // started framed that page and kept it. The edge answered itself, so even a
+  // write is safe to send again; past the retry budget the 404 passes through.
+  if (
+    upstream.status === 404 &&
+    upstream.headers.get('x-pt-edge-verdict') === 'port-not-exposed' &&
+    attempt < MAX_RETRIES
+  ) {
+    logger.warn('[PREVIEW] edge has no route for the port yet', {
+      sandboxId,
+      port,
+      attempt: attempt + 1,
+    });
+    invalidatePreviewLink(sandboxId, port);
+    await upstream.body?.cancel().catch(() => {});
+    await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+    return 'retry';
+  }
+
   if (upstream.status === 502 || upstream.status === 503) {
     // A prompt-delivery or upload POST is NEVER retried on a 5xx: an upstream
     // 502 can mean the sandbox already accepted the body (the gateway just
@@ -345,7 +368,11 @@ async function handleUpstreamFailureStatus(
     const edgeRefused = upstream.headers.has('x-pt-edge-verdict');
     if ((!nonReplayableWrite || edgeRefused) && attempt < MAX_RETRIES) {
       // Port not ready yet — sandbox is booting (container running, port down).
-      console.warn(
+      // Only the runtime's own ports are ours to flag: a user's dev server that
+      // is down answers 502 on every client poll, and the log sweep filed each
+      // retry as a new warn pattern (KRTX-4365). The give-up 502 still logs.
+      const logNotReady = portFailureHop(upstreamPort) === 'daemon' ? logger.warn : logger.info;
+      logNotReady(
         `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
       );
       invalidatePreviewLink(sandboxId, port);
@@ -382,7 +409,7 @@ async function handleUpstreamFailureStatus(
     const isSandboxDown =
       bodyText.includes('no IP address found') ||
       bodyText.includes('failed to get runner info');
-    // Daytona rejected this BEFORE opencode — the box has no runner, so the
+    // Daytona rejected this BEFORE the runtime — the box has no runner, so the
     // prompt certainly was not enqueued. On the last attempt we stop
     // retrying and pass the 400 through, and the dedupe claim must go with
     // it: otherwise the client's retry under the same Idempotency-Key hits
@@ -462,7 +489,7 @@ async function recoverFromAttemptError(
   // error PROVES nothing reached the box (the upstream refused the
   // connection). Any other error stops here and returns the friendly
   // unreachable response below. (The Daytona "no IP / no runner" 400 branch —
-  // a rejection before opencode — retries in the response path above, which
+  // a rejection before the runtime — retries in the response path above, which
   // is safe.)
   if (
     state.promptDeliveryMayHaveReachedUpstream &&

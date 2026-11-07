@@ -43,7 +43,8 @@ import {
   type Icon,
 } from '@phosphor-icons/react';
 import { useContext, useMemo } from 'react';
-import { MULTI_AGENT_ICON, multiAgentBody, runningKey } from './multi-agent-tool-bodies';
+import { MULTI_AGENT_ICON, multiAgentBody, PeerSendRow, runningKey } from './multi-agent-tool-bodies';
+import { parsePeerSend } from '@kortix/sdk';
 import {
   KORTIX_PLATFORM_TOOLS,
   isReadAction,
@@ -377,6 +378,11 @@ export function KortixActionTool(props: ToolProps) {
   }
 
   const { card, error } = result;
+  // A message to another agent is one plain row with the receiver's face, sent or not.
+  if (multi === 'send_message') {
+    const send = parsePeerSend(result.data);
+    if (send) return <PeerSendRow send={send} defaultOpen={defaultOpen} forceOpen={forceOpen} locked={locked} />;
+  }
   const denied = card.status === 'denied';
   const failure = card.status === 'error' && error && error.message && error.message !== card.title ? error.message : undefined;
   // A multi-agent result draws its own body from `data`; the card's rows would say it twice.

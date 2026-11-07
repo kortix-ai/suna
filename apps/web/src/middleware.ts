@@ -139,6 +139,8 @@ const PROTECTED_APP_PREFIXES = [
   '/teams',
   '/tunnel',
   '/game-of-life',
+  // The account-level Inbox (KRTX-1742): /projects, /new and /settings link it.
+  '/inbox',
   '/invites',
   '/maintenance',
   '/new',
@@ -257,6 +259,8 @@ const DESKTOP_ALLOWED_ROUTES = [
   // desktop shell bounces it to the landing door — including the post-sign-in
   // redirect to `/settings/billing`.
   '/settings',
+  // The account-level Inbox; `/projects/[id]/inbox` rides `/projects`.
+  '/inbox',
   '/invites',
   '/admin',
   '/setup',
@@ -939,7 +943,8 @@ export const config = {
      *   a next.config rewrite on the Accept header)
      * - monitoring (Sentry/Better Stack error tracking tunnel)
      * - _betterstack (Better Stack browser telemetry proxy)
+     * - ingest (PostHog proxy, a next.config rewrite to eu.i.posthog.com)
      */
-    '/((?!_next/static|_next/image|favicon.ico|monitoring|_betterstack|docs(?:/|$)|.*\\.(?:svg|png|jpg|jpeg|JPEG|gif|webp|avif|ico|wasm|json|woff2?|ttf|otf|js|mjs|css|map|mp4|webm|mp3|zip)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|monitoring|_betterstack|ingest/|docs(?:/|$)|.*\\.(?:svg|png|jpg|jpeg|JPEG|gif|webp|avif|ico|wasm|json|woff2?|ttf|otf|js|mjs|css|map|mp4|webm|mp3|zip)$).*)',
   ],
 };

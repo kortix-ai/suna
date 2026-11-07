@@ -23,10 +23,10 @@
  *
  * The API session stream (`GET /v1/projects/:p/sessions/:s/events?schema=v2`, P4.4) carries these
  * frames in place of the v1 transcript frames (`V1_TRANSCRIPT_EVENTS`, `live.ts`). It relays them
- * from a daemon that lists `session.log.v2`; for an older daemon the API converts the v1 frames
- * (`liveMessageFromV1`, block id = part id, seq = `v1Seqs`), and `log.thread` is never sent.
+ * from the daemon (`session.log.v2`) and drops the daemon's v1 transcript frames.
  */
 import { z } from 'zod';
+import { THREAD_STATUSES } from '../wire-values';
 import { SessionLogPutSchema, SessionLogSessionPatchSchema, SessionLogThreadUpsertSchema, SessionLogTombstoneSchema } from './wire';
 
 const id = z.string().min(1);
@@ -54,7 +54,7 @@ export const SessionLogBlockDeltaEventSchema = z.object({ thread_id: id, message
  */
 export const SessionLogStatusEventSchema = z.object({
   thread_id: id,
-  status: z.enum(['idle', 'busy', 'retry', 'compacting']),
+  status: z.enum(THREAD_STATUSES),
   retry: z.object({ attempt: z.number().int().positive(), message: z.string(), next_at: z.string() }).optional(),
 });
 

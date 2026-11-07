@@ -147,6 +147,15 @@ describe('agents', () => {
     expect(errorPaths(swap('exclude: [lookup_order]', 'exclude: [nope]'))).toContain('agents.researcher.tools');
   });
 
+  test('a grant of a retired Rooms skill or permission validates with a warning', () => {
+    const skill = check(swap('skills: [triage-rules, kortix-system]', 'skills: [triage-rules, kortix-rooms]'));
+    expect(skill.errors).toEqual([]);
+    expect(skill.warnings.map((issue) => issue.path)).toContain('agents.researcher.skills');
+    const permission = check(swap('kortix_permissions: [project.session.start]', 'kortix_permissions: [project.session.start, project.room.read]'));
+    expect(permission.errors).toEqual([]);
+    expect(permission.warnings.some((issue) => issue.message.includes('project.room.read'))).toBe(true);
+  });
+
   test('subagents name other declared subagents', () => {
     expect(errorPaths(swap('subagents: [researcher]', 'subagents: [nobody]'))).toContain('agents.assistant.subagents');
     expect(errorPaths(swap('subagents: [researcher]', 'subagents: [assistant]'))).toContain('agents.assistant.subagents');
@@ -246,7 +255,7 @@ describe('agents.<name>.workspace.project_repository default', () => {
   });
 });
 
-describe('spaces (a channel: a room plus configurable tabs)', () => {
+describe('spaces (a channel with configurable tabs)', () => {
   test('golden has no space and stays valid', () => {
     expect(check(GOLDEN).errors).toEqual([]);
   });
@@ -350,10 +359,67 @@ describe('spaces (a channel: a room plus configurable tabs)', () => {
     expect(errorPaths(yaml)).toContain('spaces.eng.tabs[0].blocks[0].type');
   });
 
-  test('a space slug is also a room name: at most 63 characters', () => {
+  test('a space slug is at most 63 characters', () => {
     const long = 'a'.repeat(64);
     expect(errorPaths(swap('agents:', `spaces:\n  ${long}:\n    label: Long\nagents:`))).toContain(`spaces.${long}`);
     expect(check(swap('agents:', `spaces:\n  ${'a'.repeat(63)}:\n    label: Ok\nagents:`)).errors).toEqual([]);
     expect(errorPaths(swap('codemode: on', `codemode: on\n    space: ${long}`))).toContain('agents.assistant.space');
+  });
+});
+
+describe('"*" is the canonical "every" value; `all` stays its alias', () => {
+  test('tools: "*", ["*"] and ALL are every tool, like `all`', () => {
+    expect(check(swap('    tools: all\n', '    tools: "*"\n')).errors).toEqual([]);
+    expect(check(swap('    tools: all\n', '    tools: ["*"]\n')).errors).toEqual([]);
+    expect(check(swap('    tools: all\n', '    tools: [bash, "*"]\n')).errors).toEqual([]);
+    expect(check(swap('    tools: all\n', '    tools: ALL\n')).errors).toEqual([]);
+    expect(check(GOLDEN).errors).toEqual([]);
+  });
+
+  test('every grant takes "*" and `all`', () => {
+    for (const key of ['skills', 'connectors']) {
+      expect(check(swap(`    ${key}: all\n`, `    ${key}: "*"\n`)).errors).toEqual([]);
+      expect(check(swap(`    ${key}: all\n`, `    ${key}: ["*"]\n`)).errors).toEqual([]);
+    }
+    for (const [from, key] of [['subagents: [researcher]', 'subagents'], ['commands: [weekly-report, summarize]', 'commands'], ['extensions: [audit, web-access]', 'extensions'], ['secrets: [HELPDESK_TOKEN]', 'secrets'], ['kortix_permissions: [project.session.start]', 'kortix_permissions']] as const) {
+      expect(check(swap(from, `${key}: "*"`)).errors).toEqual([]);
+      expect(check(swap(from, `${key}: all`)).errors).toEqual([]);
+    }
+  });
+
+  test('a list with "*" and other names warns that the other names do nothing', () => {
+    const tools = check(swap('    tools: all\n', '    tools: [bash, "*"]\n')).warnings.find((i) => i.path === 'agents.assistant.tools');
+    expect(tools?.message).toBe('"*" grants every name, so the other entries do nothing: bash. Write `"*"` alone.');
+    const skills = check(swap('    skills: all\n', '    skills: ["*", typo]\n')).warnings.find((i) => i.path === 'agents.assistant.skills');
+    expect(skills?.message).toBe('"*" grants every name, so the other entries do nothing: typo. Write `"*"` alone.');
+    expect(check(swap('    skills: all\n', '    skills: ["*"]\n')).warnings.filter((i) => i.path === 'agents.assistant.skills')).toEqual([]);
+  });
+
+  test('a wrong tools value names "*" first', () => {
+    const issue = check(swap('    tools: all\n', '    tools: everything\n')).errors.find((i) => i.path === 'agents.assistant.tools');
+    expect(issue?.message).toBe('tools must be `"*"` (every tool), `none`, a list of tool names, or `{ exclude: [names] }`.');
+  });
+
+  test('an agent without tools is told to write tools: "*"', () => {
+    const warning = check(swap('    tools: all\n', '')).warnings.find((i) => i.path === 'agents.assistant.tools');
+    expect(warning?.message).toContain('Write `tools: "*"`');
+  });
+
+  test('permission: "*" / all, and a rule value "*" / all, mean allow', () => {
+    expect(check(swap('    permission:\n      bash:\n        "*": allow\n        "git push *": ask\n      external_directory: deny\n', '    permission: "*"\n')).errors).toEqual([]);
+    expect(check(swap('    permission:\n      bash:\n        "*": allow\n        "git push *": ask\n      external_directory: deny\n', '    permission: all\n')).errors).toEqual([]);
+    expect(check(swap('        "*": allow\n', '        "*": all\n')).errors).toEqual([]);
+    expect(check(swap('      external_directory: deny\n', '      external_directory: deny\n      edit: "*"\n')).errors).toEqual([]);
+    expect(errorPaths(swap('      external_directory: deny', '      external_directory: maybe'))).toContain('agents.assistant.permission.external_directory');
+  });
+
+  test('a bare * (a YAML alias) tells you to quote it, with the line', () => {
+    const result = validateManifest(swap('    tools: all\n', '    tools: *\n'));
+    expect(result.valid).toBe(false);
+    const issue = result.issues[0]!;
+    expect(issue.path).toBe('<yaml>');
+    expect(issue.message).toContain('YAML reads a bare `*` as an alias. Quote it: `tools: "*"`');
+    expect(issue.line).toBe(GOLDEN.split('\n').findIndex((line) => line === '    tools: all') + 1);
+    expect(validateManifest('agents:\n  a:\n    tools:\n      - *\n').issues[0]!.message).toContain('Quote it: `- "*"`');
   });
 });

@@ -72,13 +72,13 @@ function sessionRow(sessionId = SESSION) {
     sandbox_provider: 'daytona',
     sandbox_id: 'sandbox-row-id',
     sandbox_url: `http://127.0.0.1/v1/p/${external}/8000`,
-    opencode_session_id: 'ses_oc',
+    runtime_session_id: 'ses_oc',
     name: 'Parity',
     custom_name: null,
     agent_name: 'kortix',
     status: 'running',
     error: null,
-    metadata: { opencode_model: 'kortix/glm-5.3-flash' },
+    metadata: { model: 'kortix/glm-5.3-flash' },
     sharing: { mode: 'private', ownerId: 'user-1' },
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
@@ -235,7 +235,7 @@ function startServer(): string {
           agent_name: 'kortix',
           retriable: false,
           sandbox: { external_id: EXTERNAL_PI },
-          opencode_session_id: 'ses_oc',
+          runtime_session_id: 'ses_oc',
         });
       }
       if (method === 'GET' && path === `/v1/p/${EXTERNAL_PI}/8000/kortix/health`) {
@@ -247,7 +247,7 @@ function startServer(): string {
           agent_name: 'kortix',
           retriable: false,
           sandbox: { external_id: EXTERNAL },
-          opencode_session_id: 'ses_oc',
+          runtime_session_id: 'ses_oc',
         });
       }
       if (method === 'POST' && path === `${session}/restart`) {
@@ -260,7 +260,7 @@ function startServer(): string {
           agent_name: 'kortix',
           retriable: false,
           sandbox: { external_id: EXTERNAL },
-          opencode_session_id: 'ses_oc',
+          runtime_session_id: 'ses_oc',
         });
       }
       if (method === 'POST' && path === `${session}/stop`) {
@@ -323,10 +323,10 @@ function startServer(): string {
         return Response.json({ prompts: [queuedPrompt()] });
       }
       if (method === 'PUT' && path === `${session}/model`) {
-        const model = (body as { opencode_model: string }).opencode_model;
+        const model = (body as { model: string }).model;
         if (model === 'kortix/wedged') {
           return Response.json({
-            opencode_model: model,
+            model: model,
             applied_live: false,
             push_failed: true,
             detail: 'env sync failed',
@@ -335,7 +335,7 @@ function startServer(): string {
         if (model === 'kortix/nope') {
           return Response.json({ error: 'Model is not available for this account' }, { status: 400 });
         }
-        return Response.json({ opencode_model: model, applied_live: true });
+        return Response.json({ model: model, applied_live: true });
       }
       if (method === 'GET' && path === `${session}/audit`) {
         // Real wire shape: `action` is connectorCalls.action_path, stored WITH
@@ -378,7 +378,7 @@ function startServer(): string {
           agent_name: 'kortix',
           retriable: false,
           reason: 'runtime_identity_unavailable',
-          opencode_session_id: 'ses_oc',
+          runtime_session_id: 'ses_oc',
         });
       }
       if (method === 'DELETE' && path === `${project}/sessions/${SESSION_B}`) {
@@ -741,7 +741,7 @@ describe('kortix sessions links', () => {
     const r = await runCli(['sessions', 'links', '--help'], config);
     expect(r.code).toBe(0);
     const flat = r.stdout.replace(/\s+/g, ' ');
-    expect(flat).toContain('Refused for 22, 3211 (the file-share server), 8000 and the opencode ports.');
+    expect(flat).toContain('Refused for 22, 3211 (the file-share server), 4096, 4097 and 8000.');
   });
 
   test('create POSTs a preview share and prints the public url', async () => {
@@ -847,7 +847,7 @@ describe('kortix sessions chat --queue', () => {
       overrides: unknown;
       client_sent_at_ms: number;
     };
-    // The API refuses anything that is not an OpenCode wire message id.
+    // The API refuses anything that is not a runtime wire message id.
     expect(body.message_id).toMatch(/^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/);
     expect(body.client_message_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.parts).toEqual([{ type: 'text', text: 'ship the thing' }]);
@@ -925,8 +925,8 @@ describe('kortix sessions model', () => {
       {
         method: 'PUT',
         path: `/v1/projects/${PROJECT}/sessions/${SESSION}/model`,
-        // `model` since W4; `opencode_model` keeps an older self-hosted API working.
-        body: { model: 'kortix/glm-5.3-flash', opencode_model: 'kortix/glm-5.3-flash' },
+        // `model` since W4; `model` keeps an older self-hosted API working.
+        body: { model: 'kortix/glm-5.3-flash' },
       },
     ]);
     expect(r.stdout).toContain('Now running kortix/glm-5.3-flash');

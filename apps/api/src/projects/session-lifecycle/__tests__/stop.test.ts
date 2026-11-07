@@ -244,7 +244,7 @@ describe('stopSession', () => {
     expect(stopCalls).toEqual(['ext-1']);
     expect(pausedCompute).toEqual(['sess-1']);
     // Already-stopped row (a wake was mid-flight, not a live turn) — no live
-    // opencode process to abort, so no pre-stop call is attempted.
+    // runtime process to abort, so no pre-stop call is attempted.
     expect(abortFetchCalls).toEqual([]);
     expect(callOrder).toEqual(['provider.stop']);
     // The persisted late-start guard is read back on real rows in

@@ -29,7 +29,7 @@ function chain(): any {
   c.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
   return c;
 }
-mock.module('../shared/db', () => ({
+mock.module('../shared/db', () => ({ withDbTransaction: async <T>(action: () => Promise<T>) => action(),
   db: {
     select: () => chain(),
     delete: () => ({
@@ -61,7 +61,7 @@ mock.module('../channels/core/identity', () =>
 
 const writes: Array<{ kind: string; value: unknown }> = [];
 mock.module('../channels/slack/selection', () => ({
-  currentChannelSelection: async () => ({ projectId: PROJECT, agentName: null, opencodeModel: null, conversationPolicy: null }),
+  currentChannelSelection: async () => ({ projectId: PROJECT, agentName: null, sessionModel: null, conversationPolicy: null }),
   setChannelAgent: async (_c: unknown, a: string | null) => {
     writes.push({ kind: 'agent', value: a });
     return { ok: true };

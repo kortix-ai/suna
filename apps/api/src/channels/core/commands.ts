@@ -18,7 +18,7 @@ import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { toWireModel } from '../../llm-gateway/resolution/effective';
-import { abortRuntimeTurn, readRunningTurn } from '../../projects/surface';
+import { PROVISIONING_SESSION_STATUSES, abortRuntimeTurn, readRunningTurn } from '../../projects/surface';
 import { applyChannelSessionKeys, checkChannelModel, listChannelModels } from '../model-access';
 import { chatAgents } from '../scoped-agents';
 import { CHANNEL_COMMANDS, type ChannelCommandName, type ParsedCommand } from './command-list';
@@ -212,7 +212,7 @@ async function bindForSetting(ctx: CommandContext, projectId: string): Promise<C
 /** A create holds the chat: the session it binds was planned before the choice changed. */
 const CREATING = "Kortix is still creating this chat's session, which keeps its own";
 /** A queued session has no sandbox yet: its turn cannot run, or be stopped. */
-const STARTING = new Set(['queued', 'branching', 'provisioning']);
+const STARTING = new Set<string>(PROVISIONING_SESSION_STATUSES);
 
 const sessionUrl = (ctx: CommandContext, sessionId: string) => sessionWebUrl(config.FRONTEND_URL, ctx.project.projectId, sessionId);
 
@@ -223,7 +223,7 @@ async function chatSession(ctx: CommandContext): Promise<ChatThreadSession | nul
 }
 
 function pinOf(session: ChatThreadSession | null): string | null {
-  const pin = (session?.metadata as Record<string, unknown> | null | undefined)?.opencode_model;
+  const pin = (session?.metadata as Record<string, unknown> | null | undefined)?.model;
   return typeof pin === 'string' && pin.trim() ? pin.trim() : null;
 }
 
@@ -283,7 +283,7 @@ const PICKERS: Record<'model' | 'agent', (ctx: CommandContext, page: number) => 
       sharedChatScope(ctx.project).then(listChannelModels),
     ]);
     if (!models.length) return notice('No model is available to this chat. A project admin can share a provider key with the whole project in Kortix.');
-    const current = selection?.opencodeModel ?? pinOf(session);
+    const current = selection?.sessionModel ?? pinOf(session);
     const labels = new Map<string, number>();
     for (const m of models) labels.set(m.label, (labels.get(m.label) ?? 0) + 1);
     const defaultName = defaultModel && (models.find((m) => m.id === defaultModel)?.label ?? labelForModelRef(defaultModel));
@@ -378,7 +378,7 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
       chatSelection(ctx.settings, ctx.project.projectId),
       session ? readRunningTurn(session.sessionId) : null,
     ]);
-    const model = await modelRow(ctx, session, selection?.opencodeModel ?? null);
+    const model = await modelRow(ctx, session, selection?.sessionModel ?? null);
     const sessionAgent = session?.agentName || 'default';
     const agent = !session
       ? selection?.agentName || 'project default'

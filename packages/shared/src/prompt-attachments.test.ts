@@ -19,9 +19,9 @@ describe('isModelNativeAttachmentMime', () => {
   });
 
   // An `image/*` the model cannot decode is NOT native. Sending one inline
-  // makes the runtime throw `ImageDecodeError` inside `prompt_async`, and
-  // OpenCode then creates NO message at all — the text and every sibling
-  // attachment die with it, while the inbox still records `delivered`
+  // made OpenCode throw `ImageDecodeError` inside `prompt_async`, and
+  // OpenCode then created NO message at all — the text and every sibling
+  // attachment died with it, while the inbox still recorded `delivered`
   // (2026-09-04: two SVG logos + a PDF, whole prompt vanished, transcript
   // showed only a spinner). Every one of these is in the composer's own
   // upload allowlist, so each is a live path to that failure.

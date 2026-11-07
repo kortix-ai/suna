@@ -9,6 +9,7 @@ import { db } from '../../shared/db';
 import { getSupabase } from '../../shared/supabase';
 import { profileNameFromMetadata } from './account-name';
 import { defaultAccountName } from './app';
+import { captureProductEvent } from '../../shared/product-analytics';
 
 /**
  * The sign-in profile's name (Google/GitHub OAuth fill `full_name` / `name`).
@@ -20,6 +21,17 @@ async function profileName(userId: string): Promise<string | null> {
     return profileNameFromMetadata(data?.user?.user_metadata);
   } catch {
     return null;
+  }
+}
+
+/** The provider the user signed up with (`email`, `google`, …), or `unknown`. */
+async function signupMethod(userId: string): Promise<string> {
+  try {
+    const { data } = await getSupabase().auth.admin.getUserById(userId);
+    const provider = data?.user?.app_metadata?.provider;
+    return typeof provider === 'string' && /^[a-z0-9_-]{1,32}$/.test(provider) ? provider : 'unknown';
+  } catch {
+    return 'unknown';
   }
 }
 
@@ -80,6 +92,18 @@ export async function bootstrapPersonalAccount(
     // Fire-and-forget: Mailtrap being down must never affect signup.
     void syncSignupContactToMailtrap(email).catch((err) =>
       console.warn('[accounts] Mailtrap contact sync failed for %s:', userId, err),
+    );
+
+    // `method` is the auth provider (email, google, github, apple). The lookup
+    // runs in the background and never delays the sign-up.
+    void signupMethod(userId).then((method) =>
+      captureProductEvent({
+        userId,
+        accountId: userId,
+        event: 'user_signed_up',
+        dedupeKey: userId,
+        properties: { method },
+      }),
     );
 
     return { accountId: userId, created: true };

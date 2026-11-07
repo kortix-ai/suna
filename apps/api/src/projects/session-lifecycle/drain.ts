@@ -258,7 +258,7 @@ async function drainSessionLifecycleQueueTick(
 
   await Promise.all(
     [...lanes.values()].map(async (lane) => {
-      // One inbox row per session reaches OpenCode in one drain. The legacy
+      // One inbox row per session reaches the runtime in one drain. The legacy
       // `/prompt_async` route interleaves same-session posts, so batching the
       // siblings reproduced the exact failure this queue exists to prevent:
       // both rows reported delivered while the first answer rendered under

@@ -915,3 +915,27 @@ describe('tailwind.config.js colors resolve to declared global.css tokens', () =
     expect(missing).toEqual([]);
   });
 });
+
+/** The THEME hsl parse `withAlpha` and `toHexColor` share: numerals kept, exact error text. */
+describe('THEME hsl parsing', () => {
+  it('withAlpha keeps the numerals as written and tolerates spacing', () => {
+    expect(withAlpha('  hsl( 220.50 13.0% 9% ) ', 0.4)).toBe('hsla(220.50, 13.0%, 9%, 0.4)');
+  });
+
+  it('toHexColor parses decimals', () => {
+    expect(toHexColor('hsl(0 0% 50.0%)')).toBe('#808080');
+  });
+
+  it.each([
+    '#ff0000',
+    'hsl(0, 0%, 50%)',
+    'hsl(0 0% 50% / 0.5)',
+    'hsla(0 0% 50%)',
+    'hsl(-1 0% 50%)',
+  ])('each caller names itself in the error for %p', (input) => {
+    const expected = (caller: string) =>
+      `${caller} expects a THEME 'hsl(H S% L%)' string, received: ${input}`;
+    expect(() => withAlpha(input, 0.5)).toThrow(expected('withAlpha'));
+    expect(() => toHexColor(input)).toThrow(expected('toHexColor'));
+  });
+});

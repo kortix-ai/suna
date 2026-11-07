@@ -71,7 +71,7 @@ export const MAX_TURN_SYSTEM_CHARS = 16_000
 
 /**
  * Validate a `POST /sessions/:id/prompt` body:
- * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply?, system? }`.
+ * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply?, system?, thread_files?, space_agents? }`.
  */
 export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | string {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 'body must be a JSON object'
@@ -99,6 +99,10 @@ export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | strin
     ...(text('directory') ? { directory: text('directory') } : {}),
     ...(body.no_reply === true ? { noReply: true } : {}),
     ...(text('system') ? { system: text('system') } : {}),
+    // Checked where it is read (`frontThreadFilesFrom`): a malformed value is dropped, never a refusal.
+    ...(body.thread_files && typeof body.thread_files === 'object' ? { threadFiles: body.thread_files } : {}),
+    // The thread's space agents (`space_agents`, `chat`): checked where it is read (`frontSpaceAgentsFrom`).
+    ...(Array.isArray(body.space_agents) ? { spaceAgents: body.space_agents } : {}),
   }
 }
 
@@ -193,18 +197,6 @@ export function createRuntimeRouter(
       return answer(c, () => turns.abort(c.req.param('sessionId')))
     })
 
-    app.get('/messages/:sessionId/:messageId', async (c) => {
-      const auth = authorize(cfg, c)
-      if (!auth.ok) return auth.response
-      return answer(c, () => turns.readMessage(c.req.param('sessionId'), c.req.param('messageId')))
-    })
-
-    app.delete('/messages/:sessionId/:messageId', async (c) => {
-      const auth = authorize(cfg, c)
-      if (!auth.ok) return auth.response
-      return answer(c, () => turns.removeMessage(c.req.param('sessionId'), c.req.param('messageId')))
-    })
-
     // Take back a user message no model call has read (RUNTIME_RETRACT_CAPABILITY).
     app.post('/messages/:sessionId/:messageId/retract', async (c) => {
       const auth = authorize(cfg, c)
@@ -239,6 +231,13 @@ export function createRuntimeRouter(
       const auth = authorize(cfg, c)
       if (!auth.ok) return auth.response
       return answer(c, () => turns.rejectQuestion(c.req.param('requestId')))
+    })
+
+    // apps/api parks the asks when a message waits behind a turn that waits on a person.
+    app.post('/asks/park', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.parkAsks())
     })
 
     app.post('/sessions/:sessionId/compact', async (c) => {

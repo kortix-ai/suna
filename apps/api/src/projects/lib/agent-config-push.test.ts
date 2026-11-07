@@ -18,7 +18,7 @@ process.env.KORTIX_URL = 'https://api.example.com';
 let compiled: string | null = '{"agent":{"support":{"prompt":"fresh"}}}';
 let compileThrows: Error | null = null;
 let compileCalls: Array<{ ref: string | null | undefined; agent?: string }> = [];
-let posted: Array<{ opencodeEnv?: Record<string, string | null>; refreshModels?: boolean }> = [];
+let posted: Array<{ runtimeEnv?: Record<string, string | null>; refreshModels?: boolean }> = [];
 let sessionMetadata: Record<string, unknown> | null = null;
 // One fake row that satisfies every select on this path — the sandbox lookup and
 // the session/project lookups `resolveSandboxEnvSnapshot` walks on its way to an
@@ -125,7 +125,7 @@ let daemonRunningConfig: Record<string, unknown> | null = null;
   }
   const body = init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : {};
   posted.push({
-    opencodeEnv: body.opencodeEnv as Record<string, string | null> | undefined,
+    runtimeEnv: body.runtimeEnv as Record<string, string | null> | undefined,
     refreshModels: body.refreshModels as boolean | undefined,
   });
   return Response.json({
@@ -137,7 +137,7 @@ let daemonRunningConfig: Record<string, unknown> | null = null;
     agent_env_written: daemonProof,
     // How the daemon applied it. 'kept-old' is the verified swap declining a
     // config that would not boot — the push landed, the config did not.
-    opencode_reload: daemonReload,
+    runtime_reload: daemonReload,
   });
 };
 
@@ -233,31 +233,31 @@ describe('pushSessionAgentConfigToSandbox', () => {
   });
 
   test('pushes the freshly compiled config and asks for the opencode restart', async () => {
-    // opencode reads its config only at spawn, so the push alone changes
-    // nothing — `refreshModels` is what makes the daemon restart it and apply.
+    // The push alone changes nothing in the runtime — `refreshModels` is what
+    // makes the daemon apply it.
     const result = await pushSessionAgentConfigToSandbox({ ...INPUT, baseRef: 'main' });
 
-    expect(result).toMatchObject({ applied: true, opencodeReload: 'restarted' });
+    expect(result).toMatchObject({ applied: true, runtimeReload: 'restarted' });
     expect(posted).toHaveLength(1);
-    expect(posted[0].opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled as string);
+    expect(posted[0].runtimeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled as string);
     expect(posted[0].refreshModels).toBe(true);
   });
 
   test('a declined swap is reported, not hidden behind applied:true', async () => {
-    // The verified reload booted the new opencode, it never served, so the box
+    // The verified reload booted a new runtime, it never served, so the box
     // kept the one it had. We DID push — `applied` stays true — but the config
-    // did not take, and only `opencodeReload` can say so. Collapsing this to a
+    // did not take, and only `runtimeReload` can say so. Collapsing this to a
     // bare success is exactly the silent no-op the swap exists to prevent.
     daemonReload = 'kept-old';
     const result = await pushSessionAgentConfigToSandbox({ ...INPUT, baseRef: 'main' });
     expect(result.applied).toBe(true);
-    expect(result.opencodeReload).toBe('kept-old');
+    expect(result.runtimeReload).toBe('kept-old');
   });
 
   test('an older daemon that says nothing reports null, never success', async () => {
     daemonReload = null;
     const result = await pushSessionAgentConfigToSandbox({ ...INPUT, baseRef: 'main' });
-    expect(result.opencodeReload).toBeNull();
+    expect(result.runtimeReload).toBeNull();
   });
 
   test("recompiles from the SESSION's ref", async () => {
@@ -343,7 +343,7 @@ describe('capability gate on the compiled-governance push', () => {
     daemonRunningConfig = { release_id: null, desired_release_id: null, source: 'workspace', mode: null };
     const result = await pushSessionAgentConfigToSandbox(INPUT);
     expect(result.applied).toBe(true);
-    expect(posted[0]?.opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
+    expect(posted[0]?.runtimeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
   });
 
   test('a daemon whose health does not answer receives no governance push', async () => {
@@ -356,12 +356,12 @@ describe('capability gate on the compiled-governance push', () => {
   test('an old daemon still receives the governance push', async () => {
     const result = await pushSessionAgentConfigToSandbox(INPUT);
     expect(result.applied).toBe(true);
-    expect(posted[0]?.opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
+    expect(posted[0]?.runtimeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
   });
 });
 
 // The push is an HTTP body and has no exec limit, but the daemon keeps the
-// value in the env OpenCode, git and every PTY inherit. Over 128 KiB, a daemon
+// value in the env the runtime, git and every PTY inherit. Over 128 KiB, a daemon
 // that predates the gzip form would store it raw, and every exec on the box
 // would then fail with E2BIG.
 describe('an oversized compiled config on the push path', () => {
@@ -383,13 +383,13 @@ describe('an oversized compiled config on the push path', () => {
     daemonRunningConfig = { release_id: null, source: 'workspace' };
     const result = await pushSessionAgentConfigToSandbox(INPUT);
     expect(result.applied).toBe(true);
-    expect(posted[0]?.opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(OVERSIZED);
+    expect(posted[0]?.runtimeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(OVERSIZED);
   });
 
   test('a config that fits needs no capability at all', async () => {
     compiled = JSON.stringify({ agent: { support: { prompt: 'Answer the ticket. '.repeat(6_000) } } });
     const result = await pushSessionAgentConfigToSandbox(INPUT);
     expect(result.applied).toBe(true);
-    expect(posted[0]?.opencodeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
+    expect(posted[0]?.runtimeEnv?.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
   });
 });

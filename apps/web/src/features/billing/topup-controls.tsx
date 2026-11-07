@@ -4,6 +4,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@kortix/ui/
 import { AutoTopupCard } from '@/features/billing/auto-topup-card';
 import { formatWholeUsd } from '@kortix/ui/internal/billing/compute-pricing';
 import { CreditTopupSection } from '@/features/billing/credit-topup-section';
+import { RedeemCodeForm } from '@/features/billing/redeem-code-form';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { type AccountState, canOfferTopup } from '@kortix/sdk';
 import { formatUsdAsCredits } from '@kortix/shared';
@@ -22,7 +23,8 @@ import type { ReactNode } from 'react';
  * renders anywhere else.
  *
  * Auto top-up is a set-once setting, so it sits behind one status line and
- * opens on demand; the one-time purchase stays the visible action.
+ * opens on demand; the one-time purchase stays the visible action. Redeeming
+ * a credit code is the same kind of rare action and folds the same way.
  */
 export function TopupControls({
   state,
@@ -34,6 +36,7 @@ export function TopupControls({
   fallback?: ReactNode;
 }) {
   const t = useTranslations('billing.topup');
+  const tRedeem = useTranslations('billing.redeem');
   const locale = useLocale();
   if (!canOfferTopup(state)) return <>{fallback}</>;
   const auto = state?.auto_topup;
@@ -61,6 +64,18 @@ export function TopupControls({
         </CollapsibleTrigger>
         <CollapsibleContent className="px-4 pb-4">
           <AutoTopupCard fetchSettings showSaveButton />
+        </CollapsibleContent>
+      </Collapsible>
+      <Collapsible className="group/redeem border-t">
+        <CollapsibleTrigger className="text-muted-foreground hover:text-foreground focus-visible:ring-kortix-base flex w-full cursor-pointer items-center gap-1.5 px-4 py-3 text-left text-xs transition-colors outline-none focus-visible:ring-[0.6px]">
+          <CaretRightIcon
+            aria-hidden
+            className="size-3 shrink-0 transition-transform group-data-[state=open]/redeem:rotate-90"
+          />
+          <span className="truncate">{tRedeem('toggle')}</span>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="px-4 pb-4">
+          <RedeemCodeForm autoFocus />
         </CollapsibleContent>
       </Collapsible>
     </div>

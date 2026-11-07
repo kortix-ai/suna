@@ -503,6 +503,19 @@ fn kick_agent(p: &Person) {
 
 // ─── The loop ───────────────────────────────────────────────────────────────
 
+/// `--json status` of every signed-in person, for the update health check (`update::judge`).
+fn health_probes(exe: &Path, live: &[Person]) -> Vec<super::update::Probe> {
+    live.iter()
+        .map(|p| super::update::Probe {
+            who: format!("uid {}", p.uid),
+            active: true,
+            status: run_as(p, exe, &["--json", "status"], b"")
+                .map(|(_, out)| out)
+                .map_err(|e| format!("{e:#}")),
+        })
+        .collect()
+}
+
 struct Session {
     state: SessionState,
     next_attempt: Option<Instant>,
@@ -540,22 +553,20 @@ impl Machine {
             }
         }
         self.write_state(cfg.as_ref());
-        self.updater.tick();
-        if let Some(since) = self.updater.verifying_since() {
-            let ok = self.healthy_since(&live, since);
-            self.updater.note_probe(ok);
-        }
-    }
-
-    /// Every signed-in person's recorder runs and saves frames (see `update::person_ok`).
-    fn healthy_since(&mut self, live: &[Person], since_ms: i64) -> bool {
         let exe = self.exe.clone();
-        live.iter().all(|p| {
-            run_as(p, &exe, &["--json", "status"], b"")
-                .ok()
-                .and_then(|(_, out)| serde_json::from_str::<Value>(&out).ok())
-                .is_some_and(|st| super::update::person_ok(&st, since_ms))
-        })
+        self.updater
+            .tick(|| super::update::baseline(&health_probes(&exe, &live)));
+        if let Some(since) = self.updater.verifying_since() {
+            let result = super::update::judge(
+                &health_probes(&exe, &live),
+                self.updater.required().as_deref(),
+                since,
+            );
+            if let Err(why) = &result {
+                self.log(&format!("update health: {why}"));
+            }
+            self.updater.note_probe(result);
+        }
     }
 
     fn tick_person(&mut self, p: &Person, cfg: Option<&ManagedConfig>) -> Result<()> {

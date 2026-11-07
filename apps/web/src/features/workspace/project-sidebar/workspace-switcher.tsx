@@ -55,6 +55,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@kortix/ui/dropdown-menu';
+import { CountBadge } from '@kortix/ui/count-badge';
 import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import {
   SidebarContext,
@@ -87,10 +88,12 @@ import { cn } from '@kortix/ui';
 import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 import { useAppsModalStore } from '@kortix/ui/internal/stores/apps-modal-store';
+import { useInboxSummary } from '@kortix/ui/internal/notifications/use-inbox-summary';
 import { getProject, type KortixAccount } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
   ArrowsLeftRightIcon,
+  BellIcon,
   CaretUpDownIcon,
   GearSixIcon as CogOne,
   SignOutIcon as LogOut,
@@ -109,6 +112,8 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const tUi = useI18nTranslations('hardcodedUi.i18nComplete');
   const canRename = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE).allowed;
   const tNewWorkspace = useI18nTranslations('newWorkspace');
+  const tNotifications = useI18nTranslations('notifications');
+  const inbox = useInboxSummary(projectId);
   const sidebar = React.useContext(SidebarContext);
   const [menuOpen, setMenuOpen] = useState(false);
   const { user } = useAuth();
@@ -196,7 +201,11 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
-                aria-label={t('workspace.switch')}
+                aria-label={
+                  inbox.count > 0
+                    ? `${t('workspace.switch')}. ${tNotifications('inbox.unreadLabel', { count: inbox.count })}`
+                    : t('workspace.switch')
+                }
                 className={cn(
                   'group/workspace hover:bg-sidebar-row relative flex cursor-pointer items-center gap-2 rounded-md px-1',
                   'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
@@ -218,12 +227,25 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                     so that gap read as "I picked an icon and nothing changed". */}
                 {project ? (
                   <>
-                    <EntityAvatar
-                      label={project.name}
-                      glyph={project.icon_glyph}
-                      emoji={project.icon}
-                      size="sm"
-                    />
+                    {/* The Inbox lives in this menu, not in the sidebar. While
+                        an unread question, permission request or failure
+                        waits, a dot on the tile says "open me"; a plain
+                        unread update does not. */}
+                    <span className="relative shrink-0">
+                      <EntityAvatar
+                        label={project.name}
+                        glyph={project.icon_glyph}
+                        emoji={project.icon}
+                        size="sm"
+                      />
+                      {inbox.needsYou ? (
+                        <span
+                          data-testid="workspace-inbox-dot"
+                          aria-hidden
+                          className="bg-kortix-yellow ring-sidebar absolute -top-0.5 -right-0.5 size-2 rounded-full ring-2"
+                        />
+                      ) : null}
+                    </span>
                     <span className="text-foreground min-w-0 flex-1 truncate text-left text-sm font-medium tracking-tight group-data-[collapsible=icon]:hidden">
                       {project.name}
                     </span>
@@ -333,6 +355,27 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   under `ProjectShell`, which renders `SettingsPanel` as a
                   sibling (`project-layout/project-shell.tsx:195`) — the
                   header `UserMenu` has no such renderer and must navigate. */}
+              {/* The person's notifications from every project (KRTX-1742).
+                  An anchor, like the other navigating rows. It left the
+                  sidebar's nav rows: a page you visit when something calls you
+                  does not need a permanent row. */}
+              {inbox.href ? (
+                <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+                  <Link href={inbox.href} prefetch>
+                    <BellIcon />
+                    {tNotifications('inbox.title')}
+                    {inbox.count > 0 ? (
+                      <CountBadge
+                        className="ml-auto"
+                        count={inbox.count}
+                        tone={inbox.needsYou ? 'waiting' : 'neutral'}
+                        aria-label={tNotifications('inbox.unreadCount', { count: inbox.count })}
+                      />
+                    ) : null}
+                  </Link>
+                </DropdownMenuItem>
+              ) : null}
+
               <DropdownMenuItem onSelect={() => openUserSettings('profile')} size="sm">
                 <CogOne />
                 {t('workspace.settings')}

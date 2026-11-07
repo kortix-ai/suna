@@ -17,6 +17,7 @@ import { requestClientIp } from '../middleware/client-ip';
 import { requireAdmin } from '../middleware/require-admin';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { analyticsApp } from './analytics';
+import { creditCodesApp } from './credit-codes';
 import { isUuid } from '../shared/validate';
 import { isoValue } from '../shared/cost-values';
 import { readJsonObject } from '../shared/http-body';
@@ -107,6 +108,8 @@ adminApp.use('*', supabaseAuth, requireAdmin);
 // this line above the `use('*')` would publish platform-wide activity data to
 // anonymous callers. `analytics-mount.test.ts` fails if that happens.
 adminApp.route('/analytics', analyticsApp);
+// Credit codes: same rule — mounted after the gate, no middleware of its own.
+adminApp.route('/api/credit-codes', creditCodesApp);
 
 // ── List accounts ────────────────────────────────────────────────────────────
 adminApp.openapi(
@@ -480,7 +483,7 @@ adminApp.openapi(
 );
 
 // ── Set a project's feature flag (operator) ─────────────────────────────────
-// The operator lever for internal-only flags (`session_log_restore`): Kortix
+// The operator lever for internal-only flags (`workspace_volume`): Kortix
 // turns them on per project on request.
 // `PATCH /v1/projects/:id/features` refuses those flags for everyone but a
 // platform operator, and this route needs no project membership. Any flag key
@@ -498,7 +501,7 @@ adminApp.openapi(
         content: {
           'application/json': {
             schema: z.object({
-              feature: z.string().openapi({ description: 'Flag key, for example `session_log_restore`.' }),
+              feature: z.string().openapi({ description: 'Flag key, for example `workspace_volume`.' }),
               enabled: z.boolean().nullable().openapi({ description: '`true`/`false` sets the override; `null` clears it.' }),
             }),
           },

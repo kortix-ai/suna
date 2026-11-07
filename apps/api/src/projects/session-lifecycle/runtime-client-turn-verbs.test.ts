@@ -1,7 +1,7 @@
 // Every runtime call of the session lifecycle goes to a Kortix route. Bun
 // mocks are process-global; run this file in isolation (`bun test --isolate`).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import * as realOpencodeMapping from '../opencode-mapping';
+import * as realRuntimeMapping from '../runtime-session-mapping';
 
 const forwarded: Array<{ method: string; path: string; query: string; body: unknown; headers: Headers }> = [];
 let forwardStatus = 202;
@@ -32,9 +32,9 @@ mock.module('../../sandbox-proxy/forward', () => ({
   },
 }));
 
-mock.module('../opencode-mapping', () => ({
-  ...realOpencodeMapping,
-  sandboxOpencodeEndpoint: async () => ({ url: 'https://daemon.test', headers: {} }),
+mock.module('../runtime-session-mapping', () => ({
+  ...realRuntimeMapping,
+  sandboxRuntimeEndpoint: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 
 const { SteerNotTaken, postPrompt, readRuntimeMessage, readSessionMessageTip, retractRuntimeMessage } = await import('./runtime-client');
@@ -73,7 +73,7 @@ beforeEach(() => {
   }) as typeof fetch;
 });
 
-const session = { endpoint: { url: 'https://daemon.test', headers: {} }, opencodeSessionId: 'ses_1', externalId: 'ext-1' };
+const session = { endpoint: { url: 'https://daemon.test', headers: {} }, runtimeSessionId: 'ses_1', externalId: 'ext-1' };
 const deliver = () =>
   postPrompt('ext-1', 'ses_1', 'hello', 'user-1', 'sess-1', 'idem-1', {
     parts: [{ type: 'text', text: 'hello' }],
@@ -138,50 +138,7 @@ describe('postPrompt', () => {
   });
 });
 
-describe('session runtime reads', () => {
-  test('the tip read uses the Kortix transcript route', async () => {
-    pages['/kortix/runtime/messages/ses_1?limit=8'] = {
-      messages: [{ info: { id: 'msg_a', role: 'user', time: { created: 1 } }, parts: [] }],
-      has_more: true,
-      first_message_id: 'msg_a',
-    };
-    const tip = await readSessionMessageTip(session, { limit: 8 });
-    expect(tip?.map((m) => m.id)).toEqual(['msg_a']);
-    expect(fetched.filter((call) => !call.endsWith('/kortix/health'))).toEqual(['GET /kortix/runtime/messages/ses_1?limit=8']);
-  });
-
-  test('a full read pages backwards on before until has_more is false', async () => {
-    pages['/kortix/runtime/messages/ses_1?limit=200'] = {
-      messages: [{ info: { id: 'msg_c', role: 'user' }, parts: [] }],
-      has_more: true,
-      first_message_id: 'msg_c',
-    };
-    pages['/kortix/runtime/messages/ses_1?limit=200&before=msg_c'] = {
-      messages: [
-        { info: { id: 'msg_a', role: 'user' }, parts: [] },
-        { info: { id: 'msg_b', role: 'assistant', parentID: 'msg_a' }, parts: [] },
-      ],
-      has_more: false,
-      first_message_id: 'msg_a',
-    };
-    const tip = await readSessionMessageTip(session);
-    expect(tip?.map((m) => m.id)).toEqual(['msg_a', 'msg_b', 'msg_c']);
-  });
-
-  // The landing proof: a held message is any body, an unheld one null, an unanswered read a throw.
-  test('one message read answers the message, null when the runtime holds none, and throws when it cannot say', async () => {
-    const path = '/kortix/runtime/messages/ses_1/msg_a';
-    pages[path] = { info: { id: 'msg_a', role: 'user' }, parts: [] };
-    expect(await readRuntimeMessage(session, 'msg_a')).toEqual({ info: { id: 'msg_a', role: 'user' }, parts: [] });
-    pages[path] = resourceMissing;
-    expect(await readRuntimeMessage(session, 'msg_a')).toBeNull();
-    pages[path] = () => new Response('down', { status: 503 });
-    await expect(readRuntimeMessage(session, 'msg_a')).rejects.toThrow('runtime message read failed (503)');
-    expect(fetched.filter((call) => !call.endsWith('/kortix/health')).every((call) => call === `GET ${path}`)).toBe(true);
-  });
-});
-
-describe('session runtime reads on a box that serves its log (runtime.log.v1)', () => {
+describe('session runtime reads: the box log (runtime.log.v1)', () => {
   // A queued prompt's provisional seq is no clock: its times are its own (the override).
   const at = (s: number) => new Date(Date.UTC(2026, 9, 31, 0, 0, Math.min(s, 59))).toISOString();
   const record = (id: string, seq: number, over: Record<string, unknown> = {}) => ({
@@ -210,7 +167,7 @@ describe('session runtime reads on a box that serves its log (runtime.log.v1)', 
       { id: 'msg_b', role: 'assistant', parentID: 'msg_a', created: Date.parse(at(3)), completed: null, partIds: ['msg_b-b0'] },
       { id: 'msg_q', role: 'user', parentID: null, created: Date.parse(at(4)), completed: Date.parse(at(4)), partIds: ['msg_q-b0'] },
     ]);
-    expect(fetched).toEqual(['GET /kortix/health', 'GET /kortix/runtime/log?limit=8']);
+    expect(fetched).toEqual(['GET /kortix/runtime/log?limit=8']);
   });
 
   test('a full read pages backwards on before_seq until has_more is false', async () => {

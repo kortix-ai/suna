@@ -273,6 +273,8 @@ export const qk = {
 
     /** `listSessionsNeedingInput` — which sessions wait on a human decision or answer. */
     needsInput: (id: string) => [...qk.project.scope(id), 'needs-input'] as const,
+    /** `listSessionAsks` — every open ask (question, permission ask, connector approval) the viewer may decide. */
+    asks: (id: string) => [...qk.project.scope(id), 'asks'] as const,
 
     /** `getReviewSummary` — the needs-you counts the always-mounted badges poll. */
     reviewSummary: (id: string) => [...qk.project.scope(id), 'review-summary'] as const,
@@ -531,6 +533,8 @@ export const qk = {
     /** Immutable deployment history for one App. */
     appDeployments: (id: string, appId: string) =>
       [...qk.project.apps(id), appId, 'deployments'] as const,
+    /** The event log of one App: what it posted and what came of each event. */
+    appEvents: (id: string, appId: string) => [...qk.project.apps(id), appId, 'events'] as const,
     /** Machines of one App (capability `machines`). */
     appMachines: (id: string, appId: string) => [...qk.project.apps(id), appId, 'machines'] as const,
     /** Volumes of one App (capability `volumes`). */
@@ -568,19 +572,45 @@ export const qk = {
 
     /** Every conversation read of a project (flag `agent_rooms`): the prefix of
      *  the keys below, so a post or a read refreshes the list, the unread
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
      *  counts and the thread together. */
     rooms: (id: string) => [...qk.project.scope(id), 'rooms'] as const,
-    /** `listRooms` — the named rooms. */
+    /**
+     * `listRooms` — the named rooms.
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+     */
     roomList: (id: string) => [...qk.project.rooms(id), 'list'] as const,
-    /** `listRooms({ mine: true })` — the caller's conversations with unread counts. */
+    /**
+     * `listRooms({ mine: true })` — the caller's conversations with unread counts.
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+     */
     roomConversations: (id: string) => [...qk.project.rooms(id), 'mine'] as const,
-    /** `findRoomByName` — the room of a space (named like its slug), or null. */
+    /**
+     * `findRoomByName` — the room of a space (named like its slug), or null.
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+     */
     spaceRoom: (id: string, name: string) => [...qk.project.rooms(id), 'name', name] as const,
-    /** `getRoom` — one conversation and its members. */
+    /**
+     * `getRoom` — one conversation and its members.
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+     */
     room: (id: string, roomId: string) => [...qk.project.rooms(id), 'room', roomId] as const,
-    /** `listRoomMessages` — the newest messages of one conversation. */
+    /**
+     * `listRoomMessages` — the newest messages of one conversation.
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+     */
     roomMessages: (id: string, roomId: string, view: 'all' | 'top' = 'all') => [...qk.project.rooms(id), 'messages', roomId, view] as const,
-    /** `listRoomMessages(…, { thread })` — one thread. */
+    /**
+     * `listRoomMessages(…, { thread })` — one thread.
+     *
+     * @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
+     */
     roomThread: (id: string, roomId: string, root: number) => [...qk.project.rooms(id), 'thread', roomId, root] as const,
 
     /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix
@@ -599,6 +629,8 @@ export const qk = {
     spaceLinks: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'links'] as const,
     /** `listProjectSpaceMembers` — a channel's people (the header roster, the Members tab). Under `spaces`, so a spaces refresh refreshes it. */
     spaceMembers: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'members'] as const,
+    /** `getProjectSpaceProactive` — a space's watcher settings (`spaces_proactive`). Under `spaces`, so a spaces refresh refreshes it. */
+    spaceProactive: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'proactive'] as const,
     /** `getProjectSpaceGeneralNotice` — `#general`'s turned-on-again line. Under `spaces`, so a spaces refresh refreshes it. */
     spaceGeneralNotice: (id: string) => [...qk.project.spaces(id), 'general-notice'] as const,
     /** `getPrivateChannelsAvailable`. Under `spaces`, so a spaces refresh refreshes it. */
@@ -629,7 +661,7 @@ export const qk = {
      * purpose: the record is fixed at the thread's first turn, so no write refreshes it.
      */
     sessionMemoryUsage: (id: string, sessionId: string) => [...qk.project.scope(id), 'memory-usage', sessionId] as const,
-    /** Every artifact read of a project (flag `artifacts`): the prefix of the
+    /** Every artifact read of a project: the prefix of the
      *  keys below, so a publish refreshes the gallery and the open artifact. */
     artifacts: (id: string) => [...qk.project.scope(id), 'artifacts'] as const,
     /** `listArtifacts` — the gallery, per scope/type/search. */
@@ -638,19 +670,19 @@ export const qk = {
     artifact: (id: string, artifactId: string, version: string = 'current') => [...qk.project.artifacts(id), 'one', artifactId, version] as const,
     /** `listArtifactVersions`. */
     artifactVersions: (id: string, artifactId: string) => [...qk.project.artifacts(id), 'versions', artifactId] as const,
-    artifactComments: (id: string, artifactId: string, status?: string, version?: string) => [...qk.project.artifacts(id), 'comments', artifactId, ...(status ? [status] : []), ...(version ? [{ version }] : [])] as const,
-    artifactCommentContext: (id: string, artifactId: string, options: { version?: string; agent?: string } = {}) => [...qk.project.artifactComments(id, artifactId), 'context', JSON.stringify(options)] as const,
-    artifactActivity: (id: string, artifactId: string, options?: { limit?: number; cursor?: string }) => [...qk.project.artifacts(id), 'activity', artifactId, ...(options ? [JSON.stringify(options)] : [])] as const,
-    artifactActivityInfinite: (id: string, artifactId: string, limit: number) => [...qk.project.artifactActivity(id, artifactId), 'infinite', limit] as const,
     /** `readArtifactFile` of a doc's Markdown at one entry version. Immutable,
      *  so outside the `artifacts` prefix: a write never refetches it. */
     artifactText: (id: string, artifactId: string, entryVersion: string) => [...qk.project.scope(id), 'artifact-text', artifactId, entryVersion] as const,
     /** `listArtifactTypes`. */
     artifactTypes: (id: string) => [...qk.project.artifacts(id), 'types'] as const,
-    /** `listProjectGoals` — the goal folders in Files with their heartbeats. */
+    /** `listProjectGoals` — every goal record the caller may read. */
     goals: (id: string) => [...qk.project.scope(id), 'goals'] as const,
-    /** `getProjectGoalFiles` — one goal folder's log, notes and verification. */
+    /** `getProjectGoalFiles` — one goal folder's brief, log, notes and verification. */
     goalFiles: (id: string, folder: string) => [...qk.project.goals(id), 'files', folder] as const,
+    /** `getProjectGoal` — one goal record by `goal_id`. */
+    goal: (id: string, goalId: string) => [...qk.project.goals(id), 'goal', goalId] as const,
+    /** `listProjectGoalEvents` — one goal's audit trail. */
+    goalEvents: (id: string, goalId: string) => [...qk.project.goals(id), 'events', goalId] as const,
     /** `listSessionReminders` — `GET /projects/:id/sessions/:sid/reminders`. */
     sessionReminders: (id: string, sessionId: string) =>
       [...qk.project.reminders(id), 'session', sessionId] as const,
@@ -710,9 +742,16 @@ export const qk = {
       [...qk.project.gateway(id), 'sessions', days] as const,
     gatewayErrors: (id: string, days: number) =>
       [...qk.project.gateway(id), 'errors', days] as const,
-    /** `ok` mirrors `listGatewayLogs`'s optional pass/fail filter — `null` = unfiltered. */
-    gatewayLogs: (id: string, ok: boolean | null) =>
-      [...qk.project.gateway(id), 'logs', ok] as const,
+    /**
+     * `ok` mirrors `listGatewayLogs`'s optional pass/fail filter — `null` = unfiltered.
+     * `filters` are the other server-side filters (`GatewayLogFilters`).
+     */
+    gatewayLogs: (id: string, ok: boolean | null, filters?: Record<string, string | undefined>) =>
+      filters
+        ? ([...qk.project.gateway(id), 'logs', ok, filters] as const)
+        : ([...qk.project.gateway(id), 'logs', ok] as const),
+    gatewayLogFacets: (id: string, hours: number) =>
+      [...qk.project.gateway(id), 'logFacets', hours] as const,
     gatewayLog: (id: string, logId: string | null) =>
       [...qk.project.gateway(id), 'log', logId] as const,
     gatewayBudgets: (id: string) => [...qk.project.gateway(id), 'budgets'] as const,

@@ -89,7 +89,7 @@ type ApiClient = <T>(
   expectedStatus?: number | number[],
 ) => Promise<T>;
 
-export interface ManifestProjectOptions {
+interface ManifestProjectOptions {
   api: ApiClient;
   accessToken: string;
   accountId: string;

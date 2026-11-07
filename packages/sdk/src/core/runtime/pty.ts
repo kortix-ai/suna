@@ -1,10 +1,10 @@
 /**
  * Kortix-native PTY client — the daemon `/kortix/pty` endpoints
  * (routes/pty.ts in kortix-sandbox-agent-server), owned by the SDK.
- * Independent of whatever agent runtime (OpenCode today) is running in the
+ * Independent of whatever agent runtime is running in the
  * sandbox — a raw terminal shouldn't go down with the agent.
  *
- * Response shape matches OpenCode's own `Pty` entity 1:1 (id/title/command/
+ * Response shape matches the old OpenCode `Pty` entity 1:1 (id/title/command/
  * args/cwd/status/pid/exitCode), so this is a drop-in swap for callers
  * already built against that contract.
  *

@@ -27,9 +27,9 @@ function makeChain(): any {
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
   return chain;
 }
-mock.module('../../../shared/db', () => ({ db: { select: () => makeChain() }, hasDatabase: () => true }));
+mock.module('../../../shared/db', () => ({ withDbTransaction: async <T>(action: () => Promise<T>) => action(), db: { select: () => makeChain() }, hasDatabase: () => true }));
 
-let selection: any = { projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null };
+let selection: any = { projectId: 'p1', agentName: null, sessionModel: null, conversationPolicy: null };
 mock.module('../selection', () => ({
   currentChannelSelection: async () => selection,
   isValidModelId: (s: string) => s.indexOf('/') > 0,
@@ -108,7 +108,7 @@ function actionIds(resp: any): string[] {
 
 beforeEach(() => {
   dbResults = [];
-  selection = { projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null };
+  selection = { projectId: 'p1', agentName: null, sessionModel: null, conversationPolicy: null };
   gate = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false };
   servable = true;
   setChannelModel.mockClear();

@@ -1,6 +1,16 @@
 'use client';
 
-import type { ConnectorConnectResult, ConnectorFinalizeResult } from '@kortix/sdk';
+import {
+  CONNECT_LINK_POLL_INTERVAL_MS,
+  CONNECT_LINK_TIMEOUT_MS,
+  connectLinkUrl,
+  pollConnectLinkFinalize,
+  type ConnectorConnectResult,
+  type ConnectorFinalizeResult,
+} from '@kortix/sdk';
+
+/** The hosted page's URL. The rule lives in `@kortix/sdk`. */
+export { connectLinkUrl };
 
 export interface ConnectLinkFlowOptions {
   openWindow?: () => Window | null;
@@ -9,9 +19,6 @@ export interface ConnectLinkFlowOptions {
   pollIntervalMs?: number;
   timeoutMs?: number;
 }
-
-const DEFAULT_POLL_INTERVAL_MS = 2_000;
-const DEFAULT_TIMEOUT_MS = 10 * 60_000;
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
@@ -52,15 +59,6 @@ function watchPopupClosed(popup: Window): { closed: Promise<never>; stop: () => 
   // The race below consumes the rejection; this keeps an unraced one quiet.
   closed.catch(() => undefined);
   return { closed, stop: () => clearInterval(timer) };
-}
-
-function timeoutMessage(timeoutMs: number): string {
-  const minutes = Math.max(1, Math.ceil(timeoutMs / 60_000));
-  return `Authorization timed out after ${minutes} minute${minutes === 1 ? '' : 's'}. Try again.`;
-}
-
-export function connectLinkUrl(response: ConnectorConnectResult): string | null {
-  return response.connectUrl || response.redirectUrl || null;
 }
 
 /**
@@ -110,23 +108,22 @@ export async function runConnectLinkFlow(
 
     popup.location.replace(url);
 
-    const sleep = options.sleep ?? defaultSleep;
-    const now = options.now ?? (() => Date.now());
-    const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-    const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const deadline = now() + timeoutMs;
-
-    while (true) {
-      const result = await Promise.race([finalize(), watcher.closed]);
-      if (result.connected) return { connected: true };
-      if (popup.closed) {
-        throw new Error(POPUP_CLOSED_MESSAGE);
-      }
-
-      const remainingMs = deadline - now();
-      if (remainingMs <= 0) throw new Error(timeoutMessage(timeoutMs));
-      await sleep(Math.min(pollIntervalMs, remainingMs));
-    }
+    // The SDK's finalize poll (every 2 s, up to 10 min). A closed popup ends
+    // it: a pending finalize loses the race against `watcher.closed`, and a
+    // finished one that is not connected checks the popup before the next poll.
+    return await pollConnectLinkFinalize(
+      async () => {
+        const result = await Promise.race([finalize(), watcher.closed]);
+        if (!result.connected && popup.closed) throw new Error(POPUP_CLOSED_MESSAGE);
+        return result;
+      },
+      {
+        sleep: options.sleep ?? defaultSleep,
+        now: options.now,
+        pollIntervalMs: options.pollIntervalMs ?? CONNECT_LINK_POLL_INTERVAL_MS,
+        timeoutMs: options.timeoutMs ?? CONNECT_LINK_TIMEOUT_MS,
+      },
+    );
   } finally {
     watcher.stop();
     closePopupSafely(popup);

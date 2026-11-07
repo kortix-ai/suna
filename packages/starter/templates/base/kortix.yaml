@@ -27,11 +27,12 @@ agents:
     mode: primary
     permission: allow
     prompt_file: agents/worker.md
-    tools: all
-    skills: all
-    connectors: all
-    secrets: all
-    kortix_permissions: all
+    # "*" is every name (quoted: a bare * is a YAML alias). `all` means the same.
+    tools: "*"
+    skills: "*"
+    connectors: "*"
+    secrets: "*"
+    kortix_permissions: "*"
     workspace: { project_repository: true }
 
 # More you can add here, each with an example in the reference:

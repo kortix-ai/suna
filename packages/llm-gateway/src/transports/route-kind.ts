@@ -29,7 +29,7 @@ function hasFunctionTools(body: Json): boolean {
 // The effective reasoning effort the client asked for, whichever shape it was
 // sent in — the OpenAI chat/completions field (`reasoning_effort: string`) or
 // the Responses-style nested object (`reasoning: { effort: string }`), which
-// opencode/callers occasionally send directly. Mirrors
+// callers occasionally send directly. Mirrors
 // openai-responses/request.ts's `reasoningFromBody`.
 export function reasoningEffort(body: Json): string | undefined {
   if (typeof body.reasoning_effort === 'string') return body.reasoning_effort;

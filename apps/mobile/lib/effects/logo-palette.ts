@@ -13,6 +13,8 @@
  *  - light page: a dark outline over a pale body (a bright first colour would
  *    vanish on white: the shader maps low heat to transparent)
  */
+import { parseHsl as parseThemeHsl } from '../utils/hsl';
+
 export type LogoTone = 'light' | 'dark';
 export type Rgba = [number, number, number, number];
 export type LogoAccent = 'yellow' | 'orange' | 'red' | 'purple' | 'blue' | 'green';
@@ -49,13 +51,9 @@ const SHADES: Record<LogoTone, { first: Shade; second: Shade }> = {
   light: { first: [0.8, 20], second: [0.7, 84] },
 };
 
-const HSL_PARTS = /^hsl\(\s*([\d.]+)\s+([\d.]+)%\s+([\d.]+)%\s*\)$/;
-
 function parseHsl(hsl: string): { h: number; s: number } {
-  const parts = HSL_PARTS.exec(hsl.trim());
-  if (!parts)
-    throw new Error(`logo-palette expects a THEME 'hsl(H S% L%)' string, received: ${hsl}`);
-  return { h: Number(parts[1]), s: Number(parts[2]) };
+  const { h, s } = parseThemeHsl(hsl, 'logo-palette');
+  return { h: Number(h), s: Number(s) };
 }
 
 /** h in degrees, s and l in percent → the shader's `[r, g, b, 1]`, each 0 to 1. */

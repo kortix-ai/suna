@@ -1,26 +1,28 @@
 import { wireIdClock, wireIdClockAt, wireIdClockDelta } from '../core/session/wire-message-id';
-import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
+import { mintSessionWireMessageId } from './use-runtime-sessions/messages';
 import { beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 
-// Mock the lowest network boundary the reply/send paths go through — the
-// OpenCode SDK client singleton — so the REAL `permissions.ts` wrappers and
-// `promptRuntimeMessage` run for real, matching session.test.ts's approach of
-// stubbing the boundary rather than the wrapper.
-let permissionReplyImpl: (args: unknown) => Promise<{
-  data?: unknown;
-  error?: unknown;
-  response?: Response;
-}> = async () => ({ data: {} });
-let questionReplyImpl: (args: unknown) => Promise<{
-  data?: unknown;
-  error?: unknown;
-  response?: Response;
-}> = async () => ({ data: {} });
-let questionRejectImpl: (args: unknown) => Promise<{
-  data?: unknown;
-  error?: unknown;
-  response?: Response;
-}> = async () => ({ data: {} });
+// Mock the lowest network boundaries the reply/send paths go through — the
+// authenticated fetch the session-log action routes use, and the runtime
+// client singleton `promptRuntimeMessage` uses — so the REAL `permissions.ts`
+// wrappers run for real, matching session.test.ts's approach of stubbing the
+// boundary rather than the wrapper.
+const ACTIONS_RUNTIME = 'http://api.test/v1/p/sbx_actions/8000';
+let actionAnswers: Record<string, () => Response | Promise<Response>> = {};
+const actionCalls: Array<{ method: string; path: string; body: unknown }> = [];
+const realAuth = await import('../core/http/auth');
+mock.module('../core/http/auth', () => ({
+  ...realAuth,
+  authenticatedFetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    if (!request.url.startsWith(ACTIONS_RUNTIME)) return realAuth.authenticatedFetch(input, init);
+    const path = new URL(request.url).pathname.replace('/v1/p/sbx_actions/8000', '');
+    const text = await request.text();
+    actionCalls.push({ method: request.method, path, body: text ? JSON.parse(text) : null });
+    const answer = actionAnswers[`${request.method} ${path}`];
+    return answer ? answer() : Response.json({ ok: true });
+  },
+}));
 let sessionPromptImpl: (args: unknown) => Promise<{
   data?: unknown;
   error?: unknown;
@@ -37,11 +39,6 @@ class RuntimeNotReadyError extends Error {
 mock.module('../core/runtime/client', () => ({
   RuntimeNotReadyError,
   getClient: () => ({
-    permission: { reply: (args: unknown) => permissionReplyImpl(args) },
-    question: {
-      reply: (args: unknown) => questionReplyImpl(args),
-      reject: (args: unknown) => questionRejectImpl(args),
-    },
     session: { promptAsync: (args: unknown) => sessionPromptImpl(args) },
   }),
 }));
@@ -50,14 +47,14 @@ import {
   getSessionSyncController,
   resetSessionSyncControllers,
 } from '../browser/session-sync/session-sync-registry';
-import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../browser/stores/runtime-pending-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { BillingError } from '../core/http/api/errors';
 import { clearSessionFresh, markSessionFresh } from '../core/http/fresh-sessions';
 import { SessionStartError, type SessionStartResult } from '../core/rest/projects-client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
 import type { ModelKey } from './use-model-store';
-import { promptRuntimeMessage } from './use-opencode-sessions/messages';
+import { promptRuntimeMessage } from './use-runtime-sessions/messages';
 import {
   SESSION_START_FRESH_MS,
   SESSION_START_POLL_MS,
@@ -111,9 +108,8 @@ beforeEach(() => {
   resetSessionSyncControllers();
   setCurrentRuntime(null);
   useRuntimePendingStore.getState().clear();
-  permissionReplyImpl = async () => ({ data: {} });
-  questionReplyImpl = async () => ({ data: {} });
-  questionRejectImpl = async () => ({ data: {} });
+  actionAnswers = {};
+  actionCalls.length = 0;
   sessionPromptImpl = async () => ({ data: {} });
 });
 
@@ -191,167 +187,83 @@ describe('send receipts', () => {
   });
 });
 
-describe('answerQuestion', () => {
-  test('success calls question.reply with the request id + answers and removes the pending entry', async () => {
-    seedQuestion('q1');
-    let captured: unknown;
-    questionReplyImpl = async (args) => {
-      captured = args;
-      return { data: {} };
-    };
+describe('the reply verbs, on the session-log action routes', () => {
+  beforeEach(() => setCurrentRuntime(ACTIONS_RUNTIME, 'sbx_actions'));
+  const refuse = (status: number, error: string) => () => Response.json({ error }, { status });
 
+  test('answerQuestion posts the answers and removes the pending entry', async () => {
+    seedQuestion('q1');
     await answerQuestion('q1', [['yes']]);
-
-    expect(captured).toEqual({ requestID: 'q1', answers: [['yes']] });
+    expect(actionCalls).toEqual([{ method: 'POST', path: '/kortix/runtime/questions/q1/reply', body: { answers: [['yes']] } }]);
     expect(useRuntimePendingStore.getState().questions['q1']).toBeUndefined();
   });
 
-  test('failure keeps the pending entry and throws a typed KortixSendError', async () => {
+  test('a refused answer keeps the pending entry and throws a typed KortixSendError', async () => {
     seedQuestion('q1');
-    questionReplyImpl = async () => ({ error: { message: 'boom' } });
-
-    await expect(answerQuestion('q1', [['yes']])).rejects.toMatchObject({
-      kind: 'runtime-error',
-      message: 'boom',
-    });
+    actionAnswers['POST /kortix/runtime/questions/q1/reply'] = refuse(500, 'boom');
+    await expect(answerQuestion('q1', [['yes']])).rejects.toMatchObject({ message: 'Answering the question failed: boom' });
     expect(useRuntimePendingStore.getState().questions['q1']).toBeDefined();
   });
-});
 
-describe('rejectQuestion', () => {
-  test('success calls question.reject with the request id and removes the pending entry', async () => {
+  test('rejectQuestion posts the reject and removes the pending entry; a refusal keeps it', async () => {
     seedQuestion('q1');
-    let captured: unknown;
-    questionRejectImpl = async (args) => {
-      captured = args;
-      return { data: {} };
-    };
-
     await rejectQuestion('q1');
-
-    expect(captured).toEqual({ requestID: 'q1' });
+    expect(actionCalls).toEqual([{ method: 'POST', path: '/kortix/runtime/questions/q1/reject', body: null }]);
     expect(useRuntimePendingStore.getState().questions['q1']).toBeUndefined();
+    seedQuestion('q2');
+    actionAnswers['POST /kortix/runtime/questions/q2/reject'] = refuse(500, 'nope');
+    await expect(rejectQuestion('q2')).rejects.toMatchObject({ message: 'Dismissing the question failed: nope' });
+    expect(useRuntimePendingStore.getState().questions['q2']).toBeDefined();
   });
 
-  test('failure keeps the pending entry and throws a typed error', async () => {
-    seedQuestion('q1');
-    questionRejectImpl = async () => ({ error: { message: 'nope' } });
-
-    await expect(rejectQuestion('q1')).rejects.toMatchObject({
-      kind: 'runtime-error',
-    });
-    expect(useRuntimePendingStore.getState().questions['q1']).toBeDefined();
-  });
-});
-
-describe('answerPermission', () => {
-  test('success calls permission.reply with the request id + reply and removes the pending entry', async () => {
+  test('answerPermission posts the reply and removes the pending entry; a refusal keeps it', async () => {
     seedPermission('p1');
-    let captured: unknown;
-    permissionReplyImpl = async (args) => {
-      captured = args;
-      return { data: {} };
-    };
-
     await answerPermission('p1', 'once', 'go ahead');
-
-    expect(captured).toEqual({
-      requestID: 'p1',
-      reply: 'once',
-      message: 'go ahead',
-    });
+    expect(actionCalls).toEqual([{ method: 'POST', path: '/kortix/runtime/permissions/p1/reply', body: { reply: 'once', message: 'go ahead' } }]);
     expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
-  });
-
-  test('failure keeps the pending entry and throws a typed error', async () => {
-    seedPermission('p1');
-    permissionReplyImpl = async () => ({
-      error: { message: 'denied by server' },
-    });
-
-    await expect(answerPermission('p1', 'always')).rejects.toMatchObject({
-      kind: 'runtime-error',
-    });
-    expect(useRuntimePendingStore.getState().permissions['p1']).toBeDefined();
+    seedPermission('p2');
+    actionAnswers['POST /kortix/runtime/permissions/p2/reply'] = refuse(500, 'denied by server');
+    await expect(answerPermission('p2', 'always')).rejects.toMatchObject({ message: 'Answering the permission request failed: denied by server' });
+    expect(useRuntimePendingStore.getState().permissions['p2']).toBeDefined();
   });
 
   // KRTX-2190 (prod 2026-10-12): two reply affordances raced for one request;
-  // the runtime answered the first and answered the second with 404
-  // `Permission request not found: per_<id>`, which reached the browser as an
-  // unhandled promise rejection and paged Sentry. The request is gone — the
-  // pending entry must drop and the reply must NOT throw.
-  test('a 404 permission-request-not-found reply resolves and drops the pending entry', async () => {
+  // the runtime answered the first and the second with 404. The request is
+  // gone — the pending entry must drop and the reply must NOT throw.
+  test("the reply route's own 404 resolves and drops the pending entry; any other 404 throws", async () => {
     seedPermission('p1');
-    permissionReplyImpl = async () => ({
-      error: { message: 'Permission request not found: per_x' },
-      response: new Response(null, { status: 404 }),
-    });
-
+    actionAnswers['POST /kortix/runtime/permissions/p1/reply'] = refuse(404, 'no such permission request');
     await expect(answerPermission('p1', 'once')).resolves.toBeUndefined();
     expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
-  });
-
-  test('a lowercase permission-request-not-found 404 (pi harness wording) resolves too', async () => {
-    seedPermission('p1');
-    permissionReplyImpl = async () => ({
-      error: 'permission request not found',
-      response: new Response(null, { status: 404 }),
-    });
-
-    await expect(answerPermission('p1', 'reject')).resolves.toBeUndefined();
-    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
-  });
-
-  test('a 404 that is not an already-answered reply still throws', async () => {
-    seedPermission('p1');
-    permissionReplyImpl = async () => ({
-      error: { message: 'no such route' },
-      response: new Response(null, { status: 404 }),
-    });
-
-    await expect(answerPermission('p1', 'always')).rejects.toMatchObject({
-      kind: 'runtime-error',
-    });
-    expect(useRuntimePendingStore.getState().permissions['p1']).toBeDefined();
+    seedPermission('p2');
+    actionAnswers['POST /kortix/runtime/permissions/p2/reply'] = refuse(404, 'sandbox not found');
+    await expect(answerPermission('p2', 'always')).rejects.toMatchObject({ message: 'Answering the permission request failed: sandbox not found' });
+    expect(useRuntimePendingStore.getState().permissions['p2']).toBeDefined();
   });
 
   test('a second concurrent reply for the same request joins the first instead of double-sending', async () => {
     seedPermission('p1');
-    let calls = 0;
-    permissionReplyImpl = async () => {
-      calls += 1;
+    actionAnswers['POST /kortix/runtime/permissions/p1/reply'] = async () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
-      return { data: {} };
+      return Response.json({ ok: true });
     };
-
     // The composer card and the tool-card inline prompt (or the allow-everything
     // flow and the auto-approve backstop) both funnel into the same reply verb;
     // racing them must not POST twice for one request id.
     await Promise.all([answerPermission('p1', 'once'), answerPermission('p1', 'always')]);
-
-    expect(calls).toBe(1);
+    expect(actionCalls).toHaveLength(1);
     expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
   });
 
   test('after a reply settles, a later reply for the same request sends again (the in-flight entry cleared)', async () => {
     seedPermission('p1');
-    let calls = 0;
-    permissionReplyImpl = async () => {
-      calls += 1;
-      if (calls === 1) return { data: {} };
-      return {
-        error: { message: 'Permission request not found: per_x' },
-        response: new Response(null, { status: 404 }),
-      };
-    };
-
     await answerPermission('p1', 'once');
     // A stale caller retries the same request after the first reply settled;
     // the runtime answers it with the already-answered 404, which resolves.
+    actionAnswers['POST /kortix/runtime/permissions/p1/reply'] = refuse(404, 'no such permission request');
     seedPermission('p1');
     await expect(answerPermission('p1', 'always')).resolves.toBeUndefined();
-
-    expect(calls).toBe(2);
+    expect(actionCalls).toHaveLength(2);
     expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
   });
 });

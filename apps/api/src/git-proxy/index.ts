@@ -296,8 +296,8 @@ async function forwardAuthorized(
     void (async () => {
       try {
         const gitProject = await loadGitProject({ row: auth.project });
-        // Warm the fresh-session git hint (base tip + scaffold delta + OpenCode
-        // config dir) right after the push that moved the tip, so the next
+        // Warm the fresh-session git hint (base tip + scaffold delta) right
+        // after the push that moved the tip, so the next
         // session create finds it cached instead of losing the 2 s create-time
         // race on a cold mirror (measured on dev 2026-08-27: a 200 KB delta's
         // first session fell back to a 6 s proxied fetch; the second, with the

@@ -5,6 +5,7 @@ import { cn } from '../../lib/utils';
 import Loading from '../../primitives/loading';
 import { SESSION_NOTICE } from '@kortix/sdk';
 import { MoonIcon } from '@phosphor-icons/react';
+import type { ReactNode } from 'react';
 
 import { COMPOSER_INPUT_SLOT_CLASS, type SessionChatInputProps } from './composer';
 import type { ComposerQuote } from './composer-logic';
@@ -32,6 +33,8 @@ export interface ComposerAboveCardDerived {
   quotes: ComposerQuote[];
   quoteListLabels: { count: string; expand: string; collapse: string; remove: string };
   handleRemoveQuote: (id: string) => void;
+  /** Inside a space: the ask about an agent the last message named from outside it (`menus/space-mentions.ts`). */
+  spaceAsk?: ReactNode;
 }
 
 export type ComposerAboveCardProps = SessionChatInputProps & ComposerAboveCardDerived;
@@ -41,6 +44,7 @@ export function ComposerAboveCard({
   quotes,
   quoteListLabels,
   handleRemoveQuote,
+  spaceAsk = null,
   aboveSlot,
   inputSlot,
   notice = null,
@@ -89,6 +93,8 @@ export function ComposerAboveCard({
         onRemove={handleRemoveQuote}
       />
     </div>
+
+    {spaceAsk ? <div className="mb-2 w-full">{spaceAsk}</div> : null}
 
     {/* The queued messages: their own card, under the reply quotes. */}
     {aboveSlot && <div className="mb-2 w-full empty:hidden">{aboveSlot}</div>}

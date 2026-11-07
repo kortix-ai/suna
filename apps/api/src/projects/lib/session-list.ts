@@ -90,7 +90,7 @@ export interface SessionListFilter {
   q?: string | null;
   /** The session carries every one of these labels (exact match). */
   labels?: string[] | null;
-  /** Only sessions filed into this space (`project_channels`). */
+  /** Only sessions filed into this space (`chat`). */
   spaceId?: string | null;
   /** Only sessions filed into this group, or (`'none'`) in no group (`session_groups`). */
   group?: string | 'none' | null;
@@ -129,7 +129,7 @@ function agentSearchKey(value: string): string {
 /** Title, first prompt, trigger slug / channel (initiator_id), agent, source,
  *  the owner's email or name, or a session-id prefix (the branch is the session id). The
  *  title is what `serializeSession` resolves: custom_name, the auto name, or a
- *  runtime conversation title in the opencode_sessions snapshot. The owner is
+ *  runtime conversation title in the runtime_sessions snapshot. The owner is
  *  already on every row the viewer may see (`owner_email`/`owner_name`). */
 function searchMatchSql(t: SessionTable, q: string): SQL {
   const pattern = likePattern(q);
@@ -158,8 +158,8 @@ function searchMatchSql(t: SessionTable, q: string): SQL {
     or exists (select 1 from jsonb_array_elements_text(${t.labels}) as l(label) where l.label ilike ${pattern})
     or exists (
       select 1 from jsonb_array_elements(
-        case when jsonb_typeof(${t.metadata}->'opencode_sessions') = 'array'
-             then ${t.metadata}->'opencode_sessions' else '[]'::jsonb end
+        case when jsonb_typeof(${t.metadata}->'runtime_sessions') = 'array'
+             then ${t.metadata}->'runtime_sessions' else '[]'::jsonb end
       ) as oc(entry)
       where oc.entry->>'title' ilike ${pattern}
     )
@@ -347,7 +347,7 @@ export function sessionRowMatchesSearch(row: ProjectSessionRow, q: string, owner
   if (ownerText.some(hit)) return true;
   if (row.sessionId.toLowerCase().startsWith(needle)) return true;
   if ((row.labels ?? []).some(hit)) return true;
-  const snapshot = Array.isArray(meta.opencode_sessions) ? meta.opencode_sessions : [];
+  const snapshot = Array.isArray(meta.runtime_sessions) ? meta.runtime_sessions : [];
   return snapshot.some((entry) => hit((entry as Record<string, unknown> | null)?.title));
 }
 

@@ -2,7 +2,7 @@
  * A wake timeout must not park a session whose repair is still running.
  *
  * `staleRuntimeReadyReason` learned this in #7954. It was only half the rule:
- * that guard sits on the OpenCode readiness clock, and a session open has a
+ * that guard sits on the runtime readiness clock, and a session open has a
  * SECOND clock that parks — the runtime wake fence, budgeted at
  * `RUNTIME_WAKE_GRACE_MS` (90s). A legacy-runtime repair is budgeted at
  * `LEGACY_BOOTSTRAP_CONVERGE_BUDGET_MS` (8 min). So the wake fence parks every

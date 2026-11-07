@@ -13,6 +13,7 @@ import {
   getOrCreateProjectDm,
   getProjectSpaceGeneralNotice,
   getPrivateChannelsAvailable,
+  getProjectSpaceProactive,
   markChannelsOnboarding,
   listProjectSpaceApps,
   listProjectSpaceLinks,
@@ -20,9 +21,13 @@ import {
   listProjectSpaces,
   listPrivateChannelsNotIn,
   removeProjectSpaceLink,
+  setProjectSpaceProactive,
+  setProjectSpaceTabs,
   updateProjectSpace,
   type AddProjectSpaceLinkInput,
   type ChannelsOnboardingMark,
+  type ProjectSpaceProactiveInput,
+  type ProjectSpaceTab,
   type UpdateProjectSpaceInput,
 } from '../core/rest/projects-client/spaces';
 import { contract } from './query-contracts';
@@ -31,7 +36,7 @@ import { qk } from './query-keys';
 /**
  * The project's channels and the caller's DMs. Members create and archive
  * channels, so this is the `inventory` tier. Pass `enabled: false` while the
- * project's `project_channels` flag is off: the route answers 403 then.
+ * project's `chat` flag is off: the route answers 403 then.
  */
 export function useProjectSpaces(projectId: string | null | undefined, options?: { enabled?: boolean }) {
   return useQuery({
@@ -110,6 +115,42 @@ export function useUpdateProjectSpace(projectId: string) {
     mutationFn: (args: { spaceId: string; input: UpdateProjectSpaceInput }) =>
       updateProjectSpace(projectId, args.spaceId, args.input),
     onSuccess: invalidate,
+  });
+}
+
+/**
+ * Replace a space's tabs after Chat (`setProjectSpaceTabs`): a channel's
+ * editor or a DM's owner, else 403 `forbidden`. Resolves after the spaces
+ * list refetched, so the tab row shows the new list.
+ */
+export function useSetProjectSpaceTabs(projectId: string) {
+  const invalidate = useInvalidateSpaces(projectId);
+  return useMutation({
+    mutationFn: (args: { spaceId: string; tabs: ProjectSpaceTab[] }) => setProjectSpaceTabs(projectId, args.spaceId, args.tabs),
+    onSuccess: invalidate,
+  });
+}
+
+/**
+ * A space's Proactive settings (flag `spaces_proactive`): whether its watcher
+ * is on, and its daily brief. Pass `enabled: false` while the flag is off:
+ * the route answers 403 then. `inventory` tier.
+ */
+export function useProjectSpaceProactive(projectId: string | null | undefined, spaceId: string | null | undefined, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: qk.project.spaceProactive(projectId ?? '', spaceId ?? ''),
+    queryFn: () => getProjectSpaceProactive(projectId as string, spaceId as string),
+    enabled: !!projectId && !!spaceId && (options?.enabled ?? true),
+    ...contract('inventory'),
+  });
+}
+
+/** Change a space's Proactive settings (see `setProjectSpaceProactive`); resolves after the settings refetched. */
+export function useSetProjectSpaceProactive(projectId: string, spaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ProjectSpaceProactiveInput) => setProjectSpaceProactive(projectId, spaceId, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.spaceProactive(projectId, spaceId) }),
   });
 }
 
@@ -219,7 +260,7 @@ export function useLeaveProjectSpace(projectId: string, spaceId: string) {
 
 /**
  * The caller's Channels onboarding state: `intro_seen` and the `#general`
- * "Get started" rows. Pass `enabled: false` while `project_channels` is off.
+ * "Get started" rows. Pass `enabled: false` while `chat` is off.
  */
 export function useChannelsOnboarding(projectId: Id, options?: { enabled?: boolean }) {
   return useQuery({

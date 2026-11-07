@@ -562,6 +562,10 @@
                 "type": "string",
                 "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
               },
+              "expect_event_within": {
+                "type": "string",
+                "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+              },
               "max_runs_per_hour": {
                 "type": "integer",
                 "minimum": 1
@@ -922,6 +926,27 @@
                   "properties": {
                     "type": {
                       "enum": [
+                        "cron",
+                        "webhook",
+                        "event"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "expect_event_within": false
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "enum": [
                         "webhook",
                         "event",
                         "app"
@@ -1108,6 +1133,11 @@
                 "type": "string",
                 "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
                 "description": "Schedules only, `60s` or more. A missed fire later than this does not run."
+              },
+              "expect_event_within": {
+                "type": "string",
+                "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
+                "description": "App events only, `5m` or more. No event for this long tells the trigger's watchers once; the next event clears it."
               },
               "overlap": {
                 "type": "string",
@@ -2851,7 +2881,7 @@
         "object",
         "null"
       ],
-      "description": "Spaces: channels with a room (always the first tab) and configured tabs. Agents join one with `agents.<name>.space`.",
+      "description": "Spaces: channels with configured tabs. Agents join one with `agents.<name>.space`.",
       "propertyNames": {
         "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
       },
@@ -2883,7 +2913,7 @@
           },
           "tabs": {
             "type": "array",
-            "description": "The tabs after the room, in order. Absent: the default set.",
+            "description": "The tabs, in order. Absent: the default set.",
             "items": {
               "type": "object",
               "required": [
@@ -2950,7 +2980,9 @@
                         "type": "string"
                       },
                       "room": {
-                        "type": "string"
+                        "type": "string",
+                        "deprecated": true,
+                        "description": "Retired with Rooms (2026-11); ignored."
                       },
                       "path": {
                         "type": "string"
@@ -3124,10 +3156,18 @@
             "oneOf": [
               {
                 "type": "string",
-                "enum": [
-                  "ask",
-                  "allow",
-                  "deny"
+                "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                "anyOf": [
+                  {
+                    "enum": [
+                      "ask",
+                      "allow",
+                      "deny"
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                  }
                 ]
               },
               {
@@ -3135,42 +3175,82 @@
                 "properties": {
                   "todowrite": {
                     "type": "string",
-                    "enum": [
-                      "ask",
-                      "allow",
-                      "deny"
+                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "ask",
+                          "allow",
+                          "deny"
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                      }
                     ]
                   },
                   "question": {
                     "type": "string",
-                    "enum": [
-                      "ask",
-                      "allow",
-                      "deny"
+                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "ask",
+                          "allow",
+                          "deny"
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                      }
                     ]
                   },
                   "webfetch": {
                     "type": "string",
-                    "enum": [
-                      "ask",
-                      "allow",
-                      "deny"
+                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "ask",
+                          "allow",
+                          "deny"
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                      }
                     ]
                   },
                   "websearch": {
                     "type": "string",
-                    "enum": [
-                      "ask",
-                      "allow",
-                      "deny"
+                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "ask",
+                          "allow",
+                          "deny"
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                      }
                     ]
                   },
                   "doom_loop": {
                     "type": "string",
-                    "enum": [
-                      "ask",
-                      "allow",
-                      "deny"
+                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "ask",
+                          "allow",
+                          "deny"
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                      }
                     ]
                   },
                   "skill": false,
@@ -3180,20 +3260,36 @@
                   "oneOf": [
                     {
                       "type": "string",
-                      "enum": [
-                        "ask",
-                        "allow",
-                        "deny"
+                      "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "ask",
+                            "allow",
+                            "deny"
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                        }
                       ]
                     },
                     {
                       "type": "object",
                       "additionalProperties": {
                         "type": "string",
-                        "enum": [
-                          "ask",
-                          "allow",
-                          "deny"
+                        "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "ask",
+                              "allow",
+                              "deny"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                          }
                         ]
                       }
                     }
@@ -3202,7 +3298,7 @@
               }
             ],
             "default": "allow",
-            "description": "Which tool calls run, ask a person, or never run. `skill` and `task` belong to `skills` and `subagents`."
+            "description": "Which tool calls run, ask a person, or never run: `allow`, `ask` or `deny` (`\"*\"` and `all` also mean `allow`). `skill` and `task` belong to `skills` and `subagents`."
           },
           "prompt": {
             "type": "string",
@@ -3239,14 +3335,22 @@
             "description": "What happens when the session's context fills. `record`: the agent continues at once in a fresh context and searches the session's full record, word for word, when it needs a detail; nothing is summarized. `summary`: a model call writes a summary of the conversation and the agent continues from it."
           },
           "tools": {
-            "default": "all",
-            "description": "The tools the agent may call: built-in tools, Kortix tools and registered tools. A list allows only those. `{ exclude: [bash] }` allows every tool but those.",
+            "default": "*",
+            "description": "The tools the agent may call: built-in tools, Kortix tools and registered tools. `\"*\"` (quoted; `all` is its alias) is every tool, `none` is none. A list allows only those. `{ exclude: [bash] }` allows every tool but those.",
             "oneOf": [
               {
                 "type": "string",
-                "enum": [
-                  "all",
-                  "none"
+                "anyOf": [
+                  {
+                    "enum": [
+                      "*",
+                      "all",
+                      "none"
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                  }
                 ]
               },
               {
@@ -3275,10 +3379,10 @@
             ]
           },
           "skills": {
-            "description": "Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. \"all\", \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
+            "description": "Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. \"*\" (every name; alias `all`), \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
             "oneOf": [
               {
-                "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
+                "description": "\"*\" (every name; `all` is its alias), \"none\", or a list of names. A list that holds \"*\" is every name.",
                 "oneOf": [
                   {
                     "type": "array",
@@ -3292,14 +3396,14 @@
                     "anyOf": [
                       {
                         "enum": [
-                          "all",
                           "*",
+                          "all",
                           "none",
                           ""
                         ]
                       },
                       {
-                        "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                       },
                       {
                         "pattern": "^\\s*$(?![\\s\\S])"
@@ -3341,14 +3445,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3373,14 +3477,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3391,10 +3495,10 @@
             "default": "none"
           },
           "extensions": {
-            "description": "Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. \"all\", \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
+            "description": "Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. \"*\" (every name; alias `all`), \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
             "oneOf": [
               {
-                "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
+                "description": "\"*\" (every name; `all` is its alias), \"none\", or a list of names. A list that holds \"*\" is every name.",
                 "oneOf": [
                   {
                     "type": "array",
@@ -3408,14 +3512,14 @@
                     "anyOf": [
                       {
                         "enum": [
-                          "all",
                           "*",
+                          "all",
                           "none",
                           ""
                         ]
                       },
                       {
-                        "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                       },
                       {
                         "pattern": "^\\s*$(?![\\s\\S])"
@@ -3457,14 +3561,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3505,14 +3609,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3537,14 +3641,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3610,8 +3714,6 @@
                     "project.review.read",
                     "project.review.submit",
                     "project.review.act",
-                    "project.room.read",
-                    "project.room.write",
                     "project.artifact.read",
                     "project.artifact.comment",
                     "project.artifact.write",
@@ -3622,6 +3724,8 @@
                     "project.cr.merge",
                     "project.customize.read",
                     "project.customize.write",
+                    "project.room.read",
+                    "project.room.write",
                     "*"
                   ]
                 }
@@ -3631,14 +3735,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3726,14 +3830,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3799,8 +3903,6 @@
                     "project.review.read",
                     "project.review.submit",
                     "project.review.act",
-                    "project.room.read",
-                    "project.room.write",
                     "project.artifact.read",
                     "project.artifact.comment",
                     "project.artifact.write",
@@ -3811,6 +3913,8 @@
                     "project.cr.merge",
                     "project.customize.read",
                     "project.customize.write",
+                    "project.room.read",
+                    "project.room.write",
                     "*"
                   ]
                 }
@@ -3820,14 +3924,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"

@@ -8,7 +8,7 @@
  * questions, subagents, the transcript), so a Claude reply looks like any model's reply and
  * the session can switch models freely.
  */
-import type { Api, AssistantMessageEventStream, Model, Provider, SimpleStreamOptions, StreamOptions, TranscriptContext } from '@earendil-works/pi-ai'
+import type { Api, AssistantMessageEvent, AssistantMessageEventStream, Model, Provider, SimpleStreamOptions, StreamOptions, TranscriptContext } from '@earendil-works/pi-ai'
 import { createAssistantMessageEventStream, createProvider, getCurrentSystemPrompt, getCurrentTools } from '@earendil-works/pi-ai'
 import { CLAUDE_AGENT_MODELS, CLAUDE_AGENT_PROVIDER_ID, CLAUDE_AGENT_PROVIDER_NAME, type ClaudeAgentModel } from '@kortix/api-contract/claude-agent'
 import { logger } from '@/lib/log/logger'
@@ -60,6 +60,35 @@ export interface ClaudeProviderOptions {
   readonly stateDir: string
   readonly cwd: string
   readonly env?: NodeJS.ProcessEnv
+  /**
+   * Runs a step through the LLM gateway under the same `claude-agent/<id>` ref. The gateway
+   * cannot serve the ref itself: it answers with the project's fallback model (Routing).
+   */
+  readonly gatewayStep?: (model: Model<Api>, context: TranscriptContext, options: StreamOptions) => AssistantMessageEventStream
+}
+
+/**
+ * Relays the fallback's step from `source` into `out`. False, with nothing relayed, when it failed
+ * before any output: no fallback served it (the project has no Routing chain, or every link
+ * failed), so the step keeps Claude's own limit message and reset time.
+ */
+export async function relayFallbackStep(source: AssistantMessageEventStream, out: AssistantMessageEventStream): Promise<boolean> {
+  const held: AssistantMessageEvent[] = []
+  let flowing = false
+  for await (const event of source) {
+    if (flowing) {
+      out.push(event)
+      continue
+    }
+    if (event.type === 'error') return false
+    held.push(event)
+    if (event.type === 'start') continue
+    flowing = true
+    for (const queued of held) out.push(queued)
+  }
+  if (!flowing) return false
+  out.end(await source.result())
+  return true
 }
 
 function ensureSessions(opts: ClaudeProviderOptions): ClaudeSessions {
@@ -98,14 +127,33 @@ function stream(opts: ClaudeProviderOptions, model: Model<Api>, context: Transcr
         signal: options.signal,
       })
       if (outcome.kind === 'tools') reply.finishTools()
-      else if (outcome.kind === 'result') reply.finishResult(outcome.result)
+      else if (outcome.kind === 'result' && opts.gatewayStep && reply.limitedBeforeOutput(outcome.result)) {
+        // Every Claude account is at its limit: the project's fallback model takes the step.
+        logger.warn('[claude] every Claude account is at its usage limit; the step goes to the gateway fallback', { model: model.id })
+        if (await relayFallbackStep(opts.gatewayStep(model, context, options), out)) return
+        if (options.signal?.aborted) reply.fail(new Error('Request was aborted'), 'aborted')
+        else reply.finishResult(outcome.result)
+      } else if (outcome.kind === 'result') reply.finishResult(outcome.result)
       else reply.fail(new Error('Request was aborted'), 'aborted')
     } catch (err) {
       if (options.signal?.aborted) reply.fail(new Error('Request was aborted'), 'aborted')
-      else reply.fail(err)
+      else reply.fail(processDied(err) ?? err)
     }
   })()
   return out
+}
+
+/**
+ * The SDK's error for a `claude` process that died (`Claude Code process terminated by signal
+ * SIGKILL`, `... exited with code 137`) says nothing a person can act on. The session itself is
+ * intact: the next message resumes it in a new process.
+ */
+export function processDied(err: unknown): Error | undefined {
+  const message = err instanceof Error ? err.message : String(err)
+  const died = /Claude Code process (terminated by signal (SIG[A-Z0-9]+)|exited with code (\d+))/.exec(message)
+  if (!died) return undefined
+  const why = died[2] === 'SIGKILL' || died[3] === '137' ? ' (it was killed, most likely because the sandbox ran out of memory)' : ''
+  return new Error(`Claude Code stopped unexpectedly${why}. Your session is intact: send a message to continue.`, { cause: err })
 }
 
 /** The pi-ai provider. Claude Code owns the login, so pi resolves no credential for it. */

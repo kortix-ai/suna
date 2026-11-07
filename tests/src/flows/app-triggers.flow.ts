@@ -5,7 +5,13 @@
 import { flow } from "../core/flow";
 import { withDb } from "../fixtures/chat";
 
-type Listed = { triggers: Array<{ slug: string; type: string; app?: string | null }> };
+type Listed = {
+  triggers: Array<{ slug: string; type: string; app?: string | null; expect_event_within_seconds?: number | null; last_event_at?: string | null; silent_since?: string | null }>;
+};
+type EventLog = {
+  events: Array<{ name: string | null; id: string | null; test: boolean; trigger: string | null; status: string; reason: string | null; data: Record<string, unknown> | null }>;
+  next_cursor: string | null;
+};
 
 flow(
   "TRG-40",
@@ -19,6 +25,8 @@ flow(
       "PATCH /v1/projects/:projectId/triggers/:slug",
       "DELETE /v1/projects/:projectId/triggers/:slug",
       "GET /v1/projects/:projectId/apps/:appId/events/credentials",
+      "GET /v1/projects/:projectId/apps/:appId/events",
+      "POST /v1/projects/:projectId/apps/:appId/events/test",
       "POST /v1/projects/:projectId/apps/:appId/events",
       "POST /v1/projects/:projectId/apps/:appId/runs",
       "DELETE /v1/projects/:projectId/apps/:appId/runs/:runId",
@@ -53,6 +61,17 @@ flow(
       const listed = (await owner.get("/v1/projects/:projectId/triggers", { params })).status(200).json<Listed>();
       const trigger = listed.triggers.find((t) => t.slug === slug);
       if (trigger?.type !== "app" || trigger.app !== appSlug) throw new Error(`listing: ${JSON.stringify(trigger)}`);
+      if (trigger.last_event_at !== null || trigger.silent_since !== null) throw new Error(`no event yet: ${JSON.stringify(trigger)}`);
+    });
+
+    await ctx.step("expect_event_within: 10m on the app trigger is listed as 600 s; 1m, a cron trigger and a bad value are 400", async () => {
+      (await owner.patch("/v1/projects/:projectId/triggers/:slug", { expect_event_within: "10m" }, { params: { ...params, slug } })).status(200);
+      const listed = (await owner.get("/v1/projects/:projectId/triggers", { params })).status(200).json<Listed>();
+      const trigger = listed.triggers.find((t) => t.slug === slug);
+      if (trigger?.expect_event_within_seconds !== 600) throw new Error(`expect_event_within: ${JSON.stringify(trigger)}`);
+      (await owner.patch("/v1/projects/:projectId/triggers/:slug", { expect_event_within: "1m" }, { params: { ...params, slug } })).status(400);
+      (await owner.patch("/v1/projects/:projectId/triggers/:slug", { expect_event_within: "soon" }, { params: { ...params, slug } })).status(400);
+      (await owner.post("/v1/projects/:projectId/triggers", { name: "c", type: "cron", cron: "0 0 9 * * *", prompt_template: "go", expect_event_within: "1h" }, { params })).status(400);
     });
 
     await ctx.step("the owner reads the App's event credentials; ANON gets 401", async () => {
@@ -74,10 +93,44 @@ flow(
       (await emit({ events: Array.from({ length: 51 }, () => ({ name: "x" })) })).status(400);
     });
 
-    await ctx.step("a valid event → 202 triggers 1 accepted 1; the same id again is deduped", async () => {
+    await ctx.step("a valid event → 202 triggers 1 accepted 1; the same id again is deduped; the listing has last_event_at", async () => {
       const event = { name: "reply.received", id: "msg-1", data: { subject: "Term sheet" } };
+      const before = Date.now();
       (await emit(event)).status(202).body().has("$.triggers", 1).has("$.accepted", 1);
       (await emit({ events: [event] })).status(202).body().has("$.deduped", 1).has("$.accepted", 0);
+      const listed = (await owner.get("/v1/projects/:projectId/triggers", { params })).status(200).json<Listed>();
+      const trigger = listed.triggers.find((t) => t.slug === slug);
+      const heard = Date.parse(trigger?.last_event_at ?? "");
+      if (!(heard >= before - 5_000) || trigger?.silent_since !== null) throw new Error(`last_event_at: ${JSON.stringify(trigger)}`);
+    });
+
+    await ctx.step("the App's event log lists the event under its trigger, pending; a bad limit or cursor is 400; ANON gets 401", async () => {
+      const log = (query: Record<string, string> = {}) => owner.get(eventsPath, { params: { ...params, appId }, query });
+      const listed = (await log()).status(200).json<EventLog>();
+      const [entry] = listed.events;
+      if (listed.events.length !== 1 || entry?.name !== "reply.received" || entry.id !== "msg-1" || entry.trigger !== slug || entry.status !== "pending" || entry.data?.subject !== "Term sheet") {
+        throw new Error(`event log: ${JSON.stringify(listed)}`);
+      }
+      (await log({ limit: "0" })).status(400);
+      (await log({ cursor: "not-a-cursor" })).status(400);
+      (await anon.get(eventsPath, { params: { ...params, appId } })).status(401);
+    });
+
+    await ctx.step("the owner sends a test event: 202 with a test- id, listed as a test under the trigger; the real id stays unspent; ANON 401", async () => {
+      const testPath = "/v1/projects/:projectId/apps/:appId/events/test";
+      const sent = (await owner.post(testPath, { name: "reply.received", id: "msg-5", data: { subject: "Wiring check" } }, { params: { ...params, appId } })).status(202);
+      sent.body().has("$.triggers", 1).has("$.accepted", 1);
+      const ids = sent.json<{ ids: string[] }>().ids;
+      if (ids.length !== 1 || ids[0] !== "test-msg-5") throw new Error(`test ids: ${sent.text()}`);
+      const listed = (await owner.get(eventsPath, { params: { ...params, appId }, query: { id: "test-msg-5" } })).status(200).json<EventLog>();
+      const [entry] = listed.events;
+      if (listed.events.length !== 1 || entry?.test !== true || entry.trigger !== slug || entry.status !== "pending" || entry.data?.subject !== "Wiring check") {
+        throw new Error(`test event: ${JSON.stringify(listed)}`);
+      }
+      // The App's own msg-5 is not deduplicated against the test.
+      (await emit({ name: "reply.received", id: "msg-5" })).status(202).body().has("$.accepted", 1).has("$.deduped", 0);
+      (await owner.post(testPath, { name: "bad name!" }, { params: { ...params, appId } })).status(400);
+      (await anon.post(testPath, { name: "reply.received" }, { params: { ...params, appId } })).status(401);
     });
 
     await ctx.step("the event waits in the trigger's event log for the drain: one pending row per trigger", async () => {
@@ -86,7 +139,7 @@ flow(
       if (!ctx.env.capabilities.database) return;
       const rows = await withDb(ctx, (db) =>
         db.query(
-          "SELECT slug, status, kind, line FROM kortix.project_monitor_events WHERE project_id = $1 AND box_epoch = $2",
+          "SELECT slug, status, kind, line FROM kortix.project_monitor_events WHERE project_id = $1 AND box_epoch = $2 AND line->>'id' = 'msg-1'",
           [project.id, `app:${appId}`],
         ),
       );
@@ -111,9 +164,15 @@ flow(
       (await cancel()).status(404);
     });
 
-    await ctx.step("a disabled app trigger matches no event: triggers 0", async () => {
+    await ctx.step("a disabled app trigger matches no event: triggers 0, unmatched 1, and the log keeps it with the reason", async () => {
       (await owner.patch("/v1/projects/:projectId/triggers/:slug", { enabled: false }, { params: { ...params, slug } })).status(200);
-      (await emit({ name: "reply.received", id: "msg-2" })).status(202).body().has("$.triggers", 0);
+      const reason = `every trigger on App "${appSlug}" is disabled (${slug}): enable one to run it`;
+      (await emit({ name: "reply.received", id: "msg-2" })).status(202).body().has("$.triggers", 0).has("$.unmatched", 1).has("$.hint", reason);
+      const unmatched = (await owner.get(eventsPath, { params: { ...params, appId }, query: { status: "unmatched" } })).status(200).json<EventLog>();
+      const [entry] = unmatched.events;
+      if (unmatched.events.length !== 1 || entry?.id !== "msg-2" || entry.trigger !== null || entry.reason !== reason) {
+        throw new Error(`unmatched: ${JSON.stringify(unmatched)}`);
+      }
     });
 
     await ctx.step("cleanup: delete the trigger and the App", async () => {

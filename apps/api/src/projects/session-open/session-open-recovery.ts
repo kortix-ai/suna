@@ -53,7 +53,7 @@ export async function openRemovedBox(
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: null,
-        opencode_session_id: null,
+        runtime_session_id: null,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason: 'runtime_removed_checking',
       };
@@ -91,7 +91,7 @@ export async function openRemovedBox(
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: serializeSandboxRow(row),
-        opencode_session_id: visible.row.runtimeSessionId,
+        runtime_session_id: visible.row.runtimeSessionId,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason: 'runtime_recovery_in_progress',
       };
@@ -109,7 +109,7 @@ export async function openRemovedBox(
           agent_name: visible.row.agentName ?? 'default',
           retriable: false,
           sandbox: null,
-          opencode_session_id: null,
+          runtime_session_id: null,
           reason: 'runtime_recovery_cancelled',
         };
       }
@@ -118,7 +118,7 @@ export async function openRemovedBox(
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: serializeSandboxRow(recoveringRow),
-        opencode_session_id: visible.row.runtimeSessionId,
+        runtime_session_id: visible.row.runtimeSessionId,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason:
           recovery === 'running' ? 'runtime_recovered_in_place' : 'runtime_restoring_in_place',
@@ -162,7 +162,7 @@ export async function openNotRunningBox(
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: serializeSandboxRow(row),
-        opencode_session_id: visible.row.runtimeSessionId,
+        runtime_session_id: visible.row.runtimeSessionId,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason: 'runtime_restoring_in_place',
       };
@@ -260,7 +260,7 @@ export async function openNotRunningBox(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
+      runtime_session_id: null,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason:
         providerStatus !== 'stopped'
@@ -308,7 +308,7 @@ export async function syncRecoveredRunningRow(
         agent_name: visible.row.agentName ?? 'default',
         retriable: false,
         sandbox: null,
-        opencode_session_id: null,
+        runtime_session_id: null,
         reason: 'runtime_recovery_cancelled',
       };
     }

@@ -84,7 +84,7 @@ export async function seedSessionTranscript(
     /**
      * The saved transcript to write, in place of the default prompt and reply.
      * A message is stored under its own `info.sessionID` when it names one, so
-     * a sub-agent's messages land in their own OpenCode session, as a capture
+     * a sub-agent's messages land in their own runtime session, as a capture
      * stores them. `defaults` is the default prompt and reply.
      */
     messages?: (root: string, defaults: SavedMessage[]) => SavedMessage[];
@@ -106,7 +106,7 @@ export async function seedSessionTranscript(
   await db.connect();
   try {
     await db.query(
-      "UPDATE kortix.project_sessions SET status = 'stopped', opencode_session_id = $2, sandbox_id = $1, sandbox_url = 'http://127.0.0.1:1' WHERE session_id = $1",
+      "UPDATE kortix.project_sessions SET status = 'stopped', runtime_session_id = $2, sandbox_id = $1, sandbox_url = 'http://127.0.0.1:1' WHERE session_id = $1",
       [input.sessionId, root],
     );
     if (input.bearer) await journalSessionLog(env, { ...input, bearer: input.bearer, root, messages });

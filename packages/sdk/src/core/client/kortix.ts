@@ -11,7 +11,6 @@ import { bindProjectAccessSecurity } from './project-access-security';
 import { projectConnections } from './project-connections';
 import { connectorDataPlane, connectorHandle } from './project-connectors';
 import { bindProjectCore } from './project-core';
-import { bindProjectArtifacts } from './project-artifacts';
 import { bindProjectOperations } from './project-operations';
 import { bindProjectPlatformResources } from './project-platform-resources';
 import { bindProjectPlatformSecurity } from './project-platform-security';
@@ -87,7 +86,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     const connections = projectConnections(projectId);
     return {
       ...bindProjectCore(projectId),
-      ...bindProjectArtifacts(projectId),
       ...bindProjectAccessResources(projectId),
       ...bindProjectAccessSecurity(projectId),
       ...bindProjectOperations(projectId, connections),

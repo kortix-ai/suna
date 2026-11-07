@@ -2,7 +2,6 @@
 import { connectorConnections, connectors, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { notificationsEnabled } from '../../notifications/enabled';
 import {
   fireGitTrigger,
   markGitTriggerAttemptFailed,
@@ -160,9 +159,6 @@ async function deliverToRow(
   if (!triggerFilterMatches(spec, payload)) return 'skipped';
 
   const idempotencyKey = eventIdempotencyKey(row.projectId, row.slug, delivery.eventId);
-  // Alerts need the project's notification_center flag; off, the failure
-  // count is not read either.
-  const alertsOn = notificationsEnabled(project.metadata);
   try {
     // A provider retry of an event whose run dead-lettered or lost its session
     // runs again instead of replaying that outcome (webhook-delivery.ts).
@@ -189,10 +185,9 @@ async function deliverToRow(
       // The provider retries on our 500. Only a failure no retry can fix, or
       // the third failed attempt of one event, alerts (KRTX-1742). A create
       // that went back to the queue alerts from the drain if it dead-letters.
-      const alerts =
-        alertsOn && !result.requeued && (!result.retryable || (await eventFailureAlerts(row.projectId, idempotencyKey)));
+      const alerts = !result.requeued && (!result.retryable || (await eventFailureAlerts(row.projectId, idempotencyKey)));
       if (alerts) {
-        await raiseTriggerAlert({ projectId: row.projectId, accountId: project.accountId, slug: row.slug, source: 'fire', error, notificationCenter: true });
+        await raiseTriggerAlert({ projectId: row.projectId, accountId: project.accountId, slug: row.slug, source: 'fire', error });
       }
       return 'failed';
     }
@@ -208,8 +203,8 @@ async function deliverToRow(
     await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'event', spec, payload, status: 'failed', error: message, now: new Date() });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, new Date(), message).catch(() => {});
     // The provider retries on our 500: the same rule as a retryable failure.
-    if (alertsOn && (await eventFailureAlerts(row.projectId, idempotencyKey))) {
-      await raiseTriggerAlert({ projectId: row.projectId, accountId: project.accountId, slug: row.slug, source: 'fire', error: message, notificationCenter: true });
+    if (await eventFailureAlerts(row.projectId, idempotencyKey)) {
+      await raiseTriggerAlert({ projectId: row.projectId, accountId: project.accountId, slug: row.slug, source: 'fire', error: message });
     }
     return 'failed';
   }

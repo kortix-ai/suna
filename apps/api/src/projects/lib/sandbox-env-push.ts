@@ -33,10 +33,10 @@ export const FANOUT_CONCURRENCY = 6;
  *
  * T3 (2026-09-14, #7016): every `/prompt_async|/message|/command` used to
  * post `refreshModels: true` unconditionally. The daemon's `/kortix/env`
- * already gates the actual reload on a value DELTA (`routes/env.ts`'s
- * `result.changed || opencodeEnvChanged`), so a byte-identical resend never
- * disposes/respawns OpenCode by itself — but it still paid for the round trip
- * on every turn.
+ * already gates the actual reload on a value DELTA (pi's
+ * `result.changed || runtimeEnvChanged` in kortixd `harness/pi/control.ts`),
+ * so a byte-identical resend never reloads the runtime by itself — but it
+ * still paid for the round trip on every turn.
  *
  * INCIDENT (2026-09-27): this memo is in-PROCESS, and the API runs at more
  * than one replica (`desired_count = 2` on dev; see
@@ -44,7 +44,8 @@ export const FANOUT_CONCURRENCY = 6;
  * requests, so a session's consecutive turns routinely land on DIFFERENT
  * replicas — each one's memo is cold for a sandbox it has never personally
  * pushed to, so it re-posted `/kortix/env` and re-triggered a full OpenCode
- * respawn almost every turn instead of only the first. Measured: `send →
+ * respawn (the runtime of that date) almost every turn instead of only the
+ * first. Measured: `send →
  * model starts` at 4.9s / 2.5s / 7.0s across three back-to-back trivial
  * prompts in ONE session, with the daemon logging a full
  * `[env] project env applied` 3.3–5.3s after every send.
@@ -218,41 +219,42 @@ export function __resetPromptEnvPrefetchForTests(): void {
 
 /**
  * Digest of EVERY value `syncSandboxEnvForPrompt` sends that can move the
- * daemon's `result.changed || opencodeEnvChanged` gate (`routes/env.ts:196`):
+ * daemon's `result.changed || runtimeEnvChanged` gate (kortixd
+ * `harness/pi/control.ts`):
  *
  *   - `snapshot.revision` — a sha256 of the full granted project-secrets env
  *     (`projectSecretsRevision`), so any secret add/remove/rotation changes it.
  *     This is NOT limited to "model-relevant" secrets on purpose: a project
- *     secret delta is the daemon's ONLY signal to respawn opencode so its
- *     process env picks the new value up (see the comment on
+ *     secret delta is the daemon's ONLY signal to reload the runtime so its
+ *     env picks the new value up (see the comment on
  *     `pushSessionScopeToSandbox`), and the per-turn sync is sometimes the
  *     only path that ever re-delivers it (see `runPrePromptEnvSync`'s comment
  *     on `/command` self-heal). Narrowing this to a "model tokens" subset
  *     would silently stop propagating an unrelated secret rotation.
  *   - `snapshot.capabilitiesJson` — pushed as `KORTIX_SECRET_CAPABILITIES`,
- *     which is on the daemon's `RESPAWN_REQUIRED_ENV_NAMES` list.
+ *     which is on pi's `RUNTIME_ENV_NAMES` list.
  *   - the LLM gateway base URL.
- *   - `args.opencodeEnv` — an explicit runtime-env push a caller asked this
+ *   - `args.runtimeEnv` — an explicit runtime-env push a caller asked this
  *     same call to carry (see `continueSession`/continue-session.ts). Omitting it would silently drop that
  *     caller's request to apply its own change.
  *
- * Keys of `opencodeEnv` are sorted so caller-side object literal order never
+ * Keys of `runtimeEnv` are sorted so caller-side object literal order never
  * produces a spurious digest change.
  */
 function promptModelSignature(input: {
   revision: string;
   capabilitiesJson: string;
   llmGatewayBaseUrl: string;
-  opencodeEnv?: Record<string, string | null>;
+  runtimeEnv?: Record<string, string | null>;
 }): string {
-  const opencodeEnvEntries = Object.entries(input.opencodeEnv ?? {}).sort(([a], [b]) =>
+  const runtimeEnvEntries = Object.entries(input.runtimeEnv ?? {}).sort(([a], [b]) =>
     a.localeCompare(b),
   );
   return JSON.stringify([
     input.revision,
     input.capabilitiesJson,
     input.llmGatewayBaseUrl,
-    opencodeEnvEntries,
+    runtimeEnvEntries,
   ]);
 }
 
@@ -330,9 +332,9 @@ async function sessionTokenPerson(sessionId: string): Promise<string | null> {
  * triggering prompt, synchronously, before this function is ever reached).
  *
  * `refreshModels: true` is safe to send unconditionally here: the daemon's
- * `/kortix/env` no-ops a byte-identical push (`routes/env.ts`'s
- * `result.changed || opencodeEnvChanged` gate) — this call cannot itself
- * cause a respawn, so it can never interrupt whatever turn is running on the
+ * `/kortix/env` no-ops a byte-identical push (the
+ * `result.changed || runtimeEnvChanged` gate) — this call cannot itself
+ * cause a reload, so it can never interrupt whatever turn is running on the
  * box concurrently with it.
  */
 function scheduleBackgroundEnvRefresh(args: {
@@ -342,7 +344,7 @@ function scheduleBackgroundEnvRefresh(args: {
   providerHeaders: Record<string, string>;
   serviceKey: string;
   snapshot: SandboxEnvSnapshot;
-  opencodeEnv?: Record<string, string | null>;
+  runtimeEnv?: Record<string, string | null>;
   llmGatewayBaseUrl: string;
   signature: string;
   agent: string;
@@ -363,7 +365,7 @@ function scheduleBackgroundEnvRefresh(args: {
         serviceKey: args.serviceKey,
         snapshot: args.snapshot,
         refreshModels: true,
-        opencodeEnv: args.opencodeEnv,
+        runtimeEnv: args.runtimeEnv,
         llmGatewayBaseUrl: args.llmGatewayBaseUrl,
       });
       const appliedAtMs = Date.now();
@@ -413,8 +415,8 @@ interface PromptEnvSyncArgs {
    *  grant is resolved from THIS, not from the session's create-time agent —
    *  see resolveOwnerRawEnv. Null/'default' means "the session's own agent". */
   requestedAgent?: string | null;
-  /** Runtime env the daemon applies before the prompt reaches OpenCode. */
-  opencodeEnv?: Record<string, string | null>;
+  /** Runtime env the daemon applies before the prompt reaches the runtime. */
+  runtimeEnv?: Record<string, string | null>;
 }
 
 /**
@@ -436,7 +438,7 @@ interface PromptEnvSyncArgs {
  * Never trusted: a different agent (its grant is resolved and pushed before it
  * runs), a different person (the session token now acts for someone else: the
  * box may hold the previous person's personal secrets), a caller's explicit
- * `opencodeEnv`, a process that has not confirmed this box itself, and a memo
+ * `runtimeEnv`, a process that has not confirmed this box itself, and a memo
  * the durable record no longer confirms (the box's daemon restarted, or
  * another replica pushed a different env — `memoConfirmedBy`).
  */
@@ -445,7 +447,7 @@ export async function syncSandboxEnvForPrompt(args: PromptEnvSyncArgs): Promise<
   const known = lastPromptModelSignature.get(args.externalId);
   const candidate =
     known &&
-    !args.opencodeEnv &&
+    !args.runtimeEnv &&
     known.agent === (args.requestedAgent ?? '') &&
     Date.now() - known.pushedAtMs < ENV_SYNC_BACKGROUND_REFRESH_STALE_MS
       ? known
@@ -594,7 +596,7 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
   lap('arm');
   const llmGatewayBaseUrl = resolveLlmGatewayBaseUrl(config.KORTIX_URL);
   // Only ask the daemon to reload when something that could move ITS
-  // `result.changed || opencodeEnvChanged` gate has actually changed since the
+  // `result.changed || runtimeEnvChanged` gate has actually changed since the
   // last CONFIRMED-applied signature for this sandbox. "Confirmed" is checked
   // first against this process's own memo, then — only on a memo miss —
   // against the DURABLE per-session record any replica may have written
@@ -609,7 +611,7 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
     revision: snapshot.revision,
     capabilitiesJson: snapshot.capabilitiesJson,
     llmGatewayBaseUrl,
-    opencodeEnv: args.opencodeEnv,
+    runtimeEnv: args.runtimeEnv,
   });
   if (mode === 'check') {
     if (lastPromptModelSignature.get(args.externalId)?.signature !== signature) {
@@ -652,7 +654,7 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
         providerHeaders: args.providerHeaders,
         serviceKey: args.serviceKey,
         snapshot,
-        opencodeEnv: args.opencodeEnv,
+        runtimeEnv: args.runtimeEnv,
         llmGatewayBaseUrl,
         signature,
         agent,
@@ -668,13 +670,13 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
   // `decision.action === 'push'`: either the first prompt of a session (no
   // memo, no durable record) or a genuine change (the signature matches
   // neither) — always a real reload request.
-  const { opencodeState } = await postEnvToDaemon({
+  const { runtimeState } = await postEnvToDaemon({
     previewUrl: args.previewUrl,
     providerHeaders: args.providerHeaders,
     serviceKey: args.serviceKey,
     snapshot,
     refreshModels: true,
-    opencodeEnv: args.opencodeEnv,
+    runtimeEnv: args.runtimeEnv,
     llmGatewayBaseUrl,
   });
   // Remember only AFTER a successful push — in-process AND durably. A throw
@@ -688,18 +690,18 @@ async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check'
   // stale by observation.
   backgroundRefreshBackoffUntil.delete(args.externalId);
   lap('push');
-  // A model-affecting change just restarted opencode (state !== 'ok'). The prompt
-  // is forwarded the instant this returns, so block until opencode is serving —
-  // otherwise the forward hits the restart window and 503s "opencode not ready",
+  // A model-affecting change just restarted the runtime (state !== 'ok'). The
+  // prompt is forwarded the instant this returns, so block until the runtime
+  // is serving — otherwise the forward hits the restart window and 503s,
   // dropping the session's first prompt (the user then has to resend).
-  if (opencodeState && opencodeState !== 'ok') {
+  if (runtimeState && runtimeState !== 'ok') {
     const waitStartedAt = Date.now();
     const ready = await waitForDaemonRuntimeReady({
       previewUrl: args.previewUrl,
       providerHeaders: args.providerHeaders,
     });
     console.log(
-      `[env-sync] opencode restarted by prompt env-sync (state=${opencodeState}); ` +
+      `[env-sync] runtime restarted by prompt env-sync (state=${runtimeState}); ` +
         `waited ${Date.now() - waitStartedAt}ms for readiness before forwarding ` +
         `(ready=${ready}) session=${args.sessionId}`,
     );

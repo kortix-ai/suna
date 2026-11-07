@@ -81,11 +81,11 @@ Needs project.session.start — the same permission as sending a message.
 `;
 
 /**
- * The OpenCode wire message id for one CLI prompt.
+ * The runtime wire message id for one CLI prompt.
  *
  * The id is the prompt's POSITION in the transcript, and only a process that
  * holds the transcript can place it. The CLI does not, so it mints with the
- * SDK's `mintWireMessageId` (OpenCode's own encoding: the LOW 48 bits of
+ * SDK's `mintWireMessageId` (the wire format's encoding: the LOW 48 bits of
  * `Date.now() * 0x1000`) and every enqueue asks the server to re-place it at
  * delivery (`remint_on_delivery`). The hand-rolled mint this replaces kept the
  * HIGH bits — ~40 days ahead of every real id — and every turn sent after a CLI
@@ -99,7 +99,7 @@ export function wireMessageId(): string {
  * Put ONE prompt in a session's inbox. Resolving means the prompt is DURABLE,
  * not that the agent has seen it. The overrides carry the session's persisted
  * agent + model exactly as the dashboard captures them at submit time — a
- * prompt delivered without them lets OpenCode fall back to a model Kortix
+ * prompt delivered without them lets the runtime fall back to a model Kortix
  * sandboxes do not provision.
  */
 export async function queueSessionPrompt(

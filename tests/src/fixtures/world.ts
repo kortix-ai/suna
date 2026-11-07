@@ -395,7 +395,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         '/v1/projects/:projectId/sessions',
         {
           initial_prompt: opts?.prompt ?? 'noop',
-          ...(opts?.opencodeModel ? { opencode_model: opts.opencodeModel } : {}),
+          ...(opts?.sessionModel ? { model: opts.sessionModel } : {}),
           ...(opts?.agentName ? { agent_name: opts.agentName } : {}),
         },
         {

@@ -97,7 +97,7 @@ describe('flattenModels — gateway provider pass-through (@kortix/sdk)', () => 
     ).toEqual([]);
   });
 
-  test('reads capabilities off the canonical opencode `Model` shape when present', () => {
+  test('reads capabilities off the canonical runtime `Model` shape when present', () => {
     const [flat] = flattenModels(
       gatewayProviders({
         'gpt-5.6': {

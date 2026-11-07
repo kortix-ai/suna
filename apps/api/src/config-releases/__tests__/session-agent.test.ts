@@ -87,7 +87,7 @@ describe('releaseVariantFor', () => {
   });
 
   // The whole point: a session with no usable agent still gets a RELEASE.
-  // `none` compiles to an empty OpenCode config, which has a non-null etag,
+  // `none` compiles to an empty config (`{}`), which has a non-null etag,
   // so `release_id` is never null and the box never falls back.
   test('no usable agent and no repository access compiles nothing, not a failure', () => {
     expect(releaseVariantFor(null, false)).toBe('none');

@@ -1,6 +1,6 @@
 /**
- * The single source of truth for "what URL does OpenCode's in-sandbox `kortix`
- * LLM provider hit" (KORTIX_LLM_BASE_URL). Takes the ORIGIN a sandbox should
+ * The single source of truth for "what URL does the runtime's in-sandbox
+ * `kortix` LLM provider hit" (KORTIX_LLM_BASE_URL). Takes the ORIGIN a sandbox should
  * use to reach kortix-api and applies the proxy-mode suffix rule.
  *
  * Deliberately a tiny, dependency-free module (only `../config`) rather than

@@ -1,0 +1,13 @@
+---
+recorded: 2026-11-05T19:11:56Z
+incident_date: 2026-11-05
+---
+# Page a human only for prod: a dev or staging error never opens a Better Stack incident
+
+**Rule:** Only the prod error-tracking applications (Kortix API (prod), Kortix Frontend (prod)) and the prod monitors may open a Better Stack incident or post to `#alerts`. A dev or staging error is triage data in its own application, never a page. Every monitor checks what users get: a monitor that has been red for days is broken and gets fixed the same day, never ignored. The API names its Sentry release from `KORTIX_VERSION`, the value `/health` reports.
+
+**Trigger surface:** adding a Better Stack application, monitor, chart alert or Slack integration; changing the error-tracking spike or incident settings; a migration that is not mixed-version-safe, which fails every query of the old API tasks until the deploy replaces them.
+
+**Incident:** near miss, no customer impact. #11848 renamed `project_sessions.opencode_session_id`. Dev migrated at 18:32Z, and the old dev API tasks ran until 18:54Z. The window was accepted in the migration header. Better Stack opened 3 "Spike detected in Error from Kortix API (dev)" incidents at 18:51Z. Each one posted to `#alerts` and fired the Kortix operator webhook into a prod project. The same audit found 4 more defects. (1) A dev `runtime_lost` spike incident had been open since 2026-10-03. (2) The Dev Frontend monitor had been red on `401` since 2026-08-10, because it checked dev.kortix.com without its basic-auth header. (3) The prod API reported every error as `kortix-api@dev`, because `lib/sentry.ts` read `SANDBOX_VERSION`, which no deploy sets. (4) The Errors-to-Slack integration covered every environment of the prod apps. Fixed: the monitor sends the basic-auth header, the Slack integration covers only the `prod` environment, the stale incidents are resolved, and `lib/sentry.ts` reads `KORTIX_VERSION` (#11854). Then Better Stack was made prod-only. The error applications Kortix API (dev) and Kortix Frontend (dev) are paused. Dev and staging errors are dropped at ingest, so they cannot open an incident. The Dev API and Dev Frontend monitors are paused. The dev log source still ingests (~187 MB/day, 11% of prod) for debugging and notifies nobody. `#alerts` errors post one thread per error, re-opened errors notify, and occurrence milestones are off.
+
+**Enforcement:** none yet: the enforcer to build is Better Stack as Terraform (`betterstack` provider). It would hold the applications, monitors, Slack integrations and the incident setting per application, so a dev application that opens incidents fails review.

@@ -2,8 +2,8 @@
 
 import { sessionLogTurns, type SessionLogTurn } from '@kortix/sdk';
 import { useSessionView } from '@kortix/sdk/react';
-import { ChatsCircleIcon } from '@phosphor-icons/react';
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { CaretDownIcon, ChatsCircleIcon } from '@phosphor-icons/react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { useTranslations } from '../../i18n';
 import { ProjectScope } from '../../internal/project-scope';
@@ -59,6 +59,8 @@ export function SessionPeek({
   );
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  // Scrolled up by more than half a screen: a round button brings the reader back to the newest message.
+  const [away, setAway] = useState(false);
   // Open at the newest message, and follow new ones while the reader sits at the bottom.
   useLayoutEffect(() => {
     const node = scrollRef.current;
@@ -81,7 +83,7 @@ export function SessionPeek({
       data-testid="session-peek"
       data-status={view.status}
       data-density={density}
-      className={cn('group/thread flex min-h-0 flex-1 flex-col', className)}
+      className={cn('group/thread relative flex min-h-0 flex-1 flex-col', className)}
     >
       {view.status === 'loading' ? (
         <div className={cn(SESSION_TRANSCRIPT_CLASS, 'space-y-4')} aria-busy="true">
@@ -112,9 +114,13 @@ export function SessionPeek({
             ref={scrollRef}
             onScroll={(event) => {
               const node = event.currentTarget;
-              pinned.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
+              const gap = node.scrollHeight - node.scrollTop - node.clientHeight;
+              pinned.current = gap < 48;
+              setAway(gap > node.clientHeight / 2);
             }}
-            className="min-h-0 flex-1 overflow-y-auto"
+            data-testid="session-peek-scroll"
+            // \`relative\`: an absolute node deep in the transcript (an \`sr-only\` label) scrolls with it, never spills out of it.
+            className="relative min-h-0 flex-1 overflow-y-auto"
           >
             <div className={cn(SESSION_TRANSCRIPT_CLASS, 'pb-6')}>
               {view.hasOlder && (
@@ -165,6 +171,31 @@ export function SessionPeek({
             </div>
           </div>
         </ProjectScope>
+      )}
+      {view.status === 'ready' && (
+        <div className={cn('absolute inset-x-0 bottom-3 z-20 flex justify-center', !away && 'pointer-events-none')}>
+          <Button
+            variant="outline"
+            size="icon-md"
+            aria-label={t('scrollToBottom')}
+            aria-hidden={!away}
+            tabIndex={away ? undefined : -1}
+            data-testid="session-peek-to-bottom"
+            className={cn(
+              'hit-area-2 bg-popover hover:bg-muted rounded-full',
+              'transition-[opacity,scale] ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96] motion-reduce:scale-100 motion-reduce:transition-opacity',
+              away ? 'duration-normal scale-100 opacity-100' : 'duration-fast scale-[0.97] opacity-0',
+            )}
+            onClick={() => {
+              const node = scrollRef.current;
+              if (!node) return;
+              pinned.current = true;
+              node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
+            }}
+          >
+            <CaretDownIcon className="size-4" />
+          </Button>
+        </div>
       )}
     </div>
   );

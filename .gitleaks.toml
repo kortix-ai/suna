@@ -19,7 +19,7 @@
 useDefault = true
 
 [[allowlists]]
-description = "dotenvx-ENCRYPTED apps/{api,web} profiles. condition=AND + regexTarget=line means a line is exempt ONLY if it is a dotenvx artifact: an `encrypted:` AES value or the non-secret DOTENV_PUBLIC_KEY. A PLAINTEXT value committed to these same files still fails the scan. (Before 2026-08-29 this allowlist was path-only, so any secret in these six files was exempt unconditionally.)"
+description = "dotenvx-ENCRYPTED apps/{api,web} profiles. condition=AND + regexTarget=line means a line is exempt ONLY if it is a dotenvx artifact: an assignment whose VALUE starts with `encrypted:` or a DOTENV_PUBLIC_KEY assignment whose VALUE is a public key (66 lowercase hex characters). A PLAINTEXT value committed to these same files still fails the scan, even on a line that mentions `encrypted:` or DOTENV_PUBLIC_KEY in a comment, and even in the public-key slot. (Before 2026-08-29 this allowlist was path-only, so any secret in these six files was exempt unconditionally. Until 2026-11-06 the bare substrings matched anywhere on the line, so a trailing `# encrypted: yes` comment exempted a plaintext secret.)"
 condition = "AND"
 regexTarget = "line"
 paths = [
@@ -33,8 +33,15 @@ paths = [
   '''apps/web/\.env\.prod$''',
 ]
 regexes = [
-  '''encrypted:''',
-  '''DOTENV_PUBLIC_KEY''',
+  # Anchored to an assignment whose VALUE is an encrypted value (optionally
+  # export-prefixed, optionally double-quoted as dotenvx writes the GitHub App
+  # private key), so a comment mentioning the word cannot exempt a plaintext
+  # value.
+  '''^\s*(export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*"?encrypted:''',
+  # The public-key assignment only (one per profile: _DEV/_STAGING/_PROD), and
+  # its value must be a dotenvx public key: 66 lowercase hex characters. Not any
+  # line that names the variable, and not a credential pasted into its slot.
+  '''^\s*(export\s+)?DOTENV_PUBLIC_KEY(_[A-Z]+)?\s*=\s*"?[0-9a-f]{66}"?\s*(#.*)?$''',
 ]
 
 [[allowlists]]
@@ -117,4 +124,34 @@ paths = [
 ]
 regexes = [
   '''"machine_key_sha256"''',
+]
+
+[[allowlists]]
+description = "Synthetic acme-dns account record in the self-host TLS wildcard unit test (#11659). The test zone is acme.kortix.acme.com and no acme-dns server issued it. Scoped to the one file and the one literal so a real secret there still fails."
+condition = "AND"
+paths = [
+  '''^apps/cli/src/self-host/__tests__/wildcard-tls\.test\.ts$''',
+]
+regexes = [
+  '''pbAXVjlIOE01xbut7YnAbkhMQIkcwoHO0ek2j4Q0''',
+]
+
+[[allowlists]]
+description = "CocoaPods SPEC CHECKSUMS in the mobile Podfile.lock: each value is the SHA-1 of a pod's podspec, written by `pod install`, not a credential (#11736 tripped generic-api-key). Scoped to that file and a 40-hex value so any other secret there still fails."
+condition = "AND"
+paths = [
+  '''^apps/mobile/ios/Podfile\.lock$''',
+]
+regexes = [
+  '''^[0-9a-f]{40}$''',
+]
+
+[[allowlists]]
+description = "PostHog project key (`phc_…`) for kortix.com analytics (#11780). PostHog project keys are write-only client keys that ship in the browser bundle by design; they cannot read data. Scoped to the one config file and the `phc_` shape so any other secret there still fails."
+condition = "AND"
+paths = [
+  '''^apps/web/src/lib/analytics/posthog-config\.ts$''',
+]
+regexes = [
+  '''^phc_[A-Za-z0-9]{20,64}$''',
 ]

@@ -9,6 +9,13 @@ import type { ProxyServer } from './server'
 import type { DaemonShutdown } from '@/harness/contract/server'
 import type { StaticWebServer } from '@/services/static-web/static-web'
 
+/**
+ * The most a shutdown waits for the harness to stop. The proxy is already closed by then, so a
+ * stop that never settles (a tool that ignores its abort) must not leave a daemon that serves
+ * nothing and never exits: the supervisor restarts an exited daemon.
+ */
+export const SHUTDOWN_HARNESS_STOP_MS = 20_000
+
 let installedSignalHandlers: { term: () => void; int: () => void } | null = null
 
 export function installShutdownHandlers(
@@ -45,10 +52,19 @@ export function installShutdownHandlers(
           logger.warn('[shutdown] static-web stop failed', err)
         }
       }
+      let deadline: ReturnType<typeof setTimeout> | undefined
       try {
-        await harness.stop(signal)
+        const stopped = await Promise.race([
+          harness.stop(signal).then(() => true),
+          new Promise<false>((resolve) => {
+            deadline = setTimeout(() => resolve(false), SHUTDOWN_HARNESS_STOP_MS)
+          }),
+        ])
+        if (!stopped) logger.warn('[shutdown] the harness did not stop in time; exiting without it', { ms: SHUTDOWN_HARNESS_STOP_MS })
       } catch (err) {
         logger.warn('[shutdown] harness stop failed', err)
+      } finally {
+        clearTimeout(deadline)
       }
       logger.info('[shutdown] done', { reason, exitCode })
       exit(exitCode)

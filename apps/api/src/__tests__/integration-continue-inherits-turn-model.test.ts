@@ -3,7 +3,7 @@
  * model runs on the session's last chosen agent/model.
  *
  * Approval resume, connector-connected, secret-submitted and auto-recovery
- * prompts carry no overrides. OpenCode then falls back to the default agent's
+ * prompts carried no overrides. OpenCode then fell back to the default agent's
  * own `model:` pin, which in a prod session was a raw `codex/gpt-6-sol` the
  * gateway could not serve: "Model not found" right after the user clicked Deny,
  * although every user turn ran on the model picked in the composer.

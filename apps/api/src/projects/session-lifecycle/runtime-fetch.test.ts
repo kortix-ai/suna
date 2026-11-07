@@ -1,6 +1,7 @@
 // The daemon lists what its runtime serves in `GET /kortix/health`. The API
 // reads the list once per sandbox per 5 minutes: `/start` hands it to the
-// client, and admission reads it from the same memo.
+// client, and admission reads it from the same memo. A daemon below the runtime
+// floor (no `runtime.log.v1`) is read every time: the open is replacing it.
 import { afterAll, beforeEach, expect, test } from 'bun:test';
 
 import { __resetRuntimeCapabilitiesMemo, runtimeCapabilities } from './runtime-fetch';
@@ -13,7 +14,7 @@ let healthReads = 0;
 beforeEach(() => {
   __resetRuntimeCapabilitiesMemo();
   healthReads = 0;
-  health = () => Response.json({ capabilities: ['runtime.turns.v1', 'session.subagents'] });
+  health = () => Response.json({ capabilities: ['runtime.turns.v1', 'runtime.log.v1', 'session.subagents'] });
   globalThis.fetch = (async () => {
     healthReads += 1;
     return health();
@@ -24,8 +25,8 @@ afterAll(() => {
 });
 
 test('the capability list is read once per sandbox', async () => {
-  expect(await runtimeCapabilities('ext-1', endpoint)).toEqual(['runtime.turns.v1', 'session.subagents']);
-  expect(await runtimeCapabilities('ext-1', endpoint)).toEqual(['runtime.turns.v1', 'session.subagents']);
+  expect(await runtimeCapabilities('ext-1', endpoint)).toEqual(['runtime.turns.v1', 'runtime.log.v1', 'session.subagents']);
+  expect(await runtimeCapabilities('ext-1', endpoint)).toEqual(['runtime.turns.v1', 'runtime.log.v1', 'session.subagents']);
   expect(healthReads).toBe(1);
 });
 
@@ -37,11 +38,15 @@ test('a failed read answers unknown and is not kept', async () => {
   expect(healthReads).toBe(2);
 });
 
-test('a daemon that lists nothing serves nothing, and that answer is kept', async () => {
+test('a daemon below the runtime floor is read again, so its successor is seen at once', async () => {
   health = () => Response.json({ status: 'ok' });
   expect(await runtimeCapabilities('ext-1', endpoint)).toEqual([]);
-  expect(await runtimeCapabilities('ext-1', endpoint)).toEqual([]);
-  expect(healthReads).toBe(1);
+  health = () => Response.json({ capabilities: ['runtime.turns.v1'] });
+  expect(await runtimeCapabilities('ext-1', endpoint)).toEqual(['runtime.turns.v1']);
+  health = () => Response.json({ capabilities: ['runtime.log.v1'] });
+  expect(await runtimeCapabilities('ext-1', endpoint)).toEqual(['runtime.log.v1']);
+  expect(await runtimeCapabilities('ext-1', endpoint)).toEqual(['runtime.log.v1']);
+  expect(healthReads).toBe(3);
 });
 
 test('no sandbox id, no read', async () => {

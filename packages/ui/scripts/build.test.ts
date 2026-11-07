@@ -4,9 +4,10 @@ import { resolve } from 'node:path';
 // Exercise the actual npm artifact pipeline: compiling source alone misses
 // collisions between private package root and subpath imports during vendoring.
 test('the publishable UI artifact builds and its Node entry points load', async () => {
+  // A CI runner's 2 GB heap, set by the caller: the build must still bring its own heap.
   const process = Bun.spawn(['node', 'scripts/build.mjs'], {
     cwd: resolve(import.meta.dir, '..'),
-    env: { ...Bun.env, NODE_OPTIONS: '--max-old-space-size=8192' },
+    env: { ...Bun.env, NODE_OPTIONS: '--max-old-space-size=2048' },
     stdout: 'pipe',
     stderr: 'pipe',
   });

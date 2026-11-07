@@ -3,7 +3,6 @@ import test from 'node:test';
 
 import {
   isAndroidWebViewNativeBridgePostEventNoise,
-  isAnonymousAuthRefreshRace,
   isAndroidWebViewNativeBridgePostMessageNoise,
   isAutoplayNotAllowedRejectionNoise,
   isCanvasImageDataOOMNoise,
@@ -15,7 +14,6 @@ import {
   isEmbedPdfTilingTileDestructureNoise,
   isEmptyMessageUnresolvedBrowserChunkNoise,
   isExpectedBillingGateMessage,
-  isExpectedCompactionNoModelMessage,
   isExpectedNextRecoveryBailoutNoise,
   isExtensionRejectedObjectNoise,
   isExtensionSource,
@@ -258,8 +256,6 @@ const RUNTIME_NOT_READY_EVENTS = [
   '[kortix-pty] Server URL not ready — sandbox is still loading',
   // An unhandled-rejection wrapper preserving the message.
   'Unhandled promise rejection: Server URL not ready — sandbox is still loading',
-  // The "opencode not ready" sibling wording used by env/pty guards.
-  'opencode not ready — sandbox is still starting',
 ];
 
 test('classifies every runtime-not-ready variant as transient noise', () => {
@@ -306,7 +302,7 @@ test('suppresses a runtime-not-ready unhandled rejection from the browser', () =
 
 test('does NOT suppress a genuine runtime/server error that is not the transient not-ready state', () => {
   assert.equal(
-    isRuntimeNotReadyNoiseMessage('Error: the OpenCode daemon crashed mid-turn (exit code 1)'),
+    isRuntimeNotReadyNoiseMessage('Error: the runtime daemon crashed mid-turn (exit code 1)'),
     false,
   );
   assert.equal(
@@ -548,127 +544,6 @@ test('does NOT suppress a longer real error containing the billing-gate phrase',
   }
 });
 
-// Reproduces Better Stack error 9f72dd9a2cb49a81aa57be27e9b3cb2f1ef06a8ebf59ede6900267febd3f7ded
-// (Kortix Frontend prod): the SDK's `useSummarizeRuntimeSession` mutation
-// threw a plain `Error('No model available for compaction. …')` when every
-// model-resolution fallback tier failed (no config default, no assistant
-// message, no connected provider/model) — an EXPECTED, user-facing
-// configuration state the host already surfaces via the `loadingToast` error
-// toast. It leaked to Sentry as an unhandled promise rejection:
-// `compact-modal.tsx` fires `void loadingToast(() => summarize.mutateAsync(...))`,
-// `loadingToast` re-throws the error after showing the toast (toast.tsx), and
-// the `void`-fired rejection is auto-captured by Sentry's `onunhandledrejection`
-// integration. The SDK now throws a sentinel `NoCompactionModelError` (same
-// message + `name`) so this gate can match it precisely and drop it across
-// every capture path. A longer real mutation failure that merely mentions the
-// wording keeps reporting.
-const COMPACTION_NO_MODEL_EVENTS = [
-  // The sentinel error's own message.
-  'No model available for compaction. Please configure a model in settings.',
-  // An `Error:`-prefixed wrapper (e.g. a console/error-boundary re-throw).
-  'Error: No model available for compaction. Please configure a model in settings.',
-  // An unhandled-rejection wrapper preserving the message (Sentry auto-capture).
-  'Unhandled promise rejection: No model available for compaction. Please configure a model in settings.',
-  // An unhandled-rejection wrapper around an `Error:`-prefixed re-throw.
-  'Unhandled promise rejection: Error: No model available for compaction. Please configure a model in settings.',
-];
-
-test('classifies the no-compaction-model configuration state as expected', () => {
-  for (const message of COMPACTION_NO_MODEL_EVENTS) {
-    assert.equal(
-      isExpectedCompactionNoModelMessage(message),
-      true,
-      `expected "${message}" to be classified as an expected no-compaction-model message`,
-    );
-  }
-});
-
-test('suppresses a no-compaction-model Sentry event regardless of capture path', () => {
-  for (const value of COMPACTION_NO_MODEL_EVENTS) {
-    assert.equal(
-      shouldIgnoreSentryBrowserNoise({
-        request: { url: 'https://app.kortix.com/projects/p/sessions/s' },
-        exception: {
-          values: [
-            {
-              value,
-              stacktrace: {
-                frames: [{ filename: 'app:///_next/static/chunks/73448-9ebd1b3ca69703dd.js' }],
-              },
-            },
-          ],
-        },
-      }),
-      true,
-      `expected Sentry event for "${value}" to be suppressed`,
-    );
-  }
-});
-
-test('suppresses a no-compaction-model unhandled rejection from the browser', () => {
-  assert.equal(
-    shouldIgnoreBrowserRuntimeNoise({
-      message:
-        'Unhandled promise rejection: No model available for compaction. Please configure a model in settings.',
-    }),
-    true,
-  );
-});
-
-test('does NOT suppress a longer real error containing the compaction wording', () => {
-  for (const value of [
-    'Failed to compact session: No model available for compaction. Please configure a model in settings.',
-    'No model available for compaction. Please configure a model in settings. while summarizing',
-    'Error: No model available for compaction. Please configure a model in settings. and more',
-    'Unhandled promise rejection: Something else: No model available for compaction. Please configure a model in settings.',
-  ]) {
-    assert.equal(
-      isExpectedCompactionNoModelMessage(value),
-      false,
-      `expected longer message "${value}" to keep reporting`,
-    );
-    assert.equal(
-      shouldIgnoreSentryBrowserNoise({
-        exception: { values: [{ value }] },
-      }),
-      false,
-      `expected longer Sentry event "${value}" to keep reporting`,
-    );
-    assert.equal(
-      shouldIgnoreBrowserRuntimeNoise({ message: value }),
-      false,
-      `expected longer runtime error "${value}" to keep reporting`,
-    );
-  }
-});
-
-test('does NOT suppress a real compaction mutation failure (network / 5xx)', () => {
-  for (const value of [
-    'Internal server error',
-    'HTTP 500: Internal Server Error',
-    'TypeError: Cannot read properties of undefined (reading providerID)',
-    'Failed to fetch',
-  ]) {
-    assert.equal(
-      isExpectedCompactionNoModelMessage(value),
-      false,
-      `expected real error "${value}" to keep reporting`,
-    );
-    assert.equal(
-      shouldIgnoreSentryBrowserNoise({
-        exception: { values: [{ value }] },
-      }),
-      false,
-      `expected real error "${value}" to keep reporting`,
-    );
-    assert.equal(
-      shouldIgnoreBrowserRuntimeNoise({ message: value }),
-      false,
-      `expected real error "${value}" to keep reporting`,
-    );
-  }
-});
-
 // Reproduces Better Stack error
 // 9784f440a71c4430667ed3aca8b727c065f38c226ecad3f33f37c7a86476a576
 // (Kortix Frontend prod): `ApiError`, message
@@ -696,8 +571,8 @@ test('does NOT suppress a real compaction mutation failure (network / 5xx)', () 
 // uncaught global rejection. The SDK `makeRequest` gate silences `onError`
 // (the Sentry callback), but the unhandled rejection happens at the `.then()`
 // / `void` level — AFTER `makeRequest` returned — so the gate never sees it.
-// This matcher is the leak-path backstop, sibling to the billing-gate /
-// compaction-no-model matchers (also `ApiError`/Error throws that leak via
+// This matcher is the leak-path backstop, sibling to the billing-gate
+// matchers (also `ApiError`/Error throws that leak via
 // `void` fire-and-forget → `onunhandledrejection`). The model name varies, so
 // the match is a REGEX anchored on the EXACT API wording
 // `Model "…" is not available for this account` (the same template across all
@@ -747,7 +622,7 @@ test('suppresses a model-not-servable Sentry event regardless of capture path', 
               // `apps/web/src/…` call-site frames (the `void setXxxDefault(...)`
               // call sites in session-chat.tsx / agents-view.tsx / gateway-view.tsx).
               // The matcher is deliberately message-only (NO first-party
-              // negative guard) — mirroring the billing-gate / compaction-no-model
+              // negative guard) — mirroring the billing-gate
               // matchers — so a first-party call-site frame does NOT veto
               // suppression (that's the whole point: the prod noise carries
               // first-party frames and must still be dropped).
@@ -12386,23 +12261,6 @@ test('suppresses the digest-less React #419 at both gates', () => {
     }),
     false,
   );
-});
-
-test('anonymous Supabase refresh race is noise only on the landing page', () => {
-  const input = {
-    message: 'Auth session missing!',
-    requestUrl: 'https://kortix.com/',
-    mechanism: 'auto.browser.global_handlers.onunhandledrejection',
-    frames: [{ filename: 'app:///_next/static/immutable/chunks/22knfs0jv6sj3.js', function: 'async sc.refreshSession' }],
-  };
-  assert.equal(isAnonymousAuthRefreshRace(input), true);
-  assert.equal(isAnonymousAuthRefreshRace({ ...input, requestUrl: 'https://kortix.com/projects' }), false);
-  assert.equal(isAnonymousAuthRefreshRace({ ...input, frames: [{ filename: 'apps/web/src/auth.ts', function: 'refreshSession' }] }), false);
-  assert.equal(isAnonymousAuthRefreshRace({ ...input, message: 'Invalid refresh token' }), false);
-  assert.equal(shouldIgnoreSentryBrowserNoise({
-    request: { url: input.requestUrl },
-    exception: { values: [{ value: input.message, mechanism: { type: input.mechanism }, stacktrace: { frames: input.frames } }] },
-  }), true);
 });
 
 // ---------------------------------------------------------------------------

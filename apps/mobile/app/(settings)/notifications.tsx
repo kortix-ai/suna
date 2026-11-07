@@ -28,17 +28,7 @@ import { haptics } from '@/lib/haptics';
 import { KIND_LABEL } from '@/lib/notifications/inbox';
 import { DEVICE_KIND_SWITCH } from '@/lib/notifications/push';
 import { carryOverLegacyKinds } from '@/lib/notifications/registration';
-import { useHasNotificationInboxProject } from '@/lib/projects/hooks';
 import { useNotificationStore, type NotificationPreferences } from '@/stores/notification-store';
-
-type ToggleKey = 'onCompletion' | 'onError' | 'onQuestion' | 'onPermission' | 'playSound';
-
-const NOTIFICATION_TYPES: { key: ToggleKey; label: string; icon: AppIcon }[] = [
-  { key: 'onCompletion', label: 'Task completions', icon: CheckCircleIcon },
-  { key: 'onError', label: 'Errors', icon: WarningIcon },
-  { key: 'onQuestion', label: 'Questions', icon: QuestionIcon },
-  { key: 'onPermission', label: 'Permission requests', icon: ShieldCheckIcon },
-];
 
 const KIND_ICON: Record<InboxNotificationKind, AppIcon> = {
   turn_done: CheckCircleIcon,
@@ -50,92 +40,26 @@ const KIND_ICON: Record<InboxNotificationKind, AppIcon> = {
   automation_recovered: ArrowCounterClockwiseIcon,
   capture_device_down: XCircleIcon,
   capture_device_recovered: ArrowCounterClockwiseIcon,
+  // Retired with Rooms (2026-11); the SDK type still carries the kind.
   message: ChatCircleIcon,
-  artifact_comment: ChatCircleIcon,
 };
 
 /**
- * Settings → Notifications. KRTX-1742 is behind the per-project
- * `notification_center` flag, off by default. The page has two modes:
+ * Settings → Notifications (KRTX-1742; on for every project since 2026-11-06).
  *
- * - No project of this user has the flag on (or the lists still load): this
- *   phone's switches only (`DeviceNotificationsPage`), the page from before
- *   KRTX-1742.
- * - One or more projects have it on: the user's record on the server
- *   (`NotificationCenterPage`).
- */
-export default function NotificationsScreen() {
-  return useHasNotificationInboxProject() ? <NotificationCenterPage /> : <DeviceNotificationsPage />;
-}
-
-function DeviceNotificationsPage() {
-  // Registration is app-wide (components/notifications/PushNotificationsBridge);
-  // preference changes reach the server from there. The master switch is
-  // this device's off switch. The page shows no registration state (Jay,
-  // 2026-09-27): a token is plumbing, not a setting.
-  const preferences = useNotificationStore((s) => s.preferences);
-  const setPreference = useNotificationStore((s) => s.setPreference);
-  const toggleEnabled = useNotificationStore((s) => s.toggleEnabled);
-
-  const handleToggleEnabled = React.useCallback(() => {
-    haptics.selection();
-    toggleEnabled();
-  }, [toggleEnabled]);
-
-  const handleToggle = React.useCallback(
-    <K extends keyof NotificationPreferences>(key: K, value: NotificationPreferences[K]) => {
-      haptics.selection();
-      setPreference(key, value);
-    },
-    [setPreference]
-  );
-
-  return (
-    <SettingsPage>
-      <GeneralRows
-        preferences={preferences}
-        onToggleEnabled={handleToggleEnabled}
-        onTogglePlaySound={(v) => handleToggle('playSound', v)}
-      />
-
-      {preferences.enabled && (
-        <SettingsGroup title="Notification types">
-          {NOTIFICATION_TYPES.map((type) => (
-            <SettingsRow
-              key={type.key}
-              icon={type.icon}
-              label={type.label}
-              right={
-                <Switch
-                  checked={preferences[type.key]}
-                  onCheckedChange={(v) => handleToggle(type.key, v)}
-                />
-              }
-            />
-          ))}
-        </SettingsGroup>
-      )}
-
-      <SettingsGroup title="This device">
-        <SettingsRow icon={SlidersHorizontalIcon} label="Device settings" external onPress={openDeviceSettings} />
-      </SettingsGroup>
-    </SettingsPage>
-  );
-}
-
-/**
  * - General: this phone's off switch and its sound. They stay on this phone
  *   and reach the server with its push token (PushNotificationsBridge).
  * - Push: one switch per kind, from the user's record on the server. It
- *   applies on every phone and browser. Email is edited on the web: mobile
- *   keeps the core set (KRTX-38). A session kind also has this phone's
- *   switch, which a project with the flag off reads alone: the row shows on
- *   only when both are on, and a toggle writes both.
+ *   applies on every phone and browser. A session kind also has this phone's
+ *   switch: the row shows on only when both are on, and a toggle writes both.
+ * - No Email switches: email is edited on the web (KRTX-38). By default email
+ *   is off for a kind until the person turns it on, except `automation_failed`
+ *   and `capture_device_down` (`packages/shared/src/notification-kinds.ts`).
  *
  * The page shows no registration state (Jay, 2026-09-27): a token is
  * plumbing, not a setting.
  */
-function NotificationCenterPage() {
+export default function NotificationsScreen() {
   const preferences = useNotificationStore((s) => s.preferences);
   const setPreference = useNotificationStore((s) => s.setPreference);
   const toggleEnabled = useNotificationStore((s) => s.toggleEnabled);
@@ -175,9 +99,8 @@ function NotificationCenterPage() {
   );
 
   const kinds = record.data?.kinds;
-  // Room messages exist only with a project's `agent_rooms` flag on: an API
-  // that does not say so hides the row rather than show a dead switch.
-  const hiddenKinds = record.data?.hidden_kinds ?? ['message'];
+  // The kinds that cannot reach this person now: the API lists them, and the row is hidden.
+  const hiddenKinds = record.data?.hidden_kinds ?? [];
 
   return (
     <SettingsPage>
@@ -233,9 +156,9 @@ function NotificationCenterPage() {
   );
 }
 
-/** Both notifications pages' General group: this phone's off switch and its
- * sound (the sound rides under the master switch: the only per-device
- * behavior). The write goes through the page's own store handle. */
+/** The General group: this phone's off switch and its sound (the sound rides
+ * under the master switch: the only per-device behavior). The write goes
+ * through the page's own store handle. */
 function GeneralRows({
   preferences,
   onToggleEnabled,
@@ -263,7 +186,7 @@ function GeneralRows({
   );
 }
 
-/** Both pages' "This device" row: the OS notification settings, outside the app. */
+/** The "This device" row: the OS notification settings, outside the app. */
 const openDeviceSettings = () => {
   haptics.tap();
   void Linking.openSettings();

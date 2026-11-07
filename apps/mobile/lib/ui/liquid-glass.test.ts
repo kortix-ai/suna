@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { supportsLiquidGlass } from './liquid-glass';
 
 describe('supportsLiquidGlass', () => {
-  test('iOS 26 and later with the ExpoUI module draw glass', () => {
+  test('iOS 26 and later with the glass module draw glass', () => {
     expect(supportsLiquidGlass('ios', '26.0', true)).toBe(true);
     expect(supportsLiquidGlass('ios', '26.5.1', true)).toBe(true);
     expect(supportsLiquidGlass('ios', '27.0', true)).toBe(true);
@@ -13,7 +13,7 @@ describe('supportsLiquidGlass', () => {
     expect(supportsLiquidGlass('ios', '17.0', true)).toBe(false);
   });
 
-  test('a binary without the ExpoUI module keeps the opaque surface', () => {
+  test('a binary without the glass module keeps the opaque surface', () => {
     expect(supportsLiquidGlass('ios', '26.0', false)).toBe(false);
   });
 

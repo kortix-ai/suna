@@ -1,6 +1,6 @@
 /**
- * Tracks which sandbox currently owns each bare OpenCode session id in the
- * compatibility sync store. OpenCode ids are local to a sandbox. A restored
+ * Tracks which sandbox currently owns each bare runtime session id in the
+ * compatibility sync store. Runtime session ids are local to a sandbox. A restored
  * snapshot can therefore expose the same id from two different sandboxes.
  *
  * Two kinds of owner scope exist, and the difference matters:
@@ -9,7 +9,7 @@
  *    which Kortix session it is reading, so it survives a sandbox replacement
  *    for that session (the transcript is not wiped when the box is re-created).
  *  - `runtime:<sandboxId>` — FALLBACK, for a standalone consumer that was given
- *    nothing but a bare OpenCode id.
+ *    nothing but a bare runtime session id.
  *
  * The two kinds must never be read as a disagreement. They describe the SAME
  * session from two consumers that simply know different amounts about it, and
@@ -36,12 +36,12 @@ export function resolveSessionCacheOwnerScope(
 }
 
 /**
- * Do two owner scopes name genuinely DIFFERENT owners of the same OpenCode id
+ * Do two owner scopes name genuinely DIFFERENT owners of the same runtime session id
  * — i.e. is the cached data for this id foreign to the asking consumer?
  *
  * Only two scopes of the same KIND can disagree. That is the real case this
  * module exists to catch: another sandbox (or another Kortix session) reusing
- * an OpenCode id. A fallback scope never contradicts an authoritative one.
+ * a runtime session id. A fallback scope never contradicts an authoritative one.
  */
 export function sessionCacheOwnerScopesConflict(a: string | null, b: string | null): boolean {
   if (!a || !b || a === b) return false;

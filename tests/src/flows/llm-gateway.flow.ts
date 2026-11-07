@@ -927,7 +927,11 @@ flow('GW-MANAGED-1', {
         detail = status === 200
           ? String(res.json<{ choices?: Array<{ message?: { content?: unknown } }> }>().choices?.[0]?.message?.content ?? '')
           : res.text().slice(0, 200);
-        if (![429, 502, 503, 504].includes(status)) break;
+        // A vision model now and then misreads the square ("white", or an empty
+        // reply) while the same request answers "red" on the next try; it failed
+        // the v0.14.19 release smoke twice that way. Retry that like a throttle.
+        const misread = status === 200 && !/\bred\b/i.test(detail);
+        if (![429, 502, 503, 504].includes(status) && !misread) break;
         if (attempt < 3) await sleep(3_000 * attempt);
       }
       return { model, status, detail };

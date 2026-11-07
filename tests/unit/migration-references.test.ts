@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 const REFERENCE = /migrations\/(\d{14,17}_[a-z0-9_]+\.sql)/g;
 
-export function missingMigrationReferences(lines: string[], sqlFiles: Set<string>): string[] {
+function missingMigrationReferences(lines: string[], sqlFiles: Set<string>): string[] {
   const missing: string[] = [];
   for (const line of lines) {
     for (const match of line.matchAll(REFERENCE)) {

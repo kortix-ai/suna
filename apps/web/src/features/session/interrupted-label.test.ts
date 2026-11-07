@@ -121,7 +121,7 @@ describe('deriveTurnErrorAbortState — the wiring that feeds TurnErrorDisplay',
     expect(deriveTurnErrorAbortState(turn)).toEqual({ isAbort: true });
   });
 
-  test('a genuine opencode wire abort (MessageAbortedError): identity true', () => {
+  test('a genuine runtime wire abort (MessageAbortedError): identity true', () => {
     const turn = turnWithError({ name: 'MessageAbortedError', data: { message: 'aborted' } });
     expect(deriveTurnErrorAbortState(turn)).toEqual({ isAbort: true });
   });
@@ -181,7 +181,7 @@ describe('deriveTurnErrorPresentation — words for each kind of notice', () => 
       notice: {
         kind: 'sandbox-memory',
         usedPct: 97,
-        detail: 'sandbox memory at 97% (opencode 513 MB RSS of 3915 MB)',
+        detail: 'sandbox memory at 97% (pi 513 MB RSS of 3915 MB)',
       },
     });
     expect(row.isAbort).toBe(false);
@@ -189,7 +189,7 @@ describe('deriveTurnErrorPresentation — words for each kind of notice', () => 
     expect(row.suggestion).toContain('ask the agent to continue');
     expect(row.suggestion).toContain('Stop or reduce heavy background work');
     expect(row.suggestion).not.toContain('The last command');
-    expect(row.suggestion).toContain('sandbox memory at 97% (opencode 513 MB RSS of 3915 MB)');
+    expect(row.suggestion).toContain('sandbox memory at 97% (pi 513 MB RSS of 3915 MB)');
   });
 
   test('a memory stop without numbers still reads as a sentence', () => {

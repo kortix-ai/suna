@@ -278,10 +278,10 @@ describe('reconcileForwardedPrompts', () => {
 
   test('a ledger turn still DELIVERING is left open past the ceiling', async () => {
     // THE flagship mid-turn case. `beginSandboxTurn` opens a `delivering`
-    // record at delivery time, and it stays that way for as long as OpenCode
+    // record at delivery time, and it stays that way for as long as the runtime
     // holds the message behind the turn in front of it — the p99 turn is ~78
     // min, eight times this ceiling. Force-closing there deletes a message from
-    // the user's queue while OpenCode is still going to run it, and pages
+    // the user's queue while the runtime is still going to run it, and pages
     // on-call for a completely healthy flow.
     //
     // The wait is bounded by the LEDGER, not by this sweep: when the box parks

@@ -26,7 +26,6 @@ import { Button } from '@kortix/ui/button';
 import Loading from '@kortix/ui/loading';
 import { errorToast, successToast } from '@kortix/ui/toast';
 import { ErrorState } from '@kortix/ui/error-state';
-import { useNotificationCenter } from '@kortix/ui/internal/hooks/use-notification-center';
 import { useOpenSessionRead } from '@/features/notifications/use-open-session-read';
 import { useAuth } from '@/features/providers/auth-provider';
 import { MissingSessionBoundary } from '@/features/session/missing-session-boundary';
@@ -91,6 +90,7 @@ import {
   canRenderCachedTranscriptWhileSandboxDown,
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
+  resolveSessionRouteSurface,
 } from '@kortix/ui/session/status/session-terminal-state';
 import {
   shouldPaintFatalCard,
@@ -122,7 +122,7 @@ import { useWebNotificationStore } from '@kortix/ui/internal/stores/web-notifica
 import {
   clearSessionFresh,
   formatRuntimeError,
-  getProjectDetail,
+  getProject,
   isRepositoryDisconnectedError,
   isSessionFresh,
   sessionStartKey,
@@ -152,7 +152,7 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
  *
  * The entire runtime lifecycle (POST /start, the sandbox switch, the SSE stream,
- * readiness seeding, and the canonical OpenCode pin) is owned by the SDK's
+ * readiness seeding, and the canonical runtime session pin) is owned by the SDK's
  * `useSession` hook — the page no longer hand-rolls the 7-step mount. The page
  * keeps its rich shell: the billing gate, the instant-shell/loader crossfade, the
  * fresh-session + pending-prompt hand-off, and the restart/error cards.
@@ -228,16 +228,17 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // forever. It gates the poll, never the transcript: reading what you already
   // wrote does not need a sandbox, let alone an entitlement re-check.
   // Scope to the account that OWNS this project (team account), not the viewer's.
-  const { data: projectDetail } = useQuery({
-    queryKey: qk.project.detail(projectId),
+  // The project row (one database read): the detail reads the repository.
+  const { data: projectRow } = useQuery({
+    queryKey: qk.project.summary(projectId),
     queryFn: () => {
       if (!projectId) throw new Error('Missing project id');
-      return getProjectDetail(projectId);
+      return getProject(projectId);
     },
     enabled: !!projectId,
     ...contract('config'),
   });
-  const projectAccountId = projectDetail?.project?.account_id ?? undefined;
+  const projectAccountId = projectRow?.account_id ?? undefined;
   const { data: accountState } = useAccountState({
     accountId: projectAccountId,
   });
@@ -271,7 +272,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   );
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
-  // server-resolved OpenCode pin), the sandbox switch, the SSE stream, readiness
+  // server-resolved runtime session pin), the sandbox switch, the SSE stream, readiness
   // seeding (no client health poll), and the canonical id. The billing gate is
   // monotonic (see canPollSessionStart) so a no-plan account still stops polling
   // for a sandbox that won't provision, without the old open→shut→open flip
@@ -279,18 +280,15 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // replayStartStash:false — the web has its own pending-prompt hand-off (below).
   // The default chat engine stays enabled. This hook owns message sync and the
   // question and permission recovery pollers for the root session.
-  // With the project's `notification_center` flag on (KRTX-1742), a tab that
-  // shows its own OS notification tells the server so, and the server then
-  // holds back the phone push and Web Push for this session; closing the page
-  // ends the presence lease at once. With the flag off, presence is as before.
-  const notificationCenter = useNotificationCenter(projectId);
+  // A tab that shows its own OS notification tells the server so, and the
+  // server then holds back the phone push and Web Push for this session
+  // (KRTX-1742). Closing the page ends the presence lease at once (the SDK's
+  // `presencePageExit` default).
   const browserNotificationsOn = useWebNotificationStore((s) => s.preferences.enabled);
   const notificationPermission = useWebNotificationStore((s) => s.permission);
   const session = useSession(projectId, sessionId, {
     browserPresence: !!user,
-    presenceAlerts:
-      notificationCenter && browserNotificationsOn && notificationPermission === 'granted',
-    presencePageExit: notificationCenter,
+    presenceAlerts: browserNotificationsOn && notificationPermission === 'granted',
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialRuntimeSessionId,
@@ -300,15 +298,15 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     subscribeMessages: false,
   });
   // The presence write marks this session's notifications read on the server;
-  // this clears them from the bell at once. Flag off: there is no bell.
-  useOpenSessionRead(notificationCenter ? user?.id : null, sessionId);
+  // this clears them from the Inbox and its sidebar count at once.
+  useOpenSessionRead(user?.id, sessionId);
   // `/start` no longer refuses a session created before a repository
   // replacement, so there is no error to detect and no mode to flip into: the
   // session starts, gets the project's current config release, and converges
   // like any other. What is still true is that its clone came from the old
   // repository — which is what the notice below is for.
   const usesPreviousRepository = sessionUsesPreviousRepository(
-    projectDetail?.project.metadata,
+    projectRow?.metadata,
     currentProjectSession?.metadata,
   );
   const sandbox = session.sandbox;
@@ -426,7 +424,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const runtimeProbed = useRuntimeConnectionStore((s) => s.initialCheckDone);
   const runtimeHealthy = useRuntimeConnectionStore((s) => s.healthy === true);
   const runtimeConnectionStatus = useRuntimeConnectionStore((s) => s.status);
-  const runtimeVersion = useRuntimeConnectionStore((s) => s.openCodeVersion);
+  const runtimeVersion = useRuntimeConnectionStore((s) => s.harnessVersion);
   const runtimeProbeError = useRuntimeConnectionStore((s) => s.runtimeError);
   // Only an ESTABLISHED runtime is woken. A session whose first sandbox is
   // still being built (`external_id` null, "Sandbox build running…") is not
@@ -759,7 +757,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   });
   // Read the RAW `/start` stage, never `session.phase` — `phase` folds a
   // terminal stage together with a typed `/start` error and a transient
-  // OpenCode REST error, so a still-provisioning session used to be classified
+  // runtime REST error, so a still-provisioning session used to be classified
   // as a hard provisioning failure. See session-terminal-state.ts.
   const terminalState = {
     stage: session.stage ?? null,
@@ -894,190 +892,190 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     }
     return null;
   })();
+  const repositoryDisconnected = !!session.startError && isRepositoryDisconnectedError(session.startError);
+  const legacyMigrated = !!currentProjectSession && isLegacyMigratedSession(currentProjectSession);
+  // The one decision: which full-screen surface, or which notice in the
+  // composer's slot over a readable transcript. The precedence lives in
+  // `resolveSessionRouteSurface`; this render names every outcome.
+  const surfaceDecision = resolveSessionRouteSurface({
+    sessionSwitchLoading,
+    gated,
+    sessionMissing,
+    sandboxArchived: !authLoading && !!user && sandbox?.status === 'archived',
+    repositoryDisconnected,
+    wakeLadderHolding,
+    hasRecoverableFailure: recoverableFailure !== null,
+    dormantWithoutRuntime,
+    legacyMigrated,
+    runtimeIdentityUnavailable,
+    previousRepositoryHistoryAvailable,
+    fatal,
+    autoResuming,
+    hasTranscript,
+    showCachedTranscriptWhileDown,
+  });
   const inner = (() => {
-    if (sessionSwitchLoading) {
-      if (resumeOverlay === 'saved-skeleton') return resumeSkeleton;
-      return (
-        <SessionBootSurface
-          stage={switchingToSessionId === sessionId ? startStage : 'starting'}
-          projectId={projectId}
-          sessionId={switchingToSessionId ?? sessionId}
-          reason={switchingToSessionId === sessionId ? session.reason : null}
-          failure={switchingToSessionId === sessionId ? session.failure : null}
-          bootImage={switchingToSessionId === sessionId ? bootImage : null}
-        />
-      );
-    }
-
-    if (gated) {
-      const blockedState =
-        billingState && billingState !== 'active' ? billingState : 'no_subscription';
-      const copy = billingGateCopy(blockedState, tI18nComplete);
-      // The genuinely-no-plan copy keeps its translated strings; the states this
-      // surface used to mislabel get their copy from the shared resolver.
-      const isNoPlan = blockedState === 'no_subscription';
-      return (
-        <InlineSessionError
-          title={
-            isNoPlan
-              ? tI18nHardcoded.raw('autoAppAppProjectsIdSessionsSessionIdPageJsxAttrTitlebf9bba8c')
-              : copy.title
-          }
-          message={
-            isNoPlan
-              ? tI18nHardcoded.raw(
-                  'autoAppAppProjectsIdSessionsSessionIdPageJsxAttrMessage93bc2779',
-                )
-              : copy.message
-          }
-          action={
-            <Button
-              onClick={() =>
-                openUpgradeDialog(
-                  billingDialogArgs(billingState, accountState, projectAccountId, tI18nComplete),
-                )
-              }
-            >
-              {isNoPlan
-                ? tI18nHardcoded.raw(
-                    'autoAppAppProjectsIdSessionsSessionIdPageJsxTextSubscribe40f5b8e1',
-                  )
-                : copy.ctaLabel}
-            </Button>
-          }
-        />
-      );
-    }
-
-    if (sessionMissing) {
-      return (
-        <InlineSessionError
-          title={tSessionPage('missing.title')}
-          message={tSessionPage('missing.message')}
-          action={
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/projects/${projectId}`} prefetch>
-                {tSessionPage('backToProject')}
-              </Link>
-            </Button>
-          }
-        />
-      );
-    }
-
-    // A readable conversation is never replaced by a card. With a transcript
-    // on screen — and the saved copy paints one before the computer answers —
-    // each terminal state below becomes a notice in the COMPOSER'S SLOT, with
-    // the same words and the same action: nothing can be sent, and nothing
-    // covers the thread. The full-screen card is kept for a session with
-    // nothing to read.
-    let notice: SessionNoticeProps | null = null;
-
+    const wakingSurface = (
+      <SessionBootSurface
+        stage="starting"
+        projectId={projectId}
+        sessionId={sessionId}
+        note={wake.note}
+        reason={session.reason}
+        failure={session.failure}
+        bootImage={bootImage}
+      />
+    );
+    const missingAction = (
+      <Button asChild variant="outline" size="sm">
+        <Link href={`/projects/${projectId}`} prefetch>
+          {tSessionPage('backToProject')}
+        </Link>
+      </Button>
+    );
     // The project's GitHub repository cannot be reached (KRTX-2955): the
     // start failed with the cause, and no retry can help until GitHub is
     // reconnected. Say that, with the one fix, instead of a machine failure.
-    if (session.startError && isRepositoryDisconnectedError(session.startError)) {
-      const message = repositoryDisconnect
-        ? tRepository(`reasons.${repositoryDisconnect.reason}`, {
-            owner: repositoryDisconnect.owner,
-            repository: repositoryDisconnect.repository,
-          })
-        : session.startError.message;
-      const action = <ReconnectGitHubButton projectId={projectId} />;
-      if (!hasTranscript) {
-        return <InlineSessionError title={tRepository('title')} message={message} action={action} />;
-      }
-      notice = { tone: 'warning', title: tRepository('title'), message, action };
-    }
+    const repositoryMessage = repositoryDisconnect
+      ? tRepository(`reasons.${repositoryDisconnect.reason}`, {
+          owner: repositoryDisconnect.owner,
+          repository: repositoryDisconnect.repository,
+        })
+      : (session.startError?.message ?? '');
+    const repositoryAction = <ReconnectGitHubButton projectId={projectId} />;
+    // A dead end that cannot say what was already attempted invites the user
+    // to repeat it by hand. `wake.summary` names every rung the ladder used
+    // before giving up. It rides in the MESSAGE, not in `detail`: that slot is
+    // monospace, for provider ids and raw errors, and a sentence in it wraps
+    // mid-word.
+    const failureMessage =
+      recoverableFailure && wake.summary
+        ? `${recoverableFailure.message} ${wake.summary}`
+        : (recoverableFailure?.message ?? '');
+    const failureRecovery = (
+      <ProviderFailureRecovery
+        pendingPrompt={pendingPrompt}
+        isRetrying={restart.isPending}
+        onRetry={handleProvisioningRetry}
+        onCopy={() => void copyPendingPrompt()}
+        onDelete={() => setDeleteOpen(true)}
+      />
+    );
+    // A migrated session's first open is dormant by design: it has never had
+    // a computer. "Stopped" would be a lie — nothing ever ran. Say what it is
+    // and make the CTA the restore it actually performs.
+    const restoreAction = (
+      <RestartSessionButton
+        restart={restart}
+        onRestart={handleRestart}
+        label={tSessionPage('legacy.restore')}
+        pendingLabel={tSessionPage('legacy.restoring')}
+      />
+    );
+    // The provider lost this session's computer. THIS MUST NEVER HAPPEN. The
+    // box is not restartable (`/start` answers `retriable: false`, `POST
+    // /restart` answers 409 forever), so it never gets the generic Restart
+    // card, and it never silently continues into a fresh session. With a
+    // saved conversation, Continue (`POST /recover`, KRTX-2419) boots a new
+    // computer from the session branch that restores the conversation.
+    const deleteAction = (
+      <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)}>
+        {tSessionPage('delete')}
+      </Button>
+    );
 
-    // The wake ladder is still working: a session with rungs left is not a dead
-    // end, and painting one is the exact defect this replaces — the card fired
-    // while the box was seconds from ready. The transcript mirror keeps
-    // rendering underneath when there is one (`showCachedTranscriptWhileDown`),
-    // so falling through here costs the user nothing.
-    if (wakeLadderHolding) {
-      if (!showCachedTranscriptWhileDown) {
+    switch (surfaceDecision.screen) {
+      case 'switch-loading':
+        if (resumeOverlay === 'saved-skeleton') return resumeSkeleton;
         return (
           <SessionBootSurface
-            stage="starting"
+            stage={switchingToSessionId === sessionId ? startStage : 'starting'}
             projectId={projectId}
-            sessionId={sessionId}
-            note={wake.note}
-            reason={session.reason}
-            failure={session.failure}
-            bootImage={bootImage}
+            sessionId={switchingToSessionId ?? sessionId}
+            reason={switchingToSessionId === sessionId ? session.reason : null}
+            failure={switchingToSessionId === sessionId ? session.failure : null}
+            bootImage={switchingToSessionId === sessionId ? bootImage : null}
+          />
+        );
+      case 'billing-gated': {
+        const blockedState =
+          billingState && billingState !== 'active' ? billingState : 'no_subscription';
+        const copy = billingGateCopy(blockedState, tI18nComplete);
+        // The genuinely-no-plan copy keeps its translated strings; the states this
+        // surface used to mislabel get their copy from the shared resolver.
+        const isNoPlan = blockedState === 'no_subscription';
+        return (
+          <InlineSessionError
+            title={
+              isNoPlan
+                ? tI18nHardcoded.raw('autoAppAppProjectsIdSessionsSessionIdPageJsxAttrTitlebf9bba8c')
+                : copy.title
+            }
+            message={
+              isNoPlan
+                ? tI18nHardcoded.raw(
+                    'autoAppAppProjectsIdSessionsSessionIdPageJsxAttrMessage93bc2779',
+                  )
+                : copy.message
+            }
+            action={
+              <Button
+                onClick={() =>
+                  openUpgradeDialog(
+                    billingDialogArgs(billingState, accountState, projectAccountId, tI18nComplete),
+                  )
+                }
+              >
+                {isNoPlan
+                  ? tI18nHardcoded.raw(
+                      'autoAppAppProjectsIdSessionsSessionIdPageJsxTextSubscribe40f5b8e1',
+                    )
+                  : copy.ctaLabel}
+              </Button>
+            }
           />
         );
       }
-    } else if (recoverableFailure && !notice) {
-      // A dead end that cannot say what was already attempted invites the
-      // user to repeat it by hand. `wake.summary` names every rung the ladder
-      // used before giving up. It rides in the MESSAGE, not in `detail`: that
-      // slot is monospace, for provider ids and raw errors, and a sentence in
-      // it wraps mid-word.
-      const failureMessage = wake.summary
-        ? `${recoverableFailure.message} ${wake.summary}`
-        : recoverableFailure.message;
-      const failureRecovery = (
-        <ProviderFailureRecovery
-          pendingPrompt={pendingPrompt}
-          isRetrying={restart.isPending}
-          onRetry={handleProvisioningRetry}
-          onCopy={() => void copyPendingPrompt()}
-          onDelete={() => setDeleteOpen(true)}
-        />
-      );
-      if (!hasTranscript) {
+      // A deleted session whose computer was removed (`archived`) has nothing
+      // to start: the same words as a missing session.
+      case 'missing':
+      case 'archived':
         return (
           <InlineSessionError
-            title={recoverableFailure.title}
+            title={tSessionPage('missing.title')}
+            message={tSessionPage('missing.message')}
+            action={missingAction}
+          />
+        );
+      case 'repository-disconnected':
+        return <InlineSessionError title={tRepository('title')} message={repositoryMessage} action={repositoryAction} />;
+      // The wake ladder is still working: a session with rungs left is not a
+      // dead end, and the box may be seconds from ready.
+      case 'waking':
+      // Stopped but resumable → we're auto-waking it. Show the boot loader,
+      // not a dead end, so the user sees it come back.
+      case 'auto-resuming':
+        return wakingSurface;
+      case 'start-failure':
+        return (
+          <InlineSessionError
+            title={recoverableFailure?.title ?? ''}
             message={failureMessage}
             detail={restart.errorMessage ?? undefined}
             action={failureRecovery}
           />
         );
-      }
-      notice = {
-        tone: 'destructive',
-        title: recoverableFailure.title,
-        message: restart.errorMessage ?? failureMessage,
-        action: failureRecovery,
-      };
-    }
-
-    // Stopped, with no sandbox row to describe — the `fatal` branch below reads
-    // `sandbox.status`, which does not exist here, so this state used to fall
-    // into the FAILURE card above and claim a session that merely stopped had
-    // failed before it ever got a computer.
-    if (!notice && dormantWithoutRuntime) {
-      // A migrated session's first open lands here by design: it has never had
-      // a computer. "Stopped" would be a lie — nothing ever ran. Say what it is
-      // and make the CTA the restore it actually performs.
-      if (currentProjectSession && isLegacyMigratedSession(currentProjectSession)) {
-        const restoreAction = (
-          <RestartSessionButton
-            restart={restart}
-            onRestart={handleRestart}
-            label={tSessionPage('legacy.restore')}
-            pendingLabel={tSessionPage('legacy.restoring')}
+      case 'legacy-dormant':
+        return (
+          <InlineSessionError
+            title={tSessionPage('legacy.title')}
+            message={tSessionPage('legacy.message')}
+            detail={restart.errorMessage ?? undefined}
+            action={restoreAction}
           />
         );
-        if (!hasTranscript) {
-          return (
-            <InlineSessionError
-              title={tSessionPage('legacy.title')}
-              message={tSessionPage('legacy.message')}
-              detail={restart.errorMessage ?? undefined}
-              action={restoreAction}
-            />
-          );
-        }
-        notice = {
-          title: tSessionPage('legacy.title'),
-          message: restart.errorMessage ?? tSessionPage('legacy.message'),
-          action: restoreAction,
-        };
-      } else if (!hasTranscript) {
+      // Stopped, with no sandbox row to describe: not a failure.
+      case 'stopped-dormant':
         return (
           <InlineSessionError
             title={tSessionPage('stopped.title')}
@@ -1086,37 +1084,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
           />
         );
-      } else {
-        // A deliberate stop with a readable transcript is not a dead end. The
-        // conversation stays, the composer stays live (a sent message wakes the
-        // box and is delivered — `deliver` carries the wake intent), and the
-        // composer says nothing about sleep. A human who left
-        // and came back re-opens the box themselves (`useSession` releases the
-        // stop hold on the next presence return), so no explicit Restart
-        // button is needed here — a `notice` would only freeze the composer
-        // (`readOnly`) and replace it with a terminal card.
-      }
-    }
-
-    // The provider lost this session's computer. THIS MUST NEVER HAPPEN. The
-    // box is not restartable (`/start` answers `retriable: false`, `POST
-    // /restart` answers 409 forever).
-    //
-    // It must NOT fall through to the generic stopped card below, which offers
-    // a Restart button whose only possible outcome is that 409 — the loop a prod
-    // session hit on 2026-08-13. It must also NEVER silently continue into a
-    // fresh session: the server deliberately preserved this identity instead of
-    // attaching a replacement box. With a saved conversation, a person may ask
-    // for that: Continue (`POST /recover`, KRTX-2419) boots a new computer from
-    // the session branch that restores the conversation. Without one, say what
-    // happened, name the id, and stop.
-    if (!notice && runtimeIdentityUnavailable && !previousRepositoryHistoryAvailable) {
-      const deleteAction = (
-        <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)}>
-          {tSessionPage('delete')}
-        </Button>
-      );
-      if (!hasTranscript) {
+      case 'runtime-lost':
         return (
           <InlineSessionError
             title={tSessionPage('lost.title')}
@@ -1125,60 +1093,81 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             action={deleteAction}
           />
         );
-      }
-      // The conversation stays readable, and it can continue on a new
-      // computer. A refusal (no saved log, the old box still being removed)
-      // keeps this banner and names the reason.
-      notice = {
-        tone: 'destructive',
-        title: tSessionPage('lost.title'),
-        message: recover.errorMessage ?? tSessionPage('lost.continueMessage'),
-        action: (
-          <div className="flex items-center gap-2">
-            <Button size="sm" disabled={recover.isPending} onClick={() => recover.recover()}>
-              {recover.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-              {tSessionPage('lost.continue')}
-            </Button>
-            {deleteAction}
-          </div>
-        ),
-      };
-    }
-
-    // `showCachedTranscriptWhileDown` VETOES the terminal card below, exactly
-    // the way transcript evidence already vetoes the new-session shell above
-    // (`isNewSessionSurface`) — a session with renderable history is never a
-    // dead end, live sandbox or not. Falls through to the same dual-layer chat
-    // mount every non-fatal open uses; nothing here needs its own render path.
-    if (fatal && !showCachedTranscriptWhileDown) {
-      // Stopped but resumable → we're auto-waking it. Show the boot loader, not a
-      // dead-end, so the user just sees it come back (as a hard refresh would).
-      if (autoResuming) {
+      // Auto-resume exhausted (or genuinely un-resumable): an in-place
+      // Restart instead of a manual browser refresh.
+      case 'stopped':
         return (
-          <SessionBootSurface
-            stage="starting"
-            projectId={projectId}
-            sessionId={sessionId}
-            note={wake.note}
-            reason={session.reason}
-            failure={session.failure}
-            bootImage={bootImage}
+          <InlineSessionError
+            title={tI18nComplete('textb13c564cdf28', { value0: sandboxLabel ?? 'session' })}
+            message={tI18nHardcoded.raw(
+              'appProjectsIdSessionsSessionidPage.line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen',
+            )}
+            detail={restart.errorMessage ?? undefined}
+            action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
           />
         );
+      case null:
+        break;
+      default: {
+        const unhandled: never = surfaceDecision.screen;
+        void unhandled;
       }
-      // Auto-resume exhausted (or genuinely un-resumable): give an in-place
-      // Restart instead of forcing a manual browser refresh.
-      return (
-        <InlineSessionError
-          title={tI18nComplete('textb13c564cdf28', { value0: sandboxLabel ?? 'session' })}
-          message={tI18nHardcoded.raw(
-            'appProjectsIdSessionsSessionidPage.line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen',
-          )}
-          detail={restart.errorMessage ?? undefined}
-          action={<RestartSessionButton restart={restart} onRestart={handleRestart} />}
-        />
-      );
     }
+
+    // A readable conversation is never replaced by a card: each terminal
+    // state above becomes a notice in the COMPOSER'S SLOT, with the same words
+    // and the same action. Nothing can be sent, and nothing covers the thread.
+    const notice: SessionNoticeProps | null = (() => {
+      switch (surfaceDecision.notice) {
+        case 'archived':
+          return {
+            tone: 'destructive',
+            title: tSessionPage('missing.title'),
+            message: tSessionPage('missing.message'),
+            action: missingAction,
+          };
+        case 'repository-disconnected':
+          return { tone: 'warning', title: tRepository('title'), message: repositoryMessage, action: repositoryAction };
+        case 'start-failure':
+          return {
+            tone: 'destructive',
+            title: recoverableFailure?.title ?? '',
+            message: restart.errorMessage ?? failureMessage,
+            action: failureRecovery,
+          };
+        case 'legacy-dormant':
+          return {
+            title: tSessionPage('legacy.title'),
+            message: restart.errorMessage ?? tSessionPage('legacy.message'),
+            action: restoreAction,
+          };
+        // The conversation stays readable, and it can continue on a new
+        // computer. A refusal (no saved log, the old box still being removed)
+        // keeps this banner and names the reason.
+        case 'runtime-lost':
+          return {
+            tone: 'destructive',
+            title: tSessionPage('lost.title'),
+            message: recover.errorMessage ?? tSessionPage('lost.continueMessage'),
+            action: (
+              <div className="flex items-center gap-2">
+                <Button size="sm" disabled={recover.isPending} onClick={() => recover.recover()}>
+                  {recover.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+                  {tSessionPage('lost.continue')}
+                </Button>
+                {deleteAction}
+              </div>
+            ),
+          };
+        case null:
+          return null;
+        default: {
+          const unhandled: never = surfaceDecision.notice;
+          void unhandled;
+          return null;
+        }
+      }
+    })();
 
     // The boot surface and the resume skeleton show the image step as their
     // own card; every other surface here gets it as a banner. A terminal
@@ -1602,7 +1591,7 @@ function ActiveSessionChat({
 
   // Migrate the home-composer prompt onto the canonical SDK start-stash. Every
   // producer (project-home composer, `useConfigureThread`, the instant shell)
-  // stashes under the ROUTE session id, before the canonical OpenCode session
+  // stashes under the ROUTE session id, before the canonical runtime session
   // exists; once it resolves, hand the stash off to `chatSessionId`'s stash,
   // which `readStartStash` (SessionChat's pending-prompt effect, or
   // `useSession`'s own replay) reads uniformly. `migrateStash` understands both
@@ -1619,7 +1608,7 @@ function ActiveSessionChat({
     if (!chatSessionId) return;
     migrateStash(sessionId, chatSessionId);
     // No queue hand-off beside it any more. The browser queue was keyed by the
-    // OpenCode session id, which changes as the pin resolves, so the instant
+    // runtime session id, which changes as the pin resolves, so the instant
     // shell's messages had to be moved from the route id onto the pin or they
     // were orphaned (#6110). The inbox is keyed by the KORTIX session id — the
     // route id — which never changes, so there is nothing to adopt.
@@ -1640,7 +1629,7 @@ function ActiveSessionChat({
     if (runtimeReady) sessionMark(sessionId, 'runtime-ready');
   }, [runtimeReady, sessionId]);
   useEffect(() => {
-    if (sessionsListed) sessionMark(sessionId, 'opencode-listed');
+    if (sessionsListed) sessionMark(sessionId, 'runtime-sessions-listed');
   }, [sessionsListed, sessionId]);
   useEffect(() => {
     if (!chatSessionId) return;

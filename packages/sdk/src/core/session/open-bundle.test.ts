@@ -44,7 +44,7 @@ function bundleBody(overrides: Record<string, unknown> = {}) {
       source: 'mirror',
       complete: true,
       captured_at: '2026-08-26T11:59:00.000Z',
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       message_count: 2,
       messages: [{ info: { id: 'msg_1' }, parts: [] }],
     },

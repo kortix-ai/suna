@@ -25,6 +25,8 @@
 // placed in the host position (`resend://re_AbC`) would be silently corrupted
 // to `re_abc` and every send would 401 with no hint why.
 
+import { stripTrailingSlashes } from './utils/string';
+
 export type EmailTargetKind = 'smtp' | 'resend' | 'ses' | 'mailtrap' | 'mailpit';
 
 export type EmailTarget =
@@ -50,17 +52,6 @@ export class EmailUrlError extends Error {}
 
 const DEFAULT_SMTP_PORT = 587;
 const IMPLICIT_TLS_PORT = 465;
-
-/**
- * Trim trailing slashes without a regex. `/\/+$/` against a long run of
- * slashes backtracks polynomially, and EMAIL_URL — while operator-set — is
- * parsed by an exported library function, so it gets library-grade handling.
- */
-function stripTrailingSlashes(value: string): string {
-  let end = value.length;
-  while (end > 0 && value[end - 1] === '/') end -= 1;
-  return value.slice(0, end);
-}
 
 /** Split on the LAST `@` so an un-encoded `@` inside a password still parses. */
 function splitUserInfo(rest: string): { userInfo: string | null; remainder: string } {

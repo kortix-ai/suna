@@ -3,6 +3,7 @@ import {
   WEBHOOK_DELIVERY_ID_HEADER,
   WEBHOOK_SIGNATURE_ALGORITHM,
   WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
   buildWebhookSampleRequest,
 } from './webhook-signing';
 
@@ -11,7 +12,7 @@ describe('buildWebhookSampleRequest', () => {
     const sample = buildWebhookSampleRequest('https://api.example.test/v1/webhooks/projects/p/h');
     expect(sample).toContain('curl -X POST https://api.example.test/v1/webhooks/projects/p/h');
     expect(sample).toContain(
-      `${WEBHOOK_SIGNATURE_HEADER}: sha256=$(echo -n '$BODY' | openssl dgst -sha256 -hmac "$SECRET"`,
+      `${WEBHOOK_SIGNATURE_HEADER}: sha256=$(printf '%s.%s' "$TS" '$BODY' | openssl dgst -sha256 -hmac "$SECRET"`,
     );
     // The `sed 's/^.* //'` strips openssl's "(stdin)=" label, so the header
     // carries the bare hex digest the server compares.
@@ -25,6 +26,16 @@ describe('buildWebhookSampleRequest', () => {
     );
     expect(sample).toContain('# $SECRET is the signing key you saved for this webhook');
     expect(WEBHOOK_SIGNATURE_ALGORITHM).toContain('HMAC-SHA256');
+  });
+
+  // KRTX-4098: the signature must cover the timestamp the header sends, and one
+  // `date +%s` must feed both, or the pair straddles a second and fails.
+  test('sends the timestamp it signed, captured once (KRTX-4098)', () => {
+    const sample = buildWebhookSampleRequest('https://api.example.test/v1/webhooks/projects/p/h');
+    expect(sample).toContain('TS=$(date +%s)');
+    expect(sample).toContain(`-H "${WEBHOOK_TIMESTAMP_HEADER}: $TS"`);
+    expect(sample).toContain('$(date +%s)');
+    expect(sample.split('$(date +%s)')).toHaveLength(2);
   });
 
   test('names the event, so a retry runs once and the next deploy runs again (KRTX-1735)', () => {

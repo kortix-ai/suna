@@ -306,10 +306,8 @@ Install the optional peers before you use the React entry:
 npm install @kortix/sdk react @tanstack/react-query
 ```
 
-Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
-`@deprecated`. Import from the root instead — see **Entry points** below, and
-the [SDK reference](https://kortix.com/docs/#deprecated-names) for the full
-list of aliases (21 of them).
+The older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) were removed in
+0.15.0. Import from the root instead — see **Entry points** below.
 
 > **React Native / Expo:** REST works. Live streaming works with a host
 > transport: pass `configureKortix({ eventStreamTransport })` (one connection's
@@ -655,102 +653,46 @@ Message retries keep the originating sandbox URL after navigation. A `404` or
 `410` message read stops automatic retries and preserves the cached transcript.
 An explicit reconciliation can recover the controller when the session returns.
 
-## Artifact comments and activity
+## Goals
 
-Projects enable `artifacts` and `artifact_comments` before using comments.
-`artifact_comments` defaults off. Agent tokens need `project.artifact.comment`.
-Every comment identifies its author as a user or a session.
+A goal is what a person wants plus a definition of done (project flag
+`goals`, off by default). The API owns its state, pause, owner and verifier
+sessions, limits and verification; the goal's Drive folder holds the brief
+(`GOAL.md`), `log.md` and `evidence/`. Lifecycle fields written into
+`GOAL.md` change nothing.
 
 ```ts
-const artifact = kortix.project(projectId).artifacts;
-const thread = await artifact.comments.create(artifactId, {
-  anchor: { type: 'none', version: entryVersion },
-  body: 'Confirm the forecast.',
-});
-await artifact.comments.reply(artifactId, thread.thread_id, { body: 'Confirmed.' });
-const handoff = await artifact.comments.send(artifactId, {
-  thread_ids: [thread.thread_id],
-  batch_id: crypto.randomUUID(),
-  agent: 'reviewer',
-});
-await artifact.comments.setStatus(artifactId, thread.thread_id, 'resolved');
-const threads = await artifact.comments.list(artifactId, { status: 'all' });
-const activity = await artifact.activity(artifactId, { limit: 50 });
+import { createProjectGoal, listProjectGoals, pauseProjectGoal, ProjectGoalConflictError } from '@kortix/sdk';
+
+// goalId is the idempotency key: retry with the same id, get the same goal.
+const { goal } = await createProjectGoal(projectId, { outcome: 'EU billing live', goalId });
+
+const [first] = await listProjectGoals(projectId);
+if (first?.capabilities.pause) {
+  try {
+    const { projectGoal } = await pauseProjectGoal(projectId, first, 'Paused from my app.');
+    console.log(projectGoal.revision); // the new revision
+  } catch (error) {
+    // Someone changed the goal first: error.goal is the goal as it is now.
+    if (error instanceof ProjectGoalConflictError) console.log(error.goal.record.state);
+    else throw error;
+  }
+}
 ```
 
-Text anchors carry `version`, `quote`, `prefix`, and `suffix`.
-`quote` accepts up to 500 UTF-16 code units, and `prefix` and `suffix` up to 32 each. Point and region anchors carry a CSS selector,
-element-relative fractions, viewport width, and scroll position.
-
-The root exports `listArtifactComments`, `createArtifactComment`,
-`replyArtifactComment`, `setArtifactCommentStatus`, `editArtifactComment`,
-`deleteArtifactComment`, and `listArtifactActivity`. The write functions return
-the thread or comment. `getArtifactCommentThread(projectId, threadId)` resolves
-a bare thread id with the same visibility checks. Activity returns
-`{ items, next_cursor, older_versions }`; pass `next_cursor` as `cursor` to
-read the next page. Unknown historical save authors remain `System`.
-
-Comments and replies also accept optional `marks` and `screenshot_base64`. Marks are normalized pen, arrow, or rectangle geometry relative to a region anchor. PNG and WebP screenshots are limited to 2 MiB decoded. `parseArtifactCommentMarks` validates the published `marks: unknown[]` response without changing that existing type. Invalid stored marks return `null`; an empty array is valid.
-
-`readArtifactCommentScreenshot(projectId, artifactId, commentId, { signal? })` returns a `Blob` through the authenticated API. The project facade exposes `project.artifacts.comments.readScreenshot(artifactId, commentId)`. Every read checks Artifact visibility. A missing, deleted, or inaccessible screenshot answers `404`. The optional `screenshot_url` response field is a protected relative API path, not a public image URL. `useArtifactCommentScreenshot(projectId, artifactId, commentId)` reads the same authenticated blob for a mounted thumbnail, without retaining it after unmount. A browser host creates an object URL from the returned blob and revokes it when the image leaves the screen. Editing comment text does not change its marks or screenshot. A failed page capture can still save the marks and anchor without a screenshot.
-
-Send attaches screenshot bytes only when the target model supports images. Image batches allow at most 20 files, 100 MiB of decoded attachments, and 12 MiB of serialized image parts. A refused batch returns `413` with code `artifact_comment_screenshot_limit`. `ApiError.details.limits` retains the API fields `max_files`, `max_total_bytes`, `max_screenshot_bytes`, and optional `max_parts_bytes`. Text-only targets receive the protected screenshot references in the comment context.
-
-`sendArtifactComments` sends selected threads to an agent. Reuse `batch_id`
-when retrying the same handoff. An omitted id is generated once by the SDK.
-The result identifies the target session. A newly reserved session remains
-pending until queued creation succeeds. Read the thread's `agent_state` before
-opening it. `agent_error` distinguishes a delivery failure from the loop guard.
-Editing a comment updates its mentions without requesting another turn; use
-Send to agent to deliver an edited request.
-
-`ArtifactCommentMention` identifies a person (`kind: 'user', user_id`), an
-existing session (`kind: 'session', session_id, agent_name`), or a project agent
-(`kind: 'agent', agent_name`). Comments return the server-resolved mentions.
-Agent and session mentions can include their literal `token` for display without agent-run permission.
-
-`useArtifactComments(projectId, artifactId, { status?, enabled? })` returns the
-thread query and `create`, `reply`, `setStatus`, `edit`, `remove`, and `send` writes.
-Writes are optimistic: `create`, `reply`, `setStatus`, `edit` and `remove`
-change every loaded thread list at once, and a failed write undoes only its own
-change. A thread or comment that the server has not confirmed yet carries
-`optimistic: true`; a new one also has an `optimistic-` id, an empty author
-(`user_id: ''`) and every `can_*` action false. Hosts render it as pending.
-Mounted Comments and Activity queries refetch after the last concurrent write.
-`useArtifactActivity(projectId, artifactId, { limit?, cursor?, enabled? })`
-returns one activity page. Both hooks poll every 10 seconds while mounted and
-visible. A missing project or Artifact id disables reads. Comment reads never
-retry a 4xx and retry another 5xx once.
-
-`getArtifactCommentContext(projectId, artifactId, { version?, agent? })` returns
-the current action permissions, literal mention insertion tokens, eligible
-`send_thread_ids` (at most 100), the total eligible `send_thread_count`, and
-the proposed session or new-session target. When the project's agent manifest
-cannot be read, the context still answers: `agents` is empty, `send_target` is
-null and `agents_unavailable` is true. People keep commenting; an explicit
-`@agent.` mention is refused until the manifest reads again. Hosts show the bounded batch
-and total when more threads remain. A successful Send refreshes the next batch.
-Hosts use
-that response to label Send before it runs. They do not infer the target from
-the Artifact creator or from `created` on a previous handoff.
-
-`readArtifactCommentSnapshot(projectId, artifactId, { version? })` reads the
-context's immutable Files commit and its Markdown. It returns `{ version,
-text }`. An entry ETag is a separate value. A missing saved commit rejects
-with `artifact_comment_snapshot_unavailable`. The project facade exposes
-these readers as `.artifacts.comments.context` and `.snapshot`.
-
-`listArtifactComments` and `useArtifactComments` accept `version` for a
-historical Files commit. Returned action permissions are false for that view.
-The historical hook also rejects writes before making an HTTP request.
-
-`useArtifactCommentContext` shares the comments cache prefix, so every comment
-write refreshes its count, permissions, and Send target. For a complete
-timeline, `useInfiniteArtifactActivity(projectId, artifactId, { limit?, enabled? })`
-owns cursor pages and exposes ordered, deduplicated `items`, `olderVersions`,
-`fetchNextPage`, and the query status. Hosts render those items without keeping
-a second copy of activity pages. Its mounted polling and write invalidation
-match the one-page hook.
+- Show a control only when `goal.capabilities` allows it. A read-only viewer
+  gets every capability `false`.
+- `criteria[].verified` is set only by a passed independent verification;
+  `criteria[].reported_met` is the agent's claim.
+- `blockedReason` says why a goal cannot go on (`credits`, `wake_cap`,
+  `session_cap`, `owner_lost`, `storage`, `flag_off`, `setup`).
+- `replyToProjectGoal(projectId, goal, text, { answerId })` answers as the
+  caller; one answer per `answerId`.
+- React: `useProjectGoals`, `useProjectGoal`, `useProjectGoalEvents`,
+  `useProjectGoalFiles`, `useSessionGoal`, and `useProjectGoalControl` (one
+  request per double submit, the cache updated on success and on a `409`).
+- Deprecated: `ProjectGoal.heartbeat` is always `null`;
+  `CreateProjectGoalInput.sessionId` is sent as the goal id.
 
 ## The facade surface
 
@@ -760,8 +702,8 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | namespace | what |
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
-| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,retry,remove,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,activity,webhooks.*}` (filterable project/session reconstruction log; `activity` = who was active and how often, per UTC day) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
-| `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` (with `min_monthly_usd` / `max_monthly_usd`) — plus a curated mutation surface: `setPlan` (subscribe to or change the credits plan; `useSetBillingPlan()` in `@kortix/sdk/react`) · `subscription.{createPortalSession,cancel,reactivate}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`. `checkout.{createSession,confirmSession}`, `subscription.{scheduleDowngrade,cancelScheduledChange,prorationPreview}`, `createPerSeatCheckout` and `claimPerSeatBilling` are deprecated: they reject with `ENDPOINT_RETIRED` |
+| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,retry,remove,grant,revoke,setAccess}` · `subscriptions.{list,usage}` (project-authorized usage for named and legacy ChatGPT logins; reads credentials in place) · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,activity,webhooks.*}` (filterable project/session reconstruction log; `activity` = who was active and how often, per UTC day) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
+| `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` (with `min_monthly_usd` / `max_monthly_usd`) — plus a curated mutation surface: `setPlan` (subscribe to or change the credits plan; `useSetBillingPlan()` in `@kortix/sdk/react`) · `subscription.{createPortalSession,cancel,reactivate}` · `credits.{purchase,redeem,autoTopupSettings,configureAutoTopup}` (`redeem({ code, accountId })` adds a credit code's amount to the non-expiring credits, once per account). `checkout.{createSession,confirmSession}`, `subscription.{scheduleDowngrade,cancelScheduledChange,prorationPreview}`, `createPerSeatCheckout` and `claimPerSeatBilling` are deprecated: they reject with `ENDPOINT_RETIRED` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}`. A project installs an item through `createMarketplaceInstallSession(projectId, itemId)`, which starts a session whose agent merges the item into the project and opens a change request; it resolves `{ session_id }` |
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
@@ -1284,11 +1226,11 @@ learn it once.
 
 | import | when you use it | why it is separate |
 | --- | --- | --- |
-| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`/`toToolView`/`toolKind`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
-| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` hook, `useChatTurns`/`renderParts`, the domain hooks. Its deprecated aliases are listed in the [SDK reference](https://kortix.com/docs/#deprecated-names) | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
+| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`/`toToolView`/`toolKind`, `openEventStream`, `narrowChatEvent`, the error classes, and every domain type | — |
+| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` hook, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
 | `@kortix/sdk/genui/fence`, `@kortix/sdk/genui`, `@kortix/sdk/genui/react` | Generative UI: split `openui` blocks out of text, parse them, render them (see **Generative UI** below) | `genui` and `genui/react` need the optional peers `zod` and `@openuidev/lang-core`; `genui/fence` loads neither |
-| `@kortix/sdk/wire-message-id` | `mintWireMessageId` and `WIRE_MESSAGE_ID`: mint and validate a Kortix message id. Its clock helpers are `@deprecated` | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
+| `@kortix/sdk/wire-message-id` | `mintWireMessageId` and `WIRE_MESSAGE_ID`: mint and validate a Kortix message id. Its clock helpers (`wireIdClockDelta`, `mintWireMessageIdAbove`, …) place ids on the 48-bit clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
 | `@kortix/sdk/workspace-search` | `createWorkspaceSearchClient` and its ranking helpers | isolated from the root on purpose |
 | `@kortix/sdk/capture-rules` | the Kortix Capture constants (`CAPTURE_LAYERS`, `CAPTURE_DEVICE_DEFAULTS`, …) | the root exports the same names; this module loads alone |
 | `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |
@@ -1297,7 +1239,7 @@ The root really is canonical, and that is a test rather than a promise:
 `src/root-canonical.test.ts` asserts that every name exported by every other
 isomorphic subpath is also exported from `@kortix/sdk`. The only subpaths it
 permits to be missing are `react`, `server`, the three `genui` entries,
-`workspace-search` and the browser-only stores above — `zustand` is a
+`workspace-search` and the browser-only `./internal/*` modules above — `zustand` is a
 forbidden import in the root's `isomorphic-core` tier, so they cannot live
 there.
 
@@ -1306,18 +1248,15 @@ import { createKortix, classifyTurn, listFiles, openEventStream } from '@kortix/
 import { useSession } from '@kortix/sdk/react';
 ```
 
-### Legacy aliases — do not use in new code
+### Removed subpaths (0.15.0)
 
-`package.json` still declares 21 more subpaths, for example `/turns`, `/files`,
-`/session`, `/projects-client`, `/event-stream` and the un-prefixed store
-aliases. The full list is in the
-[SDK reference](https://kortix.com/docs/#deprecated-names).
-
-Twenty of them are one-line `export *` re-exports under `src/deprecated/`, and
-`/message-queue` is a deprecated module of its own. They stay only so an
-existing `npm install` does not break. **They add nothing
-the root does not already export.** They are removed at the next major; new
-code imports the root.
+0.15.0 removed 25 legacy subpaths: `/turns`, `/files`, `/session`,
+`/session/url`, `/projects-client`, `/platform-client`, `/api-client`,
+`/config`, `/auth`, `/feature-flags`, `/fresh-sessions`, `/instance-routes`,
+`/event-stream`, `/opencode-client`, `/opencode-errors`, `/idb-sync-cache`,
+`/message-queue`, the four un-prefixed store aliases and the four
+`/internal/*` session stores. Every name they exported (except the message
+queue and the stores) is exported from the root. See `CHANGELOG.md`.
 
 ## Configuration
 
@@ -1742,3 +1681,28 @@ an unavailable origin creates a root with `metadata.origin_session_id`.
 same-project parent. This groups the new session without inheriting the parent's
 sharing or automation identity. A session-bound credential retains its own
 server-derived parent regardless of that field.
+
+### Durable session model controls
+
+`session.setModel()` remains a local preference for later sends from that SDK handle.
+`session.getModel()` reads the durable pin (`{ model: string | null }`).
+`session.changeModel(model)` saves the pin without sending a prompt.
+Pi reconfigures without restarting; the running turn finishes before the next turn uses the new model.
+
+```ts
+await session.switchModel({
+  model: 'kortix/glm-5.3-flash',
+  prompt: 'Continue verification with the new model.',
+  idempotency_key: 'verification-model-1',
+});
+```
+
+The switch saves the pin and queues the continuation in one database transaction.
+Reuse the same key and payload after a transport failure. A different payload with the same key is refused.
+Self-switches are limited to three per hour. A queued continuation waits for the current turn.
+The response contains `prompt_id` and `deduped`; inspect `push_failed` before reporting live application.
+
+CLI: `kortix sessions model get [session-id]`, `set [session-id] <model>`,
+and `switch [session-id] <model> --prompt "Continue verification" --idempotency-key verification-model-1`.
+The new verbs default to `KORTIX_SESSION_ID`. The existing `sessions model <session-id> <model>` remains supported.
+Never send a peer message to yourself to continue a model switch.

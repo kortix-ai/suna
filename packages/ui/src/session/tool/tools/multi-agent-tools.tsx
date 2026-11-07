@@ -7,7 +7,7 @@ import { AgentSpawnTool } from './agent-spawn-tool';
 import { AgentTaskUpdateTool } from './agent-task-update-tool';
 import { KortixActionTool } from './kortix-action-tool';
 import { parseKortixToolResult } from './kortix-tool-card';
-import { looksLikeTeamTaskInput } from './multi-agent-tool-data';
+import { looksLikeTeamTaskInput } from '@kortix/sdk';
 import { TaskListTool } from './task-list-tool';
 
 /**

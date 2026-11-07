@@ -31,7 +31,7 @@ export const STOP_REASONS = [
    *  the wake budget, or the provider rejected the start as missing. The row
    *  keeps its identity; the box simply never came back. */
   'runtime_wake_failed',
-  /** The box IS provider-running, but OpenCode never became reachable inside
+  /** The box IS provider-running, but the runtime never became reachable inside
    *  the readiness budget. Distinct from a wake failure: the infrastructure
    *  came up and the agent runtime did not. */
   'runtime_boot_failed',

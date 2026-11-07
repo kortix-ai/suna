@@ -28,7 +28,7 @@ import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
 import { registerJobHandler } from '../shared/job-queue';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
-import { buildArgsPreviewDetails } from './args-preview';
+import { CALLER_ONLY_KEY, buildArgsPreviewDetails } from './args-preview';
 import { approvalRunAuditEvent } from './call-audit';
 import { rebuildHeldCallPrincipal } from './db-deps-principal';
 import { makeDbGatewayDeps } from './db-deps-gateway';
@@ -180,7 +180,8 @@ export async function runHeldCall(
     return;
   }
   const outcome = outcomeOf(result);
-  await settleAfterDispatch(row, outcome, result.status === 'pending_approval' ? null : lastRecorded);
+  const callerOnly = result.status === 'ok' ? callerOnlyText(result.output) : null;
+  await settleAfterDispatch(row, outcome, result.status === 'pending_approval' ? null : lastRecorded, callerOnly);
 }
 
 const SETTLE_ATTEMPTS = 3;
@@ -191,10 +192,15 @@ const SETTLE_ATTEMPTS = 3;
  * log and the thrown error name only the error class and the pg code. A row
  * that stays `dispatched` settles `unknown` through the sweep.
  */
-async function settleAfterDispatch(row: HeldRunRow, outcome: HeldRunOutcome, runExecutionId: string | null): Promise<void> {
+async function settleAfterDispatch(
+  row: HeldRunRow,
+  outcome: HeldRunOutcome,
+  runExecutionId: string | null,
+  callerOnly: string | null = null,
+): Promise<void> {
   for (let attempt = 1; ; attempt += 1) {
     try {
-      await settle(row, 'dispatched', outcome, runExecutionId);
+      await settle(row, 'dispatched', outcome, runExecutionId, callerOnly);
       return;
     } catch (error) {
       const name = error instanceof Error ? error.name : 'unknown';
@@ -239,7 +245,7 @@ function outcomeOf(result: CallResult): HeldRunOutcome {
         ...(result.upstreamError ? { message: result.upstreamError.slice(0, MAX_MESSAGE) } : {}),
         upstream_status: result.upstreamStatus,
         ...(result.account ? { account: { label: result.account.label, id: result.account.connection_id } } : {}),
-        output_preview: outputPreview(result.output),
+        output_preview: outputPreview(withoutCallerOnly(result.output)),
       };
     case 'error':
       return {
@@ -266,11 +272,31 @@ function outputPreview(output: unknown): string {
   return text.length > MAX_OUTPUT_PREVIEW ? `${text.slice(0, MAX_OUTPUT_PREVIEW)}… [truncated]` : text;
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** The output without its caller-only field: what the stored outcome may show reviewers. */
+export function withoutCallerOnly(output: unknown): unknown {
+  if (!isRecord(output) || !(CALLER_ONLY_KEY in output)) return output;
+  const { [CALLER_ONLY_KEY]: _callerOnly, ...rest } = output;
+  return rest;
+}
+
+/** The caller-only field as JSON for the resume prompt, at most 4 KB; null when the output has none. */
+export function callerOnlyText(output: unknown): string | null {
+  if (!isRecord(output) || !isRecord(output[CALLER_ONLY_KEY])) return null;
+  const text = JSON.stringify(output[CALLER_ONLY_KEY]);
+  return text.length > MAX_OUTPUT_PREVIEW ? `${text.slice(0, MAX_OUTPUT_PREVIEW)}… [truncated]` : text;
+}
+
 /** The prompt that tells the agent what its approved call did. */
-export function heldRunResumeText(actionPath: string, outcome: HeldRunOutcome): string {
+export function heldRunResumeText(actionPath: string, outcome: HeldRunOutcome, callerOnly: string | null = null): string {
   switch (outcome.status) {
     case 'ok':
-      return `Your approved call ${actionPath} ran once. Do not repeat it. Result:\n${outcome.output_preview ?? 'null'}`;
+      return (
+        `Your approved call ${actionPath} ran once. Do not repeat it. Result:\n${outcome.output_preview ?? 'null'}` +
+        (callerOnly ? `\n${CALLER_ONLY_KEY} (for you only, not shown to reviewers):\n${callerOnly}` : '')
+      );
     case 'error':
       return `Your approved call ${actionPath} ran, but failed: ${outcome.message ?? 'unknown error'}. Check its effect before you repeat it.`;
     case 'unknown':
@@ -298,6 +324,7 @@ async function settle(
   from: 'queued' | 'dispatched',
   outcome: HeldRunOutcome,
   runExecutionId: string | null,
+  callerOnly: string | null = null,
 ): Promise<void> {
   const now = new Date();
   const idempotencyKey = `approval-run:${row.executionId}`;
@@ -325,7 +352,7 @@ async function settle(
             accountId: row.accountId,
             sessionId: row.sessionId,
             actorUserId: row.approvedBy,
-            text: withReplyTarget(heldRunResumeText(row.actionPath, outcome), row.chatDecider),
+            text: withReplyTarget(heldRunResumeText(row.actionPath, outcome, callerOnly), row.chatDecider),
             executionId: row.executionId,
             availableAt: now,
             idempotencyKey,

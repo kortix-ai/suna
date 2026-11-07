@@ -20,14 +20,14 @@ export interface SessionTranscriptDeps {
     sessionId: string,
     limit: number,
     before?: string | null,
-    /** A sub-agent's OpenCode session; null reads the root. */
-    opencodeSessionId?: string | null,
+    /** A sub-agent's runtime session; null reads the root. */
+    runtimeSessionId?: string | null,
   ) => Promise<MirrorSnapshot | null>;
 }
 
 /** The runtime session id under its neutral name and its pre-W4 name. */
 function runtimeSessionPin(id: string | null) {
-  return { runtime_session_id: id, opencode_session_id: id };
+  return { runtime_session_id: id };
 }
 
 /**
@@ -65,7 +65,7 @@ export async function buildSessionTranscriptDigest(
     source: 'mirror',
     complete: mirrorIsComplete(stored),
     captured_at: stored.captured_at,
-    ...runtimeSessionPin(stored.opencode_session_id ?? session.runtimeSessionId),
+    ...runtimeSessionPin(stored.runtime_session_id ?? session.runtimeSessionId),
     message_count: stored.messages.length,
     messages: stored.messages.map((m) => compactMessage({ info: m.info as never, parts: m.parts as never }, maxChars, full)),
   };
@@ -83,7 +83,7 @@ export async function buildSessionTranscriptSyncEnvelope(
     requireCurrentRoot?: boolean;
     /** A `next_cursor` from a previous window — read the window older than it. */
     before?: string | null;
-    /** A sub-agent's OpenCode session inside this session: its own saved
+    /** A sub-agent's runtime session inside this session: its own saved
      *  transcript. Omitted: the root conversation. */
     child?: string | null;
   },
@@ -98,7 +98,7 @@ export async function buildSessionTranscriptSyncEnvelope(
   // Bounded by size as well as by count: rows keep every tool payload 1:1, and
   // a cold open waits for this window. What does not fit is one cursor away.
   const mirror = read ? boundMirrorWindow(read, MIRROR_WINDOW_MAX_CHARS) : null;
-  const mirrorRoot = mirror?.root_opencode_session_id ?? mirror?.opencode_session_id;
+  const mirrorRoot = mirror?.root_runtime_session_id ?? mirror?.runtime_session_id;
   const rootMismatch = input.requireCurrentRoot && (
     !input.session.runtimeSessionId || mirrorRoot !== input.session.runtimeSessionId
   );
@@ -122,7 +122,7 @@ export async function buildSessionTranscriptSyncEnvelope(
     source: 'mirror',
     complete: mirrorIsComplete(mirror),
     captured_at: mirror.captured_at,
-    ...runtimeSessionPin(mirror.opencode_session_id ?? input.session.runtimeSessionId),
+    ...runtimeSessionPin(mirror.runtime_session_id ?? input.session.runtimeSessionId),
     message_count: mirror.messages.length,
     total: mirror.total,
     next_cursor: mirror.next_cursor,
@@ -143,10 +143,10 @@ async function readMirrorSafely(
   sessionId: string,
   limit: number,
   before?: string | null,
-  opencodeSessionId?: string | null,
+  runtimeSessionId?: string | null,
 ): Promise<MirrorSnapshot | null> {
   try {
-    return await readStoredTranscriptWindow({ sessionId, limit, before, opencodeSessionId });
+    return await readStoredTranscriptWindow({ sessionId, limit, before, runtimeSessionId });
   } catch (err) {
     // A cursor the caller supplied is the caller's error, not a mirror
     // failure, and swallowing it here would answer "nothing was captured" for

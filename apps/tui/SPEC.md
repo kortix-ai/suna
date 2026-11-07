@@ -5,7 +5,7 @@ rendered with OpenTUI (`@opentui/core` + `@opentui/react`), and runs on Bun.
 It is session-first: one session on screen, every action a slash command in
 its input, the sidebar optional (§4). It covers the web's session product and
 its project surfaces: Drive, repository, artifacts, inbox, approvals, goals,
-memory, spaces, rooms, loops, audit, files, review, apps, customize, account.
+memory, spaces, loops, audit, files, review, apps, customize, account.
 
 Status: **experimental**. Not in the release CLI bundle. Run from the repo.
 
@@ -182,7 +182,7 @@ columns the terminal panel is a full-screen toggle instead of a split. Below
 - `info-panel.tsx` reads context use with the SDK's
   `sessionLogThreadMetrics(...).context` and the model's `contextWindow`
   (the web's rule: input + output + cache, reasoning not added twice).
-- `tabs-bar.tsx` draws the sessions opened in this run (opencode's model).
+- `tabs-bar.tsx` draws the sessions opened in this run (the tab model of the OpenCode TUI).
 - The terminal title is `renderer.setTerminalTitle(<session> · Kortix)`,
   cleared on exit.
 
@@ -288,7 +288,7 @@ Composer:
 ### 5.4 Terminal panel (`features/terminal`)
 
 - `Alt+T` toggles. Creates or reuses a PTY via the SDK PTY functions
-  (`useCreatePty`/`useOpenCodePtyList`, `getPtyWebSocketUrl`).
+  (`useCreatePty`/`useRuntimePtyList`, `getPtyWebSocketUrl`).
 - Bytes flow into `<embedded-terminal>` (OpenTUI's VT parser renderable) and
   keystrokes flow back over the WebSocket. Resize sends the PTY size.
 - Header: "Connect from your machine" hint with the exact `kortix sessions
@@ -365,7 +365,7 @@ The full list is generated: `pnpm --filter @kortix/tui keymap` (README
 | sessions list | `useProjectSessions` |
 | session | `useSession` |
 | models/agents | fields of `useSession`; `useSessionModelSelection`, `useProjectModels` |
-| PTY | `useOpenCodePtyList`, `useCreatePty`, `getPtyWebSocketUrl` |
+| PTY | `useRuntimePtyList`, `useCreatePty`, `getPtyWebSocketUrl` |
 | files | `kortix.session(pid,sid).files` |
 | review | `useChangeRequests` |
 | apps | `useProjectApps` |

@@ -126,16 +126,21 @@ mock.module('../../projects/surface', () => ({
   // module LINK error, not a null.
   missingClaudeSubscription: async () => null,
   sessionModelPin: async () => null,
+  // The turn's origin block ("## Where you are") reads the session row here; inert in this suite.
+  sessionWhereTurn: async () => null,
 }));
 // A wake claimed by `/start` or another request leaves the row `stopped` until
 // the provider confirms the box; tests flip this to model that window.
 let wakePending = false;
+const resumedProviderIds: string[] = [];
+const headerSandboxIds: string[] = [];
 mock.module('../../projects/session-open', () => ({
   // Spread the real module: a hand-listed stub deletes every other export —
   // the lifecycle graph imports `openSession` from it.
   ...realSessionOpen,
   resumeStoppedSandboxByExternalId: async (externalId: string) => {
     counts.resumeStopped += 1;
+    resumedProviderIds.push(externalId);
     return Boolean(externalId);
   },
   stoppedSandboxWakePending: async () => wakePending,
@@ -161,7 +166,10 @@ mock.module('../backend', () => ({
     effectivePort: request.port,
   }),
   resolveSandboxIngress: async () => ({ ...ingress }),
-  buildSandboxUpstreamHeaders: async () => ({ ...upstreamAuthHeaders }),
+  buildSandboxUpstreamHeaders: async (input: { sandboxId: string }) => {
+    headerSandboxIds.push(input.sandboxId);
+    return { ...upstreamAuthHeaders };
+  },
   invalidatePreviewLink: () => {
     counts.invalidatePreviewLink += 1;
   },
@@ -717,27 +725,6 @@ describe('forwardToSandbox authentication failures', () => {
     expect(fetchCalls).toBe(1);
   });
 
-  test('an opencode not-ready 503 passes through and releases the dedupe claim', async () => {
-    const args = {
-      method: 'POST',
-      path: '/session/sess-1/message',
-      port: 8000,
-      body: bodyOf({ parts: [{ type: 'text', text: 'hi' }] }),
-      headers: jsonHeaders({ 'idempotency-key': 'nr-1' }),
-    } as const;
-    queueFetch(new Response('opencode not ready', { status: 503 }));
-    const first = await forward(args);
-    expect(first.status).toBe(503);
-    expect(await first.text()).toBe('opencode not ready');
-    expect(counts.markSandboxUsed).toBe(1);
-
-    // The claim was released: the client's retry delivers instead of deduping.
-    queueFetch(new Response('{"info":{},"parts":[]}', { status: 200 }));
-    const retry = await forward(args);
-    expect(retry.status).toBe(200);
-    expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
-  });
-
   // pi (and OpenCode's boot steps) refuse with another text, a W6 daemon adds
   // `code: runtime_not_ready`, and every daemon names its boot phase in
   // `X-Kortix-Boot-Phase`. Each must release the claim on its own.
@@ -930,6 +917,19 @@ const wsArgs = (overrides?: Partial<Parameters<typeof resolvePreviewWsUpstream>[
 });
 
 describe('resolvePreviewWsUpstream', () => {
+  test('an internal UUID alias uses the canonical provider ID for wake and signed headers', async () => {
+    resumedProviderIds.length = 0;
+    headerSandboxIds.length = 0;
+    const sandboxId = '550e8400-e29b-41d4-a716-446655440000';
+    currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
+    const parked = await resolvePreviewWsUpstream(wsArgs({ sandboxId, wakeRequested: true }));
+    expect(parked).toEqual({ ok: false, status: 503, message: 'sandbox not ready (status: stopped)' });
+    expect(resumedProviderIds).toEqual([ACTIVE_RECORD.externalId]);
+    currentRecord = { ...ACTIVE_RECORD };
+    expect((await resolvePreviewWsUpstream(wsArgs({ sandboxId }))).ok).toBe(true);
+    expect(headerSandboxIds).toEqual([ACTIVE_RECORD.externalId]);
+  });
+
   test('an unknown sandbox is a 404', async () => {
     currentRecord = null as unknown as Record<string, unknown>;
     expect(await resolvePreviewWsUpstream(wsArgs())).toEqual({

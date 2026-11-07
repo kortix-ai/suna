@@ -4,14 +4,10 @@
  * its `GET /kortix/health` serves.
  *
  * kortixd bundles this file into the guest binary, so it imports nothing but
- * zod. Every name here is harness-neutral: an OpenCode box and a pi box send
- * the same fields.
- *
- * `normalizeRuntimeRelayBody` accepts the pre-W3 spellings a daemon built
- * before these names existed still sends (`opencode_session_id`, turn-stream
- * kind `opencode_session`). Remove it when no such daemon runs.
+ * zod. Every name here is harness-neutral.
  */
 import { z } from 'zod';
+import type { RuntimeThreadStatus } from './wire-values';
 
 /** `POST /v1/projects/:projectId/turn-stream` kinds the daemon sends. */
 export const DAEMON_TURN_STREAM_KINDS = [
@@ -71,8 +67,28 @@ export const TurnQuestionRelayBodySchema = z.object({
   request_id: z.string(),
   runtime_session_id: z.string().optional(),
   questions: z.array(z.unknown()),
+  /**
+   * The runtime parks this question instead of dismissing it when nobody
+   * answers live: apps/api keeps it open past the turn. Omitted (a daemon
+   * built before parking): false.
+   */
+  parkable: z.boolean().optional(),
 });
 export type TurnQuestionRelayBody = z.infer<typeof TurnQuestionRelayBodySchema>;
+
+/**
+ * What apps/api answers a `turn-question` or `turn-permission` relay with,
+ * beside its older fields. A daemon built before parking ignores it.
+ */
+export const AskRelayResponseSchema = z.object({
+  /** How long the call waits for a live answer before it parks. 0: park at once (an unattended session). */
+  live_wait_ms: z.number().int().nonnegative().optional(),
+  /** Permission: a person approved this exact call (`args_hash`) while it was parked; it runs now. */
+  approved: z.boolean().optional(),
+  /** Permission: the capability the approval granted for the session (an "always" reply). */
+  grant: z.string().optional(),
+});
+export type AskRelayResponse = z.infer<typeof AskRelayResponseSchema>;
 
 /** `POST /v1/projects/:projectId/turn-permission`. apps/api reads `session_id` and `request_id`. */
 export const TurnPermissionRelayBodySchema = z.object({
@@ -81,7 +97,14 @@ export const TurnPermissionRelayBodySchema = z.object({
   runtime_session_id: z.string().optional(),
   permission: z.string(),
   patterns: z.array(z.string()),
+  /** The tool the call runs. Omitted by a daemon built before parking. */
+  tool: z.string().optional(),
+  /** sha256 of the tool and its canonical arguments: an approval matches the agent's re-run of the same call. */
+  args_hash: z.string().optional(),
+  /** The call's arguments, at most `PERMISSION_ARGS_RELAY_MAX_BYTES` of JSON; larger ones arrive as `{ truncated: true, preview }`. */
+  args: z.unknown().optional(),
 });
+export const PERMISSION_ARGS_RELAY_MAX_BYTES = 16_384;
 export type TurnPermissionRelayBody = z.infer<typeof TurnPermissionRelayBodySchema>;
 
 /** `POST /v1/platform/runtime-projection` (gzip). `projection` is the `/kortix/runtime/state` document. */
@@ -176,24 +199,6 @@ export const DAEMON_FILE_IMPORT_TIMEOUT_MS = 120_000;
 export const BLOCKING_TURN_VERBS = ['message', 'command', 'summarize'] as const;
 
 /**
- * Rewrite the pre-W3 names an older daemon sends to the names above: the
- * `opencode_session_id` field and the `opencode_session` turn-stream kind.
- * Returns a copy; the neutral name wins when a body carries both.
- * @deprecated Pre-W3 OpenCode names (opencode_session_id, kind opencode_session) from older daemons; new daemons send runtime_session_id / runtime_session.
- */
-export function normalizeRuntimeRelayBody<T extends Record<string, unknown>>(
-  body: T,
-): T & { runtime_session_id?: string } {
-  const { opencode_session_id: legacyId, ...rest } = body as Record<string, unknown>;
-  const out = rest as Record<string, unknown>;
-  if (out.runtime_session_id === undefined && typeof legacyId === 'string') {
-    out.runtime_session_id = legacyId;
-  }
-  if (out.kind === 'opencode_session') out.kind = 'runtime_session';
-  return out as T & { runtime_session_id?: string };
-}
-
-/**
  * `code` on the daemon's 503 while the session runtime cannot take a request:
  * the repo is not on disk, the workspace is installing, or the harness is still
  * starting. A client renders it as "starting" and retries. The `error` text
@@ -209,52 +214,7 @@ export const BOOT_PHASE_HEADER = 'x-kortix-boot-phase';
  * `capabilities` beside the host's own entries (`file.import`, ...). A client
  * hides a control whose capability is absent.
  */
-export const RUNTIME_CAPABILITIES = [
-  /** Revert to a message and restore it (`/session/:id/revert`, `/unrevert`). */
-  'session.rewind',
-  /** Summarize the conversation on demand (`/session/:id/summarize`). */
-  'session.compact',
-  /** Project slash commands (`GET /command`, `/session/:id/command`). */
-  'session.commands',
-  /** Fork a session at a message. */
-  'session.fork',
-  /** Subagent child sessions, readable while the parent drives them. */
-  'session.subagents',
-  /** MCP servers the runtime connects itself. */
-  'session.mcp',
-  /** The runtime's todo list (`/session/:id/todo`). */
-  'session.todo',
-  /** A shell command run as a turn (`/session/:id/shell`). */
-  'session.shell',
-  /** Attach the harness's own terminal client to the session runtime. */
-  'session.attach',
-  /** A runtime config document a client may read and patch (`/global/config`). */
-  'session.config',
-  /**
-   * A message sent during a turn is read by that turn at its next step
-   * boundary (`POST /kortix/runtime/sessions/:id/steer`). The turn does not stop.
-   */
-  'session.steer',
-  /**
-   * `GET /kortix/runtime/events?schema=v2` streams the session log
-   * (`kortix.session/2`) as `log.*` frames (`@kortix/api-contract/session-log`
-   * `SESSION_LOG_EVENTS`). Without `schema` the stream is the v1 stream.
-   */
-  'session.log.v2',
-  /**
-   * Cross-session messages: the `send_message` and `list_agents` tools
-   * (`@kortix/api-contract/multi-agent`).
-   */
-  'session.messaging',
-  /** A team's shared task list: the `task_*` tools (flag `agent_teams`). */
-  'session.team_tasks',
-  /**
-   * A full context, and `/session/:id/summarize`, reset onto the session's searchable record:
-   * nothing is summarized (kortixd `extensions/context-record.ts`). Absent: a summary.
-   */
-  'session.context_record',
-] as const;
-export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
+export { RUNTIME_CAPABILITIES, type RuntimeCapability } from './wire-values';
 
 /**
  * The extensions the pi runtime loads for every agent (kortixd `harness/pi/runtime.ts`): the agent
@@ -276,7 +236,7 @@ export type PlatformExtensionId = (typeof PLATFORM_EXTENSION_IDS)[number];
 
 /**
  * The daemon serves the Kortix turn verbs: `POST /kortix/runtime/sessions/:id/prompt`,
- * `POST /kortix/runtime/sessions/:id/abort`, `GET|DELETE /kortix/runtime/messages/:id/:messageId`
+ * `POST /kortix/runtime/sessions/:id/abort`, `GET /kortix/runtime/messages/:id`
  * and `GET /kortix/runtime/agents`. Listed in `capabilities` beside the runtime's own.
  */
 export const RUNTIME_TURNS_CAPABILITY = 'runtime.turns.v1' as const;
@@ -392,8 +352,8 @@ export interface RuntimeCommandInfo {
   agents?: string[];
 }
 
-/** What a thread does now (`log.status`); `retry` is reported as `busy` here. */
-export type RuntimeThreadStatus = 'idle' | 'busy' | 'compacting';
+/** What a thread does now (`log.status`); `retry` is reported as `busy` here (`toRuntimeThreadStatus`). */
+export type { RuntimeThreadStatus } from './wire-values';
 
 /** One request the runtime waits on (the session log's `pending` record). */
 export interface RuntimePendingRecord {
@@ -520,11 +480,6 @@ export interface CompiledCommand {
 
 /** A kortix.yaml v3 extension: one implementation per harness. */
 export interface CompiledExtension {
-  /**
-   * Repo-relative module path, loaded as an OpenCode plugin.
-   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
-   */
-  opencode?: string;
   /** `npm:<name>@<x.y.z>`, a repo-relative path, or pi's `{ source, extensions, skills, prompts, themes }` form. */
   pi?: string | { source: string; extensions?: string[]; skills?: string[]; prompts?: string[]; themes?: string[] };
 }
@@ -586,23 +541,23 @@ export function toolAllowed(tools: Record<string, boolean> | undefined, tool: st
 
 /** The agent settings a harness applies. A setting a harness does not list is ignored there. */
 export const AGENT_SETTING_HARNESSES = {
-  description: ['opencode', 'pi'],
-  mode: ['opencode', 'pi'],
-  model: ['opencode', 'pi'],
-  variant: ['opencode', 'pi'],
-  temperature: ['opencode', 'pi'],
-  top_p: ['opencode', 'pi'],
-  options: ['opencode'],
-  color: ['opencode'],
-  steps: ['opencode', 'pi'],
-  tools: ['opencode', 'pi'],
-  hidden: ['opencode', 'pi'],
-  permission: ['opencode', 'pi'],
-  disable: ['opencode', 'pi'],
-  prompt: ['opencode', 'pi'],
-  extensions: ['opencode', 'pi'],
+  description: ['pi'],
+  mode: ['pi'],
+  model: ['pi'],
+  variant: ['pi'],
+  temperature: ['pi'],
+  top_p: ['pi'],
+  options: [],
+  color: [],
+  steps: ['pi'],
+  tools: ['pi'],
+  hidden: ['pi'],
+  permission: ['pi'],
+  disable: ['pi'],
+  prompt: ['pi'],
+  extensions: ['pi'],
   codemode: ['pi'],
-} as const satisfies Record<keyof CompiledAgent, readonly ('opencode' | 'pi')[]>;
+} as const satisfies Record<keyof CompiledAgent, readonly 'pi'[]>;
 export type AgentSetting = keyof typeof AGENT_SETTING_HARNESSES;
 
 /** The agent settings `harness` ignores, in `AGENT_SETTING_HARNESSES` order. */
@@ -658,22 +613,11 @@ export function healthHarnessId(health: { harness?: unknown } | null | undefined
   return null;
 }
 
-/** The runtime process state a health body reports: the W3 `harness` block, or the pre-W3 `opencode` field. */
+/** The runtime process state a health body reports, from its `harness` block. */
 export function healthRuntimeState(health: Record<string, unknown> | null | undefined): string | null {
   const harness = health?.harness;
   if (harness && typeof harness === 'object' && typeof (harness as { state?: unknown }).state === 'string') {
     return (harness as { state: string }).state;
   }
-  return typeof health?.opencode === 'string' ? health.opencode : null;
-}
-
-/**
- * The port the runtime listens on (OpenCode's alternates on a verified reload): `harness.details.port`, or the pre-W3 `opencode_port`.
- * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
- */
-export function healthRuntimePort(health: Record<string, unknown> | null | undefined): number | null {
-  const harness = health?.harness;
-  const details = harness && typeof harness === 'object' ? (harness as { details?: unknown }).details : null;
-  const port = details && typeof details === 'object' ? (details as { port?: unknown }).port : health?.opencode_port;
-  return typeof port === 'number' && Number.isInteger(port) && port > 0 ? port : null;
+  return null;
 }

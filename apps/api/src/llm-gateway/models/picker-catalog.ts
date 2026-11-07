@@ -9,7 +9,7 @@ import { getRuntimeManagedModel } from './managed-models';
 // resolved project default) lives in picker.ts and builds on these.
 
 export interface PickerModel {
-  /** Opencode model ref — `kortix/<id>` for managed, `provider/model` for BYOK. */
+  /** Model ref — `kortix/<id>` for managed, `provider/model` for BYOK. */
   id: string;
   /** Human label, e.g. "Claude Opus 4.8". */
   label: string;
@@ -90,8 +90,7 @@ export function projectPickerCatalog<T extends object>(
   requiredModels: string[],
 ): Record<string, T | (T & UnavailableModelMark)> {
   const required = new Set(requiredModels.filter(Boolean).map(toWireModel));
-  const codexConnected =
-    connectedEnvVars.has('CODEX_AUTH_JSON') || connectedEnvVars.has('OPENCODE_AUTH_JSON');
+  const codexConnected = connectedEnvVars.has('CODEX_AUTH_JSON');
   const compact: Record<string, T | (T & UnavailableModelMark)> = {};
 
   for (const [model, entry] of Object.entries(fullCatalog)) {
@@ -118,8 +117,8 @@ export function projectPickerCatalog<T extends object>(
  * The flagship `provider/model` ref for the provider whose primary credential
  * env var is `envVar` (e.g. `ANTHROPIC_API_KEY` → `anthropic/claude-opus-4.8`),
  * or null. Used to auto-seed a sensible project default when a user connects
- * their first provider. Non-provider credentials (CODEX_AUTH_JSON,
- * OPENCODE_AUTH_JSON) have no catalog upstream → null, so they're skipped.
+ * their first provider. A non-provider credential (CODEX_AUTH_JSON) has no
+ * catalog upstream → null, so it is skipped.
  */
 export function flagshipRefForEnvVar(envVar: string): string | null {
   const upper = envVar.toUpperCase();

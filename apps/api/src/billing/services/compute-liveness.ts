@@ -48,7 +48,7 @@
  * `running`, a busy probe the API completed, a proxied request the API served,
  * a real turn. Deliberately NOT the sandbox's own heartbeat — `lastTurnAt` and
  * `executionLeaseUntil` are written by the in-sandbox agent (renewed every 60s
- * while it believes any opencode session is 'busy' OR 'retry'), which is
+ * while it believes any runtime session is 'busy' OR 'retry'), which is
  * precisely how 188 of 279 prod boxes held a permanent reprieve and billed
  * around the clock. A signal the box authors may never extend its own bill.
  */

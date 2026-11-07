@@ -22,6 +22,8 @@ import {
   getAppAccess,
   getAppDeployment,
   listAppDeployments,
+  listAppEvents,
+  sendAppTestEvent,
   listApps,
   rollbackApp,
   startApp,
@@ -45,6 +47,11 @@ export const appDeploymentKey = (
   appId: string | null | undefined,
   deploymentId: string | null | undefined,
 ) => qk.project.appDeployment(projectId ?? '', appId ?? '', deploymentId ?? '');
+
+export const appEventsKey = (
+  projectId: string | null | undefined,
+  appId: string | null | undefined,
+) => qk.project.appEvents(projectId ?? '', appId ?? '');
 
 /** The project's App list, which also covers every channel's Apps (`qk.project.spaceApps`). */
 function invalidateProjectApps(queryClient: QueryClient, projectId: string | null | undefined) {
@@ -84,10 +91,57 @@ export function useProjectApps(projectId: string | null | undefined) {
   });
   const remove = useMutation({
     mutationFn: (appId: string) => deleteApp(projectId as string, appId),
-    onSuccess: invalidate,
+    onSuccess: (_deleted: unknown, appId: string) => {
+      // The deleted App's own queries (access, deployments, events) sit under
+      // the list key; refetched, each answers 404 while its detail closes.
+      const list = projectAppsKey(projectId);
+      void queryClient.invalidateQueries({ queryKey: list, predicate: (q) => q.queryKey[list.length] !== appId });
+      // A delete takes the triggers that name the App.
+      return queryClient.invalidateQueries({ queryKey: qk.project.triggers(projectId ?? '') });
+    },
   });
 
   return { ...query, create, update, start, stop, remove };
+}
+
+/**
+ * The App's event log, newest first (`listAppEvents`): what it posted and what
+ * came of each event. Needs project.app.deploy: pass `enabled: false` for a
+ * viewer without the operations view. Refreshed every 10 s.
+ */
+export function useAppEvents(
+  projectId: string | null | undefined,
+  appId: string | null | undefined,
+  /** `id`: only the rows of that event (one per trigger it reached), as a trigger run links to it. */
+  options: { enabled?: boolean; limit?: number; id?: string | null } = {},
+) {
+  const id = options.id || null;
+  return useQuery({
+    // Under the log's key: a test event or an App mutation refreshes it too.
+    queryKey: id ? [...appEventsKey(projectId, appId), { id }] : appEventsKey(projectId, appId),
+    queryFn: () => listAppEvents(projectId as string, appId as string, { limit: options.limit ?? 20, ...(id ? { id } : {}) }),
+    enabled: !!projectId && !!appId && options.enabled !== false,
+    ...contract('inventory'),
+    refetchInterval: 10_000,
+  });
+}
+
+/**
+ * Send a test event as if the App posted it (`sendAppTestEvent`): it takes the
+ * real path, with an id starting `test-`. Refreshes the App's event log.
+ */
+export function useSendAppTestEvent(
+  projectId: string | null | undefined,
+  appId: string | null | undefined,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof sendAppTestEvent>[2]) =>
+      sendAppTestEvent(projectId as string, appId as string, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: appEventsKey(projectId, appId) });
+    },
+  });
 }
 
 /** Immutable deployment history and deployment-specific mutations. */

@@ -23,6 +23,7 @@ import { servableProjectCatalog } from './models/servable-catalog';
 import { codexConversationHeaders, resolveCandidates } from './resolution/resolve-candidates';
 import { MAX_ACCOUNT_SECRET_REST_SECONDS, coolDownAccountSecret } from '../secrets/account-resource';
 import { refreshRefusedCodexAccountLogin } from './credentials/codex';
+import { SubscriptionUsageSchema, recordSubscriptionUsage } from './subscription-usage';
 import { claudeCredentialsForGateway, markClaudeAccountRefused } from '../claude-subscription/accounts';
 import { refreshRefusedOpencodeLogin } from './credentials/opencode-console';
 import { codexDescriptor } from './resolution/descriptors';
@@ -120,6 +121,18 @@ export function createInternalGatewayRoutes() {
     }).safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid pool rate limit' }, 400);
     await coolDownAccountSecret(parsed.data.secretId, parsed.data.principal.accountId, parsed.data.seconds);
+    return c.json({ ok: true });
+  });
+
+  // A subscription login's plan usage from a model response's headers. Keyed
+  // by the account and the secret alone, like the rest above.
+  app.post('/pool-usage', async (c) => {
+    const parsed = z.object({
+      principal: z.object({ accountId: z.string().uuid() }),
+      secretId: z.string().uuid(), usage: SubscriptionUsageSchema,
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Invalid pool usage' }, 400);
+    await recordSubscriptionUsage(parsed.data.secretId, parsed.data.principal.accountId, parsed.data.usage);
     return c.json({ ok: true });
   });
 

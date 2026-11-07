@@ -96,19 +96,19 @@ export const INBOX_NOTIFICATION_KINDS = [
   'automation_recovered',
   'capture_device_down',
   'capture_device_recovered',
-  'message',
-  'artifact_comment',
 ] as const;
+
+/** The kinds the API sends today: every entry of {@link INBOX_NOTIFICATION_KINDS}. */
+type LiveInboxNotificationKind = (typeof INBOX_NOTIFICATION_KINDS)[number];
 
 /**
  * What a notification is about: a turn ended (`turn_done`, `turn_error`), the
  * agent asks (`question`, `permission`), a session was shared with you
  * (`shared`), an automation fails or works again, or a Capture computer stops
- * recording or records again (`capture_device_down`, `capture_device_recovered`),
- * or someone messaged you in a conversation (`message`, flag `agent_rooms`),
- * or left Artifact feedback (`artifact_comment`, flag `artifact_comments`).
+ * recording or records again (`capture_device_down`, `capture_device_recovered`).
+ * `message` is deprecated: a room message. Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major.
  */
-export type InboxNotificationKind = (typeof INBOX_NOTIFICATION_KINDS)[number];
+export type InboxNotificationKind = LiveInboxNotificationKind | 'message';
 
 /** One notification in the caller's inbox. */
 export interface InboxNotification {
@@ -124,11 +124,8 @@ export interface InboxNotification {
   session_id: string | null;
   /** The automation, for the two automation kinds. */
   trigger_slug: string | null;
-  /** The conversation, for `message`. Absent from an API built before conversations. */
+  /** @deprecated The room of a `message` row. Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major. */
   room_id?: string | null;
-  /** The Artifact and comment thread. Absent from older APIs. */
-  artifact_id?: string | null;
-  artifact_thread_id?: string | null;
   /** Who caused it: the person who shared or prompted. */
   actor_user_id: string | null;
   /** The web path that opens the subject; its `?notification=<id>` marks the row read. */
@@ -188,7 +185,10 @@ export async function markNotificationsRead(
  * browser) and whether to email. The inbox row is always written.
  */
 export interface NotificationPreferences {
-  kinds: Record<InboxNotificationKind, { push: boolean; email: boolean }>;
+  kinds: Record<LiveInboxNotificationKind, { push: boolean; email: boolean }> & {
+    /** @deprecated Rooms were removed (2026-11); the API no longer serves these routes. Removed in the next major. */
+    message?: { push: boolean; email: boolean };
+  };
   /** False when this deployment sends no email: hide the email choices. */
   email_available: boolean;
   /** Kinds that cannot reach the caller now (their feature is off everywhere they are): hide their rows. Absent from older APIs. */
@@ -203,16 +203,14 @@ export interface NotificationPreferencesPatch {
 /** The record of a user who never saved one. Held equal to the server's defaults by a parity test. */
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences['kinds'] = {
   turn_done: { push: true, email: false },
-  turn_error: { push: true, email: true },
-  question: { push: true, email: true },
+  turn_error: { push: true, email: false },
+  question: { push: true, email: false },
   permission: { push: true, email: false },
-  shared: { push: true, email: true },
+  shared: { push: true, email: false },
   automation_failed: { push: true, email: true },
   automation_recovered: { push: true, email: false },
   capture_device_down: { push: true, email: true },
   capture_device_recovered: { push: true, email: false },
-  message: { push: true, email: true },
-  artifact_comment: { push: true, email: true },
 };
 
 /** The caller's effective preferences (the defaults with their saved choices applied). */

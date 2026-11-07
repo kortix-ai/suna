@@ -43,6 +43,7 @@ Around that loop:
 | Skills | A written procedure an agent loads for one kind of task. | [Skills](/docs/guide#skills) |
 | Apps | Websites, internal tools and backends that agents build and Kortix hosts. | [Apps](/docs/guide#apps) |
 | Drive | Files that outlive a session, including what agents remember about you. | [Drive](/docs/guide#drive) |
+| Artifacts | Docs and web pages shared from Drive, with one link and a version history. | [Artifacts](/docs/guide#artifacts) |
 | Connectors | Governed access to the apps and APIs your team uses. | [Connectors](/docs/guide#connectors) |
 | Triggers | Schedules, webhooks, events and merged change requests that start an agent or wake a session. | [Triggers](/docs/guide#triggers) |
 | Computers | The cloud computer each session runs on, and your own computer if you connect it. | [Computers](/docs/guide#computers) |
@@ -148,12 +149,32 @@ Roles and groups are described in [People and access](/docs/guide#teams).
 | Where | What is there |
 | --- | --- |
 | **New session** | Starts a session. |
+| **Inbox** | Your notifications from every project. The number is how many you have not read. |
 | **Customize** | Your agents and what they use: **Agents**, **Skills**, **Connectors**, **Triggers**, **Loops**, **Models**, **Secrets**, **Repo**, **Review** and **Settings**. **Settings** opens **Project admin**, which holds the project's settings, including **Feature flags**. |
 | **Drive** | **My files**: your own files and what agents remember about you. |
 | **Apps** | The project's Apps. |
+| **Artifacts** | The docs and web pages shared in the project. |
 | **Sessions** | Your sessions. |
 | Search | The command palette: `Cmd+K` on a Mac, `Ctrl+K` on Windows and Linux. |
 | Project menu (top left) | **Switch Project**, **Account settings**, your personal **Settings** and **Log out**. |
+
+<a id="notifications" />
+
+### Notifications
+
+Kortix tells you when something needs you or is done:
+
+- A session you started, prompted or follow finishes, fails, asks you a question or asks for a permission.
+- Someone shares a session with you.
+- A trigger or loop you follow starts failing, is paused, or works again.
+- Someone comments on an Artifact you follow.
+- Your capture computer stops recording, or records again.
+
+Every notification lands in your **Inbox**: select **Inbox** in the sidebar, or search for it with `Cmd+K`. **Needs you** lists what waits for your answer; **Done** lists the rest. Select a notification to open it. **Mark all as read** clears the count.
+
+Kortix also sends a push to your phone and to this browser. Select **Turn on** in the Inbox to get them while every Kortix tab is closed. When you have the session open, its notifications arrive already read.
+
+Email is off for most kinds until you turn it on. A failing App, a paused trigger and a capture computer that stopped are emailed by default. Choose push and email per kind in **Settings** → **Notifications**.
 
 <a id="desktop-and-mobile-apps" />
 
@@ -444,6 +465,31 @@ On the session's own computer, only `/workspace` and `/drives` are kept. See [Wh
 
 When you delete a session, Kortix keeps its messages and its stored files for 30 days, so you can restore it.
 
+## Artifacts
+
+An Artifact is a doc or a web page that people and agents share from Drive: a report, a plan, a deck, a dashboard. It has one link, a version history and its own sharing. People read it and edit a doc in place. Agents publish it and save new versions.
+
+Artifacts are on in every project.
+
+### What an Artifact is
+
+- **A doc** is a folder in Drive with an `index.md`. It opens in an editor. It saves itself 2 seconds after you stop typing, and every save is a version. When someone else saves the doc while you edit it, autosave stops and you pick **Reload** or **Keep mine**. **Export as PDF** prints it.
+- **A page** is a folder with an `index.html` and its files: styles, scripts, images. It opens in a sandbox: its scripts run, but they cannot reach Kortix or your account.
+- **Where it lives.** A new Artifact is a folder under `Artifacts` in **My files**. An agent can also share a folder that is already in Drive. **Stop sharing** removes the Artifact and its links. Its files stay in Drive.
+- **Who sees it.** **Private** (only you and the people you add), **Project** (everyone in the project) or **Public** (anyone with the link, without signing in). Its creator and project managers change it with **Share**. To edit an Artifact, you need write access to its folder in Drive.
+- **Versions.** **History**, the clock button in the header, lists the saves by day. Saves less than 5 minutes apart show as one row. Open a save to read it. **Restore** writes it back as a new save.
+- **Ask AI** in the header opens a chat beside the Artifact. Your first message starts a session that edits it, and you see the edits as they land.
+
+Open **Artifacts** in the sidebar to see every Artifact you can open. Filter by **All**, **Yours**, **Shared with you** or **Pinned**, search by title and description, and select **New doc** to start a doc.
+
+Agents publish and save Artifacts from the command line. The full list is in [Artifact commands](/docs/developers#artifact-commands).
+
+| Command | What it does |
+| --- | --- |
+| `kortix artifacts publish <file\|dir>` | Upload and share a doc or a page. |
+| `kortix artifacts pull <id> <dir>` | Download the files to edit them. |
+| `kortix artifacts versions <id>` | List the saves. |
+
 ## Connectors
 
 <video src="/media/guide/connectors.mp4" aria-label="Connectors in Kortix: the catalog and the approval rules" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
@@ -678,7 +724,7 @@ Any website or tool that the agent starts on its computer can be opened from out
 
 Sessions of your project's agents run on a computer with a desktop. Select **Desktop** in the session header to watch it live. My Kortix runs on a smaller computer without a desktop, so its sessions have no **Desktop** button: it hands browsing to your agents' sessions.
 
-The desktop has one browser, and you share it with the agent. You see each page the agent visits, and the browser on the dock opens that same window with the same tabs and logins. The agent has control by default. Select **Take over** to click and type yourself, for example to sign in to a site for the agent, or to use the terminal or the file manager on the dock. Select **Return control** to hand control back. The desktop resizes to fit the panel.
+The desktop has one browser, and you share it with the agent. You see each page the agent visits, and the browser on the dock opens that same window with the same tabs and logins. The agent has control by default. Select **Take over** to click and type yourself, for example to sign in to a site for the agent, or to use the terminal or the file manager on the dock. Select **Return control** to hand control back. The desktop resizes to fit the panel. When it is open in more than one window, it fits the window where someone last clicked or typed, and the other windows show it scaled.
 
 You can ask the agent to put an app on its desktop, for example "install QGIS and open it on your desktop", and watch it in the panel. When you say "my desktop", the agent puts files in **My files**, which every session you start opens at `~/Desktop`, and puts programs on the session's desktop. When your own computer is connected to Kortix, the agent first asks which one you mean.
 
@@ -787,7 +833,7 @@ Connect a Claude Pro or Max plan, and Claude models run on it: **Claude Opus 5.5
 - Everything else works as with any other model: the agent's tools, permissions, questions, subagents, skills and pi extensions, and the messages and tool calls the session shows.
 - You can switch between a Claude subscription model and any other model in the same session. The new model sees the whole session.
 - A Claude account works like a ChatGPT account. It is private to you until you share it with the project or with chosen members. A session uses the accounts selected for it, then your own, then one shared with the project. Triggers and channels use the shared ones. Kortix stores the login encrypted and never shows it again.
-- Your Claude plan sets the limits. When you reach one, the turn ends with "Your Claude subscription limit is reached" and the time it resets.
+- Your Claude plan sets the limits. When every Claude account the session may use reaches its limit, the project's [fallback models](/docs/guide#fallback-models) take over the turn, and the session moves to the model that answered. It moves back to Claude once an account has room again. A fallback model with a smaller context window than the session needs cannot take over. A project without fallback models ends the turn with "Your Claude subscription limit is reached" and the time it resets.
 - Claude Code features that Kortix has no version of do not apply: plan usage (`/usage`), auto mode and Claude Code's own skills.
 
 **A ChatGPT subscription also generates images.** With a connected ChatGPT account, the `image_gen` tool can use `gpt-image-2` on your plan. ChatGPT sets its own image limit, separate from the chat limit, and reaching it does not pause the account for chat. An OpenAI, Google, xAI or OpenRouter key also generates images. Kortix-managed models do not generate images. See [Generate images](/docs/developers#generate-images).
@@ -837,7 +883,7 @@ Account owners, admins and project managers get an email at 80% and at 100% of a
 
 Open **Customize** → **Models** → **Routing** to list up to 8 models that the gateway tries in order when a model fails. When a fallback model answers, the composer shows **Running on** and its name. A request on your own key moves to a Kortix-billed model only when your own fallback list names that model.
 
-The fallback list also takes over when the requested model is unknown or retired. Every successful gateway answer names the model you asked for (`x-kortix-requested-model`) and the model that answered (`x-kortix-model`). When they differ, a fallback model answered.
+The fallback list also takes over when the requested model is unknown or retired, and when every Claude account of a session is at its plan limit. Every successful gateway answer names the model you asked for (`x-kortix-requested-model`) and the model that answered (`x-kortix-model`). When they differ, a fallback model answered.
 
 ## Outcomes
 
@@ -851,46 +897,73 @@ Three things work together:
 | --- | --- |
 | Agent | Who works on the goal. The agent's grants decide what the goal may touch. |
 | Loop or trigger | When work starts: the heartbeat, your answer, a merged change request. |
-| Goal | What done means, written in a folder in Drive. |
+| Goal | What done means. Kortix keeps the goal's state; the brief and the proof sit in a folder in Drive. |
 
 ### How it works
 
-#### The goal folder
+#### Where a goal lives
 
-Each goal is a folder in Drive, by default `Goals/<slug>/` in **My files** of the person who started it. The folder is the goal's memory: every session that works on the goal reads it and adds to it. It holds:
+Kortix keeps each goal as a record: its state, the pause, the owner and verifier sessions, the limits, and which criteria the verifier passed. Only Kortix changes that record, so an agent cannot mark its own goal done, pause it, or raise its own limits.
 
-- `GOAL.md`: the goal, its done criteria, the person it is for, the assigned agent, the state, the limits, and links to related files, Apps, change requests and sessions.
+Each goal also has a folder in Drive, `Goals/<slug>/` in **My files** of the person who started it:
+
+- `GOAL.md`: the brief: the outcome, the context, and the done criteria as the agent reads them.
 - `log.md`: one line per action, each handover and each verifier finding.
 - `evidence/`: the proof for each criterion and the verifier's report.
 
-You can open and edit these files. Your edits win.
+You can open and edit these files. Editing the brief changes what the agent reads. Editing a state, a pause or a limit in `GOAL.md` changes nothing: the goal's page and its controls are the place for that.
 
 #### States
 
-A goal moves through draft, active, waiting on you, verifying, and done. A person can stop it from any state. It never ends because it is hard, slow or blocked.
+A goal moves through draft, active, waiting on you, verifying, and done. A person can stop it from any open state and start a stopped goal again. It never ends because it is hard, slow or blocked.
+
+#### Who can do what
+
+| Who | Can |
+| --- | --- |
+| The person who started the goal, the person it is for, a project admin | See it, pause, resume, stop, start it again, answer it, change its criteria. |
+| Someone the goal's folder is shared with | See it. The page shows them no controls. |
+| The goal's owner session | Write the criteria while the goal is a draft, report progress, ask you a question, hand over to a fresh session, ask for verification. |
+| The goal's verifier session | Give the verdict. |
+
+The goal's page shows each person only the controls they may use.
+
+#### Pause and stop
+
+- **Pause** keeps the goal's state and starts no new turn until a person resumes it. A turn that is already running finishes, but Kortix refuses any change it tries to make to the goal.
+- **Resume** starts the heartbeat again and wakes the owner once.
+- **Stop** closes the goal: the heartbeat goes, and the owner's running turn is stopped. **Start again** reopens it in the same folder.
+
+If a control fails, the page says what failed and offers **Try again**. Trying again never applies a control twice. If the goal changed while you looked at it (someone else paused it, or it finished), the page shows the goal as it is now and tells you.
 
 #### Work and wake
 
 One owner session works on the goal at a time, and nothing runs between turns. These wake it:
 
-- the heartbeat loop, every 4 hours while the goal is open;
+- the heartbeat, every 4 hours while the goal is active;
 - your answer to a question it asked you;
 - the merge of a change request it opened;
 - the verifier's verdict.
 
-When the owner session's context is full, it writes a handover to `log.md` and a fresh session continues.
+When the owner session's context is full, it writes a handover to `log.md` and a fresh session continues. If the owner session fails, a successor session takes the goal over.
 
 #### Questions to you
 
 <a id="ask" />
 
-When only you can unblock the goal, it asks you and waits in **Waiting on you**. Answer on the goal's page or in the channel it used. Your answer wakes it.
+When only you can unblock the goal, it asks you and waits in **Waiting on you**. While it waits, the heartbeat is off: waiting costs no turns. It wakes when you answer on the goal's page, or at a follow-up time it set. Your answer reaches the agent under your name, once, even if you send it again after an error.
 
 #### The independent check
 
 <a id="check" />
 
-The agent never judges its own work. When every criterion has its proof, the goal starts a separate verifier session that did none of the work. The verifier checks each criterion, writes PASS or FAIL for each one to `evidence/verification.md`, and gives the verdict. Only a PASS on every criterion makes the goal done. A FAIL sends it back to work, with the findings in `log.md`.
+The agent never judges its own work. When every criterion has its proof, Kortix starts a separate verifier session that did none of the work. The verifier checks each criterion and gives one result per criterion: pass, fail or inconclusive. Kortix accepts the verdict only from that session and only when it covers every current criterion. A pass on every criterion makes the goal done. Anything else sends it back to work, with the findings in `log.md`.
+
+On the goal's page a criterion shows as:
+
+- a green check: the verifier passed it;
+- a grey check, **Reported met, not verified yet**: the agent says it is done, and nobody has checked it;
+- an empty circle: not met.
 
 #### Permissions
 
@@ -898,7 +971,18 @@ A goal grants no access of its own. An email, a Slack message or a connector cal
 
 #### Limits
 
-`GOAL.md` caps the work, so a stuck goal does not use up your credits: at most 12 wakes per UTC day (then the heartbeat waits for the next day) and at most 10 sessions in total. You can change `heartbeat`, `max_wakes_per_day` and `max_sessions` in `GOAL.md`.
+Kortix checks a goal's limits before each turn starts, so a stuck goal does not use up your credits: at most 12 wakes per UTC day and at most 10 sessions in total, by default. The goal's page shows the wakes used today and the sessions used. The agent cannot change these limits.
+
+When a goal cannot go on by itself, its page says **Blocked**, why, and the next step:
+
+| Reason | What happens |
+| --- | --- |
+| Out of credits | No wake starts. Add credits, then resume the goal. |
+| Wakes for today used | It goes on by itself after midnight UTC. |
+| Sessions used | Stop it, or ask a project admin to raise its session limit. |
+| Owner session lost | Start it again to give it a new session. |
+| Folder unreadable | Check the folder in Drive, then resume the goal. |
+| Goals turned off | Nothing runs. Turn Goals on, then resume the goal. |
 
 ### Set it up
 
@@ -907,19 +991,15 @@ A goal grants no access of its own. An email, a Slack message or a connector cal
 Turn on **Goals** in **Project admin** → **Feature flags**.
 </Step>
 <Step title="State the outcome">
-In a session, describe the outcome, for example "make sure…" or "keep at it until…". In a session that is already under way, say "make this a goal". On the **Goals** page, **New goal** starts one from the outcome.
+On the **Goals** page, **New goal** starts one from the outcome, or from a template. In a session that is already under way, say "make this a goal".
 </Step>
 <Step title="Read the plan">
-The agent replies with the outcome, the done criteria, the first thing it needs from you, and where to follow it.
+The agent writes the done criteria, starts the work, and asks you for what only you can give.
 </Step>
 <Step title="Follow it">
-Open **Goals** in the project sidebar: the state, the assigned person and agent, and the last and next wake. **Assigned to me** shows the goals that are for you. A goal's page shows its definition, log, evidence, links and sessions, and the buttons to answer, share or stop it.
+Open **Goals** in the project sidebar. It lists every goal you can see: your own, the ones for you, the ones shared with you, and every goal for a project admin. **Assigned to me** shows the goals that are for you. A goal's page shows its brief, criteria, activity, the next and last wake, the wakes used today, and the sessions, with the controls you may use.
 </Step>
 </Steps>
-
-<Callout type="warning">
-Do not delete the owner session of an open goal. If you delete it, the goal stops waking.
-</Callout>
 
 ## Channels
 

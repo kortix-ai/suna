@@ -9,7 +9,7 @@ test('slugifySpace produces a manifest-safe key and falls back', () => {
   expect(slugifySpace('***')).toBe('space');
 });
 
-test('slugifySpace always yields a valid room name: starts alphanumeric, at most 63 characters', () => {
+test('slugifySpace always yields a valid space slug: starts alphanumeric, at most 63 characters', () => {
   expect(slugifySpace('_ops_')).toBe('ops');
   const long = slugifySpace(`${'a'.repeat(62)} b`);
   expect(long.length).toBeLessThanOrEqual(63);
@@ -20,7 +20,8 @@ test('slugifySpace always yields a valid room name: starts alphanumeric, at most
 test('every template is a list of starting tabs; the first is the default', () => {
   const SPACE_TEMPLATES = spaceTemplates((key) => `translated:${key}`);
   expect(SPACE_TEMPLATES[0]!.tabs.map((t) => t.type)).toEqual(['goals', 'apps', 'artifacts']);
-  expect(SPACE_TEMPLATES.find((t) => t.id === 'room')!.tabs).toEqual([]);
+  expect(SPACE_TEMPLATES.map((t) => t.id)).toEqual(['standard', 'board']);
+  for (const template of SPACE_TEMPLATES) expect(template.tabs.length).toBeGreaterThan(0);
   for (const template of SPACE_TEMPLATES) expect(Array.isArray(template.tabs)).toBe(true);
 });
 
@@ -29,8 +30,8 @@ test('addSpaceToManifest creates the spaces map when absent, keeps the rest, and
   const text = addSpaceToManifest(yaml, { slug: 'sales', label: 'Sales', description: 'Deals.', tabs: [{ type: 'goals' }] });
   const next = parseYaml(text);
   expect(next.spaces.sales).toEqual({ label: 'Sales', description: 'Deals.', tabs: [{ type: 'goals' }] });
-  // Deprecated shapes are rewritten on the way: the version line goes, a missing `tools` is written as `all`.
-  expect(next.agents).toEqual({ a: { mode: 'primary', tools: 'all' } });
+  // Deprecated shapes are rewritten on the way: the version line goes, a missing `tools` is written as `"*"`.
+  expect(next.agents).toEqual({ a: { mode: 'primary', tools: '*' } });
   expect(next.kortix_version).toBeUndefined();
   expect(text).toContain('# keep me');
 });

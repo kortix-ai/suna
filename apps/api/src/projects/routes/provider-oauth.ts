@@ -28,7 +28,7 @@ import { memberMayReadProject } from '../../secrets/account-resource';
 import { reconnectProviderAccount, writeProviderAccount } from '../../secrets/provider-accounts';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { projectSecrets } from '@kortix/db';
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import {
   loadProjectForUser,
   assertProjectCapability,
@@ -42,6 +42,7 @@ import {
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { capturePersonEvent } from './product-events';
 
 // ─── Provider OAuth device flow (poll-based) ───────────────────────────────
 //
@@ -61,9 +62,7 @@ import { rethrowDatabaseError } from '../../shared/database-errors';
 // isn't tied to a client connection, so nothing the edge does can kill it.
 
 // Kortix provider id → how its device flow runs and where the login is saved.
-// `legacySecretNames` are older names for the same login. Nothing writes them
-// any more, but clients and the gateway still count them as connected, so a
-// disconnect must delete them too. `resourceProviderId` tags a named (pooled)
+// `resourceProviderId` tags a named (pooled)
 // connection. `secretName` is read lazily: the OpenCode names come from the
 // runtime catalog (a Console login is stored as the provider's own key secret,
 // see llm-gateway/credentials/opencode-console.ts).
@@ -71,7 +70,6 @@ interface OAuthProvider {
   label: string;
   secretName: string;
   resourceProviderId: string;
-  legacySecretNames?: string[];
   start: () => Promise<{ verificationUrl: string; userCode: string; handle: string; intervalMs: number }>;
   poll: (handle: string, userCode: string) => Promise<
     { status: 'pending' } | { status: 'failed'; error: string } | { status: 'authorized'; authJson: string }>;
@@ -83,7 +81,6 @@ function oauthProvider(provider: string): OAuthProvider | null {
   if (provider === 'openai') {
     return {
       label: 'ChatGPT', secretName: CODEX_AUTH_JSON_SECRET_NAME, resourceProviderId: 'codex',
-      legacySecretNames: ['OPENCODE_AUTH_JSON'],
       start: async () => {
         const c = await startCodexDeviceAuth();
         return { verificationUrl: c.verificationUrl, userCode: c.userCode, handle: c.deviceAuthId, intervalMs: c.intervalMs };
@@ -114,8 +111,7 @@ const OAUTH_POLL_INTERVAL_MS = 3000;
 // Persists the login as the provider's project secret (CODEX_AUTH_JSON, or the
 // OpenCode key secret) — private (the caller's own per-user OAuth login,
 // ownerUserId-scoped) when `sharing` says so, else the project-wide shared
-// row — then returns the caller's view of it. A legacy OPENCODE_AUTH_JSON row
-// is never overwritten by this. `sharing` only ever chooses private-vs-shared
+// row — then returns the caller's view of it. `sharing` only ever chooses private-vs-shared
 // here — member/group secret sharing was retired (see projects/secrets.ts).
 async function writeOAuthLoginSecret(input: {
   projectId: string;
@@ -482,6 +478,7 @@ export function registerProviderOauthRoutes(): void {
       if (!reconnected) {
         return c.json({ status: 'failed', error: `This ${cfg.label} account is no longer available. Add it again.` });
       }
+      capturePersonEvent(c, loaded, projectId, 'provider_configured', { provider: String(provider), method: 'oauth' });
       return c.json({ status: 'success', credential: {
         provider_id: cfg.resourceProviderId, secret_id: reconnected.secretId, label: reconnected.label,
         expires_in_ms: authExpiresInMs(result.authJson), updated_at: new Date().toISOString(),
@@ -499,6 +496,7 @@ export function registerProviderOauthRoutes(): void {
         label: state.l, value: result.authJson, projectId, kind: accountKind(cfg),
         sharing: state.s ? (parseSharingIntent(state.s, loaded.userId) ?? undefined) : undefined,
       });
+      capturePersonEvent(c, loaded, projectId, 'provider_configured', { provider: String(provider), method: 'oauth' });
       return c.json({ status: 'success', credential: {
         provider_id: cfg.resourceProviderId, secret_id: secretId, label: state.l,
         expires_in_ms: authExpiresInMs(result.authJson), updated_at: new Date().toISOString(),
@@ -516,6 +514,7 @@ export function registerProviderOauthRoutes(): void {
       sharing,
     });
 
+    capturePersonEvent(c, loaded, projectId, 'provider_configured', { provider: String(provider), method: 'oauth' });
     return c.json({
       status: 'success',
       credential: {
@@ -614,7 +613,7 @@ export function registerProviderOauthRoutes(): void {
           .where(
             and(
               eq(projectSecrets.projectId, projectId),
-              inArray(projectSecrets.name, [cfg.secretName, ...(cfg.legacySecretNames ?? [])]),
+              eq(projectSecrets.name, cfg.secretName),
               canManageShared ? or(ownPrivate, isNull(projectSecrets.ownerUserId)) : ownPrivate,
             ),
           );

@@ -47,37 +47,6 @@ function loadContentTimestamps(): Record<string, string> {
   return contentTimestamps!;
 }
 
-export const STATIC_PUBLIC_ROUTES = [
-  '/',
-  '/a1o',
-  '/about',
-  '/careers',
-  '/changelog',
-  '/changelog/releases',
-  '/contact',
-  '/developers',
-  '/docs',
-  '/download',
-  '/enterprise',
-  '/legal',
-  '/marketplace',
-  '/pricing',
-  '/security',
-  '/self-hosted',
-  '/services',
-  '/case-studies',
-  '/framework',
-  '/multiplayer',
-  '/sovereign',
-  '/compliance',
-  '/use-cases',
-  '/white-label',
-  '/desktop',
-  '/mobile',
-  '/slack',
-  '/teams',
-] as const;
-
 const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',

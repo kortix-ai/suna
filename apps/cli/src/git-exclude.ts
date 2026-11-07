@@ -1,6 +1,6 @@
 import { closeSync, constants, openSync, readFileSync, writeSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { runGit } from './git-run.ts';
 
 /** Append missing repository-local excludes through one stable file descriptor. */
 export function appendGitExcludeEntries(
@@ -8,11 +8,8 @@ export function appendGitExcludeEntries(
   entries: readonly string[],
   comment: string,
 ): void {
-  const gitPath = spawnSync('git', ['rev-parse', '--git-path', 'info/exclude'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  if (gitPath.status !== 0) return;
+  const gitPath = runGit(repoRoot, ['rev-parse', '--git-path', 'info/exclude']);
+  if (!gitPath.ok) return;
   const rawPath = gitPath.stdout.trim();
   if (!rawPath) return;
 

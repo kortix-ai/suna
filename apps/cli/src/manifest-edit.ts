@@ -138,14 +138,6 @@ export function readArrayEntry(
 // Against the `yaml` package's Document AST — comments are attached to nodes,
 // so mutating the AST in place and re-stringifying preserves them.
 
-function readYamlDocument(cwd?: string): YamlDocument {
-  return parseDocument(readManifestText(cwd));
-}
-
-function writeYamlDocument(doc: YamlDocument, cwd?: string): void {
-  writeManifestText(doc.toString(), cwd);
-}
-
 interface YamlSeqLike {
   items: unknown[];
 }
@@ -185,7 +177,7 @@ function findYamlArrayIndex(doc: YamlDocument, path: string[], field: string, va
 
 /** Append an entry built from `fields` (insertion order) to the `section` list. */
 export function appendArrayBlock(section: string, fields: Record<string, unknown>, cwd?: string): void {
-  const doc = readYamlDocument(cwd);
+  const doc = parseDocument(readManifestText(cwd));
   const path = section.split('.');
   const existing = doc.getIn(path, true) as
     | { items?: Array<{ range?: [number, number, number] }>; range?: [number, number, number] }
@@ -222,7 +214,7 @@ export function appendArrayBlock(section: string, fields: Record<string, unknown
     entry[k] = v;
   }
   doc.addIn(path, doc.createNode(entry));
-  writeYamlDocument(doc, cwd);
+  writeManifestText(doc.toString(), cwd);
 }
 
 /** Remove the `section` list entry whose `field` equals `value`. Returns false if not found. */
@@ -253,7 +245,7 @@ export function removeArrayBlock(section: string, field: string, value: string, 
   }
   let end = range[2];
   if (end < text.length && text[end] === '\n') end += 1;
-  writeManifest(file, `${text.slice(0, start)}${text.slice(end)}`);
+  spliceRange(file, text, [start, end], '');
   return true;
 }
 
@@ -278,9 +270,7 @@ export function setScalarInArrayBlock(
     | { range?: [number, number, number] }
     | undefined;
   if (valueNode?.range) {
-    const text = readFileSync(file, 'utf8');
-    const [start, end] = valueNode.range;
-    writeManifest(file, `${text.slice(0, start)}${renderYamlScalar(value)}${text.slice(end)}`);
+    replaceScalarNode(file, readFileSync(file, 'utf8'), valueNode.range, value);
   } else {
     doc.setIn([...path, idx, key], value);
     writeManifest(file, doc.toString());
@@ -293,6 +283,16 @@ function renderYamlScalar(value: string | number | boolean): string {
   return stringifyYaml(value).trimEnd();
 }
 
+/** Write `file` with `text[start, end)` replaced by `replacement`. */
+function spliceRange(file: string, text: string, [start, end]: [number, number], replacement: string): void {
+  writeManifest(file, `${text.slice(0, start)}${replacement}${text.slice(end)}`);
+}
+
+/** Replace the scalar at `range` (a YAML node's range) with `value`. */
+function replaceScalarNode(file: string, text: string, range: [number, number, number], value: string | number | boolean): void {
+  spliceRange(file, text, [range[0], range[1]], renderYamlScalar(value));
+}
+
 /** Set `key: value` inside a top-level map (e.g. `policy`), in place. Creates the map if absent. */
 export function setTableScalar(
   table: string,
@@ -300,15 +300,14 @@ export function setTableScalar(
   value: string | number | boolean,
   cwd?: string,
 ): void {
-  const doc = readYamlDocument(cwd);
+  const doc = parseDocument(readManifestText(cwd));
   const path = table.split('.');
   const text = readManifestText(cwd);
   const currentValue = doc.getIn([...path, key], true) as
     | { range?: [number, number, number] }
     | undefined;
   if (currentValue?.range) {
-    const [start, end] = currentValue.range;
-    writeManifestText(`${text.slice(0, start)}${renderYamlScalar(value)}${text.slice(end)}`, cwd);
+    replaceScalarNode(manifestFile(cwd), text, currentValue.range, value);
     return;
   }
   const currentMap = doc.getIn(path, true) as
@@ -341,7 +340,7 @@ export function setTableScalar(
   }
   ensureYamlMapPath(doc, path);
   doc.setIn([...path, key], value);
-  writeYamlDocument(doc, cwd);
+  writeManifestText(doc.toString(), cwd);
 }
 
 function renderYamlSequenceItem(fields: Record<string, unknown>, indent: string): string {
@@ -386,7 +385,7 @@ export function setYamlMapEntry(
     const lineEnd = text.indexOf('\n', end) === -1 ? text.length : text.indexOf('\n', end);
     // Only a comment (or nothing) may follow the value on its line.
     const rest = /^[ \t]*(#.*)?$/.test(text.slice(end, lineEnd)) ? lineEnd : end;
-    writeManifest(file, `${text.slice(0, start)}${renderYamlScalar(value)}${suffix}${text.slice(rest)}`);
+    spliceRange(file, text, [start, rest], `${renderYamlScalar(value)}${suffix}`);
     return 'replaced';
   }
   const node = doc.get(map, true) as

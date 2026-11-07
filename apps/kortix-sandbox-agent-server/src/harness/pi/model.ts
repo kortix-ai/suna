@@ -157,6 +157,16 @@ export interface PiModels {
   live: boolean
 }
 
+/**
+ * How pi fits an image before it enters the history (the `read` tool, tool results, prompts).
+ * pi keeps an image under `maxBytes` of base64 as it is, so a 1600x1200 aerial PNG went as
+ * 4.7 MB; with this cap pi sends the same pixels as a JPEG (q80: 0.61 MB, measured 2026-11-06).
+ * The gateway refuses a request with more than 22 MiB of images (`image-window.ts`), and
+ * Bedrock one over ~32 MB: twelve 3.6 MB PNG reads failed every retry on 2026-11-02.
+ * A screenshot PNG under 1.5 MB stays a sharp PNG.
+ */
+export const IMAGE_RESIZE = { maxWidth: 2000, maxHeight: 2000, maxBytes: 1_500_000, jpegQuality: 80 } as const
+
 function gatewayModel(id: string, entry: CatalogModel | undefined, target: GatewayTarget): Model<'openai-completions'> {
   return {
     id,
@@ -166,6 +176,7 @@ function gatewayModel(id: string, entry: CatalogModel | undefined, target: Gatew
     baseUrl: target.baseUrl,
     reasoning: entry?.reasoning === true,
     input: entry?.attachment ? ['text', 'image'] : ['text'],
+    ...(entry?.attachment ? { inputLimits: { images: { resize: { ...IMAGE_RESIZE } } } } : {}),
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     // No source knows the window: pi's own default for a model it cannot size.
     contextWindow: entry?.limit?.context ?? 128_000,
@@ -204,7 +215,28 @@ export async function createPiModels(input: {
     api: { 'openai-completions': openAICompletionsApi() },
   })
   models.setProvider(provider)
-  if (input.claude) models.setProvider(createClaudeProvider(input.claude))
+  if (input.claude) {
+    const gatewayApi = openAICompletionsApi()
+    models.setProvider(createClaudeProvider({
+      ...input.claude,
+      // The ref stays `claude-agent/<id>`: the gateway answers it with the project's fallback model.
+      // The Claude model's window and image input, so the step is the one Claude would have taken.
+      // No output cap: Claude's (64k) is above many fallbacks' own, which refuse it with a 400.
+      gatewayStep: (model, context, options) => gatewayApi.streamSimple(
+        gatewayModel(`${CLAUDE_AGENT_PROVIDER_ID}/${model.id}`, { attachment: true, limit: { context: model.contextWindow, output: model.maxTokens } }, target),
+        context,
+        {
+          ...options,
+          apiKey: target.apiKey,
+          onPayload: async (payload, payloadModel) => {
+            const next = ((await options.onPayload?.(payload, payloadModel)) ?? payload) as Record<string, unknown>
+            const { max_tokens: _maxTokens, max_completion_tokens: _maxCompletionTokens, ...rest } = next
+            return rest
+          },
+        },
+      ),
+    }))
+  }
   await credentials.modify(KORTIX_PROVIDER_ID, async () => ({ type: 'api_key', key: target.apiKey }))
   const fallback = nativeModelId(input.defaultModelRef) ?? Object.keys(catalog)[0] ?? null
   if (!fallback) throw new Error('pi harness has no model: no KORTIX_MODEL and no live model catalog')

@@ -71,14 +71,16 @@ export interface FileLoaders {
 }
 
 export interface FilesScreenProps {
-  projectId: string;
-  sessionId: string;
+  projectId: string | null;
+  sessionId: string | null;
   focused: boolean;
   width: number;
   height: number;
   onBack(): void;
   /** The host's `useSession` result. Gates the reads on the runtime phase. */
   session?: SessionState;
+  /** A file to open on mount (`/shown` → a shown file). */
+  target?: string | null;
   onToast?(message: string, kind?: 'info' | 'error'): void;
 }
 
@@ -97,7 +99,14 @@ const DRIVE_READS: DriveReads = {
   readFile: async (driveId, path) => (await readDriveFile(driveId, path)).blob,
 };
 
-export function FilesScreen({
+export function FilesScreen(props: FilesScreenProps) {
+  if (!props.projectId || !props.sessionId) {
+    return <text fg={theme.faint}>Open a session to browse its files.</text>;
+  }
+  return <FilesScreenBody {...props} projectId={props.projectId} sessionId={props.sessionId} />;
+}
+
+function FilesScreenBody({
   projectId,
   sessionId,
   focused,
@@ -105,8 +114,9 @@ export function FilesScreen({
   height,
   onBack,
   session,
+  target: reveal = null,
   onToast,
-}: FilesScreenProps) {
+}: FilesScreenProps & { projectId: string; sessionId: string }) {
   // The folders the session mounts under `/drives`. The hook is off while the
   // project's `drives` flag is off, so the tree is then exactly the sandbox.
   // React Query keeps the same array while a poll returns the same mounts, so
@@ -161,6 +171,7 @@ export function FilesScreen({
       width={width}
       height={height}
       onBack={onBack}
+      reveal={reveal}
       onToast={onToast}
     />
   );
@@ -173,7 +184,21 @@ export interface FilesViewProps {
   height: number;
   onBack(): void;
   root?: string;
+  /** A file to show on open: its folders expand, the cursor lands on it, the viewer reads it. */
+  reveal?: string | null;
   onToast?(message: string, kind?: 'info' | 'error'): void;
+}
+
+/** The folders between `root` and `path`, outermost first. Empty when `path` is not under `root`. */
+export function revealFolders(root: string, path: string): string[] {
+  const base = root.replace(/\/+$/, '');
+  if (!path.startsWith(`${base}/`)) return [];
+  const rest = path.slice(base.length + 1).split('/').filter(Boolean);
+  const folders: string[] = [];
+  for (let index = 0; index < rest.length - 1; index += 1) {
+    folders.push(`${base}/${rest.slice(0, index + 1).join('/')}`);
+  }
+  return folders;
 }
 
 /** Tree column width: a third of the screen, inside a readable band. */
@@ -188,6 +213,7 @@ export function FilesView({
   height,
   onBack,
   root = WORKSPACE_ROOT,
+  reveal = null,
   onToast,
 }: FilesViewProps) {
   const [tree, setTree] = useState<FileTree>(() => createTree(root));
@@ -236,6 +262,18 @@ export function FilesView({
     },
     [loaders],
   );
+
+  // `/shown` → a shown file: open its folders, put the cursor on it, read it.
+  // A relative path is the workspace's, as the agent's own tools resolve it.
+  useEffect(() => {
+    if (!reveal) return;
+    const path = reveal.startsWith('/') ? reveal : `${root.replace(/\/+$/, '')}/${reveal}`;
+    const folders = revealFolders(root, path);
+    setTree((current) => folders.reduce((next, folder) => expand(next, folder), current));
+    for (const folder of folders) void loadDirectory(folder);
+    setCursorId(path);
+    void openFile(path);
+  }, [reveal, root, loadDirectory, openFile]);
 
   const allRows = useMemo(() => flatten(tree), [tree]);
   const visibleRows = useMemo(

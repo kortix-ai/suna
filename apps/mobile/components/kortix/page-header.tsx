@@ -44,16 +44,14 @@
 import * as React from 'react';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { CaretLeftIcon, PlusIcon } from '@/lib/icons';
+import { PlusIcon } from '@/lib/icons';
 import { HEADER_BUTTON_SIZE, HEADER_ICON_SIZE } from '@/components/kortix/header-button';
 import { BackButton } from '@/components/kortix/back-button';
 import { MenuButton } from '@/components/kortix/menu-button';
-import { THEME } from '@/lib/utils/theme';
-import { LIQUID_GLASS_AVAILABLE, LiquidGlassCapsule } from '@/components/kortix/liquid-glass-capsule';
+import { GlassButtons, LIQUID_GLASS_AVAILABLE } from '@/components/kortix/liquid-glass';
 
 interface PageHeaderProps {
   /** The page title, centred between the left and right columns. A string
@@ -113,7 +111,9 @@ export function PageHeader({
     );
 
   return (
-    <View style={{ paddingBottom }} className={`bg-background ${className ?? ''}`}>
+    // zIndex: a pressed glass button grows past the row (the system press
+    // response); the page below must not draw over it.
+    <View style={{ paddingBottom, zIndex: 1 }} className={`bg-background ${className ?? ''}`}>
       {/* `SettingsHeader`'s metrics (56pt min height, 12pt below). Three
           flex-1 columns: the outer two take equal width no matter how many
           buttons either holds, so the title is centred in the row, not in
@@ -133,19 +133,23 @@ export function PageHeader({
         {/* The last button holds the padding edge: -mr-2.5 mirrors the
             hamburger's -ml-2.5. */}
         <View className={`${fillTitle ? '' : 'flex-1 '}flex-row items-center justify-end`}>
-          <View className={LIQUID_GLASS_AVAILABLE ? 'flex-row items-center rounded-full' : '-mr-2.5 flex-row items-center'}>
-            {LIQUID_GLASS_AVAILABLE && (rightActions || onAdd) ? <LiquidGlassCapsule /> : null}
-            {rightActions}
-            {onAdd ? (
-              <Button
-                variant="ghost"
-                size={HEADER_BUTTON_SIZE}
-                className="rounded-full"
-                onPress={onAdd}
-                accessibilityLabel={addLabel}
-                hitSlop={{ top: 10, bottom: 10 }}>
-                <Icon as={PlusIcon} size={HEADER_ICON_SIZE} className="text-foreground" />
-              </Button>
+          <View className={LIQUID_GLASS_AVAILABLE ? 'flex-row items-center' : '-mr-2.5 flex-row items-center'}>
+            {/* One glass capsule around the group (Review: History + plus). */}
+            {rightActions || onAdd ? (
+              <GlassButtons shared>
+                {rightActions}
+                {onAdd ? (
+                  <Button
+                    variant="ghost"
+                    size={HEADER_BUTTON_SIZE}
+                    className="rounded-full"
+                    onPress={onAdd}
+                    accessibilityLabel={addLabel}
+                    hitSlop={{ top: 10, bottom: 10 }}>
+                    <Icon as={PlusIcon} size={HEADER_ICON_SIZE} className="text-foreground" />
+                  </Button>
+                ) : null}
+              </GlassButtons>
             ) : null}
           </View>
         </View>

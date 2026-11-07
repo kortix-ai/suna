@@ -13,7 +13,7 @@
     "./types": "./src/types.ts"
   },
   "scripts": {
-    "test": "node ../../scripts/test-guard.mjs \"bun test --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'\"",
+    "test": "node ../../scripts/test-guard.mjs \"bun test --isolate --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'\"",
     "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
     "db:generate": "bunx drizzle-kit generate",
     "db:check": "bunx drizzle-kit check",

@@ -1,7 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT as ROOT, readRepoFile } from '../src/fixtures/repo';
 
 // The gateway budgets read kortix.gateway_spend_daily, a running total that an
 // AFTER INSERT trigger keeps (migration 20261020122531072_gateway_spend_daily).
@@ -10,7 +9,6 @@ import { describe, expect, it } from 'vitest';
 // cost correction must also re-insert the affected days into
 // gateway_spend_pending_days; then add its file to ALLOWED with that reason.
 
-const ROOT = join(import.meta.dirname, '..', '..');
 const SINCE = '20261020122531072';
 const ALLOWED = new Set<string>([
   // The retention purge nulls `request` and `response` of a deleted session's rows.
@@ -29,7 +27,7 @@ function offenders(): string[] {
     .split('\n')
     .filter((f) => /\.(ts|sql)$/.test(f) && !/\.test\.ts$|\/__tests__\//.test(f) && !ALLOWED.has(f))
     .filter((f) => !f.startsWith('packages/db/migrations/') || f.split('/').pop()! > SINCE);
-  return files.filter((f) => MUTATION.test(readFileSync(join(ROOT, f), 'utf8')));
+  return files.filter((f) => MUTATION.test(readRepoFile(f)));
 }
 
 describe('gateway_request_logs stays insert-only', () => {

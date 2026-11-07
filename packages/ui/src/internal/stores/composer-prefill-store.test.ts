@@ -19,6 +19,14 @@ describe('composer prefill store', () => {
     expect(useComposerPrefillStore.getState().consume('p1')).toBeNull();
   });
 
+  test("a Chrome panel prefill keeps 'when-ready', so the composer waits until it can send", () => {
+    useComposerPrefillStore.getState().setPrefill('p1', 'Summarize this page', { submit: 'when-ready' });
+    expect(useComposerPrefillStore.getState().consume('p1')).toEqual({
+      text: 'Summarize this page',
+      submit: 'when-ready',
+    });
+  });
+
   test('prefills stay in their own project', () => {
     useComposerPrefillStore.getState().setPrefill('p1', 'one', { submit: true });
     expect(useComposerPrefillStore.getState().consume('p2')).toBeNull();

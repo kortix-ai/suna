@@ -7,8 +7,8 @@
 # directly via WORKDIR /workspace, its CWD becomes "/workspace (deleted)"
 # the moment Daytona's init clobbers the dir, and every fs operation the
 # daemon subsequently attempts (Node's mkdir/stat/chdir) silently misbehaves
-# — opencode never spawns, materializeRepo never runs, the sandbox sits
-# stuck at `opencode: starting` forever.
+# — the agent runtime never spawns, materializeRepo never runs, the sandbox
+# sits stuck at `starting` forever.
 #
 # This script polls for /workspace to exist + be writable for several
 # consecutive iterations, mkdir's it if missing, cd's into the verified
@@ -68,7 +68,14 @@ desktop() {
       startxfce4 &
       # ponytail: voxl restarts on exit; Xvfb or XFCE dying needs `kortix-desktop stop && kortix-desktop start`.
       while :; do
-        voxl --port="${DESKTOP_PORT}" --enable-resize=true --files-root="${HOME}" || true
+        # The Kortix proxy authenticates every viewer, so voxl's own login is
+        # off. Its Host and Origin checks stay on: the box's browser loads any
+        # site, and a page there reaches this port on loopback. The edges
+        # rename the Host (Platinum `6901-<id>.aec.local`, Daytona
+        # `6901-<id>.daytonaproxy01.net`); the proxy sends no Origin here.
+        voxl --port="${DESKTOP_PORT}" --enable-resize=true --files-root="${HOME}" \
+          --enable-basic-auth=false \
+          --allowed-hosts="${KORTIX_DESKTOP_ALLOWED_HOSTS:-.aec.local,.daytonaproxy01.net}" || true
         sleep 1
       done
       ;;
@@ -173,9 +180,17 @@ WORKSPACE="${KORTIX_WORKSPACE:-/workspace}"
 # drive arrive root-owned (0644 files, 0755 folders). The runtime user must be
 # able to change them without sudo. A small root helper follows every
 # read-write mount under /drives (drives can be attached at any time) and
-# hands each new or changed entry to the runtime user. Read-only mounts are
-# left alone. It never blocks the boot: a failure leaves drives root-owned,
-# exactly as before.
+# hands root-owned entries to the runtime user. Read-only mounts are left
+# alone. It never blocks the boot: a failure leaves drives root-owned.
+#
+# A drive folder is shared: the person's own folder mounts read-write into
+# every session and into My Kortix at once. Boxes whose runtime users had
+# different uids (1000 and 1001) once re-owned the whole folder back and forth,
+# and every flip was a new version of every file in storage. So an entry owned
+# by another non-root uid changes hands only toward uid 1000 (the uid every
+# image now gives `kortix`, KORTIX_RUNTIME_UID in
+# packages/shared/src/sandbox/defaults.ts), and never on an attribute change:
+# that is another box's own chown. The rule is in the helper's docstring.
 # ---------------------------------------------------------------------------
 start_drive_owner() {
   local py=/home/kortix/.local/bin/python3
@@ -195,9 +210,23 @@ Runs as root, started by the entrypoint. Every few seconds it looks for
 read-write mounts under /drives (a drive can be attached at any time), fixes
 ownership once, then follows the mount with inotify and fixes each new or
 changed entry as it appears. Read-only mounts are left alone. stdlib only.
+
+Who gets an entry (`wants`). A drive folder is mounted read-write into several
+boxes at once, so every box must agree on the owner, or two boxes re-own the
+same files forever:
+
+1. An entry the runtime user already owns stays as it is (its group too).
+2. A root-owned entry goes to the runtime user, on any event.
+3. An entry owned by another non-root uid goes to the runtime user only when
+   the runtime uid is CANONICAL_UID (1000), and only on the first walk of a
+   mount or on a new entry (create, move in). Images before 2026-11 made
+   `kortix` uid 1001 on ubuntu:24.04; a box at 1000 takes their files over,
+   so it can write them. A box at any other uid never takes a file away from
+   another user, so it never starts a fight. An attribute change (IN_ATTRIB)
+   to another non-root owner is another box's own chown, and is never undone:
+   a box still on an old image re-owns at most once per change, not forever.
 """
 
-import ctypes
 import os
 import pwd
 import struct
@@ -206,53 +235,52 @@ import time
 
 ROOT = "/drives"
 USER = os.environ.get("KORTIX_DRIVE_OWNER", "kortix")
+CANONICAL_UID = 1000
 IN_ATTRIB, IN_MOVED_TO, IN_CREATE = 0x4, 0x80, 0x100
 IN_DELETE_SELF, IN_UNMOUNT, IN_IGNORED, IN_ISDIR, IN_Q_OVERFLOW = 0x400, 0x2000, 0x8000, 0x40000000, 0x4000
 MASK = IN_ATTRIB | IN_MOVED_TO | IN_CREATE | IN_DELETE_SELF
 SKIP = {"lost+found"}
 
-libc = ctypes.CDLL("libc.so.6", use_errno=True)
-pw = pwd.getpwnam(USER)
-UID, GID = pw.pw_uid, pw.pw_gid
 
+def wants(owner_uid, runtime_uid, attrib_only):
+    """True when an entry owned by `owner_uid` goes to `runtime_uid`.
 
-def own(path):
-    try:
-        st = os.lstat(path)
-        if st.st_uid != UID or st.st_gid != GID:
-            os.lchown(path, UID, GID)
-    except OSError:
-        pass
-
-
-def rw_mounts():
-    out = []
-    with open("/proc/mounts") as f:
-        for line in f:
-            parts = line.split()
-            if len(parts) < 4:
-                continue
-            mnt = parts[1].replace("\\040", " ")
-            if mnt.startswith(ROOT + "/") and "rw" in parts[3].split(","):
-                out.append(mnt)
-    return out
+    `attrib_only`: the only news about the entry is an attribute change.
+    """
+    if owner_uid == runtime_uid:
+        return False
+    if owner_uid == 0:
+        return True
+    return runtime_uid == CANONICAL_UID and not attrib_only
 
 
 class Watcher:
-    def __init__(self):
-        self.fd = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
+    def __init__(self, uid, gid):
+        import ctypes
+
+        self.uid, self.gid = uid, gid
+        self.libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        self.fd = self.libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
         if self.fd < 0:
             raise OSError(ctypes.get_errno(), "inotify_init1")
         self.paths = {}  # wd -> dir
         self.mounts = set()
 
+    def own(self, path, attrib_only=False):
+        try:
+            st = os.lstat(path)
+            if wants(st.st_uid, self.uid, attrib_only):
+                os.lchown(path, self.uid, self.gid)
+        except OSError:
+            pass
+
     def add_tree(self, top):
         for dirpath, dirnames, filenames in os.walk(top):
             dirnames[:] = [d for d in dirnames if not (dirpath == top and d in SKIP)]
-            own(dirpath)
+            self.own(dirpath)
             for name in filenames:
-                own(os.path.join(dirpath, name))
-            wd = libc.inotify_add_watch(self.fd, dirpath.encode(), MASK)
+                self.own(os.path.join(dirpath, name))
+            wd = self.libc.inotify_add_watch(self.fd, dirpath.encode(), MASK)
             if wd >= 0:
                 self.paths[wd] = dirpath
 
@@ -286,11 +314,25 @@ class Watcher:
             if mask & IN_ISDIR and mask & (IN_CREATE | IN_MOVED_TO):
                 self.add_tree(path)
             else:
-                own(path)
+                self.own(path, attrib_only=not mask & (IN_CREATE | IN_MOVED_TO))
+
+
+def rw_mounts():
+    out = []
+    with open("/proc/mounts") as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            mnt = parts[1].replace("\\040", " ")
+            if mnt.startswith(ROOT + "/") and "rw" in parts[3].split(","):
+                out.append(mnt)
+    return out
 
 
 def main():
-    w = Watcher()
+    pw = pwd.getpwnam(USER)
+    w = Watcher(pw.pw_uid, pw.pw_gid)
     last = 0.0
     while True:
         now = time.monotonic()
@@ -334,6 +376,28 @@ if [ "${KORTIX_WORKSPACE_VOLUME:-}" = "1" ]; then
     sudo -n rmdir "${WORKSPACE}/lost+found" 2>/dev/null || true
   fi
 fi
+
+# Files from an older image's runtime user. Images before 2026-11 made `kortix`
+# uid 1001 on ubuntu:24.04 (its stock `ubuntu` user held 1000); every image now
+# makes it 1000. /workspace is a Platinum volume that outlives the box, so a box
+# on the new image can find its own session's files owned by 1001 and unable to
+# change them. When the top of the directory belongs to another non-root uid,
+# hand that uid's entries (only those: never root's, never a third user's) to
+# the runtime user. chown changes a directory after its contents, so a run cut
+# short leaves the top unchanged and the next boot finishes it; after that the
+# check is one stat. Never blocks the boot.
+adopt_previous_owner() {
+  local dir=$1 old uid
+  uid=$(id -u)
+  [ "${uid}" -ne 0 ] && [ -d "${dir}" ] || return 0
+  old=$(stat -c %u "${dir}" 2>/dev/null) || return 0
+  [ "${old}" != 0 ] && [ "${old}" != "${uid}" ] || return 0
+  echo "[entrypoint] ${dir} belongs to uid ${old}: handing its files to $(id -un) (${uid})" >&2
+  sudo -n timeout 300 chown -R -h --from="${old}" "${uid}:$(id -g)" "${dir}" 2>/dev/null \
+    || echo "[entrypoint] could not hand ${dir} from uid ${old} to $(id -un); continuing" >&2
+}
+adopt_previous_owner "${WORKSPACE}" || true
+adopt_previous_owner "${HOME}" || true
 
 # Kortix Drive off Platinum (KORTIX_DRIVE_SYNC=1): no volume mounts here; the
 # daemon copies the session's drives into /drives and keeps them in sync, as
@@ -402,7 +466,7 @@ done
 # CRITICAL: cd to / (always exists) before exec'ing the daemon. Daytona's
 # runtime can delete /workspace AFTER the entrypoint loop exits — if we
 # cd'd into /workspace and exec'd from there, the daemon would inherit a
-# "deleted" cwd and every subsequent spawn (git, opencode) would inherit
+# "deleted" cwd and every subsequent spawn (git, pi) would inherit
 # it too, failing in confusing ways. Anchoring at / keeps the daemon's
 # cwd stable; the daemon itself works with absolute paths under
 # ${WORKSPACE} from here on.
@@ -446,8 +510,9 @@ AGENT_PINNED="${AGENT_STATE_DIR}/agent.pinned"
 # rolls back while a crash-looping OLD one never triggers an update.
 SWAP_CODE=75
 # A relaunched binary must survive this long to count as good. Shorter than any
-# real session, longer than a binary that dies on startup.
-HEALTHY_AFTER_S=60
+# real session, longer than a binary that dies on startup. Overridable for the
+# supervisor tests only, like the paths above.
+HEALTHY_AFTER_S="${KORTIX_AGENT_HEALTHY_AFTER_S:-60}"
 # Consecutive early exits after a swap before we give up and pin.
 MAX_EARLY_EXITS=2
 
@@ -584,7 +649,10 @@ while :; do
   status=$?
   set -e
   ran=$(( $(date +%s) - started ))
-
+  # A run that lasted HEALTHY_AFTER_S proves the binary starts: the early-exit
+  # budget counts only early exits in a row. Before, two early crashes hours
+  # apart, with healthy service between them, rolled back and pinned for good.
+  [ "${ran}" -ge "${HEALTHY_AFTER_S}" ] && early_exits=0
 
   if [ "${status}" -eq "${SWAP_CODE}" ]; then
     echo "[entrypoint] daemon requested update swap (ran ${ran}s)" >&2

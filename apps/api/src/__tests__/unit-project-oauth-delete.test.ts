@@ -143,11 +143,7 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
     });
   });
 
-  // The web counts a legacy OPENCODE_AUTH_JSON row as a connected ChatGPT
-  // subscription and offers "Disconnect ChatGPT" over it. This route deleted
-  // only CODEX_AUTH_JSON, returned 200, and left the legacy row in place, so
-  // such a project could never be disconnected from the product.
-  test('openai disconnect also deletes the legacy OPENCODE_AUTH_JSON credential', async () => {
+  test('openai disconnect deletes the CODEX_AUTH_JSON credential', async () => {
     const res = await buildApp(AUTHORIZED_USER_ID).request(`/v1/projects/${PROJECT_ID}/oauth/openai`, {
       method: 'DELETE',
     });
@@ -157,11 +153,10 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
     const { sql, params } = new PgDialect().sqlToQuery(deleteCalls[0].where as any);
     expect(params).toContain(PROJECT_ID);
     expect(params).toContain('CODEX_AUTH_JSON');
-    expect(params).toContain('OPENCODE_AUTH_JSON');
     expect(sql).toContain('"project_id" = ');
   });
 
-  // CODEX_AUTH_JSON / OPENCODE_AUTH_JSON can be per-user PRIVATE rows
+  // CODEX_AUTH_JSON can be a per-user PRIVATE row
   // (`owner_user_id` set). The delete used to filter on project + name only, so
   // one member's disconnect also deleted every other member's private login.
   // The delete must cover exactly the rows the caller sees as "connected": the
@@ -205,17 +200,6 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
       expect(sql).not.toContain('is null');
       expect(params).toContain(AUTHORIZED_USER_ID);
       expect(auditEvents[0]).toMatchObject({ metadata: { scope: 'own_private' } });
-    });
-
-    test('legacy OPENCODE_AUTH_JSON follows the same owner scoping', async () => {
-      const { sql, params } = await disconnect();
-      expect(params).toContain('CODEX_AUTH_JSON');
-      expect(params).toContain('OPENCODE_AUTH_JSON');
-      expect(params).toContain(AUTHORIZED_USER_ID);
-      expect(params).not.toContain(OTHER_MEMBER_USER_ID);
-      // The name filter and the owner filter are ANDed, so the owner scope binds
-      // both names; there is no per-name branch that skips it.
-      expect(sql).toMatch(/"name" in \(\$\d+, \$\d+\) and \(/);
     });
   });
 

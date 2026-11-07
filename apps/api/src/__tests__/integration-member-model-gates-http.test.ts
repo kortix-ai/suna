@@ -69,8 +69,8 @@ beforeAll(async () => {
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);
   // A RUNNING session the member OWNS. Ownership matters: `mayChangeSessionModel`
-  // gates on owner-or-manager (a live model change restarts opencode and would
-  // kill someone else's in-flight turn), and `canChangeSessionModel` refuses a
+  // gates on owner-or-manager (a live model change moves the model of someone
+  // else's running session), and `canChangeSessionModel` refuses a
   // terminal status. Both must be satisfied for the role floor to be what this
   // suite is actually reading.
   await db.insert(projectSessions).values({
@@ -195,7 +195,7 @@ describe('project member — model selection', () => {
 
   test('can WRITE the session model on a session it owns', async () => {
     const res = await req('PUT', `${base}/sessions/${SESSION}/model`, memberKey, {
-      opencode_model: 'kortix/deepseek-v4-flash',
+      model: 'kortix/deepseek-v4-flash',
     });
     expect(await roleDenied(res)).toBe(false);
     expect(res.status).not.toBe(403);
@@ -209,6 +209,21 @@ describe('project member — model selection', () => {
     } else {
       expect(res.status).toBe(200);
     }
+  });
+
+  test('a switch refuses an unknown model before enqueueing its continuation', async () => {
+    const res = await req('PUT', `${base}/sessions/${SESSION}/model`, memberKey, {
+      model: 'kortix/nonexistent-synthetic-model', prompt: 'Continue', idempotency_key: 'unknown-model',
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ code: 'INVALID_SESSION_MODEL' });
+  });
+
+  test('a switch cannot mutate a session the caller cannot see', async () => {
+    const res = await req('PUT', `${base}/sessions/${crypto.randomUUID()}/model`, memberKey, {
+      model: 'kortix/nonexistent-synthetic-model', prompt: 'Continue', idempotency_key: 'hidden-session',
+    });
+    expect(res.status).toBe(404);
   });
 
   test("session model write is floored 'session', not 'write'", () => {

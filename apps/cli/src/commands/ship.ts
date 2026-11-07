@@ -149,7 +149,7 @@ export async function runShip(argv: string[]): Promise<number> {
     );
     return 1;
   }
-  if (!run('git', ['rev-parse', '--is-inside-work-tree']).ok) {
+  if (!run(['rev-parse', '--is-inside-work-tree']).ok) {
     process.stderr.write(
       `${status.err('Not inside a git repository.')}\n` +
         `  ${C.dim}Run ${C.reset}${C.cyan}kortix init${C.reset}${C.dim} (it runs git init for you).${C.reset}\n`,

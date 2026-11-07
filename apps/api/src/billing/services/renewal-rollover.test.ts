@@ -37,6 +37,7 @@ mock.module('./account-write-owner', () => ({
   applyStripeSync: async (_id: string, patch: Record<string, unknown>) => {
     syncs.push(patch);
   },
+  isClosedBillingAccount: (row: { paymentStatus?: string | null } | null) => row?.paymentStatus === 'deleted',
 }));
 mock.module('../repositories/credit-accounts', () => ({
   getCreditAccount: async () => account,

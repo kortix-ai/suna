@@ -27,7 +27,6 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { logger } from '../../lib/logger';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { readJsonObject } from '../../shared/http-body';
 import type { AppEnv } from '../../types';
@@ -107,8 +106,7 @@ async function sourceProblem(c: Context<AppEnv>, projectId: string, metadata: un
 }
 
 /** Follow an agent-target runtime trigger's alerts, as a trigger's creator does (KRTX-1742). Best-effort. */
-async function followRuntimeTrigger(c: Context<AppEnv>, project: { accountId: string; metadata: unknown }, projectId: string, slug: string) {
-  if (!notificationsEnabled(project.metadata)) return;
+async function followRuntimeTrigger(c: Context<AppEnv>, project: { accountId: string }, projectId: string, slug: string) {
   const userId = triggerWatcherOf({
     authType: c.get('authType'),
     userId: c.get('userId'),
@@ -201,7 +199,7 @@ export function registerRuntimeTriggersRoutes(): void {
           name: z.string().optional().openapi({ description: 'Label.' }),
           source: z.record(z.string(), z.any()).openapi({
             description:
-              '{ type: "schedule", every | cron | at | in, timezone? } · { type: "webhook", secret_env } · { type: "event", connector, event, config?, account? } · { type: "app", app } · { type: "change_request", cr_id?, base? }',
+              '{ type: "schedule", every | cron | at | in, timezone? } · { type: "webhook", secret_env } · { type: "event", connector, event, config?, account? } · { type: "app", app, expect_event_within? } (5m–30d: no App event for that long alerts its owner) · { type: "change_request", cr_id?, base? }',
           }),
           target: z.record(z.string(), z.any()).openapi({ description: '{ session_id } wakes that session; { agent } starts a new session of that agent.' }),
         }) } } },

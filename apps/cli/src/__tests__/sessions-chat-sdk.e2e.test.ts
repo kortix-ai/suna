@@ -55,7 +55,7 @@ function sessionRow() {
     sandbox_provider: 'daytona',
     sandbox_id: provisioning ? null : SESSION_ID,
     sandbox_url: null,
-    opencode_session_id: provisioning ? null : ROOT_THREAD_ID,
+    runtime_session_id: provisioning ? null : ROOT_THREAD_ID,
     name: 'SDK chat',
     custom_name: null,
     agent_name: 'default',
@@ -138,7 +138,7 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
             agent_name: 'default',
             retriable: false,
             sandbox: { external_id: EXTERNAL_ID },
-            opencode_session_id: ROOT_THREAD_ID,
+            runtime_session_id: ROOT_THREAD_ID,
           });
         }
         if (

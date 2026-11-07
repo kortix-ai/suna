@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { clientAbortTarget } from './client-abort';
 
 // Every client that stops a turn — web, mobile, SDK, CLI — does it with one
-// OpenCode call through this proxy. It is the only place the control plane can
+// abort call through this proxy. It is the only place the control plane can
 // learn that a stop was ASKED FOR before the turn ends.
 describe('clientAbortTarget', () => {
   test('names the OpenCode session a client asked to abort', () => {

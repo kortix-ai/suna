@@ -9,7 +9,7 @@ import { db } from '../shared/db';
 //   platform default.
 // Stored `model` values are gateway wire models (bare managed id like 'glm-5.3-flash',
 // a BYOK 'provider/model', or 'codex/<id>') — never the synthetic `auto` and
-// never the opencode-only `kortix/` prefix.
+// never the runtime's `kortix/` provider prefix.
 //
 // AGENT-SCOPE ROWS ARE PROJECT-SCOPED (see the `project_id` doc comment on
 // `accountModelPreferences` in packages/db/src/schema/kortix.ts for the full
@@ -186,7 +186,7 @@ export async function deleteAccountModelPreference(params: {
  */
 export async function getSessionAgentContext(
   sessionId: string,
-): Promise<{ agentName: string; opencodeModel: string | null; projectDefaultAgent: string | null } | null> {
+): Promise<{ agentName: string; sessionModel: string | null; projectDefaultAgent: string | null } | null> {
   const [row] = await db
     .select({
       agentName: projectSessions.agentName,
@@ -199,12 +199,12 @@ export async function getSessionAgentContext(
     .limit(1);
   if (!row) return null;
   const metadata = row.metadata as Record<string, unknown> | null;
-  const opencodeModel =
-    metadata && typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null;
+  const sessionModel =
+    metadata && typeof metadata.model === 'string' ? metadata.model : null;
   const projectMetadata = row.projectMetadata as Record<string, unknown> | null;
   const projectDefaultAgent =
     projectMetadata && typeof projectMetadata.default_agent === 'string' && projectMetadata.default_agent.trim()
       ? projectMetadata.default_agent.trim()
       : null;
-  return { agentName: row.agentName, opencodeModel, projectDefaultAgent };
+  return { agentName: row.agentName, sessionModel, projectDefaultAgent };
 }

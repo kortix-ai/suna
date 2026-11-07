@@ -1,12 +1,15 @@
 import { describe, expect, mock, test } from 'bun:test';
 
-// The pure helpers under test never query; the module only needs `db` to load.
+// The helpers under test never query except `existsPublicShare`, which gets a
+// `db` stub of its own below.
 mock.module('./db', () => ({ hasDatabase: true, db: {} }));
 
 const {
   buildPublicShareInsert,
+  existsPublicShare,
   isViewOnlyShare,
   publicShareToken,
+  publicShareTokenHash,
   serializePublicShare,
   shareIdFromPublicRef,
 } = await import('./session-public-shares');
@@ -99,5 +102,36 @@ describe('shareIdFromPublicRef', () => {
     for (const ref of ['', 'not-a-uuid', 'kps_', 'kps_xyz', `${TOKEN}0`, 'KPS_11111111111141118111111111111111']) {
       expect(shareIdFromPublicRef(ref)).toBeNull();
     }
+  });
+});
+
+describe('existsPublicShare', () => {
+  test('answers the share id of a stored token, asks once per token, and null for a token of no row', async () => {
+    const db: { select?: unknown } = await import('./db').then((module) => module.db as { select?: unknown });
+    const known: Record<string, string> = { [publicShareTokenHash(TOKEN)]: SHARE_ID };
+    const asked: string[] = [];
+    // The chain the helper uses: select().from().where(cond).limit(1).
+    db.select = () => ({
+      from: () => ({
+        where: (cond: { queryChunks: Array<{ value?: unknown }> }) => {
+          // The token hash is the `Param` chunk of the `token_hash` equality.
+          const tokenHash = cond.queryChunks.map((chunk) => chunk.value).find((value) => typeof value === 'string');
+          asked.push(String(tokenHash));
+          const shareId = known[String(tokenHash)];
+          return { limit: async () => (shareId ? [{ shareId }] : []) };
+        },
+      }),
+    });
+
+    expect(await existsPublicShare(TOKEN)).toBe(SHARE_ID);
+    expect(await existsPublicShare(TOKEN)).toBe(SHARE_ID);
+    expect(await existsPublicShare(TOKEN)).toBe(SHARE_ID);
+    // A verified token is cached: a popular link asks once for three views.
+    expect(asked).toHaveLength(1);
+
+    const invented = publicShareToken('99999999-9999-4999-8999-999999999999');
+    expect(await existsPublicShare(invented)).toBeNull();
+    expect(await existsPublicShare(invented)).toBeNull();
+    expect(asked).toHaveLength(3);
   });
 });

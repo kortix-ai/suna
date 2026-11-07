@@ -10,6 +10,7 @@ const KINDS = new Set((process.env.VOICE_CARDS ?? 'weather,version,price,fx,f1')
 // A primary API that has not answered in 300 ms (p90 231) is asked again: a card past its 800 ms wait loses to the web
 // search, which is slower and can be wrong ("around twenty-five degrees" against a forecast of 9 to 18).
 const get = async (u: string) => {
+  //codeql[js/file-access-to-http] Non-exploit: the host of every card URL is one of the fixed, allowlisted CARD_HOSTS (open-meteo, open-meteo geocoding, endoflife.date, npm registry, deps.dev, er-api, coingecko, jolpi) and the caller-chosen words are encodeURIComponent'd path/query text, never the request target.
   const r = await hedged((signal) => fetch(u, { headers: { 'user-agent': 'voice-agent' }, signal }), 300, undefined, false)
   if (!r.ok) throw new Error(`${r.status}`)
   return r.json() as Promise<any>
@@ -26,6 +27,9 @@ const located = (place: string) => {
   void found.then((g) => g || places.delete(key), () => places.delete(key))
   return found
 }
+/** Whether the geocoder knows the place (the card's own lookup, cached for it); undefined when it did not answer in time. */
+export const placeKnown = (place: string, ms = 800): Promise<boolean | undefined> =>
+  Promise.race([located(place).then((g) => !!g, () => undefined), new Promise<undefined>((ok) => setTimeout(ok, ms))])
 // open.er-api.com's rates are daily, and one answer holds every currency of its base: kept ten minutes per base, so a
 // follow-up in another currency ("And in Serbian dinars?" after a dollar rate) reads its rate in hand. It fetched the
 // same address again after its transcript, the card that turn waited on (~960 ms against ~560 for follow-ups in hand).

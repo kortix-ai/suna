@@ -509,7 +509,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
         // open thread: closing its tab clears `activeSessionId`, and the
         // project stack's view route pops itself back to home.
         const tabs = useTabStore.getState();
-        const rootId = confirmDelete.runtime_session_id ?? confirmDelete.opencode_session_id;
+        const rootId = confirmDelete.runtime_session_id;
         if (rootId) {
           tabs.closeTab(rootId);
         } else if (tabs.activeSessionId === confirmDelete.session_id) {

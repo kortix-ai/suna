@@ -32,7 +32,7 @@ function provisioning(
     agent_name: 'kortix',
     retriable: true,
     sandbox: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     observed_at: observed,
     action: 'none',
     boot: {
@@ -44,8 +44,8 @@ function provisioning(
   };
 }
 
-const STARTING = { stage: 'starting', agent_name: 'kortix', retriable: true, opencode_session_id: null, boot: { phase: 'booting', since: at(3, 0), actively_starting: true, image: null } };
-const READY = { stage: 'ready', agent_name: 'kortix', retriable: false, opencode_session_id: 'ses_rt', boot: { phase: 'ready', since: at(3, 5), actively_starting: false, image: null } };
+const STARTING = { stage: 'starting', agent_name: 'kortix', retriable: true, runtime_session_id: null, boot: { phase: 'booting', since: at(3, 0), actively_starting: true, image: null } };
+const READY = { stage: 'ready', agent_name: 'kortix', retriable: false, runtime_session_id: 'ses_rt', boot: { phase: 'ready', since: at(3, 5), actively_starting: false, image: null } };
 
 /** Every image state once, plus one repeat that must not print a line. */
 const IMAGE_WALK = [
@@ -87,7 +87,7 @@ function sessionRow() {
     sandbox_provider: 'platinum',
     sandbox_id: null,
     sandbox_url: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     name: 'Image wait',
     custom_name: null,
     agent_name: 'kortix',

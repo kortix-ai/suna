@@ -19,7 +19,7 @@
  * `canShowExternalPurchase` (`lib/billing/store-policy`) gates all three.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AppState, Platform, RefreshControl, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { IN_APP_BROWSER_OPTIONS } from '@/lib/utils/link-target';

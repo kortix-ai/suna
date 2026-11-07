@@ -5,7 +5,6 @@
  * alpha 0 → 0.85 → 1) at `COMPOSER_FADE_SCALE` of its height. The live thread
  * (`SessionPage`) and the waking thread (`SessionConnecting`) both use it.
  */
-import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 

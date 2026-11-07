@@ -27,6 +27,15 @@ describe('parseRuntimePromptBody', () => {
   })
 })
 
+describe('thread_files', () => {
+  test('the prompt route passes thread_files on (the API sets it; the router reads it); a non-object is dropped', () => {
+    const parts = [{ type: 'text', text: 'hi' }]
+    const files = { folder: '/drives/general/threads/t-1a2b3c4d', context: '/drives/general/context.md', message: '/drives/general/threads/t-1a2b3c4d/messages/0001-a.md' }
+    expect(parseRuntimePromptBody({ parts, thread_files: files })).toEqual({ parts, threadFiles: files })
+    expect(parseRuntimePromptBody({ parts, thread_files: 'x' })).toEqual({ parts })
+  })
+})
+
 describe('the turn system text', () => {
   test('the steer route drops a system field; the prompt route passes it on', async () => {
     const seen: Array<[string, RuntimePromptInput]> = []
@@ -64,20 +73,18 @@ describe('the Kortix turn routes keep the runtime gate of the proxy they replace
       seen.push(name)
       return { status: 204, body: null }
     }
-    const turns = { prompt: verb('prompt'), abort: verb('abort'), readMessage: verb('readMessage') } as unknown as HarnessTurnService
+    const turns = { prompt: verb('prompt'), abort: verb('abort'), retractMessage: verb('retractMessage') } as unknown as HarnessTurnService
     const app = createRuntimeRouter(cfg, noQueries, {
       turns,
       readiness: async () => ({ ready: false, phase: 'workspace_not_ready', details: { reason: 'installing dependencies' } }),
     })
-    for (const path of ['/sessions/ses_1/prompt', '/sessions/ses_1/abort']) {
+    for (const path of ['/sessions/ses_1/prompt', '/sessions/ses_1/abort', '/messages/ses_1/msg_1/retract']) {
       const res = await post(app, path)
       expect(res.status).toBe(503)
       expect(res.headers.get('X-Kortix-Boot-Phase')).toBe('workspace_not_ready')
       // `code` is the one machine answer a client matches; the harness's own details follow it.
       expect(await res.json()).toEqual({ code: 'runtime_not_ready', reason: 'installing dependencies', phase: 'workspace_not_ready' })
     }
-    const read = await app.request('/messages/ses_1/msg_1', { headers: { Authorization: `Bearer ${TOKEN}` } })
-    expect(read.status).toBe(503)
     expect(seen).toEqual([])
   })
 

@@ -3,7 +3,7 @@ import { logger } from '../../lib/logger';
 import * as realSandboxProxyBackend from '../../sandbox-proxy/backend';
 import { PlatinumHttpError, PlatinumSandboxNotRunningError } from '../../shared/platinum';
 
-// T11: close the live opencode turn on a box BEFORE `provider.stop()`
+// T11: close the live turn on a box BEFORE `provider.stop()`
 // powers it off, via `abortLiveTurnBeforeStop` (exported alongside
 // `stopExpiredBox` in stop-box.ts, and reused by session-lifecycle/stop.ts —
 // see its own coverage in session-lifecycle/__tests__/stop.test.ts).

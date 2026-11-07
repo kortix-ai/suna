@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT } from '../src/fixtures/repo';
 
 // The brand kit is one skill, `.agents/skills/kortix-brand`. Its only file with
 // values is references/visual/visual-system.json. The generator turns it into
@@ -12,7 +13,6 @@ import { describe, expect, it } from 'vitest';
 // fail when a generated file drifts, when a guidance file cites a color value,
 // when a relative link breaks, or when a motion utility compiles to nothing.
 
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const KIT = join(REPO_ROOT, '.agents/skills/kortix-brand');
 const REFERENCES = join(KIT, 'references');
 const GENERATOR = join(KIT, 'scripts/generate-tokens.ts');

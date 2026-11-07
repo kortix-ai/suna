@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ProjectIconPicker } from './project-icon-picker';
 
 describe('ProjectIconPicker', () => {
-  test('renders both tab triggers, Emoji first', () => {
+  test('renders both tab triggers, Icons first', () => {
     // Wrapped in TooltipProvider: the Emoji tab is the default active panel,
     // and EmojiPicker wraps its skin-tone selector in Hint (components/ui/hint.tsx),
     // which throws `Tooltip must be used within TooltipProvider` without one —
@@ -16,9 +16,25 @@ describe('ProjectIconPicker', () => {
         <ProjectIconPicker onEmojiSelect={() => {}} onGlyphSelect={() => {}} />
       </TooltipProvider>,
     );
-    expect(html).toContain('Emoji');
-    expect(html).toContain('Icon');
-    expect(html.indexOf('Emoji')).toBeLessThan(html.indexOf('Icon'));
+    expect(html).toContain('Emojis');
+    expect(html).toContain('Icons');
+    expect(html.indexOf('Icons')).toBeLessThan(html.indexOf('Emojis'));
+  });
+
+  test('draws a trash-only remove button in the header when onRemove is passed', () => {
+    const withRemove = renderToStaticMarkup(
+      <TooltipProvider>
+        <ProjectIconPicker onEmojiSelect={() => {}} onGlyphSelect={() => {}} onRemove={() => {}} />
+      </TooltipProvider>,
+    );
+    expect(withRemove).toMatch(/<button type="button" aria-label="Remove icon"/);
+    expect(withRemove).not.toContain('>Remove icon<');
+    const without = renderToStaticMarkup(
+      <TooltipProvider>
+        <ProjectIconPicker onEmojiSelect={() => {}} onGlyphSelect={() => {}} />
+      </TooltipProvider>,
+    );
+    expect(without).not.toContain('aria-label="Remove icon"');
   });
 
   test('does not modify the emoji picker', () => {

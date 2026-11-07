@@ -28,7 +28,7 @@ const CLIENT_READ_METADATA = {
   trigger_slug: 'nightly-watch',
   // Read off the SINGLE-session response.
   sandbox_slug: 'sampleco',
-  opencode_model: 'kortix/codex/gpt-5.6-sol',
+  model: 'kortix/codex/gpt-5.6-sol',
 };
 
 const HEAVY_METADATA = {
@@ -49,7 +49,7 @@ const row = (over: Record<string, unknown> = {}) =>
     sandboxProvider: 'platinum',
     sandboxId: 's',
     sandboxUrl: null,
-    opencodeSessionId: null,
+    runtimeSessionId: null,
     agentName: 'default',
     status: 'stopped',
     error: null,
@@ -133,10 +133,10 @@ test('session labels survive list metadata trimming', () => {
 });
 
 test('list serialization prefers the durable conversation selection without changing the creation pin', () => {
-  const source = row({ metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } });
+  const source = row({ metadata: { model: 'kortix/deepseek-v4.1-flash' } });
   const out = serializeSession(source, { trimListMetadata: true, conversationModel: 'kortix/glm-5.3-flash' });
   expect(out.model).toBe('kortix/glm-5.3-flash');
-  expect(out.metadata.opencode_model).toBe('kortix/deepseek-v4.1-flash');
+  expect(out.metadata.model).toBe('kortix/deepseek-v4.1-flash');
   expect(serializeSession(source).model).toBe('kortix/deepseek-v4.1-flash');
   expect(serializeSession(row({ metadata: {} })).model).toBeNull();
   expect(serializeSession(source, { canAccess: false, conversationModel: 'kortix/glm-5.3-flash' }).model).toBeNull();

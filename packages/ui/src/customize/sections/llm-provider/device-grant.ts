@@ -62,3 +62,31 @@ export async function runDeviceGrant({
     setError(err instanceof Error ? err.message : failedMessage);
   }
 }
+
+/**
+ * One generation per sign-in run. `begin()` starts a run and returns ITS
+ * cancelled check; `cancel()` (Cancel, unmount) ends every run so far.
+ *
+ * A single shared boolean could not tell runs apart: Cancel set it, the next
+ * Connect cleared it, and the old loop (asleep in its poll interval) woke up
+ * "not cancelled", polled its old flow, and its `expired` answer wiped the new
+ * code off the card.
+ */
+export function createRunGeneration() {
+  let current = 0;
+  return {
+    begin(): () => boolean {
+      current += 1;
+      const run = current;
+      return () => current !== run;
+    },
+    /** The cancelled check of the run in progress, without starting one. */
+    current(): () => boolean {
+      const run = current;
+      return () => current !== run;
+    },
+    cancel(): void {
+      current += 1;
+    },
+  };
+}
