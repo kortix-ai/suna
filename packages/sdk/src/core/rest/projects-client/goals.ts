@@ -476,7 +476,7 @@ async function goalWrite(send: () => Promise<{ data?: { goal: ProjectGoalRecord 
 const goalsPath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/goals`;
 function goalPath(projectId: string, goalId: string): string {
   // `encodeURIComponent` keeps "." and "..", and the URL parser resolves them: `goals/..` would reach `/projects/:projectId`.
-  if (goalId === '.' || goalId === '..') throw new Error(`Refused the goal id "${goalId}": a "." or ".." path segment would send the request to another endpoint.`);
+  if (goalId === '.' || goalId === '..') throw new Error(`Refused the request path ${goalsPath(projectId)}/${goalId}: a "." or ".." segment would send it to another endpoint. Pass ids exactly as Kortix prints them.`);
   return `${goalsPath(projectId)}/${encodeURIComponent(goalId)}`;
 }
 

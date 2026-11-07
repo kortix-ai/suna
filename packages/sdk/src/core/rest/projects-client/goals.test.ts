@@ -501,8 +501,8 @@ describe('goal record: the calls a goal session makes (the CLI)', () => {
 
   test('a "." or ".." goal id is refused before any request: the URL parser would send it to another endpoint', async () => {
     for (const id of ['.', '..']) {
-      await expect(getProjectGoal('p1', id)).rejects.toThrow(`Refused the goal id "${id}"`);
-      await expect(postProjectGoalAction('p1', { goal_id: id, revision: 1 }, 'progress', {})).rejects.toThrow(`Refused the goal id "${id}"`);
+      await expect(getProjectGoal('p1', id)).rejects.toThrow(`Refused the request path /projects/p1/goals/${id}: a "." or ".." segment`);
+      await expect(postProjectGoalAction('p1', { goal_id: id, revision: 1 }, 'progress', {})).rejects.toThrow(`Refused the request path /projects/p1/goals/${id}:`);
     }
     expect(calls).toEqual([]);
   });
