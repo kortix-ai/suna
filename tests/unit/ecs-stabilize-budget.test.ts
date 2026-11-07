@@ -456,8 +456,7 @@ describe.concurrent('ECS rollout --wait-for serving', () => {
   });
 
   it('is used by every Deploy Dev roll except the worker, and by no staging or production roll', () => {
-    const workflow = readWorkflow;
-    const devRolls = workflow('deploy-dev.yml')
+    const devRolls = readWorkflow('deploy-dev.yml')
       .split('\n')
       .filter((line) => line.includes('infra/scripts/ecs-deploy.sh') && !line.trim().startsWith('#') && !line.trim().startsWith('-'))
       // A --dry-run renders the task definition and rolls nothing (the release
@@ -471,9 +470,9 @@ describe.concurrent('ECS rollout --wait-for serving', () => {
     const workerRolls = devRolls.filter((line) => line.includes('--service worker'));
     expect(workerRolls).toHaveLength(1);
     expect(workerRolls[0]).not.toContain('--wait-for');
-    expect(workflow('deploy-dev.yml').match(/--wait-for serving/g)).toHaveLength(3);
+    expect(readWorkflow('deploy-dev.yml').match(/--wait-for serving/g)).toHaveLength(3);
     for (const name of ['deploy-staging.yml', 'deploy-prod.yml', 'rollback-prod.yml']) {
-      expect(workflow(name)).not.toContain('--wait-for');
+      expect(readWorkflow(name)).not.toContain('--wait-for');
     }
   });
 });
