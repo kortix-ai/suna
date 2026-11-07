@@ -58,6 +58,16 @@ describe('wallet failure branches', () => {
     ).rejects.toThrow('Credit settlement failed for acct: Failed query');
   });
 
+  test('a failed settlement keeps the driver error as its cause, so callers still recognize a database error (KRTX-4400)', async () => {
+    const { isDatabaseError } = await import('../../shared/database-errors');
+    executeError = queryError({ name: 'PostgresError', code: '22P02', message: 'invalid input syntax' });
+    const error = await wallet
+      .settle({ accountId: 'acct', amount: 1, description: 'x', kind: 'llm_debit', key: null })
+      .catch((err) => err);
+    expect(error.cause).toBe(executeError);
+    expect(isDatabaseError(error)).toBe(true);
+  });
+
   test('a grant that loses a same-key race reports a replay', async () => {
     executeError = duplicate;
     expect(

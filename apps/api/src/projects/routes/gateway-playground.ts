@@ -17,6 +17,8 @@ import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import { isDatabaseError } from '../../shared/database-errors';
+import { logger } from '../../lib/logger';
 import {
   assertGatewayBudget,
   GatewayBudgetExceededError,
@@ -24,6 +26,32 @@ import {
   recordGatewayUsage,
 } from '../../llm-gateway/hooks';
 import { workspaceIdParam } from '../../shared/route-params';
+
+/**
+ * The per-model error text POST /{projectId}/gateway/playground returns for
+ * one of the requested models. `err.message` is safe to echo for a typed
+ * failure (`resolveCandidates`/`callUpstream` throw with a caller-meaningful
+ * reason), but `recordGatewayUsage`/`persistGatewayTrace` can reject with a
+ * `DrizzleQueryError`/`PostgresError` whose message is the whole generated
+ * SQL statement plus its bound parameters (KRTX-3422's catch-echo guard).
+ * This catch sits inside `Promise.all`, outside the route's own try/catch, so
+ * nothing here reached the global handler (`shared/http-errors.ts`) that
+ * already answers an uncaught database error with a generic 500 — an
+ * authenticated caller could turn a crafted `model` value that made the
+ * write fail into an oracle for the usage/trace tables (KRTX-4400). Never
+ * echo a database error's message; log it instead and answer generically,
+ * same shape as every other guarded catch-all in this codebase.
+ */
+export function playgroundModelError(err: unknown, model: string): string {
+  if (isDatabaseError(err)) {
+    logger.error('[gateway-playground] model run failed with a database error', {
+      model,
+      error: err instanceof Error ? err.message.split('\n')[0] : String(err),
+    });
+    return 'Request failed';
+  }
+  return err instanceof Error ? err.message : 'Request failed';
+}
 
 export function registerGatewayPlaygroundRoutes(): void {
   projectsApp.openapi(
@@ -225,7 +253,7 @@ export function registerGatewayPlaygroundRoutes(): void {
               provider: shownProvider(descriptor),
             };
           } catch (err) {
-            return { model, ok: false, error: err instanceof Error ? err.message : 'Request failed' };
+            return { model, ok: false, error: playgroundModelError(err, model) };
           }
         }),
       );
