@@ -45,17 +45,19 @@ def read(relative_path: str) -> str:
 
 
 WORKFLOW = read(".github/workflows/deploy-preview.yml")
-# The preview runtime moved into the test package. These four files are the
+# The preview runtime moved into the test package. These five files are the
 # whole implementation of "boot a preview and delete it again".
 PREVIEW_CLI = read("tests/bin/sandbox-preview.ts")
 PREVIEW_CORE = read("tests/src/core/sandbox-preview.ts")
 PREVIEW_PROVIDERS = read("tests/src/core/sandbox-preview-providers.ts")
 PREVIEW_STACK = read("tests/src/core/preview-stack.ts")
+PREVIEW_REAPER_IO = read("tests/src/core/preview-reaper-io.ts")
 PREVIEW_SOURCES = {
     "tests/bin/sandbox-preview.ts": PREVIEW_CLI,
     "tests/src/core/sandbox-preview.ts": PREVIEW_CORE,
     "tests/src/core/sandbox-preview-providers.ts": PREVIEW_PROVIDERS,
     "tests/src/core/preview-stack.ts": PREVIEW_STACK,
+    "tests/src/core/preview-reaper-io.ts": PREVIEW_REAPER_IO,
 }
 
 JOB_HEADING = re.compile(r"^  [a-z][a-z0-9-]*:$", re.MULTILINE)
@@ -563,9 +565,9 @@ class PreviewTeardown(unittest.TestCase):
         # the host's child session boxes, then deletes the host. The old exact
         # one-line assertion rejected this stronger lifecycle because listing
         # moved into a local variable.
-        self.assertIn("const sandboxes = await allPlatinumPreviewSandboxes(api);", PREVIEW_PROVIDERS)
-        self.assertIn("const owned = selectTeardownSandboxIds(sandboxes, input);", PREVIEW_PROVIDERS)
-        self.assertIn("await stopPreviewSessionsOf(api, sandboxes, ownedNames);", PREVIEW_PROVIDERS)
+        self.assertIn("const sandboxes = await allPlatinumPreviewSandboxes(api);", PREVIEW_REAPER_IO)
+        self.assertIn("const owned = selectTeardownSandboxIds(sandboxes, input);", PREVIEW_REAPER_IO)
+        self.assertIn("await stopPreviewSessionsOf(api, sandboxes, ownedNames);", PREVIEW_REAPER_IO)
         self.assertIn("PREVIEW_BRANCH_ENV", job("teardown"))
 
     def test_a_failed_pull_request_query_never_reads_as_no_active_previews(self):

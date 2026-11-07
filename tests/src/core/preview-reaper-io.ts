@@ -156,6 +156,13 @@ export function envNumber(name: string, fallback: number): number {
   return process.env[name]?.trim() && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
+/**
+ * Delete this pull request's sandbox, in whichever shape it was deployed.
+ *
+ * `branchEnv` is passed when the pull request runs a persistent environment. Its
+ * sandbox is named after the BRANCH, so looking only for the PR-named one would
+ * leave it running forever — a branch environment has no expiry to fall back on.
+ */
 export async function teardownPlatinumPreview(input: {
   apiUrl: string;
   apiKey: string;
