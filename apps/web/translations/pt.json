@@ -812,30 +812,10 @@
       "notificationsDescription": "Notificações do navegador sobre eventos nas suas sessões.",
       "unsupported": "Seu navegador não oferece suporte a notificações.",
       "enableNotifications": "Ativar notificações",
-      "permissionGranted": "Permissão do navegador concedida",
       "permissionDenied": "Bloqueadas pelo navegador — altere a permissão nas configurações do site",
-      "permissionDefault": "A permissão do navegador será solicitada ao ativar",
       "notificationTypes": "Tipos de notificação",
       "behavior": "Comportamento",
       "sendTestNotification": "Enviar notificação de teste",
-      "types": {
-        "onCompletion": {
-          "label": "Tarefas concluídas",
-          "description": "Quando uma sessão conclui sua tarefa"
-        },
-        "onError": {
-          "label": "Erros",
-          "description": "Quando uma sessão encontra um erro"
-        },
-        "onQuestion": {
-          "label": "Perguntas",
-          "description": "Quando o Kortix precisa da sua resposta para continuar"
-        },
-        "onPermission": {
-          "label": "Solicitações de permissão",
-          "description": "Quando o Kortix precisa de permissão para usar uma ferramenta"
-        }
-      },
       "notificationBehavior": {
         "onlyWhenHidden": {
           "label": "Somente quando a aba estiver oculta",
@@ -887,7 +867,7 @@
       "enableDescriptionPush": "Mostra notificações neste navegador, mesmo com todas as abas do Kortix fechadas.",
       "enableDescriptionDesktop": "Mostra notificações do aplicativo desktop enquanto a janela dele estiver aberta.",
       "enableDescriptionBrowser": "Mostra notificações neste navegador enquanto uma aba do Kortix estiver aberta.",
-      "notificationTypesDescription": "Estas escolhas valem em todos os celulares e navegadores. Um celular também tem a própria chave para Turno concluído, Turno com falha, Pergunta e Pedido de permissão. Ele só os recebe quando as duas estão ligadas. O sino lista todas as notificações dos projetos com a Central de notificações ligada.",
+      "notificationTypesDescription": "Estas escolhas valem em todos os celulares e navegadores. Um celular também tem a própria chave para Turno concluído, Turno com falha, Pergunta e Pedido de permissão. Ele só os recebe quando as duas estão ligadas. A caixa de entrada lista todas as notificações, independentemente destas escolhas. O e-mail fica desligado para a maioria dos tipos até você ativá-lo.",
       "push": "Push",
       "email": "E-mail",
       "channelSwitch": "{kind}: {channel}",
@@ -1288,10 +1268,6 @@
           "name": "Região dos EUA",
           "description": "Execute as novas sessões deste projeto na região Leste dos EUA. Uma sessão em andamento mantém a região até reiniciar."
         },
-        "notification_center": {
-          "name": "Central de notificações",
-          "description": "Avisa as pessoas a quem uma sessão diz respeito (quem enviou o prompt, quem a criou e quem a segue) com uma caixa de entrada com sino, push do navegador e e-mail, e alerta sobre gatilhos e ciclos que falham. Desligado: só o telefone de quem criou a sessão recebe o push dela, e o telefone de um proprietário da conta recebe um quando um gatilho começa a falhar."
-        },
         "event_triggers": {
           "name": "Gatilhos de eventos do Composio",
           "description": "Inicie um agente quando algo acontece em um app conectado: um novo e-mail, um pull request, um evento do calendário. Os eventos vêm do Composio. O Kortix também verifica por conta própria seus apps conectados."
@@ -1304,10 +1280,6 @@
           "name": "Sandboxes sem estado",
           "description": "Cada sessão mantém apenas o /workspace, em um volume próprio. Uma sandbox parada por uma hora é excluída, e a próxima abertura inicia uma nova com os mesmos arquivos e a mesma conversa. Os programas da sandbox anterior não estão mais em execução. A Kortix ativa por projeto."
         },
-        "artifacts": {
-          "name": "Artefatos",
-          "description": "Compartilhe documentos (Markdown) e páginas HTML (apresentações, painéis, mockups, ferramentas) de Arquivos com o projeto, pessoas escolhidas ou qualquer pessoa com um link. Os documentos são editados no próprio lugar, cada salvamento é uma versão do histórico de Arquivos e os documentos podem ser exportados em PDF. Adiciona a página Artefatos e `kortix artifacts`."
-        },
         "email_channel": {
           "name": "Canal de e-mail",
           "description": "Dê ao agente uma caixa de entrada no Resend: e-mails recebidos iniciam e continuam sessões, e o agente lê, responde e envia a partir da caixa. Use sua própria chave de API e domínio do Resend."
@@ -1319,10 +1291,6 @@
         "session_groups": {
           "name": "Grupos de sessões",
           "description": "Agrupe as sessões da barra lateral em pastas com nome compartilhadas por todo o projeto, por exemplo uma por loja ou cliente. Mova uma sessão para um grupo pelo menu dela ou arrastando; reordene e recolha os grupos."
-        },
-        "artifact_comments": {
-          "name": "Comentários em artefatos",
-          "description": "Discuta documentos e páginas em conversas com pessoas e agentes. Requer Artefatos."
         },
         "chrome": {
           "name": "Kortix no Chrome",
@@ -3379,8 +3347,7 @@
       "automation_failed": "Alerta de falha",
       "automation_recovered": "Alerta de recuperação",
       "capture_device_down": "Computador do Capture parado",
-      "capture_device_recovered": "Computador do Capture gravando de novo",
-      "artifact_comment": "Comentários em artefatos"
+      "capture_device_recovered": "Computador do Capture gravando de novo"
     },
     "kindDescription": {
       "turn_done": "Um turno termina.",
@@ -3391,33 +3358,37 @@
       "automation_failed": "Um trigger ou ciclo começa a falhar.",
       "automation_recovered": "Um trigger ou ciclo que falhava volta a funcionar.",
       "capture_device_down": "Um computador do Kortix Capture não está gravando. Enviado a quem gerencia o Capture.",
-      "capture_device_recovered": "Um computador do Kortix Capture que parou voltou a gravar.",
-      "artifact_comment": "Feedback, menções e respostas nos artefatos que você pode visualizar."
+      "capture_device_recovered": "Um computador do Kortix Capture que parou voltou a gravar."
     },
-    "bell": {
-      "label": "Notificações",
-      "unreadLabel": "Notificações: {count} não lidas",
+    "inbox": {
+      "title": "Caixa de entrada",
+      "description": "Atualizações das sessões, gatilhos e artefatos que envolvem você, de todos os projetos.",
+      "unreadLabel": "Caixa de entrada: {count} não lidas",
+      "unreadCount": "{count} não lidas",
       "markAllRead": "Marcar tudo como lido",
       "tabAll": "Tudo",
       "tabNeedsYou": "Precisa de você",
       "tabDone": "Concluído",
       "emptyNeedsYou": "Nada precisa de você agora",
+      "emptyNeedsYouDescription": "Perguntas, pedidos de permissão e falhas aparecem nesta aba.",
       "empty": "As notificações aparecerão aqui",
+      "emptyDescription": "O Kortix avisa você quando uma sessão termina, precisa da sua resposta ou falha.",
       "loadError": "Não foi possível carregar as notificações",
       "retry": "Tentar novamente",
       "unread": "Não lida",
       "promptPush": "Receba notificações quando o Kortix estiver fechado",
       "promptBackground": "Receba notificações quando o Kortix estiver em segundo plano",
       "turnOn": "Ativar",
-      "dismiss": "Dispensar"
+      "dismiss": "Dispensar",
+      "settings": "Configurações de notificação",
+      "emailOptIn": "O e-mail fica desligado para a maioria dos tipos até você ativá-lo."
     },
     "arrival": {
       "inProject": "{kind} em {project}",
       "openSession": "Abrir sessão",
       "openReminders": "Abrir ciclos",
       "openTriggers": "Abrir triggers",
-      "openConversation": "Abrir conversa",
-      "openArtifact": "Abrir artefato"
+      "openConversation": "Abrir conversa"
     },
     "session": {
       "mute": "Silenciar notificações",
@@ -5867,11 +5838,8 @@
       "line61JsxTextThisPageRefreshesAutomaticallyEvery30Seconds": "Esta página é atualizada automaticamente a cada 30 segundos."
     },
     "appNotFound": {
-      "line65JsxTextPageNotFound": "Página não encontrada",
-      "line70JsxTextThePageYouAposReLookingForDoesn": "A página que você está procurando não existe ou foi movida.",
       "line82JsxTextText404Error": "Erro 404",
-      "line85JsxTextResourceNotAvailable": "recurso não disponível",
-      "line100JsxTextReturnHome": "Voltar ao início"
+      "line85JsxTextResourceNotAvailable": "recurso não disponível"
     },
     "appOauthAuthorizePage": {
       "line146JsxTextInvalidAuthorizationRequest": "Solicitação de autorização inválida",
@@ -24897,7 +24865,6 @@
   },
   "artifacts": {
     "title": "Artefatos",
-    "gateDescription": "Compartilhe documentos e páginas HTML de Arquivos com sua equipe ou qualquer pessoa com um link. Os documentos são editados no próprio lugar; cada salvamento é uma versão.",
     "type": {
       "doc": "Documento",
       "html": "HTML"
@@ -24916,7 +24883,6 @@
     "emptyFiltered": "Nenhum artefato corresponde",
     "updated": "Atualizado {time}",
     "pinned": "Fixado",
-    "openComments": "{count, plural, one {# comentário em aberto} other {# comentários em aberto}}",
     "visibility": {
       "private": "Privado",
       "project": "Projeto",
@@ -25037,178 +25003,12 @@
     "embedConvert": "Converter em link",
     "embedCopy": "Copiar link",
     "embedDelete": "Excluir",
-    "discussion": {
-      "comments": "Comentários",
-      "activity": "Atividade",
-      "open": "Em aberto",
-      "resolved": "Resolvidos",
-      "outdated": "Desatualizados",
-      "outdatedHint": "Não é possível localizar este trecho no documento atual.",
-      "newComment": "Novo comentário",
-      "annotationMode": "Fixar um comentário",
-      "annotationModeHint": "Clique em um elemento para fixar um comentário. Arraste para marcar uma região.",
-      "annotationLoading": "Carregando anotações…",
-      "annotationUnavailable": "As anotações estão indisponíveis. Escolha {refresh} em {actions} para tentar novamente.",
-      "commentLabel": "Comentário",
-      "commentPlaceholder": "Deixe um comentário ou mencione alguém…",
-      "replyLabel": "Resposta",
-      "replyPlaceholder": "Escreva uma resposta…",
-      "postComment": "Comentar",
-      "postReply": "Responder",
-      "saveEdit": "Salvar alterações",
-      "cancel": "Cancelar",
-      "edit": "Editar",
-      "delete": "Excluir",
-      "deleteTitle": "Excluir comentário?",
-      "deleteDescription": "O texto é removido para todos e “Comentário excluído” fica no lugar. Não é possível desfazer.",
-      "commentDeleted": "Comentário excluído",
-      "threadDeleted": "Esta conversa foi excluída.",
-      "resolve": "Resolver",
-      "reopen": "Reabrir",
-      "edited": "Editado",
-      "commentActions": "Ações do comentário",
-      "focusThread": "Mostrar trecho",
-      "quoteLabel": "Trecho selecionado",
-      "waitingForPerson": "Aguardando uma pessoa",
-      "deliveryFailed": "Não foi possível enviar os comentários ao agente.",
-      "sendFailed": "Não foi possível enviar estes comentários. Tente novamente.",
-      "retrySend": "Tentar envio novamente ({count})",
-      "discardSend": "Descartar e usar os comentários atuais",
-      "sendRetryHint": "A solicitação anterior pode ter sido concluída. Tente novamente para confirmar ou descarte-a antes de iniciar uma nova solicitação.",
-      "sendBatchHint": "Este lote contém {count} de {total} tópicos.",
-      "commentFailed": "Não foi possível salvar seu comentário. Tente novamente.",
-      "statusFailed": "Não foi possível alterar esta conversa. Tente novamente.",
-      "deleteFailed": "Não foi possível excluir este comentário. Tente novamente.",
-      "commentsLoadError": "Não foi possível carregar os comentários.",
-      "contextLoadError": "Não foi possível carregar as permissões dos comentários.",
-      "activityLoadError": "Não foi possível carregar a atividade.",
-      "retry": "Tentar novamente",
-      "sendAgainTo": "Enviar novamente para {agent}",
-      "noComments": "Nenhum comentário em aberto",
-      "noCommentsHint": "Selecione um trecho para comentar ou comece um novo comentário.",
-      "noResolved": "Nenhum comentário resolvido",
-      "noResolvedHint": "As conversas resolvidas aparecem aqui.",
-      "noActivity": "Ainda não há atividade",
-      "noActivityHint": "As versões salvas e os comentários aparecem aqui.",
-      "loadMore": "Carregar mais",
-      "olderSaves": "As versões mais antigas podem não estar disponíveis neste histórico.",
-      "historicalReadOnly": "Os comentários desta versão são somente leitura.",
-      "mentionPeople": "Pessoas",
-      "mentionAgents": "Agentes",
-      "sourceSession": "Sessão do artefato",
-      "composerKeys": "Enter para enviar · Shift+Enter para uma nova linha",
-      "closeSelection": "Descartar trecho selecionado",
-      "preparingSelection": "Preparando o trecho selecionado…",
-      "selectionCaptureFailed": "Não foi possível preparar o trecho selecionado. Descarte-o para comentar o artefato inteiro.",
-      "commentSelection": "Comentar",
-      "selectionTooLong": "Este trecho é longo demais para comentar. Selecione até {max} caracteres.",
-      "selectionUnavailable": "Não é possível vincular este trecho. Selecione outro.",
-      "snapshotChanged": "O documento foi alterado. Recarregue-o antes de comentar.",
-      "commentSaveFailed": "Não foi possível salvar o documento. Tente novamente antes de comentar.",
-      "events": {
-        "saved": "salvou uma versão",
-        "published": "publicou o artefato",
-        "renamed": "renomeou o artefato",
-        "visibility_changed": "alterou a visibilidade",
-        "shared_with_changed": "alterou quem pode visualizar",
-        "restored": "restaurou uma versão",
-        "thread_opened": "abriu uma conversa",
-        "replied": "respondeu em uma conversa",
-        "resolved": "resolveu uma conversa",
-        "reopened": "reabriu uma conversa",
-        "comment_deleted": "excluiu um comentário",
-        "sent_to_agent": "enviou comentários a um agente"
-      },
-      "person": "Pessoa",
-      "deleteRootDescription": "O texto é removido para todos, e a conversa sai da lista de comentários. Isso não pode ser desfeito.",
-      "showPanel": "Mostrar comentários",
-      "hidePanel": "Ocultar comentários",
-      "panelTitle": "Comentários e atividade",
-      "resizePanel": "Redimensionar painel de comentários",
-      "unshareComments": "{count, plural, one {# comentário será excluído.} other {# comentários serão excluídos.}}",
-      "systemActor": "Sistema",
-      "draw": "Desenhar comentário",
-      "drawPen": "Caneta",
-      "drawArrow": "Seta",
-      "drawRectangle": "Retângulo",
-      "drawBlack": "Preto",
-      "drawRed": "Vermelho",
-      "drawBlue": "Azul",
-      "drawUndo": "Desfazer traço",
-      "drawPageChanged": "A página mudou. Cancele e desenhe novamente.",
-      "drawLimit": "Limite de desenho atingido. Desfaça um traço para continuar.",
-      "openScreenshot": "Abrir captura",
-      "drawingScreenshot": "Captura do comentário",
-      "screenshotReadFailed": "Não foi possível carregar a captura.",
-      "screenshotMissing": "Captura indisponível. O desenho foi salvo.",
-      "screenshotCaptureFailed": "Não foi possível capturar a tela. Seu comentário incluirá o desenho sem imagem.",
-      "sendScreenshotLimit": "Não foi possível enviar estes comentários. As capturas ultrapassam o limite de uma solicitação. Envie menos conversas com desenhos.",
-      "agentsUnavailable": "Não foi possível carregar os agentes.",
-      "showMore": "Mostrar mais",
-      "showLess": "Mostrar menos",
-      "moreReplies": "{count, plural, one {Mais # resposta} other {Mais # respostas}}",
-      "resolvedBy": "Resolvido por {name}",
-      "agent": "Agente",
-      "threadResolved": "Conversa resolvida",
-      "undo": "Desfazer",
-      "agentPending": "Enviando ao agente…",
-      "agentSent": "Enviado ao agente",
-      "openSession": "Abrir sessão",
-      "notDelivered": "Não entregue",
-      "sendThreads": "{count, plural, one {Enviar # conversa aberta para {agent}} other {Enviar # conversas abertas para {agent}}}",
-      "chooseAgent": "Escolher agente",
-      "sentToAgent": "Comentários enviados para {agent}",
-      "newCommentFrom": "Novo comentário de {name}",
-      "newComments": "{count, plural, one {# novo comentário} other {# novos comentários}}",
-      "pagePinLabel": "Comentário {number}",
-      "showPanelCount": "Mostrar comentários, {count} em aberto",
-      "hidePanelCount": "Ocultar comentários, {count} em aberto",
-      "commentSelectionHint": "Comentar a seleção",
-      "threadReopened": "Conversa reaberta",
-      "noCommentsReadOnlyHint": "Os comentários sobre este artefato aparecem aqui.",
-      "commentTooLong": "Um comentário pode ter até {max} caracteres. Remova {over}.",
-      "discardDrawingTitle": "Descartar este desenho?",
-      "discardDrawingHint": "Seus traços não estão salvos. Isso não pode ser desfeito.",
-      "discardDrawing": "Descartar",
-      "keepDrawing": "Continuar desenhando",
-      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
-      "activityLabel": "{actor} {verb}"
-    },
     "moveTo": "Mover para espaço",
     "projectWide": "Todo o projeto",
     "moved": "Artefato movido",
     "moveFailed": "Não foi possível mover o artefato",
     "spaceEmpty": "Ainda não há artefatos em {space}",
     "showAll": "Mostrar todos",
-    "live": {
-      "here": "Aqui agora",
-      "hereLabel": "Neste artefato agora: {names}",
-      "reconnecting": "Reconectando…",
-      "you": "Você",
-      "agents": "Agentes",
-      "agentsHere": "Agentes nesta conversa",
-      "status": {
-        "viewing": "Visualizando",
-        "reading": "Lendo",
-        "editing": "Editando",
-        "writing": "Escrevendo"
-      },
-      "hideCursor": "Ocultar meu cursor",
-      "hideCursorHint": "Os outros continuam vendo seu avatar.",
-      "typingOne": "{name} está digitando…",
-      "typingTwo": "{first} e {second} estão digitando…",
-      "typingMany": "{count, plural, one {# pessoa está digitando…} other {# pessoas estão digitando…}}",
-      "writing": "{name} está escrevendo…"
-    },
-    "coedit": {
-      "offLarge": "A edição ao vivo está desativada: este documento é grande demais. As alterações são salvas enquanto você digita.",
-      "offLineEndings": "A edição ao vivo está desativada: este documento mistura dois tipos de quebra de linha. As alterações são salvas enquanto você digita.",
-      "offShape": "A edição ao vivo está desativada: o editor não consegue manter parte deste documento exatamente como foi escrita. As alterações são salvas enquanto você digita.",
-      "stoppedLarge": "A edição ao vivo parou: uma alteração era grande demais para compartilhar. As alterações são salvas enquanto você digita.",
-      "stoppedFailed": "A edição ao vivo parou: a conexão falhou. As alterações são salvas enquanto você digita.",
-      "stoppedHistory": "A edição ao vivo parou: o histórico de edições deste documento é grande demais. As alterações são salvas enquanto você digita.",
-      "offFailed": "A edição ao vivo está desativada: não foi possível conectar. As alterações são salvas enquanto você digita."
-    },
     "conflictTitle": "Outra pessoa alterou este documento",
     "conflictReloadTitle": "Carregar a versão mais recente?",
     "conflictReloadHint": "Suas alterações desde o último salvamento são descartadas. Isso não pode ser desfeito.",
@@ -26163,10 +25963,6 @@
       "connectLabel": "Conectar MCP",
       "copyFailed": "Não foi possível copiar o comando. Tente novamente."
     }
-  },
-  "roleCapabilities": {
-    "comment": "Comentar",
-    "commentArea": "Comentar em {area}"
   },
   "sessionDesktop": {
     "title": "Área de trabalho",

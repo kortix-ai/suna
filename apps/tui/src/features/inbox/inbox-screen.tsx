@@ -6,8 +6,8 @@
  * cache optimistically and rolls back on a rejected write. It renders
  * `<InboxView/>`, which knows nothing about the SDK.
  *
- * The inbox is gated by the project's `notification_center` flag (or
- * `artifacts` + `artifact_comments`), exactly as the web bell is.
+ * The inbox is on for every project (the `notification_center` flag graduated
+ * on 2026-11-06).
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -60,7 +60,7 @@ export function InboxScreen({
     return () => clearInterval(timer);
   }, []);
 
-  const { enabled, isLoading: gateLoading, inbox } = useInbox(projectId);
+  const inbox = useInbox(projectId);
   const rows = useMemo(() => (inbox.data?.notifications ?? []).map(toInboxRow), [inbox.data]);
 
   const markRead = useCallback(
@@ -114,15 +114,6 @@ export function InboxScreen({
       </box>
     );
   }
-  if (!gateLoading && !enabled) {
-    return (
-      <box flexDirection="column" width={width}>
-        <text fg={theme.faint}>
-          The inbox is off for this project (flag `notification_center`).
-        </text>
-      </box>
-    );
-  }
 
   return (
     <InboxView
@@ -132,7 +123,7 @@ export function InboxScreen({
       width={width}
       height={height}
       now={now}
-      loading={gateLoading || inbox.isLoading}
+      loading={inbox.isLoading}
       errorMessage={inbox.isError ? errorText(inbox.error) : null}
       busyMessage={busy}
       onOpen={open}

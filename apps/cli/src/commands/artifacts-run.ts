@@ -8,8 +8,6 @@ export interface ArtifactsFlags {
   visibility?: string; id?: string; baseVersion?: string; version?: string; search?: string;
   with: string[]; mine: boolean; shared: boolean; pinned: boolean; starter: boolean;
   space?: string; agent?: string; clear: boolean;
-  quote?: string; selector?: string; all: boolean; resolved: boolean; limit?: string;
-  thread?: string; focusStatus?: string;
 }
 
 export interface ArtifactsRun {

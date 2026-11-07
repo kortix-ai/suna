@@ -25,7 +25,6 @@ export type SessionInvocationSource =
   | 'system:approval-resume'
   | 'system:secret-submitted'
   | 'system:connector-connected'
-  | 'system:artifact-comment'
   /** A background subagent finished a turn: its report, delivered into the parent (`projects/subagent-notice.ts`). */
   | 'system:subagent-finished'
   /** A cross-session message (`send_message`) or its idle notice (`projects/peer-messages`). */
@@ -95,7 +94,6 @@ export type SessionLifecycleStatus =
   | 'deleted';
 
 export interface CreateSessionCommand {
-  artifactId?: string;
   /** Internal retained-upload authority from an already accepted create command. */
   attachmentSourceCommandId?: string;
   /**

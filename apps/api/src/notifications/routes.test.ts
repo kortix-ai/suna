@@ -360,10 +360,6 @@ function inboxApp() {
       return { ...DEFAULT_NOTIFICATION_PREFERENCES, question: { push: false, email: true } };
     },
     emailAvailable: () => false,
-    hiddenKinds: async (...args) => {
-      record('hiddenKinds', args);
-      return ['artifact_comment'];
-    },
     vapidPublicKey: async () => 'BSyntheticPublicKey',
     validateWebPush: validateWebPushSubscriptionInput,
     registerWebPush: async (...args) => {
@@ -467,13 +463,12 @@ describe('POST /v1/notifications/read', () => {
 });
 
 describe('GET and PUT /v1/notifications/preferences', () => {
-  test('GET returns every kind, whether email can be sent, and the kinds that cannot reach the caller', async () => {
+  test('GET returns every kind, whether email can be sent, and no hidden kind', async () => {
     const h = inboxApp();
     const res = await h.send('GET', '/preferences', browser);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ kinds: DEFAULT_NOTIFICATION_PREFERENCES, email_available: false, hidden_kinds: ['artifact_comment'] });
+    expect(await res.json()).toEqual({ kinds: DEFAULT_NOTIFICATION_PREFERENCES, email_available: false, hidden_kinds: [] });
     expect(h.named('loadPreferences')).toEqual([[USER_A]]);
-    expect(h.named('hiddenKinds')).toEqual([[USER_A]]);
   });
 
   test('PUT passes the partial patch and returns the saved record', async () => {
@@ -484,11 +479,11 @@ describe('GET and PUT /v1/notifications/preferences', () => {
     expect(h.named('updatePreferences')).toEqual([[USER_A, { kinds: { question: { push: false } } }]]);
   });
 
-  test('PUT accepts the retired `message` kind that an older client may still send', async () => {
+  test.each(['message', 'artifact_comment'])('PUT accepts the retired `%s` kind that an older client may still send', async (kind) => {
     const h = inboxApp();
-    const res = await h.send('PUT', '/preferences', browser, { kinds: { message: { push: false } } });
+    const res = await h.send('PUT', '/preferences', browser, { kinds: { [kind]: { push: false } } });
     expect(res.status).toBe(200);
-    expect((await res.json()).kinds).not.toHaveProperty('message');
+    expect((await res.json()).kinds).not.toHaveProperty(kind);
   });
 
   const invalid: [string, unknown][] = [

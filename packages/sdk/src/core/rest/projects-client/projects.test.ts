@@ -1034,13 +1034,10 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'pooled_provider_secrets',
     'us_region',
     'event_triggers',
-    'notification_center',
     'workspace_volume',
     'chat',
     'shared_drives',
     'goals',
-    'artifacts',
-    'artifact_comments',
     'email_channel',
     'session_groups',
     'chrome',
@@ -1070,6 +1067,17 @@ test('a graduated flag key still typechecks but is no longer a served flag', () 
   // actually serves, so it drops the key.
   const graduated: FeatureFlagKey = 'review_center';
   expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+});
+
+test('notification_center graduated: notifications need no flag, the key still typechecks', () => {
+  // Notifications are on for every project since 2026-11-06. The API sends
+  // `experimental.notification_center: true` for older clients, but it no
+  // longer lists, resolves, or accepts the key as a flag.
+  const graduated: FeatureFlagKey = 'notification_center';
+  expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+  const project = { experimental: {} } as Pick<KortixProject, 'experimental'>;
+  const sent: boolean | undefined = project.experimental?.notification_center;
+  expect(sent).toBeUndefined();
 });
 
 test('agent_tunnel graduated: computers need no flag, the key still typechecks', () => {

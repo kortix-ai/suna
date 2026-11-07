@@ -4,14 +4,14 @@
  * Prod, 2026-11-02: one free project had 22 cron triggers pinned to models the
  * account could not use. Every fire was refused ("Model … is not available
  * for this account"), about 1,250 times a day for a month, and nothing
- * stopped them. With the project's `notification_center` flag off, nobody was
+ * stopped them. The project had no notification center then, so nobody was
  * told.
  *
  * The rule: when every run of a trigger for at least 24 hours failed with a
  * refusal only its owner can fix (the model, the plan, the manifest), and at
  * least 3 runs failed in a row, the trigger pauses itself
  * (`project_trigger_runtime.auto_paused_at`, the run-cap pause, KRTX-1721)
- * and its watchers hear once, flag or not. Resuming (`PATCH enabled: true`)
+ * and its watchers hear once. Resuming (`PATCH enabled: true`)
  * starts a new 24 hours.
  *
  * Deliberately NOT a reason to pause:

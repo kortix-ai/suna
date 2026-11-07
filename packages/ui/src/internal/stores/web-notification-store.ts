@@ -11,16 +11,13 @@ import { persist } from 'zustand/middleware';
 export type WebNotificationPermission = 'default' | 'granted' | 'denied';
 
 export interface WebNotificationPreferences {
-  /** Master toggle for browser notifications */
+  /**
+   * Master toggle for browser notifications. Which kinds notify is the
+   * person's server record (Settings → Notifications), the same for every
+   * browser and phone. A profile saved before 2026-11-06 may still hold the
+   * four retired per-browser kind switches; nothing reads them.
+   */
   enabled: boolean;
-  /** Notify when a session task completes (becomes idle after being busy) */
-  onCompletion: boolean;
-  /** Notify when a session error occurs */
-  onError: boolean;
-  /** Notify when Kortix asks a question that needs user input */
-  onQuestion: boolean;
-  /** Notify when Kortix requests a permission */
-  onPermission: boolean;
   /** Only send browser notifications when the tab is not visible */
   onlyWhenHidden: boolean;
   /** Play a sound with notifications */
@@ -56,10 +53,6 @@ interface WebNotificationState {
 
 const DEFAULT_PREFERENCES: WebNotificationPreferences = {
   enabled: true,
-  onCompletion: true,
-  onError: true,
-  onQuestion: true,
-  onPermission: true,
   onlyWhenHidden: true,
   playSound: false,
 };

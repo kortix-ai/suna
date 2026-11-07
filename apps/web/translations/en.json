@@ -634,30 +634,10 @@
       "notificationsDescription": "Browser notifications for what happens in your sessions.",
       "unsupported": "Your browser does not support notifications.",
       "enableNotifications": "Enable notifications",
-      "permissionGranted": "Browser permission granted",
       "permissionDenied": "Blocked by browser — update in browser site settings",
-      "permissionDefault": "Will request browser permission when enabled",
       "notificationTypes": "Notification types",
       "behavior": "Behavior",
       "sendTestNotification": "Send test notification",
-      "types": {
-        "onCompletion": {
-          "label": "Task completions",
-          "description": "When a session finishes its task"
-        },
-        "onError": {
-          "label": "Errors",
-          "description": "When a session encounters an error"
-        },
-        "onQuestion": {
-          "label": "Questions",
-          "description": "When Kortix needs your input to continue"
-        },
-        "onPermission": {
-          "label": "Permission requests",
-          "description": "When Kortix needs permission to use a tool"
-        }
-      },
       "notificationBehavior": {
         "onlyWhenHidden": {
           "label": "Only when tab is hidden",
@@ -709,7 +689,7 @@
       "enableDescriptionPush": "Shows notifications in this browser, also with every Kortix tab closed.",
       "enableDescriptionDesktop": "Shows notifications from the desktop app while its window is open.",
       "enableDescriptionBrowser": "Shows notifications in this browser while a Kortix tab is open.",
-      "notificationTypesDescription": "These choices apply on every phone and in every browser. A phone also has its own switch for Turn finished, Turn failed, Question, and Permission request. It gets these only while both are on. The bell lists every notification of a project with Notification Center on.",
+      "notificationTypesDescription": "These choices apply on every phone and in every browser. A phone also has its own switch for Turn finished, Turn failed, Question, and Permission request. It gets these only while both are on. The Inbox lists every notification, whatever these choices are. Email is off for most kinds until you turn it on.",
       "push": "Push",
       "email": "Email",
       "channelSwitch": "{kind}: {channel}",
@@ -1110,10 +1090,6 @@
           "name": "US Region",
           "description": "Run this project's new sessions in the US East region. A running session keeps its region until it restarts."
         },
-        "notification_center": {
-          "name": "Notification Center",
-          "description": "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and loops. Off: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing."
-        },
         "event_triggers": {
           "name": "Composio event triggers",
           "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. Events come from Composio. Kortix also checks your connected apps itself."
@@ -1126,10 +1102,6 @@
           "name": "Stateless sandboxes",
           "description": "Every session keeps only /workspace, on its own volume. A sandbox stopped for an hour is deleted, and the next open starts a new one with the same files and conversation. Programs that ran in the old sandbox are not running. Kortix enables it per project."
         },
-        "artifacts": {
-          "name": "Artifacts",
-          "description": "Share docs (Markdown) and HTML pages (decks, dashboards, mockups, tools) from Files with the project, chosen people or anyone with a link. Docs edit in place, every save is a version from the Files history, and docs export to PDF. Adds the Artifacts page and `kortix artifacts`."
-        },
         "email_channel": {
           "name": "Email channel",
           "description": "Give the agent an email inbox on Resend: inbound mail starts and continues sessions, and the agent reads, replies and sends from the inbox. Bring your own Resend API key and domain."
@@ -1141,10 +1113,6 @@
         "session_groups": {
           "name": "Session groups",
           "description": "Group the sidebar's sessions into named folders that everyone in the project shares, for example one per store or client. Move a session into a group from its menu or by dragging it; reorder and collapse the groups."
-        },
-        "artifact_comments": {
-          "name": "Artifact comments",
-          "description": "Discuss docs and pages in threads with people and agents. Requires Artifacts."
         },
         "chrome": {
           "name": "Kortix in Chrome",
@@ -3424,8 +3392,7 @@
       "automation_failed": "Failure alert",
       "automation_recovered": "Recovery alert",
       "capture_device_down": "Capture computer stopped",
-      "capture_device_recovered": "Capture computer recording again",
-      "artifact_comment": "Artifact comments"
+      "capture_device_recovered": "Capture computer recording again"
     },
     "kindDescription": {
       "turn_done": "A turn ends.",
@@ -3436,33 +3403,37 @@
       "automation_failed": "A trigger or a loop starts failing.",
       "automation_recovered": "A failing trigger or loop works again.",
       "capture_device_down": "A Kortix Capture computer is not recording. Sent to people who manage Capture.",
-      "capture_device_recovered": "A Kortix Capture computer that stopped records again.",
-      "artifact_comment": "Feedback, mentions, and replies on Artifacts you can view."
+      "capture_device_recovered": "A Kortix Capture computer that stopped records again."
     },
-    "bell": {
-      "label": "Notifications",
-      "unreadLabel": "Notifications: {count} unread",
+    "inbox": {
+      "title": "Inbox",
+      "description": "Updates about the sessions, triggers, and artifacts that concern you, from every project.",
+      "unreadLabel": "Inbox: {count} unread",
+      "unreadCount": "{count} unread",
       "markAllRead": "Mark all as read",
       "tabAll": "All",
       "tabNeedsYou": "Needs you",
       "tabDone": "Done",
       "emptyNeedsYou": "Nothing needs you right now",
+      "emptyNeedsYouDescription": "Questions, permission requests and failures show up in this tab.",
       "empty": "Notifications will show up here",
+      "emptyDescription": "Kortix notifies you when a session finishes, needs your answer or fails.",
       "loadError": "Could not load notifications",
       "retry": "Try again",
       "unread": "Unread",
       "promptPush": "Get notified when Kortix is closed",
       "promptBackground": "Get notified when Kortix is in the background",
       "turnOn": "Turn on",
-      "dismiss": "Dismiss"
+      "dismiss": "Dismiss",
+      "settings": "Notification settings",
+      "emailOptIn": "Email is off for most kinds until you turn it on."
     },
     "arrival": {
       "inProject": "{kind} in {project}",
       "openSession": "Open session",
       "openReminders": "Open loops",
       "openTriggers": "Open triggers",
-      "openConversation": "Open conversation",
-      "openArtifact": "Open Artifact"
+      "openConversation": "Open conversation"
     },
     "session": {
       "mute": "Mute notifications",
@@ -5912,11 +5883,8 @@
       "line61JsxTextThisPageRefreshesAutomaticallyEvery30Seconds": "This page refreshes automatically every 30 seconds."
     },
     "appNotFound": {
-      "line65JsxTextPageNotFound": "Page not found",
-      "line70JsxTextThePageYouAposReLookingForDoesn": "The page you're looking for doesn't exist or has been moved.",
       "line82JsxTextText404Error": "404 Error",
-      "line85JsxTextResourceNotAvailable": "resource not available",
-      "line100JsxTextReturnHome": "Return Home"
+      "line85JsxTextResourceNotAvailable": "resource not available"
     },
     "appOauthAuthorizePage": {
       "line146JsxTextInvalidAuthorizationRequest": "Invalid authorization request",
@@ -24897,7 +24865,6 @@
   },
   "artifacts": {
     "title": "Artifacts",
-    "gateDescription": "Share docs and HTML pages from Files with your team or anyone with a link. Docs edit in place; every save is a version.",
     "type": {
       "doc": "Doc",
       "html": "HTML"
@@ -24920,7 +24887,6 @@
     "moveFailed": "Could not move the artifact",
     "updated": "Updated {time}",
     "pinned": "Pinned",
-    "openComments": "{count, plural, one {# open comment} other {# open comments}}",
     "visibility": {
       "private": "Private",
       "project": "Project",
@@ -25019,143 +24985,6 @@
     "close": "Close",
     "conflictReload": "Reload theirs",
     "conflictKeepMine": "Keep mine",
-    "discussion": {
-      "comments": "Comments",
-      "activity": "Activity",
-      "open": "Open",
-      "resolved": "Resolved",
-      "outdated": "Outdated",
-      "outdatedHint": "This passage cannot be located in the current document.",
-      "newComment": "New comment",
-      "annotationMode": "Pin a comment",
-      "annotationModeHint": "Click an element to pin a comment. Drag to mark a region.",
-      "annotationLoading": "Loading annotations…",
-      "annotationUnavailable": "Annotations are unavailable. Choose {refresh} in {actions} to try again.",
-      "commentLabel": "Comment",
-      "commentPlaceholder": "Leave feedback or mention someone…",
-      "replyLabel": "Reply",
-      "replyPlaceholder": "Write a reply…",
-      "postComment": "Comment",
-      "postReply": "Reply",
-      "saveEdit": "Save changes",
-      "cancel": "Cancel",
-      "edit": "Edit",
-      "delete": "Delete",
-      "deleteTitle": "Delete comment?",
-      "deleteDescription": "Its text is removed for everyone, and “Comment deleted” stays in its place. This cannot be undone.",
-      "commentDeleted": "Comment deleted",
-      "threadDeleted": "This thread was deleted.",
-      "resolve": "Resolve",
-      "reopen": "Reopen",
-      "edited": "Edited",
-      "commentActions": "Comment actions",
-      "focusThread": "Show passage",
-      "quoteLabel": "Selected passage",
-      "waitingForPerson": "Waiting for a person",
-      "deliveryFailed": "Could not send feedback to the agent.",
-      "sendFailed": "Could not send these comments. Try again.",
-      "retrySend": "Retry send ({count})",
-      "discardSend": "Discard and use latest comments",
-      "sendRetryHint": "The previous request may have completed. Retry it to confirm, or discard it before starting a new request.",
-      "sendBatchHint": "This batch contains {count} of {total} threads.",
-      "commentFailed": "Could not save your comment. Try again.",
-      "statusFailed": "Could not change this thread. Try again.",
-      "deleteFailed": "Could not delete this comment. Try again.",
-      "commentsLoadError": "Could not load comments.",
-      "contextLoadError": "Could not load comment permissions.",
-      "activityLoadError": "Could not load activity.",
-      "retry": "Try again",
-      "sendAgainTo": "Send again to {agent}",
-      "noComments": "No open comments",
-      "noCommentsHint": "Select a passage to comment on it, or start a new comment.",
-      "noResolved": "No resolved comments",
-      "noResolvedHint": "Resolved threads appear here.",
-      "noActivity": "No activity yet",
-      "noActivityHint": "Saves and comments appear here.",
-      "loadMore": "Load more",
-      "olderSaves": "Older saves may be unavailable in this history.",
-      "historicalReadOnly": "Comments on this version are read-only.",
-      "mentionPeople": "People",
-      "mentionAgents": "Agents",
-      "sourceSession": "Artifact session",
-      "composerKeys": "Enter to send · Shift+Enter for a new line",
-      "closeSelection": "Discard selected passage",
-      "preparingSelection": "Preparing selected passage…",
-      "selectionCaptureFailed": "Could not prepare the selected passage. Discard it to leave a comment on the whole artifact.",
-      "commentSelection": "Comment",
-      "selectionTooLong": "This passage is too long to comment on. Select {max} characters or fewer.",
-      "selectionUnavailable": "This passage cannot be anchored. Select another passage.",
-      "snapshotChanged": "The document changed. Reload it before commenting.",
-      "commentSaveFailed": "Could not save the document. Try again before commenting.",
-      "events": {
-        "saved": "saved a version",
-        "published": "published the artifact",
-        "renamed": "renamed the artifact",
-        "visibility_changed": "changed visibility",
-        "shared_with_changed": "changed who can view",
-        "restored": "restored a version",
-        "thread_opened": "opened a thread",
-        "replied": "replied to a thread",
-        "resolved": "resolved a thread",
-        "reopened": "reopened a thread",
-        "comment_deleted": "deleted a comment",
-        "sent_to_agent": "sent feedback to an agent"
-      },
-      "person": "Person",
-      "deleteRootDescription": "Its text is removed for everyone, and the thread leaves the comments list. This cannot be undone.",
-      "showPanel": "Show comments",
-      "hidePanel": "Hide comments",
-      "panelTitle": "Comments and activity",
-      "resizePanel": "Resize comments panel",
-      "unshareComments": "{count, plural, one {# comment will be deleted.} other {# comments will be deleted.}}",
-      "systemActor": "System",
-      "draw": "Draw feedback",
-      "drawPen": "Pen",
-      "drawArrow": "Arrow",
-      "drawRectangle": "Rectangle",
-      "drawBlack": "Black",
-      "drawRed": "Red",
-      "drawBlue": "Blue",
-      "drawUndo": "Undo stroke",
-      "drawPageChanged": "The page changed. Cancel and draw again.",
-      "drawLimit": "Drawing limit reached. Undo a stroke to continue.",
-      "openScreenshot": "Open screenshot",
-      "drawingScreenshot": "Feedback screenshot",
-      "screenshotReadFailed": "Could not load the screenshot.",
-      "screenshotMissing": "Screenshot unavailable. The drawing is saved.",
-      "screenshotCaptureFailed": "Could not capture a screenshot. Your comment will include the drawing without an image.",
-      "sendScreenshotLimit": "Could not send these comments. Their screenshots exceed the limit for one request. Send fewer threads with drawings.",
-      "agentsUnavailable": "Could not load agents.",
-      "showMore": "Show more",
-      "showLess": "Show less",
-      "moreReplies": "{count, plural, one {# more reply} other {# more replies}}",
-      "resolvedBy": "Resolved by {name}",
-      "agent": "Agent",
-      "threadResolved": "Thread resolved",
-      "undo": "Undo",
-      "agentPending": "Sending to agent…",
-      "agentSent": "Sent to agent",
-      "openSession": "Open session",
-      "notDelivered": "Not delivered",
-      "sendThreads": "{count, plural, one {Send # open thread to {agent}} other {Send # open threads to {agent}}}",
-      "chooseAgent": "Choose agent",
-      "sentToAgent": "Comments sent to {agent}",
-      "newCommentFrom": "New comment from {name}",
-      "newComments": "{count, plural, one {# new comment} other {# new comments}}",
-      "pagePinLabel": "Comment {number}",
-      "showPanelCount": "Show comments, {count} open",
-      "hidePanelCount": "Hide comments, {count} open",
-      "commentSelectionHint": "Comment on the selection",
-      "threadReopened": "Thread reopened",
-      "noCommentsReadOnlyHint": "Comments on this artifact appear here.",
-      "commentTooLong": "A comment can be up to {max} characters. Remove {over}.",
-      "discardDrawingTitle": "Discard this drawing?",
-      "discardDrawingHint": "Your strokes are not saved. This cannot be undone.",
-      "discardDrawing": "Discard",
-      "keepDrawing": "Keep drawing",
-      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
-      "activityLabel": "{actor} {verb}"
-    },
     "insertMedia": "Image or video…",
     "diagram": "Diagram",
     "blockMenu": "Blocks",
@@ -25180,35 +25009,6 @@
     "embedDelete": "Delete",
     "spaceEmpty": "No artifacts in {space} yet",
     "showAll": "Show all",
-    "live": {
-      "here": "Here now",
-      "hereLabel": "On this artifact now: {names}",
-      "reconnecting": "Reconnecting…",
-      "you": "You",
-      "agents": "Agents",
-      "agentsHere": "Agents in this thread",
-      "status": {
-        "viewing": "Viewing",
-        "reading": "Reading",
-        "editing": "Editing",
-        "writing": "Writing"
-      },
-      "hideCursor": "Hide my cursor",
-      "hideCursorHint": "Others still see your avatar.",
-      "typingOne": "{name} is typing…",
-      "typingTwo": "{first} and {second} are typing…",
-      "typingMany": "{count, plural, one {# person is typing…} other {# people are typing…}}",
-      "writing": "{name} is writing…"
-    },
-    "coedit": {
-      "offLarge": "Live co-editing is off: this doc is too large. Changes save as you type.",
-      "offLineEndings": "Live co-editing is off: this doc mixes two kinds of line breaks. Changes save as you type.",
-      "offShape": "Live co-editing is off: the editor cannot keep part of this doc exactly as written. Changes save as you type.",
-      "stoppedLarge": "Live co-editing stopped: one change was too large to share. Changes save as you type.",
-      "stoppedFailed": "Live co-editing stopped: the connection failed. Changes save as you type.",
-      "stoppedHistory": "Live co-editing stopped: this doc's edit history is too large. Changes save as you type.",
-      "offFailed": "Live co-editing is off: it could not connect. Changes save as you type."
-    },
     "conflictTitle": "Someone else changed this doc",
     "conflictReloadTitle": "Reload the newer version?",
     "conflictReloadHint": "Your edits since the last save are discarded. This cannot be undone.",
@@ -26119,10 +25919,6 @@
       "connectLabel": "Connect MCP",
       "copyFailed": "Could not copy the command. Try again."
     }
-  },
-  "roleCapabilities": {
-    "comment": "Comment",
-    "commentArea": "Comment on {area}"
   },
   "sessionDesktop": {
     "title": "Desktop",

@@ -271,7 +271,6 @@
     "./internal/hooks/use-channel-bindings": "./src/internal/hooks/use-channel-bindings.ts",
     "./internal/hooks/use-copy": "./src/internal/hooks/use-copy.ts",
     "./internal/hooks/use-debounced-value": "./src/internal/hooks/use-debounced-value.ts",
-    "./internal/hooks/use-notification-center": "./src/internal/hooks/use-notification-center.ts",
     "./internal/hooks/use-slash-focus": "./src/internal/hooks/use-slash-focus.ts",
     "./internal/icons/claude": "./src/internal/icons/claude.tsx",
     "./internal/icons/discord": "./src/internal/icons/discord.tsx",
@@ -337,8 +336,10 @@
     "./internal/lib/utils/time-budget": "./src/internal/lib/utils/time-budget.ts",
     "./internal/lib/web-notifications": "./src/internal/lib/web-notifications.ts",
     "./internal/notifications/notification-bell": "./src/internal/notifications/notification-bell.tsx",
+    "./internal/notifications/notification-inbox": "./src/internal/notifications/notification-inbox.tsx",
     "./internal/notifications/notification-rows": "./src/internal/notifications/notification-rows.ts",
     "./internal/notifications/session-toast-cards": "./src/internal/notifications/session-toast-cards.tsx",
+    "./internal/notifications/use-inbox-summary": "./src/internal/notifications/use-inbox-summary.ts",
     "./internal/notifications/web-push": "./src/internal/notifications/web-push.ts",
     "./internal/session-types/index": "./src/internal/session-types/index.ts",
     "./internal/session-types/types": "./src/internal/session-types/types.ts",
@@ -1549,10 +1550,6 @@
         "types": "./dist/internal/hooks/use-debounced-value.d.ts",
         "import": "./dist/internal/hooks/use-debounced-value.js"
       },
-      "./internal/hooks/use-notification-center": {
-        "types": "./dist/internal/hooks/use-notification-center.d.ts",
-        "import": "./dist/internal/hooks/use-notification-center.js"
-      },
       "./internal/hooks/use-slash-focus": {
         "types": "./dist/internal/hooks/use-slash-focus.d.ts",
         "import": "./dist/internal/hooks/use-slash-focus.js"
@@ -1813,6 +1810,10 @@
         "types": "./dist/internal/notifications/notification-bell.d.ts",
         "import": "./dist/internal/notifications/notification-bell.js"
       },
+      "./internal/notifications/notification-inbox": {
+        "types": "./dist/internal/notifications/notification-inbox.d.ts",
+        "import": "./dist/internal/notifications/notification-inbox.js"
+      },
       "./internal/notifications/notification-rows": {
         "types": "./dist/internal/notifications/notification-rows.d.ts",
         "import": "./dist/internal/notifications/notification-rows.js"
@@ -1820,6 +1821,10 @@
       "./internal/notifications/session-toast-cards": {
         "types": "./dist/internal/notifications/session-toast-cards.d.ts",
         "import": "./dist/internal/notifications/session-toast-cards.js"
+      },
+      "./internal/notifications/use-inbox-summary": {
+        "types": "./dist/internal/notifications/use-inbox-summary.d.ts",
+        "import": "./dist/internal/notifications/use-inbox-summary.js"
       },
       "./internal/notifications/web-push": {
         "types": "./dist/internal/notifications/web-push.d.ts",

@@ -42,7 +42,7 @@ import { useLocale, useTranslations } from '../../i18n';
 import type { SessionReminder } from '@kortix/sdk';
 import { AlarmIcon, MagnifyingGlassIcon as SearchIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
-import { CLOCK_TONE, lastRunLabel } from '../../internal/lib/trigger-clock';
+import { CLOCK_TONE, lastRunLabel, nextRunIn } from '../../internal/lib/trigger-clock';
 import {
   ReminderActions,
   ReminderFacts,
@@ -90,17 +90,6 @@ function ReminderTile({ reminder }: { reminder: SessionReminder }) {
       </span>
     </span>
   );
-}
-
-/** "in 25m", "in 8h", "in 3d": the next run in the last-run label's narrow style. */
-function nextRunIn(iso: string | null, locale: string, now: number): string {
-  const at = iso ? Date.parse(iso) : Number.NaN;
-  if (!Number.isFinite(at)) return '—';
-  const rtf = new Intl.RelativeTimeFormat(locale, { style: 'narrow', numeric: 'auto' });
-  const min = Math.max(0, Math.round((at - now) / 60_000));
-  if (min < 60) return rtf.format(min, 'minute');
-  if (min < 24 * 60) return rtf.format(Math.round(min / 60), 'hour');
-  return rtf.format(Math.round(min / (24 * 60)), 'day');
 }
 
 function ReminderListRow({
@@ -155,7 +144,9 @@ function ReminderListRow({
         </span>
         <span className="flex shrink-0 flex-col items-end text-xs tabular-nums">
           <span className={cn('whitespace-nowrap', active ? 'text-foreground' : 'text-muted-foreground')}>
-            {active ? nextRunIn(reminder.next_fire_at, locale, now) : t('pausedLabel')}
+            {active
+              ? nextRunIn(reminder.next_fire_at, new Intl.RelativeTimeFormat(locale, { style: 'narrow', numeric: 'auto' }), now)
+              : t('pausedLabel')}
           </span>
           <span className="text-muted-foreground whitespace-nowrap">{lastRunLabel(asTrigger, tTriggers, locale, now)}</span>
         </span>

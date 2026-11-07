@@ -276,9 +276,7 @@ export function scanSdkBoundary(sourceRoot) {
         });
       }
       if (ts.isTemplateExpression(node)) {
-        const templateText = `${node.head.text}${node.templateSpans
-          .map((span) => `\${}${span.literal.text}`)
-          .join('')}`;
+        const templateText = networkTargetText(node);
         if (runtimePathViolation(templateText)) {
           violations.push({
             file,

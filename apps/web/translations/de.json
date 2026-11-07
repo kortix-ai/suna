@@ -812,30 +812,10 @@
       "notificationsDescription": "Browser-Benachrichtigungen zu Ereignissen in Ihren Sitzungen.",
       "unsupported": "Ihr Browser unterstützt keine Benachrichtigungen.",
       "enableNotifications": "Benachrichtigungen aktivieren",
-      "permissionGranted": "Browser-Berechtigung erteilt",
       "permissionDenied": "Vom Browser blockiert — ändern Sie die Berechtigung in den Website-Einstellungen",
-      "permissionDefault": "Beim Aktivieren wird die Browser-Berechtigung angefragt",
       "notificationTypes": "Benachrichtigungstypen",
       "behavior": "Verhalten",
       "sendTestNotification": "Testbenachrichtigung senden",
-      "types": {
-        "onCompletion": {
-          "label": "Aufgabenabschlüsse",
-          "description": "Wenn eine Sitzung ihre Aufgabe beendet"
-        },
-        "onError": {
-          "label": "Fehler",
-          "description": "Wenn in einer Sitzung ein Fehler auftritt"
-        },
-        "onQuestion": {
-          "label": "Fragen",
-          "description": "Wenn Kortix Ihre Eingabe benötigt"
-        },
-        "onPermission": {
-          "label": "Berechtigungsanfragen",
-          "description": "Wenn Kortix eine Berechtigung für ein Werkzeug benötigt"
-        }
-      },
       "notificationBehavior": {
         "onlyWhenHidden": {
           "label": "Nur bei ausgeblendetem Tab",
@@ -887,7 +867,7 @@
       "enableDescriptionPush": "Zeigt Benachrichtigungen in diesem Browser, auch wenn alle Kortix-Tabs geschlossen sind.",
       "enableDescriptionDesktop": "Zeigt Benachrichtigungen der Desktop-App, solange ihr Fenster geöffnet ist.",
       "enableDescriptionBrowser": "Zeigt Benachrichtigungen in diesem Browser, solange ein Kortix-Tab geöffnet ist.",
-      "notificationTypesDescription": "Diese Einstellungen gelten auf jedem Telefon und in jedem Browser. Ein Telefon hat zusätzlich einen eigenen Schalter für „Durchlauf beendet“, „Durchlauf fehlgeschlagen“, „Frage“ und „Berechtigungsanfrage“. Es erhält diese nur, wenn beide an sind. Die Glocke listet jede Benachrichtigung eines Projekts mit aktivierter Benachrichtigungszentrale.",
+      "notificationTypesDescription": "Diese Einstellungen gelten auf jedem Telefon und in jedem Browser. Ein Telefon hat zusätzlich einen eigenen Schalter für „Durchlauf beendet“, „Durchlauf fehlgeschlagen“, „Frage“ und „Berechtigungsanfrage“. Es erhält diese nur, wenn beide an sind. Der Posteingang listet jede Benachrichtigung, unabhängig von diesen Einstellungen. E-Mail ist für die meisten Arten aus, bis du sie einschaltest.",
       "push": "Push",
       "email": "E-Mail",
       "channelSwitch": "{kind}: {channel}",
@@ -1288,10 +1268,6 @@
           "name": "US-Region",
           "description": "Neue Sitzungen dieses Projekts in der Region US-Ost ausführen. Eine laufende Sitzung behält ihre Region bis zum Neustart."
         },
-        "notification_center": {
-          "name": "Benachrichtigungszentrale",
-          "description": "Informiert die Personen, die eine Sitzung betrifft (wer den Prompt sendete, wer sie erstellte und wer ihr folgt), über eine Glocke, Browser-Push und E-Mail, und meldet fehlschlagende Trigger und Schleifen. Aus: Den Push einer Sitzung erhält nur das Telefon der Person, die sie erstellt hat, und das Telefon eines Kontoinhabers erhält einen Push, wenn ein Trigger anfängt fehlzuschlagen."
-        },
         "event_triggers": {
           "name": "Composio-Ereignis-Trigger",
           "description": "Starte einen Agenten, wenn in einer verbundenen App etwas passiert: eine neue E-Mail, ein Pull Request, ein Kalendertermin. Die Ereignisse kommen von Composio. Kortix prüft deine verbundenen Apps zusätzlich selbst."
@@ -1304,10 +1280,6 @@
           "name": "Zustandslose Sandboxes",
           "description": "Jede Session behält nur /workspace, auf einem eigenen Volume. Eine Sandbox, die eine Stunde gestoppt ist, wird gelöscht, und beim nächsten Öffnen startet eine neue mit denselben Dateien und derselben Unterhaltung. Programme aus der alten Sandbox laufen nicht mehr. Kortix aktiviert es pro Projekt."
         },
-        "artifacts": {
-          "name": "Artefakte",
-          "description": "Teile Dokumente (Markdown) und HTML-Seiten (Präsentationen, Dashboards, Mockups, Tools) aus Dateien mit dem Projekt, ausgewählten Personen oder allen mit einem Link. Dokumente werden direkt bearbeitet, jedes Speichern ist eine Version aus dem Dateien-Verlauf, und Dokumente lassen sich als PDF exportieren. Fügt die Seite „Artefakte“ und `kortix artifacts` hinzu."
-        },
         "email_channel": {
           "name": "E-Mail-Kanal",
           "description": "Gib dem Agenten ein E-Mail-Postfach bei Resend: eingehende Mails starten und setzen Sessions fort, und der Agent liest, antwortet und sendet aus dem Postfach. Bring deinen eigenen Resend-API-Schlüssel und deine Domain mit."
@@ -1319,10 +1291,6 @@
         "session_groups": {
           "name": "Sitzungsgruppen",
           "description": "Ordne die Sitzungen der Seitenleiste in benannte Ordner, die alle im Projekt teilen, zum Beispiel einen pro Shop oder Kunde. Verschiebe eine Sitzung über ihr Menü oder per Ziehen in eine Gruppe; sortiere die Gruppen und klappe sie ein."
-        },
-        "artifact_comments": {
-          "name": "Artefakt-Kommentare",
-          "description": "Besprich Dokumente und Seiten in Threads mit Personen und Agenten. Erfordert Artefakte."
         },
         "chrome": {
           "name": "Kortix in Chrome",
@@ -3379,8 +3347,7 @@
       "automation_failed": "Fehleralarm",
       "automation_recovered": "Entwarnung",
       "capture_device_down": "Capture-Computer gestoppt",
-      "capture_device_recovered": "Capture-Computer nimmt wieder auf",
-      "artifact_comment": "Artefaktkommentare"
+      "capture_device_recovered": "Capture-Computer nimmt wieder auf"
     },
     "kindDescription": {
       "turn_done": "Ein Durchlauf endet.",
@@ -3391,33 +3358,37 @@
       "automation_failed": "Ein Trigger oder eine Schleife schlägt fehl.",
       "automation_recovered": "Ein fehlschlagender Trigger oder eine Schleife funktioniert wieder.",
       "capture_device_down": "Ein Kortix-Capture-Computer nimmt nicht auf. Geht an Personen, die Capture verwalten.",
-      "capture_device_recovered": "Ein gestoppter Kortix-Capture-Computer nimmt wieder auf.",
-      "artifact_comment": "Feedback, Erwähnungen und Antworten zu Artefakten, die du ansehen kannst."
+      "capture_device_recovered": "Ein gestoppter Kortix-Capture-Computer nimmt wieder auf."
     },
-    "bell": {
-      "label": "Benachrichtigungen",
-      "unreadLabel": "Benachrichtigungen: {count} ungelesen",
+    "inbox": {
+      "title": "Posteingang",
+      "description": "Neuigkeiten zu den Sitzungen, Triggern und Artefakten, die dich betreffen, aus allen Projekten.",
+      "unreadLabel": "Posteingang: {count} ungelesen",
+      "unreadCount": "{count} ungelesen",
       "markAllRead": "Alle als gelesen markieren",
       "tabAll": "Alle",
       "tabNeedsYou": "Für dich",
       "tabDone": "Erledigt",
       "emptyNeedsYou": "Gerade wartet nichts auf dich",
+      "emptyNeedsYouDescription": "Fragen, Berechtigungsanfragen und Fehler erscheinen in diesem Tab.",
       "empty": "Benachrichtigungen erscheinen hier",
+      "emptyDescription": "Kortix benachrichtigt dich, wenn eine Sitzung fertig ist, deine Antwort braucht oder fehlschlägt.",
       "loadError": "Benachrichtigungen konnten nicht geladen werden",
       "retry": "Erneut versuchen",
       "unread": "Ungelesen",
       "promptPush": "Benachrichtigt werden, wenn Kortix geschlossen ist",
       "promptBackground": "Benachrichtigt werden, wenn Kortix im Hintergrund läuft",
       "turnOn": "Einschalten",
-      "dismiss": "Schließen"
+      "dismiss": "Schließen",
+      "settings": "Benachrichtigungseinstellungen",
+      "emailOptIn": "E-Mail ist für die meisten Arten aus, bis du sie einschaltest."
     },
     "arrival": {
       "inProject": "{kind} in {project}",
       "openSession": "Sitzung öffnen",
       "openReminders": "Schleifen öffnen",
       "openTriggers": "Trigger öffnen",
-      "openConversation": "Unterhaltung öffnen",
-      "openArtifact": "Artefakt öffnen"
+      "openConversation": "Unterhaltung öffnen"
     },
     "session": {
       "mute": "Benachrichtigungen stummschalten",
@@ -5867,11 +5838,8 @@
       "line61JsxTextThisPageRefreshesAutomaticallyEvery30Seconds": "Diese Seite wird alle 30 Sekunden automatisch aktualisiert."
     },
     "appNotFound": {
-      "line65JsxTextPageNotFound": "Seite nicht gefunden",
-      "line70JsxTextThePageYouAposReLookingForDoesn": "Die gesuchte Seite existiert nicht oder wurde verschoben.",
       "line82JsxTextText404Error": "404-Fehler",
-      "line85JsxTextResourceNotAvailable": "Ressource nicht verfügbar",
-      "line100JsxTextReturnHome": "Zur Startseite zurückkehren"
+      "line85JsxTextResourceNotAvailable": "Ressource nicht verfügbar"
     },
     "appOauthAuthorizePage": {
       "line146JsxTextInvalidAuthorizationRequest": "Ungültige Autorisierungsanfrage",
@@ -24897,7 +24865,6 @@
   },
   "artifacts": {
     "title": "Artefakte",
-    "gateDescription": "Teile Dokumente und HTML-Seiten aus Dateien mit deinem Team oder allen mit einem Link. Dokumente werden direkt bearbeitet; jedes Speichern ist eine Version.",
     "type": {
       "doc": "Dokument",
       "html": "HTML"
@@ -24916,7 +24883,6 @@
     "emptyFiltered": "Keine passenden Artefakte",
     "updated": "Aktualisiert {time}",
     "pinned": "Angeheftet",
-    "openComments": "{count, plural, one {# offener Kommentar} other {# offene Kommentare}}",
     "visibility": {
       "private": "Privat",
       "project": "Projekt",
@@ -25037,178 +25003,12 @@
     "embedConvert": "In Link umwandeln",
     "embedCopy": "Link kopieren",
     "embedDelete": "Löschen",
-    "discussion": {
-      "comments": "Kommentare",
-      "activity": "Aktivität",
-      "open": "Offen",
-      "resolved": "Erledigt",
-      "outdated": "Veraltet",
-      "outdatedHint": "Diese Passage lässt sich im aktuellen Dokument nicht zuordnen.",
-      "newComment": "Neuer Kommentar",
-      "annotationMode": "Kommentar anheften",
-      "annotationModeHint": "Klicke auf ein Element, um einen Kommentar anzuheften. Ziehe, um einen Bereich zu markieren.",
-      "annotationLoading": "Anmerkungen werden geladen…",
-      "annotationUnavailable": "Anmerkungen sind nicht verfügbar. Wähle {refresh} unter {actions}, um es erneut zu versuchen.",
-      "commentLabel": "Kommentar",
-      "commentPlaceholder": "Feedback geben oder jemanden erwähnen…",
-      "replyLabel": "Antwort",
-      "replyPlaceholder": "Antwort schreiben…",
-      "postComment": "Kommentieren",
-      "postReply": "Antworten",
-      "saveEdit": "Änderungen speichern",
-      "cancel": "Abbrechen",
-      "edit": "Bearbeiten",
-      "delete": "Löschen",
-      "deleteTitle": "Kommentar löschen?",
-      "deleteDescription": "Der Text wird für alle entfernt, an seiner Stelle steht „Kommentar gelöscht“. Das lässt sich nicht rückgängig machen.",
-      "commentDeleted": "Kommentar gelöscht",
-      "threadDeleted": "Dieser Thread wurde gelöscht.",
-      "resolve": "Erledigen",
-      "reopen": "Erneut öffnen",
-      "edited": "Bearbeitet",
-      "commentActions": "Kommentaraktionen",
-      "focusThread": "Passage anzeigen",
-      "quoteLabel": "Ausgewählte Passage",
-      "waitingForPerson": "Wartet auf eine Person",
-      "deliveryFailed": "Das Feedback konnte nicht an den Agenten gesendet werden.",
-      "sendFailed": "Die Kommentare konnten nicht gesendet werden. Erneut versuchen.",
-      "retrySend": "Senden wiederholen ({count})",
-      "discardSend": "Verwerfen und aktuelle Kommentare verwenden",
-      "sendRetryHint": "Die vorherige Anfrage wurde möglicherweise abgeschlossen. Wiederhole sie zur Bestätigung oder verwirf sie, bevor du eine neue Anfrage startest.",
-      "sendBatchHint": "Dieser Stapel enthält {count} von {total} Threads.",
-      "commentFailed": "Dein Kommentar konnte nicht gespeichert werden. Erneut versuchen.",
-      "statusFailed": "Der Thread konnte nicht geändert werden. Erneut versuchen.",
-      "deleteFailed": "Der Kommentar konnte nicht gelöscht werden. Erneut versuchen.",
-      "commentsLoadError": "Kommentare konnten nicht geladen werden.",
-      "contextLoadError": "Kommentarberechtigungen konnten nicht geladen werden.",
-      "activityLoadError": "Aktivität konnte nicht geladen werden.",
-      "retry": "Erneut versuchen",
-      "sendAgainTo": "Erneut an {agent} senden",
-      "noComments": "Keine offenen Kommentare",
-      "noCommentsHint": "Wähle eine Passage aus, um sie zu kommentieren, oder beginne einen neuen Kommentar.",
-      "noResolved": "Keine erledigten Kommentare",
-      "noResolvedHint": "Erledigte Threads erscheinen hier.",
-      "noActivity": "Noch keine Aktivität",
-      "noActivityHint": "Gespeicherte Versionen und Kommentare erscheinen hier.",
-      "loadMore": "Mehr laden",
-      "olderSaves": "Ältere Speicherstände sind in diesem Verlauf möglicherweise nicht verfügbar.",
-      "historicalReadOnly": "Kommentare zu dieser Version sind schreibgeschützt.",
-      "mentionPeople": "Personen",
-      "mentionAgents": "Agenten",
-      "sourceSession": "Artefakt-Sitzung",
-      "composerKeys": "Enter zum Senden · Shift+Enter für eine neue Zeile",
-      "closeSelection": "Ausgewählte Passage verwerfen",
-      "preparingSelection": "Ausgewählte Passage wird vorbereitet…",
-      "selectionCaptureFailed": "Die ausgewählte Passage konnte nicht vorbereitet werden. Verwirf sie, um das gesamte Artefakt zu kommentieren.",
-      "commentSelection": "Kommentieren",
-      "selectionTooLong": "Diese Passage ist zu lang für einen Kommentar. Wähle höchstens {max} Zeichen aus.",
-      "selectionUnavailable": "Diese Passage lässt sich nicht verankern. Wähle eine andere Passage.",
-      "snapshotChanged": "Das Dokument wurde geändert. Lade es vor dem Kommentieren neu.",
-      "commentSaveFailed": "Das Dokument konnte nicht gespeichert werden. Versuche es vor dem Kommentieren erneut.",
-      "events": {
-        "saved": "hat eine Version gespeichert",
-        "published": "hat das Artefakt veröffentlicht",
-        "renamed": "hat das Artefakt umbenannt",
-        "visibility_changed": "hat die Sichtbarkeit geändert",
-        "shared_with_changed": "hat den Lesezugriff geändert",
-        "restored": "hat eine Version wiederhergestellt",
-        "thread_opened": "hat einen Thread eröffnet",
-        "replied": "hat in einem Thread geantwortet",
-        "resolved": "hat einen Thread erledigt",
-        "reopened": "hat einen Thread erneut geöffnet",
-        "comment_deleted": "hat einen Kommentar gelöscht",
-        "sent_to_agent": "hat Feedback an einen Agenten gesendet"
-      },
-      "person": "Person",
-      "deleteRootDescription": "Sein Text wird für alle entfernt, und der Thread verschwindet aus der Kommentarliste. Das kann nicht rückgängig gemacht werden.",
-      "showPanel": "Kommentare anzeigen",
-      "hidePanel": "Kommentare ausblenden",
-      "panelTitle": "Kommentare und Aktivität",
-      "resizePanel": "Größe des Kommentarbereichs ändern",
-      "unshareComments": "{count, plural, one {# Kommentar wird gelöscht.} other {# Kommentare werden gelöscht.}}",
-      "systemActor": "System",
-      "draw": "Feedback zeichnen",
-      "drawPen": "Stift",
-      "drawArrow": "Pfeil",
-      "drawRectangle": "Rechteck",
-      "drawBlack": "Schwarz",
-      "drawRed": "Rot",
-      "drawBlue": "Blau",
-      "drawUndo": "Strich rückgängig machen",
-      "drawPageChanged": "Die Seite hat sich geändert. Brich ab und zeichne erneut.",
-      "drawLimit": "Zeichenlimit erreicht. Mache einen Strich rückgängig, um fortzufahren.",
-      "openScreenshot": "Screenshot öffnen",
-      "drawingScreenshot": "Feedback-Screenshot",
-      "screenshotReadFailed": "Der Screenshot konnte nicht geladen werden.",
-      "screenshotMissing": "Screenshot nicht verfügbar. Die Zeichnung ist gespeichert.",
-      "screenshotCaptureFailed": "Screenshot nicht möglich. Dein Kommentar enthält die Zeichnung ohne Bild.",
-      "sendScreenshotLimit": "Diese Kommentare konnten nicht gesendet werden. Ihre Screenshots überschreiten das Limit für eine Anfrage. Sende weniger Threads mit Zeichnungen.",
-      "agentsUnavailable": "Agenten konnten nicht geladen werden.",
-      "showMore": "Mehr anzeigen",
-      "showLess": "Weniger anzeigen",
-      "moreReplies": "{count, plural, one {# weitere Antwort} other {# weitere Antworten}}",
-      "resolvedBy": "Erledigt von {name}",
-      "agent": "Agent",
-      "threadResolved": "Thread erledigt",
-      "undo": "Rückgängig",
-      "agentPending": "Wird an den Agenten gesendet…",
-      "agentSent": "An den Agenten gesendet",
-      "openSession": "Sitzung öffnen",
-      "notDelivered": "Nicht zugestellt",
-      "sendThreads": "{count, plural, one {# offenen Thread an {agent} senden} other {# offene Threads an {agent} senden}}",
-      "chooseAgent": "Agenten wählen",
-      "sentToAgent": "Kommentare an {agent} gesendet",
-      "newCommentFrom": "Neuer Kommentar von {name}",
-      "newComments": "{count, plural, one {# neuer Kommentar} other {# neue Kommentare}}",
-      "pagePinLabel": "Kommentar {number}",
-      "showPanelCount": "Kommentare anzeigen, {count} offen",
-      "hidePanelCount": "Kommentare ausblenden, {count} offen",
-      "commentSelectionHint": "Auswahl kommentieren",
-      "threadReopened": "Thread wieder geöffnet",
-      "noCommentsReadOnlyHint": "Kommentare zu diesem Artefakt erscheinen hier.",
-      "commentTooLong": "Ein Kommentar darf höchstens {max} Zeichen haben. Entferne {over}.",
-      "discardDrawingTitle": "Diese Zeichnung verwerfen?",
-      "discardDrawingHint": "Deine Striche sind nicht gespeichert. Das kann nicht rückgängig gemacht werden.",
-      "discardDrawing": "Verwerfen",
-      "keepDrawing": "Weiterzeichnen",
-      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
-      "activityLabel": "{actor} {verb}"
-    },
     "moveTo": "In Bereich verschieben",
     "projectWide": "Projektweit",
     "moved": "Artefakt verschoben",
     "moveFailed": "Artefakt konnte nicht verschoben werden",
     "spaceEmpty": "Noch keine Artefakte in {space}",
     "showAll": "Alle anzeigen",
-    "live": {
-      "here": "Gerade hier",
-      "hereLabel": "Gerade auf diesem Artefakt: {names}",
-      "reconnecting": "Verbindung wird wiederhergestellt…",
-      "you": "Du",
-      "agents": "Agenten",
-      "agentsHere": "Agenten in diesem Thread",
-      "status": {
-        "viewing": "Ansicht",
-        "reading": "Liest",
-        "editing": "Bearbeitet",
-        "writing": "Schreibt"
-      },
-      "hideCursor": "Meinen Cursor ausblenden",
-      "hideCursorHint": "Andere sehen weiterhin deinen Avatar.",
-      "typingOne": "{name} tippt…",
-      "typingTwo": "{first} und {second} tippen…",
-      "typingMany": "{count, plural, one {# Person tippt…} other {# Personen tippen…}}",
-      "writing": "{name} schreibt…"
-    },
-    "coedit": {
-      "offLarge": "Live-Bearbeitung ist aus: Dieses Dokument ist zu groß. Änderungen werden beim Tippen gespeichert.",
-      "offLineEndings": "Live-Bearbeitung ist aus: Dieses Dokument mischt zwei Arten von Zeilenumbrüchen. Änderungen werden beim Tippen gespeichert.",
-      "offShape": "Live-Bearbeitung ist aus: Der Editor kann einen Teil dieses Dokuments nicht genau so behalten, wie er geschrieben ist. Änderungen werden beim Tippen gespeichert.",
-      "stoppedLarge": "Live-Bearbeitung beendet: Eine Änderung war zu groß zum Teilen. Änderungen werden beim Tippen gespeichert.",
-      "stoppedFailed": "Live-Bearbeitung beendet: Die Verbindung ist fehlgeschlagen. Änderungen werden beim Tippen gespeichert.",
-      "stoppedHistory": "Live-Bearbeitung beendet: Der Bearbeitungsverlauf dieses Dokuments ist zu groß. Änderungen werden beim Tippen gespeichert.",
-      "offFailed": "Live-Bearbeitung ist aus: Es konnte keine Verbindung hergestellt werden. Änderungen werden beim Tippen gespeichert."
-    },
     "conflictTitle": "Jemand anderes hat dieses Dokument geändert",
     "conflictReloadTitle": "Die neuere Version laden?",
     "conflictReloadHint": "Deine Änderungen seit dem letzten Speichern werden verworfen. Das kann nicht rückgängig gemacht werden.",
@@ -26163,10 +25963,6 @@
       "connectLabel": "MCP verbinden",
       "copyFailed": "Der Befehl konnte nicht kopiert werden. Versuche es erneut."
     }
-  },
-  "roleCapabilities": {
-    "comment": "Kommentieren",
-    "commentArea": "In {area} kommentieren"
   },
   "sessionDesktop": {
     "title": "Desktop",

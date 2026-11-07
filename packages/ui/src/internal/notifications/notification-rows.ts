@@ -99,11 +99,9 @@ export function notificationTag(row: InboxNotification): string {
 
 /**
  * Where a row's open action goes, named by the page its `url` opens: its
- * Artifact, its session, the Reminders page (a reminder
- * alert), or the Triggers page.
+ * session, the Reminders page (a reminder alert), or the Triggers page.
  */
-export function rowDestination(row: InboxNotification): 'artifact' | 'session' | 'reminders' | 'triggers' {
-  if (row.artifact_id) return 'artifact';
+export function rowDestination(row: InboxNotification): 'session' | 'reminders' | 'triggers' {
   if (row.session_id) return 'session';
   const path = new URL(row.url, 'http://kortix.invalid').pathname;
   // `/admin/loops` since 2026-10-28; a row stored before carries `/reminders`.
@@ -148,7 +146,7 @@ export function sessionUnreadRowId(
   return rows?.find((row) => !row.read && row.session_id === sessionId)?.id ?? null;
 }
 
-/** The bell's tabs. `needs` holds the kinds that wait on the person: an answer, an approval, a failure to look at. */
+/** The Inbox page's tabs. `needs` holds the kinds that wait on the person: an answer, an approval, a failure to look at. */
 export type NotificationTab = 'all' | 'needs' | 'done';
 
 const NEEDS_YOU_KINDS: ReadonlySet<InboxNotification['kind']> = new Set([

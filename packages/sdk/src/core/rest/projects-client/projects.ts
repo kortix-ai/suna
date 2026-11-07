@@ -88,6 +88,7 @@ export type FeatureFlagKey =
   | 'agent_principal'
   | 'us_region'
   | 'event_triggers'
+  /** @deprecated Graduated 2026-11-06 — notifications (the inbox, push, session watch, alerts, per-kind notification settings) are on for every project. The API sends `true` for every project, so `useFeatureFlag(id, 'notification_center')` reports `enabled: true`. Removed in the next major. */
   | 'notification_center'
   /** @deprecated Graduated 2026-11-02 — every project has a Drive. The API sends `true` wherever the platform stores a Drive (Platinum). Removed in the next major. */
   | 'volumes'
@@ -113,7 +114,9 @@ export type FeatureFlagKey =
   | 'shared_drives'
   | 'goals'
   | 'workspace_volume'
+  /** @deprecated Graduated 2026-11-06 — every project has Artifacts wherever the platform stores Files (Platinum). The API sends `true` there, so `useFeatureFlag(id, 'artifacts')` reads Artifacts availability. Removed in the next major. */
   | 'artifacts'
+  /** @deprecated Withdrawn 2026-11-06 — artifact comments, live presence, co-editing and the activity feed were removed. The API sends `false`. Removed in the next major. */
   | 'artifact_comments'
   /** The email channel: a Resend inbox that starts and continues sessions. Experimental, off by default. */
   | 'email_channel'
@@ -134,7 +137,7 @@ export type FeatureFlagKey =
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
-/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `session_log_restore`, `pi_harness`, `genui`, `meta_agent`) sends a constant `true`, or (`volumes`, `drives`) sends whether the platform stores a Drive. */
+/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `session_log_restore`, `pi_harness`, `genui`, `meta_agent`, `notification_center`) sends a constant `true`, or (`volumes`, `drives`, `artifacts`) sends whether the platform stores a Drive, or (`artifact_comments`) sends a constant `false`. */
 type GraduatedFeatureFlagKey =
   | 'agent_tunnel'
   | 'teams'
@@ -161,7 +164,10 @@ type GraduatedFeatureFlagKey =
   | 'meta_agent'
   | 'warm_sessions'
   | 'volumes'
-  | 'drives';
+  | 'drives'
+  | 'notification_center'
+  | 'artifacts'
+  | 'artifact_comments';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -177,13 +183,10 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'pooled_provider_secrets',
   'us_region',
   'event_triggers',
-  'notification_center',
   'chat',
   'shared_drives',
   'goals',
   'workspace_volume',
-  'artifacts',
-  'artifact_comments',
   'email_channel',
   'session_groups',
   'chrome',

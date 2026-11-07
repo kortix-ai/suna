@@ -1250,7 +1250,6 @@ describe('git-backed triggers — runtime fire paths', () => {
   test('the person who creates or edits a trigger follows it; deleting it drops its followers', async () => {
     seedManifest();
     testAuthType = 'supabase';
-    projectRow.metadata = { experimental: { notification_center: true } };
     const app = createApp();
     const created = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
       method: 'POST',
@@ -1275,11 +1274,11 @@ describe('git-backed triggers — runtime fire paths', () => {
     ]);
   });
 
-  // The notification_center flag off (the default): a created or edited trigger
-  // records no follower; deleting one still drops followers from an earlier on period.
-  test('with the notification_center flag off, nobody follows a created or edited trigger', async () => {
+  // The flag graduated on 2026-11-06: a stored override changes no follow.
+  test('a stored notification_center: false override is inert: the creator still follows the trigger', async () => {
     seedManifest();
     testAuthType = 'supabase';
+    projectRow.metadata = { experimental: { notification_center: false } };
     const app = createApp();
     const created = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
       method: 'POST',
@@ -1296,13 +1295,17 @@ describe('git-backed triggers — runtime fire paths', () => {
     const deleted = await app.request(`/v1/projects/${PROJECT_ID}/triggers/nightly`, { method: 'DELETE' });
     expect(deleted.status).toBe(200);
 
-    expect(watcherCalls).toEqual([{ kind: 'drop', ref: { projectId: PROJECT_ID, slug: 'nightly' } }]);
+    const follow = { accountId: ACCOUNT_ID, projectId: PROJECT_ID, slug: 'nightly', userId: USER_ID };
+    expect(watcherCalls).toEqual([
+      { kind: 'follow', ref: follow },
+      { kind: 'follow', ref: follow },
+      { kind: 'drop', ref: { projectId: PROJECT_ID, slug: 'nightly' } },
+    ]);
   });
 
   test('an API key that creates a trigger names no person, so nobody follows it', async () => {
     seedManifest();
     testAuthType = 'apiKey';
-    projectRow.metadata = { experimental: { notification_center: true } };
     const created = await createApp().request(`/v1/projects/${PROJECT_ID}/triggers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1749,7 +1752,6 @@ describe('git-backed triggers — runtime fire paths', () => {
     test('a failed watcher write does not fail the trigger create or delete', async () => {
       seedManifest();
       testAuthType = 'supabase';
-      projectRow.metadata = { experimental: { notification_center: true } };
       watcherFailure = new Error('connection terminated');
       const app = createApp();
       const created = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {

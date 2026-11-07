@@ -24,6 +24,7 @@ import {
 import { db } from '../../shared/db';
 import { resolveScopedAccountId } from '../../middleware/resolve-account';
 import { getSessionCostRecord, listSessionCosts } from '../../shared/session-costs';
+import { isUuid } from '../../shared/validate';
 import type { AppEnv } from '../../types';
 import {
   InvalidUsageQueryError,
@@ -534,9 +535,16 @@ usageApp.openapi(
       throw error;
     }
 
+    // owner_id is compared with the uuid-typed project_sessions.created_by: a
+    // malformed value would fail in Postgres (22P02) and surface as a 500.
+    const requestedOwnerId = c.req.query('owner_id') || undefined;
+    if (requestedOwnerId && !isUuid(requestedOwnerId)) {
+      throw new HTTPException(400, { message: 'owner_id must be a UUID' });
+    }
+
     const projectId = c.req.query('project_id') || undefined;
     const accountId = await resolveSessionCostAccountId(c, projectId);
-    const ownerId = await sessionCostOwner(c, accountId, c.req.query('owner_id') || undefined);
+    const ownerId = await sessionCostOwner(c, accountId, requestedOwnerId);
 
     if (c.req.query('format') === 'csv') {
       // Same filtered query as the JSON branch (accountId, projectId, ownerId,

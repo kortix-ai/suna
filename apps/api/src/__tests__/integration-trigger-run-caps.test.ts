@@ -124,7 +124,7 @@ async function projectRow() {
 }
 
 beforeAll(async () => {
-  project = await seedProject('trigger-run-caps', { metadata: { experimental: { notification_center: true } } });
+  project = await seedProject('trigger-run-caps');
   await insertIntoView(db, accountMembers, [
     { userId: OWNER, accountId: project.account_id, accountRole: 'owner' },
     { userId: WATCHER, accountId: project.account_id, accountRole: 'member' },

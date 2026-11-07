@@ -10,7 +10,7 @@
  * flow pins the HTTP and CLI contract.
  */
 import { flow } from '../core/flow';
-import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
+import { AgentPrincipalsWorld, manifest } from '../fixtures/agent-principals';
 import { CliSandbox } from '../fixtures/cli';
 
 const ROUTES = {
@@ -23,8 +23,6 @@ const ROUTES = {
 const ALL = '/v1/projects/:projectId/triggers/all';
 const RUNTIME = '/v1/projects/:projectId/triggers/runtime';
 const ONE = '/v1/projects/:projectId/triggers/runtime/:id';
-const MANIFEST =
-  'project:\n  name: ke2e-runtime-triggers\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
 
 type TriggerRow = {
   id: string;
@@ -61,7 +59,7 @@ flow(
     const params = { projectId: project.id };
     try {
       await world.setFeature('reminders', true);
-      await world.writeManifest(MANIFEST, 'ke2e: runtime triggers agent');
+      await world.writeManifest(manifest('runtime-triggers'), 'ke2e: runtime triggers agent');
       const session = await world.mintAgentSession({ agent: 'kortix', launcher: ctx.P.OWNER });
       let loopId = '';
 

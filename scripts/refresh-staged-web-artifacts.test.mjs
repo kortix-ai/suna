@@ -25,11 +25,22 @@ test('staged web artifacts: regenerate, stage, refuse partial inputs and preserv
     git('config', 'user.email', 'agent@kortix.ai');
     git('config', 'core.hooksPath', '/dev/null');
     git('config', 'core.attributesfile', '/dev/null');
-    for (const script of ['build-content-timestamps.mjs', 'generate-audit-http-routes.mjs']) {
+    for (const script of [
+      'build-content-timestamps.mjs',
+      'generate-audit-http-routes.mjs',
+      // generate-audit-http-routes.mjs imports repositoryRoot + runFileGenerator from here.
+      'docs-generated-region.mjs',
+    ]) {
       write(`apps/web/scripts/${script}`, '');
       copyFileSync(join(root, 'apps/web/scripts', script), join(dir, 'apps/web/scripts', script));
     }
     symlinkSync(join(root, 'apps/web/node_modules'), join(dir, 'apps/web/node_modules'), 'dir');
+    // docs-generated-region.mjs reads the feature-flag registry at module load.
+    write('apps/api/src/feature-flags/registry.ts', '');
+    copyFileSync(
+      join(root, 'apps/api/src/feature-flags/registry.ts'),
+      join(dir, 'apps/api/src/feature-flags/registry.ts'),
+    );
     write('apps/web/content/docs/old.mdx', '# Old');
     write('tests/spec/routes.generated.json', routes('/v1/old'));
     write(timestamps, '{}\n');

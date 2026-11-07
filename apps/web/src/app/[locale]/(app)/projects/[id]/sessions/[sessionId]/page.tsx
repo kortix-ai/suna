@@ -26,7 +26,6 @@ import { Button } from '@kortix/ui/button';
 import Loading from '@kortix/ui/loading';
 import { errorToast, successToast } from '@kortix/ui/toast';
 import { ErrorState } from '@kortix/ui/error-state';
-import { useNotificationCenter } from '@kortix/ui/internal/hooks/use-notification-center';
 import { useOpenSessionRead } from '@/features/notifications/use-open-session-read';
 import { useAuth } from '@/features/providers/auth-provider';
 import { MissingSessionBoundary } from '@/features/session/missing-session-boundary';
@@ -281,18 +280,15 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // replayStartStash:false — the web has its own pending-prompt hand-off (below).
   // The default chat engine stays enabled. This hook owns message sync and the
   // question and permission recovery pollers for the root session.
-  // With the project's `notification_center` flag on (KRTX-1742), a tab that
-  // shows its own OS notification tells the server so, and the server then
-  // holds back the phone push and Web Push for this session; closing the page
-  // ends the presence lease at once. With the flag off, presence is as before.
-  const notificationCenter = useNotificationCenter(projectId);
+  // A tab that shows its own OS notification tells the server so, and the
+  // server then holds back the phone push and Web Push for this session
+  // (KRTX-1742). Closing the page ends the presence lease at once (the SDK's
+  // `presencePageExit` default).
   const browserNotificationsOn = useWebNotificationStore((s) => s.preferences.enabled);
   const notificationPermission = useWebNotificationStore((s) => s.permission);
   const session = useSession(projectId, sessionId, {
     browserPresence: !!user,
-    presenceAlerts:
-      notificationCenter && browserNotificationsOn && notificationPermission === 'granted',
-    presencePageExit: notificationCenter,
+    presenceAlerts: browserNotificationsOn && notificationPermission === 'granted',
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialRuntimeSessionId,
@@ -302,8 +298,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     subscribeMessages: false,
   });
   // The presence write marks this session's notifications read on the server;
-  // this clears them from the bell at once. Flag off: there is no bell.
-  useOpenSessionRead(notificationCenter ? user?.id : null, sessionId);
+  // this clears them from the Inbox and its sidebar count at once.
+  useOpenSessionRead(user?.id, sessionId);
   // `/start` no longer refuses a session created before a repository
   // replacement, so there is no error to detect and no mode to flip into: the
   // session starts, gets the project's current config release, and converges

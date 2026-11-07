@@ -1,8 +1,8 @@
 /**
  * POST /v1/projects/:projectId/sessions/:sessionId/reminders records who hears
  * when the reminder fails (KRTX-1742): the person who set it, or the person an
- * agent session acts for; never an API key; nobody while the project has the
- * `notification_center` flag off. Driven through the real route; access, agent
+ * agent session acts for; never an API key. A stored `notification_center`
+ * override is inert. Driven through the real route; access, agent
  * authorization and the reminder store are stubbed.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -78,7 +78,7 @@ beforeEach(() => {
   followed = [];
   inserted = 0;
   followFailures = 0;
-  projectFlags = { notification_center: true };
+  projectFlags = {};
 });
 
 describe('a new reminder', () => {
@@ -107,16 +107,15 @@ describe('a new reminder', () => {
     expect(followed).toEqual([]);
   });
 
-  test('with the notification_center flag off, is created and followed by nobody', async () => {
-    projectFlags = {};
-    credential = { userId: PERSON_ID, authType: 'supabase', sessionId: '7a600000-0000-4000-a000-000000000001' };
-    expect((await createReminder()).status).toBe(201);
+  // The flag graduated on 2026-11-06: a stored override changes no follow.
+  test('with a stored notification_center: false override, is still followed by the person who set it', async () => {
     projectFlags = { notification_center: false };
-    credential = { userId: AGENT_USER_ID, authType: 'pat', sessionId: SESSION_ID, onBehalfOfUserId: PERSON_ID };
-    expect((await createReminder()).status).toBe(201);
+    credential = { userId: PERSON_ID, authType: 'supabase', sessionId: '7a600000-0000-4000-a000-000000000001' };
+    const { status, id } = await createReminder();
 
-    expect(inserted).toBe(2);
-    expect(followed).toEqual([]);
+    expect(status).toBe(201);
+    expect(inserted).toBe(1);
+    expect(followed).toEqual([{ accountId: ACCOUNT_ID, projectId: PROJECT_ID, slug: id, userId: PERSON_ID }]);
   });
 
   test('is created once, though recording its follower fails', async () => {
