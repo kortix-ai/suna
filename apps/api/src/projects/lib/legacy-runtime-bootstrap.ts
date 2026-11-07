@@ -45,6 +45,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ProviderName, SandboxExecResult } from '../../platform/providers';
 import { CONFIG_RELEASE_CAPABILITY } from './session-config-release';
+import { runtimeProvenThisBoot } from '../session-lifecycle/readiness-clocks';
 import { exponentialBackoffMs } from '../../shared/backoff';
 import { isRecord } from '@kortix/shared/guards';
 
@@ -400,6 +401,30 @@ export function decideDeadDaemonOnOpen(input: {
     return 'park';
   }
   return input.nowMs - requestedMs < DEAD_DAEMON_REPAIR_BUDGET_MS ? 'wait' : 'park';
+}
+
+/**
+ * The Platinum edge refused a daemon-port request (502 with `x-pt-edge-verdict`).
+ * That is the first sign of a dead daemon on a running box, long before the
+ * next `/start` or reaper tick would find it (prod 2026-11-07: up to 12 min of
+ * upload 502s). Only a daemon that already answered this boot can be "dead":
+ * a box still booting (or just resumed) 502s on its daemon port too, and a
+ * relaunch there kills the boot in progress. Ask for the relaunch, once per
+ * repair budget. The relaunch
+ * itself re-probes twice and checks the box loopback before it touches anything,
+ * so a refusal from a healthy box repairs nothing.
+ */
+export function decideDeadDaemonOnEdgeRefusal(input: {
+  provider: string;
+  metadata: Record<string, unknown> | null;
+  nowMs: number;
+}): 'request' | 'skip' {
+  if (relaunchStrategyFor(input.provider) !== 'pt-app') return 'skip';
+  if (!runtimeProvenThisBoot(input.metadata ?? {})) return 'skip';
+  const requestedMs = Date.parse(String(input.metadata?.[DEAD_DAEMON_REPAIR_REQUESTED_KEY] ?? ''));
+  return Number.isFinite(requestedMs) && input.nowMs - requestedMs < DEAD_DAEMON_REPAIR_BUDGET_MS
+    ? 'skip'
+    : 'request';
 }
 
 export interface RenderScriptOptions {

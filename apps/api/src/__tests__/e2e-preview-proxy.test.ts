@@ -433,6 +433,18 @@ mock.module('../projects/session-title-generate', () => ({
   },
 }));
 
+// Count the dead-daemon relaunch requests instead of running one: the real
+// repair reads the DB and execs into a box. Spread the real module (see above).
+const realProjectsSurface = await import('../projects/surface');
+let mockDaemonRepairRequests: string[] = [];
+mock.module('../projects/surface', () => ({
+  ...realProjectsSurface,
+  repairDeadDaemonOnEdgeRefusal: async (sandboxId: string) => {
+    mockDaemonRepairRequests.push(sandboxId);
+    return true;
+  },
+}));
+
 // Override global fetch for proxy requests
 const originalFetch = globalThis.fetch;
 function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Response> {
@@ -550,6 +562,7 @@ beforeEach(() => {
   mockPreviewUrl = 'https://preview.daytona.io/proxy-url';
   mockPreviewToken = 'daytona-preview-token-123';
   mockWakeCalls = [];
+  mockDaemonRepairRequests = [];
   mockFetchResponses = [{ status: 200, body: 'Hello from upstream' }];
   mockFetchCallCount = 0;
   mockFetchReturned = [];
@@ -1966,5 +1979,40 @@ describe('Preview proxy: per-session gate on every port', () => {
       headers: { Authorization: 'Bearer test', 'X-Test-Caller-Session': mockDbSandbox.sessionId },
     });
     expect(appPort.status).toBe(200);
+  });
+});
+
+describe('Preview proxy: dead daemon on a running box', () => {
+  // KRTX-4438: a dead daemon on a running Platinum box answers every daemon-port
+  // request with the edge's own 502. The first one starts the relaunch; it must
+  // not wait for the next `/start` or reaper tick.
+  const sendUpload = async (port: number) => {
+    const res = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/${port}/file/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test' },
+      body: 'file-bytes',
+    });
+    // The relaunch request is fire-and-forget behind a dynamic import.
+    await new Promise((r) => setTimeout(r, 20));
+    return res;
+  };
+
+  test('an edge 502 on the daemon port asks for the dead-daemon relaunch', async () => {
+    mockFetchResponses = [{ status: 502, body: 'bad gateway', headers: { 'x-pt-edge-verdict': 'port-refused' } }];
+    await sendUpload(8000);
+    expect(mockDaemonRepairRequests).toContain(mockDbSandbox.sandboxId);
+  });
+
+  test('a 502 the box served itself does not ask for a relaunch', async () => {
+    mockFetchResponses = [{ status: 502, body: 'bad gateway', headers: { 'x-pt-edge-served': '1' } }];
+    const res = await sendUpload(8000);
+    expect(res.status).toBe(502);
+    expect(mockDaemonRepairRequests).toEqual([]);
+  });
+
+  test("an edge 502 on a user's own app port does not ask for a relaunch", async () => {
+    mockFetchResponses = [{ status: 502, body: 'bad gateway', headers: { 'x-pt-edge-verdict': 'port-refused' } }];
+    await sendUpload(TEST_PORT);
+    expect(mockDaemonRepairRequests).toEqual([]);
   });
 });
