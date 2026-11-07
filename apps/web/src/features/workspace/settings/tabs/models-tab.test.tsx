@@ -128,16 +128,6 @@ describe('Models page chrome', () => {
     expect(gatewaySource).not.toContain('<TabsList size=');
   });
 
-  test('the project-default picker sits on the tab row, opposite the tabs', () => {
-    const filtersStart = gatewaySource.indexOf('filters={');
-    expect(filtersStart).toBeGreaterThan(-1);
-    const filtersSlot = gatewaySource.slice(filtersStart, gatewaySource.indexOf('<LlmSections'));
-    expect(filtersSlot).toContain('<LlmTabStrip');
-    expect(filtersSlot).toContain('<ProjectDefaultPicker');
-    expect(filtersSlot.indexOf('<LlmTabStrip')).toBeLessThan(filtersSlot.indexOf('<ProjectDefaultPicker'));
-    // A secondary button, with no "Project default" label beside it.
-    expect(gatewaySource).toContain('triggerVariant="secondary"');
-  });
 
 
   /**

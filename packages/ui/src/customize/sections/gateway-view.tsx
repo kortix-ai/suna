@@ -256,6 +256,9 @@ export function ProjectDefaultPicker({ projectId }: { projectId: string }) {
     <div className="flex shrink-0 items-center" title={tI18nComplete.raw('texte8cb80e5c5cb')}>
       <ModelSelector
         triggerVariant="secondary"
+        // The composer caps the name at max-w-30; on this page the full
+        // name ("Workspace default", a model name) fits beside the tabs.
+        triggerLabelClassName="max-w-52"
         models={models}
         selectedModel={effectiveDefault}
         unsetLabel={tI18nComplete.raw('texte8cb80e5c5cb')}
@@ -430,9 +433,10 @@ export function LlmManagementView({
         // that all of the project's agents share, and the line says so.
         agentScoped ? tAgentScope('modelsDescription') : MODELS_PAGE_DESCRIPTION
       }
+      // The workspace default is a page-level setting: it sits in the header
+      // beside the title, so the tab strip below gets the full width.
+      action={canWrite && !agentScoped ? <ProjectDefaultPicker projectId={projectId} /> : undefined}
       filters={
-        /* The tab strip on the left, the project default on the right of the
-           same row. */
         <>
           {agentScoped ? (
             // Eight tabs in the editor's pane, beside the rail: the strip
@@ -449,7 +453,6 @@ export function LlmManagementView({
               <LlmTabStrip value={tab} onValueChange={(v) => selectTab(v as LlmTab)} tabs={LLM_TABS} />
             </FadedScrollArea>
           )}
-          {canWrite && !agentScoped ? <ProjectDefaultPicker projectId={projectId} /> : null}
         </>
       }
     >
