@@ -37,6 +37,8 @@ let sandboxRefFailure: Error | null = null;
 let platformAdminGate: Promise<void> | null = null;
 let platformAdmins = new Set<string>();
 let projectSessionRow: Record<string, unknown> | null = null;
+/** The sessions the injected spawn-ancestor predicate says spawned the caller. */
+let spawnAncestorIds: string[] = [];
 /** The project's private channels, as `hiddenSpaceIds` reads them (`member`: the caller is in it). */
 let privateSpaceRows: Array<{ spaceId: string; kind: 'channel'; visibility: 'private'; isDefault: false; member: boolean }> = [];
 let projectSessionReads = 0;
@@ -164,6 +166,7 @@ const privateSessionOf = (ownerId: string) => ({
 });
 
 beforeEach(() => {
+  spawnAncestorIds = [];
   privateSpaceRows = [];
   sandboxRefRow = {
     sandboxId: 'sbx-1',
@@ -644,5 +647,47 @@ describe('canAccessSandboxSession — private channels', () => {
         boundCredentialSessionId: null,
       }),
     ).toBe(true);
+  });
+});
+
+// A subagent reads the conversation of the session that spawned it
+// (`kortix sessions log <parent>`). The REST read path allows it; the daemon-port
+// gate refused it, so the box's own log read 403'd with
+// `[preview] session access refused` (KRTX-4412).
+describe('canAccessSandboxSession — a session token reads the log of a session that spawned it', () => {
+  const parentRead = (caller: string, isRead: boolean) => ({
+    sessionId: 'sess-parent',
+    projectId: 'proj-1',
+    accountId: 'acct-1',
+    userId: 'user-launcher',
+    callerSessionId: caller,
+    boundCredentialSessionId: caller,
+    spawnAncestorRead: isRead ? async () => spawnAncestorIds.includes('sess-parent') : undefined,
+  });
+  const privateTriggerParent = () => ({
+    visibility: 'private',
+    createdBy: 'sa-agent-owner',
+    origin: 'schedule',
+    metadata: {},
+    initiatorType: 'trigger',
+  });
+
+  test('a child session is let in for a log read', async () => {
+    projectSessionRow = privateTriggerParent();
+    spawnAncestorIds = ['sess-parent'];
+    expect(await canAccessSandboxSession(parentRead('child-a', true))).toBe(true);
+  });
+
+  test('the same child is refused for any other request, branch recorded', async () => {
+    projectSessionRow = privateTriggerParent();
+    spawnAncestorIds = ['sess-parent'];
+    expect(await canAccessSandboxSession(parentRead('child-b', false))).toBe(false);
+    expect(takeSessionAccessRefusal(parentRead('child-b', false))?.boundCredentialSessionId).toBe('child-b');
+  });
+
+  test('a session that did not spawn the target stays refused even for a log read', async () => {
+    projectSessionRow = privateTriggerParent();
+    spawnAncestorIds = ['some-other-session'];
+    expect(await canAccessSandboxSession(parentRead('sibling', true))).toBe(false);
   });
 });

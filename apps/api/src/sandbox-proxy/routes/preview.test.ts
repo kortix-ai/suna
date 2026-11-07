@@ -9,6 +9,7 @@ import {
   clientResponseHeaders,
   isConnectionRefusedError,
   isProxiedBaseReset,
+  isSessionLogRead,
   longTurnTimeoutResponse,
   portUnreachableResponse,
   sanitizeRedirectLocation,
@@ -463,4 +464,19 @@ test('without host headers the page simply omits the address', async () => {
     hop: 'upstream_port',
   });
   expect(await res.text()).not.toContain('https://');
+});
+
+describe('isSessionLogRead', () => {
+  test('is a GET of the box log or one of its messages', () => {
+    expect(isSessionLogRead(8000, 'GET', '/kortix/runtime/log')).toBe(true);
+    expect(isSessionLogRead(8000, 'GET', '/kortix/runtime/log/messages/msg_1')).toBe(true);
+    expect(isSessionLogRead(8000, 'GET', '/proxy/8000/kortix/runtime/log')).toBe(true);
+  });
+
+  test('is not a write, another path or a non-session port', () => {
+    expect(isSessionLogRead(8000, 'POST', '/kortix/runtime/log')).toBe(false);
+    expect(isSessionLogRead(8000, 'GET', '/kortix/runtime/log/../env')).toBe(false);
+    expect(isSessionLogRead(8000, 'GET', '/kortix/runtime/logs')).toBe(false);
+    expect(isSessionLogRead(8000, 'GET', '/kortix/env')).toBe(false);
+  });
 });
