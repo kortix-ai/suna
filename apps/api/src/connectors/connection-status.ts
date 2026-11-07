@@ -109,7 +109,24 @@ export async function connectConnection(
     },
     exec,
   );
+  if (!moved.applied && authority === 'agent') await expirePendingOAuthSessions(connectionId, exec);
   return moved.applied ? moved.row : null;
+}
+
+/**
+ * An agent's start that found the account revoked expires the sessions waiting
+ * on it: a revoke expires the sessions of a row it moved, but a start on a row
+ * that is ALREADY revoked never moved it, so its poll would otherwise find a
+ * pending session and store a token on an account a person turned off.
+ */
+async function expirePendingOAuthSessions(
+  connectionId: string,
+  exec: Pick<typeof db, 'update'>,
+): Promise<void> {
+  await exec
+    .update(connectionOAuthSessions)
+    .set({ status: 'expired', updatedAt: new Date() })
+    .where(and(eq(connectionOAuthSessions.connectionId, connectionId), eq(connectionOAuthSessions.status, 'pending')));
 }
 
 /** An authorization failed: `error`, unless the account is revoked. */

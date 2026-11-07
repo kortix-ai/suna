@@ -11,7 +11,13 @@
  * the revoke, and a person's request-time reconnect still works.
  */
 import { afterAll, describe, expect, test } from 'bun:test';
-import { connectionCredentials, connectorConnections, connectors } from '@kortix/db';
+import {
+  connectionCredentials,
+  connectionOAuthApplications,
+  connectionOAuthSessions,
+  connectorConnections,
+  connectors,
+} from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { upsertConnectionCredential } from '../connectors/credentials';
 import { completeConnection, connectConnection, revokeConnections } from '../connectors/connection-status';
@@ -56,7 +62,7 @@ async function seedConnection(
         ? {}
         : { revokedAt: revokedAt instanceof Date ? revokedAt.toISOString() : revokedAt },
   });
-  return { projectId: project_id, connectorId, connectionId };
+  return { accountId: account_id, projectId: project_id, connectorId, connectionId };
 }
 
 async function state(connectionId: string) {
@@ -170,7 +176,31 @@ describe('a connector connection revoke is sticky', () => {
     // revoke is a person's decision: an agent records its authorization on the
     // row and the row stays revoked until the flow completes after the revoke.
     const conn = await seedConnection('revoke-sticky-agent-start', 'revoked', minutesAgo(10));
+    const [app] = await db
+      .insert(connectionOAuthApplications)
+      .values({ ...conn, configEnc: 'not-used-by-this-test' })
+      .returning({ applicationId: connectionOAuthApplications.applicationId });
+    const pending = await db
+      .insert(connectionOAuthSessions)
+      .values({
+        applicationId: app!.applicationId,
+        accountId: conn.accountId,
+        projectId: conn.projectId,
+        connectionId: conn.connectionId,
+        initiatedBy: conn.connectionId,
+        flow: 'device_authorization',
+        deviceCodeEnc: 'not-used-by-this-test',
+        expiresAt: new Date(Date.now() + 600_000),
+      })
+      .returning({ sessionId: connectionOAuthSessions.sessionId });
     expect(await connectConnection(conn.connectionId, { metadata: { session_id: 'sess_1' } })).toBeNull();
+    // Denied: the start leaves the row revoked, so the poll of a session the
+    // revoke did not expire finds no pending session and stores no token.
+    const [session] = await db
+      .select({ status: connectionOAuthSessions.status })
+      .from(connectionOAuthSessions)
+      .where(eq(connectionOAuthSessions.sessionId, pending[0]!.sessionId));
+    expect(session?.status).toBe('expired');
     expect(await state(conn.connectionId)).toEqual({ status: 'revoked', credentials: 0 });
   });
 
