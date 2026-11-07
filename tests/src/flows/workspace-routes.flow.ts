@@ -180,9 +180,12 @@ flow(
     const p = await team.project();
 
     await ctx.step('/v1/me is /v1/accounts/me; /v1/invites is /v1/account-invites', async () => {
-      if ((await sameAnswer(ctx, ctx.P.OWNER, '/v1/accounts/me', '/v1/me')) !== 200) throw new Error('/v1/me');
-      if ((await sameAnswer(ctx, ctx.P.OWNER, '/v1/account-invites', '/v1/invites')) !== 200) throw new Error('/v1/invites');
-      const me = (await ctx.client.as(ctx.P.OWNER).get('/v1/me')).json<any>();
+      // A member of this team only: OWNER's workspace list grows while other
+      // flows create teams, so two reads of it can differ by a workspace.
+      const member = await team.addMember('member');
+      if ((await sameAnswer(ctx, member, '/v1/accounts/me', '/v1/me')) !== 200) throw new Error('/v1/me');
+      if ((await sameAnswer(ctx, member, '/v1/account-invites', '/v1/invites')) !== 200) throw new Error('/v1/invites');
+      const me = (await ctx.client.as(member).get('/v1/me')).json<any>();
       const membership = (me.accounts as any[]).find((a) => a.account_id === team.id);
       if (membership?.workspace_id !== p.id) throw new Error(`me.accounts workspace_id ${membership?.workspace_id}`);
     });
