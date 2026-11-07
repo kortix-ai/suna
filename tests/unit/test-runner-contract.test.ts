@@ -3,10 +3,10 @@ import { resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT as root, readRepoFile } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
-const rootPackage = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
-const testsPackage = JSON.parse(readFileSync(resolve(root, 'tests/package.json'), 'utf8'));
+const rootPackage = JSON.parse(readRepoFile('package.json'));
+const testsPackage = JSON.parse(readRepoFile('tests/package.json'));
 // scripts/test-guard.mjs refuses a whole package suite on a Mac.
 const guarded = (command: string) => `node ../../scripts/test-guard.mjs "${command}"`;
 
@@ -42,7 +42,7 @@ describe('local test runner contract', () => {
   });
 
   it('starts a fresh Supabase stack before migrations without waiting on schema health', () => {
-    const source = readFileSync(resolve(root, 'tests/src/core/local-stack.ts'), 'utf8');
+    const source = readRepoFile('tests/src/core/local-stack.ts');
 
     expect(source).toMatch(/"start",\s+"--ignore-health-check"/);
     // No test uses the dashboard or image transforms; they were the largest pulls.
@@ -50,7 +50,7 @@ describe('local test runner contract', () => {
   });
 
   it('snapshots fixture counts into results before teardown starts', () => {
-    const runner = readFileSync(resolve(root, 'tests/src/core/runner.ts'), 'utf8');
+    const runner = readRepoFile('tests/src/core/runner.ts');
     const fixtureSnapshot = runner.indexOf('fixtureStats: world.fixtureStats()');
     const teardown = runner.indexOf('await world.teardownAll()');
 
@@ -59,7 +59,7 @@ describe('local test runner contract', () => {
   });
 
   it('builds publishable artifacts once and schedules package tests by load class', () => {
-    const source = readFileSync(resolve(root, 'tests/bin/package-quality.ts'), 'utf8');
+    const source = readRepoFile('tests/bin/package-quality.ts');
     const smoke = source.indexOf("'smoke:install'");
     const dryPack = source.indexOf('verifyPublishablePackage(directory, false)');
 
@@ -91,7 +91,7 @@ describe('local test runner contract', () => {
   });
 
   it('runs isolated API test files through a bounded parallel worker pool', () => {
-    const source = readFileSync(resolve(root, 'apps/api/scripts/test.sh'), 'utf8');
+    const source = readRepoFile('apps/api/scripts/test.sh');
 
     expect(source).toContain('api_test_workers="${KORTIX_API_TEST_WORKERS:-$(detect_api_test_workers)}"');
     expect(source).toContain('--parallel="$api_test_workers"');
@@ -126,11 +126,11 @@ describe('local test runner contract', () => {
   });
 
   it('keeps process-heavy package tests on their proven concurrency settings', () => {
-    const cliPackage = JSON.parse(readFileSync(resolve(root, 'apps/cli/package.json'), 'utf8'));
+    const cliPackage = JSON.parse(readRepoFile('apps/cli/package.json'));
     const agentPackage = JSON.parse(
-      readFileSync(resolve(root, 'apps/kortix-sandbox-agent-server/package.json'), 'utf8'),
+      readRepoFile('apps/kortix-sandbox-agent-server/package.json'),
     );
-    const dbPackage = JSON.parse(readFileSync(resolve(root, 'packages/db/package.json'), 'utf8'));
+    const dbPackage = JSON.parse(readRepoFile('packages/db/package.json'));
 
     // The hermetic env wrapper (scripts/hermetic-test-env.sh) owns the
     // environment for both wrappers; the bun invocation it execs is still the
@@ -138,15 +138,15 @@ describe('local test runner contract', () => {
     // (KORTIX_TEST_TIMEOUT_MS=30000; process-heavy git fixtures sit above bun's
     // 5 s default on slower boxes) lives in the execed invocation.
     expect(cliPackage.scripts.test).toBe(guarded('pnpm lint:sdk-boundary && bash scripts/test.sh'));
-    expect(readFileSync(resolve(root, 'apps/cli/scripts/test.sh'), 'utf8')).toContain(
+    expect(readRepoFile('apps/cli/scripts/test.sh')).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
     expect(agentPackage.scripts.test).toBe(guarded('bash scripts/test.sh'));
-    expect(readFileSync(resolve(root, 'apps/kortix-sandbox-agent-server/scripts/test.sh'), 'utf8')).toContain(
+    expect(readRepoFile('apps/kortix-sandbox-agent-server/scripts/test.sh')).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}',
     );
     const gatewayPackage = JSON.parse(
-      readFileSync(resolve(root, 'apps/llm-gateway/package.json'), 'utf8'),
+      readRepoFile('apps/llm-gateway/package.json'),
     );
     expect(gatewayPackage.scripts.test).toBe(
       guarded('bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}'),
@@ -162,8 +162,12 @@ describe('local test runner contract', () => {
     // container against the real disposable-PostgreSQL containers.
     // The PostgreSQL contracts (`*.integration.test.ts`) run one file per
     // process in the `db-suites` lane of the core run, not here.
+    // Isolated since v0.15.1 (#11974): migrate-auto-baseline's process-wide
+    // mock.module of node-pg-migrate reached the invitations migration test,
+    // which failed and later hung the packages-rest lane to its 40-min cap.
+    // Bun 1.4.3 ran the isolated suite clean on Linux (run 42301472596).
     expect(dbPackage.scripts.test).toBe(
-      guarded("bun test --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'"),
+      guarded("bun test --isolate --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'"),
     );
   });
 
@@ -191,6 +195,8 @@ describe('local test runner contract', () => {
       'Kortix-Computer-Frontend': '762 test files; serial is not viable',
       '@kortix/sdk': 'xargs -n1 -P4 runs one file per process: no isolate swap, no leak',
       '@kortix/ui': '236 test files from the apps/web session UI; 10 of them mock.module, which leaks across files without isolation',
+      '@kortix/db': 'migrate-auto-baseline mock.module-s node-pg-migrate process-wide; the invitations migration test drives the real runner',
+      '@kortix/voice': 'a cached voice catalog leaks between speech-api test files without isolation (KRTX-4386)',
     };
 
     const offenders: string[] = [];
@@ -215,7 +221,7 @@ describe('local test runner contract', () => {
   });
 
   it('keeps connector discovery convergence out of the parallel API lane', () => {
-    const source = readFileSync(resolve(root, 'tests/src/flows/connectors.flow.ts'), 'utf8');
+    const source = readRepoFile('tests/src/flows/connectors.flow.ts');
     const start = source.indexOf("'CONN-15'");
     const end = source.indexOf("'CONN-12'", start);
 
@@ -224,11 +230,8 @@ describe('local test runner contract', () => {
   });
 
   it('runs browser fixture SQL through the Node client without a host psql binary', () => {
-    const databaseSource = readFileSync(resolve(root, 'tests/e2e/helpers/database.ts'), 'utf8');
-    const manifestSource = readFileSync(
-      resolve(root, 'tests/e2e/helpers/manifest-project.ts'),
-      'utf8',
-    );
+    const databaseSource = readRepoFile('tests/e2e/helpers/database.ts');
+    const manifestSource = readRepoFile('tests/e2e/helpers/manifest-project.ts');
 
     expect(databaseSource).toContain('new Client');
     expect(`${databaseSource}\n${manifestSource}`).not.toMatch(/\bpsql\b/);

@@ -13,7 +13,7 @@ import {
 import { toWireModel } from '../llm-gateway/resolution/effective';
 import { isClaudeAgentModelRef } from '../llm-gateway/resolution/claude-agent';
 import { db } from '../shared/db';
-import { PLACEHOLDER_TITLE_SQL_PATTERN, isPlaceholderOpencodeTitle } from './lib/opencode-title';
+import { PLACEHOLDER_TITLE_SQL_PATTERN, isPlaceholderSessionTitle } from './lib/session-title-placeholder';
 import type { ProjectSessionRow } from './lib/serializers';
 import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
 
@@ -24,7 +24,7 @@ import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
 //   - create-with-prompt: `body.initial_prompt` (or `body.title_source`) is
 //     baked into the sandbox and runs in-guest, so create is its only chance;
 //   - first HTTP prompt: sessions created empty (the whole web UI, CLI/SDK)
-//     carry their first prompt as an OpenCode REST request body.
+//     carry their first prompt as a prompt request body through the proxy.
 // At most two bounded calls to the internal LLM gateway use only that text. A
 // deterministic prompt excerpt guarantees a title when both calls fail. That
 // excerpt is a fallback (`title_fallback_attempts`): the next prompt or turn end
@@ -96,7 +96,7 @@ export function sanitizeGeneratedTitle(raw: string | null | undefined): string |
   title = title.replace(/\s+/g, ' ');
   if (!title) return null;
   if (title.length > MAX_TITLE_LENGTH) title = title.slice(0, MAX_TITLE_LENGTH).trim();
-  if (!title || isPlaceholderOpencodeTitle(title)) return null;
+  if (!title || isPlaceholderSessionTitle(title)) return null;
   return title;
 }
 
@@ -131,7 +131,7 @@ function deterministicTitleFromPrompt(raw: string): string | null {
   if (!candidate) candidate = normalized.slice(0, MAX_TITLE_LENGTH);
   candidate = candidate.replace(/[\s.,!?;:'"`-]+$/, '').trim();
   if (!candidate) return null;
-  if (isPlaceholderOpencodeTitle(candidate)) candidate = `Topic: ${candidate}`;
+  if (isPlaceholderSessionTitle(candidate)) candidate = `Topic: ${candidate}`;
   return sanitizeGeneratedTitle(candidate);
 }
 
@@ -143,8 +143,8 @@ export interface PromptInfo {
 }
 
 /** Wire form of a prompt-body `model` field, shaped
- *  `{ providerID, modelID }` (opencode's per-send
- *  override) or a bare string. opencode's synthetic `kortix` provider already
+ *  `{ providerID, modelID }` (the per-send
+ *  override) or a bare string. The runtime's synthetic `kortix` provider already
  *  carries the full gateway wire id in `modelID` (e.g. `codex/gpt-5.6-sol`);
  *  any other provider is a BYOK `provider/model` pair. */
 function wireModelFrom(raw: unknown): string | null {
@@ -158,7 +158,7 @@ function wireModelFrom(raw: unknown): string | null {
   return providerId && providerId !== 'kortix' ? `${providerId}/${modelId}` : modelId;
 }
 
-/** Parse the OpenCode prompt body once and read the text and selected model. */
+/** Parse the prompt body once and read the text and selected model. */
 export function extractPromptInfo(
   body: ArrayBuffer | undefined,
   incomingHeaders: Headers,
@@ -312,7 +312,7 @@ function needsTitle(row: ProjectSessionRow): boolean {
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
   if (metadataText(metadata, 'custom_name')?.trim()) return false;
   const name = metadataText(metadata, 'name')?.trim();
-  if (!name || isPlaceholderOpencodeTitle(name)) return true;
+  if (!name || isPlaceholderSessionTitle(name)) return true;
   const attempts = fallbackAttempts(metadata);
   return attempts >= 1 && attempts < MAX_TITLE_FALLBACK_ATTEMPTS;
 }
@@ -337,7 +337,7 @@ function platformDefaultModel(): string | null {
 /**
  * The model to title with when neither the turn nor the session names one —
  * create-with-prompt and every server-side delivery arrive that way, and
- * `metadata.opencode_model` is absent whenever session create resolved no
+ * `metadata.model` is absent whenever session create resolved no
  * default (free tier or a gateway-disabled project).
  *
  * The account's own default chain first, then the platform default — but ONLY
@@ -376,7 +376,7 @@ async function resolveFallbackModel(
 /** The model the session was started with, in gateway wire form. */
 function sessionModel(row: ProjectSessionRow): string | null {
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
-  const ref = typeof metadata.opencode_model === 'string' ? metadata.opencode_model.trim() : '';
+  const ref = typeof metadata.model === 'string' ? metadata.model.trim() : '';
   return ref ? toWireModel(ref) : null;
 }
 
@@ -452,7 +452,7 @@ export interface GenerateSessionTitleInput {
   firstPromptText: string;
   /** The model the user actually picked for this turn (gateway wire form, from
    *  the prompt body). Preferred over the session's stale boot-default
-   *  `opencode_model`, which goes out of date the moment the model is switched. */
+   *  `model`, which goes out of date the moment the model is switched. */
   modelHint?: string;
 }
 
@@ -557,7 +557,7 @@ export async function generateSessionTitleFromFirstPrompt(
     const promptText = titlePromptText(storedTitleSource(row) ?? suppliedText);
 
     // Prefer the model the user actually picked for this turn (from the prompt
-    // body); the session's stored `opencode_model` is only the boot default and
+    // body); the session's stored `model` is only the boot default and
     // goes stale the moment the model is switched. Both are known-servable —
     // one is being served right now, the other was validated at create — so
     // only the last resort has to prove itself.

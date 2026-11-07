@@ -18,7 +18,7 @@ import { matchesCustomizeBinding } from './keys.ts';
 import { useProjectDetailState } from './use-project-detail.ts';
 
 /** The web's fallback when an agent declares no `model:` frontmatter. */
-export const DEFAULT_MODEL_TEXT = 'Uses the project default';
+export const DEFAULT_MODEL_TEXT = 'Uses the workspace default';
 
 export interface AgentRowData {
   name: string;
@@ -40,8 +40,8 @@ export interface AgentRowData {
 /**
  * Config agents in display order, with the project default marked.
  *
- * `default_agent` is the provider-neutral field; `open_code_default_agent` is
- * the deprecated one older servers still answer with, so both are consulted.
+ * `default_agent` is the project default. The SDK fills it in from the
+ * deprecated field an older server answers with.
  */
 export function agentRows(config: {
   agents: Array<{
@@ -54,16 +54,15 @@ export function agentRows(config: {
     scope?: AgentRowData['scope'];
   }>;
   default_agent?: string | null;
-  open_code_default_agent?: string | null;
 }): AgentRowData[] {
-  const fallback = config.default_agent ?? config.open_code_default_agent ?? null;
+  const fallback = config.default_agent ?? null;
   return config.agents.map((agent) => ({
     name: agent.name,
     description: agent.description,
     model: agent.model ?? null,
     mode: agent.mode,
     path: agent.path,
-    // `enabled` is absent on an OpenCode-discovered agent, which means on.
+    // An agent with no `enabled` field is on.
     enabled: agent.enabled !== false,
     isDefault: fallback != null && agent.name === fallback,
     scope: agent.scope ?? null,
@@ -107,7 +106,7 @@ export function AgentsTabView({
         // The default agent carries the same star the web card shows.
         glyph: row.isDefault ? '★' : ' ',
         label: row.description ? `${row.name} · ${row.description}` : row.name,
-        right: row.enabled ? (row.model ?? 'project default') : 'Disabled',
+        right: row.enabled ? (row.model ?? 'workspace default') : 'Disabled',
         dim: !row.enabled,
       })),
     [rows],
@@ -134,7 +133,7 @@ export function AgentsTabView({
     return (
       <DetailPane
         title={current.name}
-        right={current.isDefault ? 'project default' : ''}
+        right={current.isDefault ? 'workspace default' : ''}
         width={width}
       >
         <Field label="Mode" value={current.mode ?? 'primary'} />
@@ -170,7 +169,7 @@ export function AgentsTabView({
         width={width}
         emptyText="No agents yet. Add agents/<name>.md and declare it under agents: in kortix.yaml."
       />
-      {rows.length > 0 ? <text fg={theme.faint}>Enter details · ★ project default</text> : null}
+      {rows.length > 0 ? <text fg={theme.faint}>Enter details · ★ workspace default</text> : null}
     </box>
   );
 }

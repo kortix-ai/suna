@@ -31,7 +31,7 @@ test('SSR renders an empty pathname, no search params and no route params', () =
 
 test('the client reads window.location and re-renders on popstate', async () => {
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
-  const win = new Window({ url: 'https://example.test/projects/p1?tab=files' });
+  const win = new Window({ url: 'https://example.test/workspaces/p1?tab=files' });
   const globals = globalThis as Record<string, unknown>;
   globals.window = win;
   globals.document = win.document;
@@ -41,13 +41,13 @@ test('the client reads window.location and re-renders on popstate', async () => 
   win.document.body.appendChild(container);
   const root = createRoot(container as never);
   act(() => root.render(<Probe />));
-  expect(container.textContent).toBe('/projects/p1|files|-');
+  expect(container.textContent).toBe('/workspaces/p1|files|-');
 
   act(() => {
-    win.history.pushState(null, '', '/projects/p2?tab=changes');
+    win.history.pushState(null, '', '/workspaces/p2?tab=changes');
     win.dispatchEvent(new win.PopStateEvent('popstate'));
   });
-  expect(container.textContent).toBe('/projects/p2|changes|-');
+  expect(container.textContent).toBe('/workspaces/p2|changes|-');
   act(() => root.unmount());
 });
 

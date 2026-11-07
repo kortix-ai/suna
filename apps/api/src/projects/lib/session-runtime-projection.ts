@@ -1,6 +1,6 @@
 /**
  * The RUNTIME PROJECTION store — server-side custody of the daemon's
- * `/kortix/opencode/state` document.
+ * `/kortix/runtime/state` document.
  *
  * WHY IT EXISTS. Opening a session used to ask the box seven questions
  * (`/agent` `/command` `/config` `/session` `/session/status` `/permission`
@@ -12,11 +12,11 @@
  * agents, which commands, what model" with zero sandbox hops.
  *
  * ─── IT IS A CACHE OF A FACT, NOT A FACT ───────────────────────────────────
- * `session-transcript-mirror.ts:34-38` states the rule this obeys: *a cached
- * record whose id the live read will not also produce is a ghost*. So the
+ * The rule this obeys: *a cached record whose id the live read will not also
+ * produce is a ghost*. So the
  * identity the live read WOULD produce travels with the projection, and
  * {@link resolveRuntimeLeg} refuses to present a projection whose identity no
- * longer matches. An agent roster from a re-pinned OpenCode session is the same
+ * longer matches. An agent roster from a re-pinned runtime session is the same
  * defect as a ghost message, wearing different clothes.
  *
  * ─── WHICH IDENTITY CHECKS ARE APPLIED, AND WHICH ARE ONLY REPORTED ────────
@@ -109,7 +109,7 @@ export type RuntimeLeg =
       epoch: string | null;
       seq: number | null;
       identity: RuntimeProjectionIdentity;
-      /** The `/kortix/opencode/state` document, verbatim. */
+      /** The `/kortix/runtime/state` document, verbatim. */
       state: Record<string, unknown>;
     };
 
@@ -122,7 +122,7 @@ function asString(value: unknown): string | null {
 }
 
 /**
- * Pull the identity out of a `/kortix/opencode/state` document.
+ * Pull the identity out of a `/kortix/runtime/state` document.
  *
  * Tolerant on purpose: the daemon owns this shape and a future field must not
  * make an older API refuse a projection it can still serve.
@@ -133,16 +133,13 @@ export function projectionIdentity(doc: unknown): RuntimeProjectionIdentity {
       ? ((doc as Record<string, unknown>).identity as Record<string, unknown> | undefined)
       : undefined;
   const headSeq = identity?.head_seq;
-  // The W3 names first; a daemon built before W3 sends only the OpenCode ones.
-  const runtimeSessionId = asString(identity?.runtime_session_id) ?? asString(identity?.opencode_session_id);
-  const harnessVersion = asString(identity?.harness_version) ?? asString(identity?.opencode_version);
+  const runtimeSessionId = asString(identity?.runtime_session_id);
+  const harnessVersion = asString(identity?.harness_version);
   return {
     schema: doc && typeof doc === 'object' ? asString((doc as Record<string, unknown>).schema) : null,
     harness: asString(identity?.harness),
     runtime_session_id: runtimeSessionId,
     harness_version: harnessVersion,
-    opencode_session_id: runtimeSessionId,
-    opencode_version: harnessVersion,
     daemon_build: asNumber(identity?.daemon_build),
     agent_config_etag: asString(identity?.agent_config_etag),
     head_seq:
@@ -264,8 +261,8 @@ export async function saveRuntimeProjection(
 
 export interface RuntimeProjectionRead {
   row: StoredRuntimeProjection | null;
-  /** The session's current OpenCode pin, for the identity check. */
-  pinnedOpencodeSessionId: string | null;
+  /** The session's current `runtime_session_id` pin, for the identity check. */
+  pinnedRuntimeSessionId: string | null;
   /** Whether a sandbox row says this session's box could be answering. */
   runtimeRunning: boolean;
 }
@@ -312,7 +309,7 @@ export async function readRuntimeProjection(
     .limit(1);
 
   const row = rows[0];
-  if (!row) return { row: null, pinnedOpencodeSessionId: null, runtimeRunning: false };
+  if (!row) return { row: null, pinnedRuntimeSessionId: null, runtimeRunning: false };
 
   return {
     row: row.projectionEtag
@@ -326,8 +323,6 @@ export async function readRuntimeProjection(
             harness: row.harness ?? null,
             runtime_session_id: row.runtimeSessionId ?? null,
             harness_version: row.harnessVersion ?? null,
-            opencode_session_id: row.runtimeSessionId ?? null,
-            opencode_version: row.harnessVersion ?? null,
             daemon_build: row.daemonBuild ?? null,
             agent_config_etag: row.agentConfigEtag ?? null,
             head_seq: (row.headSeq as Record<string, number> | null) ?? null,
@@ -340,7 +335,7 @@ export async function readRuntimeProjection(
           capturedAt: row.capturedAt!,
         }
       : null,
-    pinnedOpencodeSessionId: row.pinned ?? null,
+    pinnedRuntimeSessionId: row.pinned ?? null,
     runtimeRunning: RUNNING_SANDBOX_STATUSES.has(String(row.sandboxStatus ?? '')),
   };
 }
@@ -356,15 +351,15 @@ export function resolveRuntimeLeg(
   read: RuntimeProjectionRead,
   nowMs: number = Date.now(),
 ): RuntimeLeg {
-  const { row, pinnedOpencodeSessionId, runtimeRunning } = read;
+  const { row, pinnedRuntimeSessionId, runtimeRunning } = read;
   if (!row) return { known: false, reason: 'no_projection' };
 
   // Both sides must be known before a mismatch is a mismatch. A session with no
   // pin yet (a cold box mid-boot) is not evidence that the projection is wrong.
   if (
-    pinnedOpencodeSessionId &&
+    pinnedRuntimeSessionId &&
     row.identity.runtime_session_id &&
-    pinnedOpencodeSessionId !== row.identity.runtime_session_id
+    pinnedRuntimeSessionId !== row.identity.runtime_session_id
   ) {
     return { known: false, reason: 'identity_mismatch' };
   }

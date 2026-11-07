@@ -43,7 +43,7 @@ describe('validation issues in a response', () => {
   });
 
   test('a union over an array branch nests each element error in ONE issue; the body stays small', async () => {
-    // Zod puts a failing branch's whole issue list in `unionErrors` of one
+    // Zod puts a failing branch's whole issue list in `errors` of one
     // invalid_union issue, so a count cap alone kept every element error.
     const Event = z.object({ name: z.string() });
     const res = await post(Event.or(z.object({ events: z.array(Event) })), { events: Array(5000).fill({}) });
@@ -53,7 +53,7 @@ describe('validation issues in a response', () => {
     expect(res.status).toBe(400);
     expect(body.issue_count).toBe(1);
     expect(body.issues[0].code).toBe('invalid_union');
-    expect(body.issues[0].unionErrors).toBeUndefined();
+    expect(body.issues[0].errors).toBeUndefined();
     expect(body.issues[0].union_errors[1].issue_count).toBe(5000);
     expect(text.length).toBeLessThan(20_000);
   });

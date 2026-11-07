@@ -1,49 +1,25 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
 import * as kortixMaster from './core/runtime/kortix-master';
 import * as kortixMasterHooks from './react/use-kortix-master';
 
 /**
- * Exports that stay public until the next major but must carry `@deprecated`,
- * so a consumer's editor flags every call site before the name is removed.
- * The tag is read from the source through the TypeScript compiler, the same
- * way an editor and the emitted `.d.ts` see it.
+ * Exports that stay public for now but must carry `@deprecated`, so a
+ * consumer's editor flags every call site before the name is removed. A
+ * first-party host still calls each of them. The tag is read from the source
+ * through the TypeScript compiler, the same way an editor and the emitted
+ * `.d.ts` see it.
  */
-
-/** No host uses them. Each wraps an OpenCode-only REST route. */
-const UNUSED_RUNTIME_EXPORTS = [
-  'useOpenCodeMcpStatus',
-  'useAddMcpServer',
-  'useConnectMcpServer',
-  'useDisconnectMcpServer',
-  'useMcpAuthStart',
-  'useMcpAuthCallback',
-  'useMcpAuthRemove',
-  'useShareSession',
-  'useUnshareSession',
-  'useUpdatePart',
-  'useDeletePart',
-  'useOpenCodeSkills',
-  'useOpenCodeToolIds',
-  'useOpenCodeProjects',
-  'useDeleteOpenCodeSession',
-  'getRuntimeProviderAuthMethods',
-  'authorizeRuntimeProvider',
-  'completeRuntimeProviderOAuth',
-  'setRuntimeProviderApiKey',
-  'getRuntimeConfig',
-  'updateRuntimeConfig',
-  'refreshRuntimeConfiguration',
-];
 
 /**
- * The message-id clock arithmetic: an ordering detail of OpenCode's ids that
- * clients must not depend on. Kortix message ids are opaque; `mintWireMessageId`
- * and `WIRE_MESSAGE_ID` stay.
+ * The Kortix message id format and its clock arithmetic. They are current, not
+ * deprecated: the pi harness (`apps/kortix-sandbox-agent-server/src/harness/pi/message-id.ts`)
+ * mints its reply ids with them and apps/api places prompts with them.
  */
-const MESSAGE_ID_CLOCK_EXPORTS = [
+const MESSAGE_ID_EXPORTS = [
+  'mintWireMessageId',
+  'WIRE_MESSAGE_ID',
   'WIRE_ID_TIME_SCALE',
   'WIRE_ID_TIME_MASK',
   'WIRE_ID_CLOCK_TOLERANCE',
@@ -85,131 +61,31 @@ const TRANSCRIPT_SHARE_EXPORTS = [
   'PublicSessionTranscriptToolCall',
 ];
 
-/** Kortix orders prompts server-side; the client queue reducers are unused. */
-const MESSAGE_QUEUE_EXPORTS = [
-  'claimNext',
-  'completeInFlight',
-  'createSessionQueue',
-  'editQueued',
-  'enqueue',
-  'failInFlight',
-  'removeQueued',
-  'reorderQueued',
-  'retryFailed',
-  'QueuedMessage',
-  'QueuedMessageInput',
-  'SessionQueue',
-];
+/**
+ * The workspace rename (PR #11857): each older `Project*` / `Account*` name
+ * that has an exact `Workspace*` equivalent carries `@deprecated` naming the
+ * replacement. Compatibility is PERMANENT: these names are never removed, so
+ * the tag says `Kept permanently.` and never `Removed in the next major.`.
+ * A name with no exact equivalent (the IAM functions, until the one
+ * workspace scope lands) is not deprecated. Every project-named export is
+ * covered by `workspace-names.test.ts`.
+ */
+const WORKSPACE_EQUIVALENTS: Record<string, string> = {
+  updateProject: 'updateWorkspace',
+  updateAccountName: 'updateWorkspace',
+  listAccountMembers: 'listWorkspaceMembers',
+  inviteAccountMember: 'inviteWorkspaceMember',
+  removeAccountMember: 'removeWorkspaceMember',
+  updateAccountMemberRole: 'updateWorkspaceMemberRole',
+  listAccountInvites: 'listWorkspaceInvites',
+  cancelAccountInvite: 'cancelWorkspaceInvite',
+  resendAccountInvite: 'resendWorkspaceInvite',
+  leaveAccount: 'leaveWorkspace',
+  listAccountTokens: 'listWorkspaceTokens',
+  revokeAccountToken: 'revokeWorkspaceToken',
+};
 
-/** Every export of these modules wraps a route the API removed. The modules go whole. */
-const RETIRED_MODULES = [
-  'react/use-admin-analytics.ts',
-  'react/use-admin-feedback.ts',
-  'react/use-system-status.ts',
-  'react/use-admin-billing.ts',
-];
-
-/** Retired hooks in modules that also hold live hooks. Each fails with `ENDPOINT_RETIRED`. */
-const RETIRED_HOOKS = [
-  'useAdminSandboxDetail',
-  'useAdminSandboxHealth',
-  'useAdminSandboxHealthBatch',
-  'useAdminSandboxExec',
-  'useAdminSandboxAction',
-  'useAdminSandboxRepair',
-  'useDeleteAdminSandbox',
-  'useAdminAccountSandboxes',
-  'useCreateTunnelConnection',
-  'useTunnelPermissions',
-  'useGrantTunnelPermission',
-  'useRevokeTunnelPermission',
-  'useTunnelPermissionRequests',
-  'useApprovePermissionRequest',
-  'useDenyPermissionRequest',
-  'useTunnelAuditLogs',
-];
-
-/** Types and helpers only the retired hooks above use. */
-const RETIRED_HOOK_TYPES = [
-  'AdminSandboxDetail',
-  'ProviderMachineDetail',
-  'AdminInstanceLayerStatus',
-  'AdminInstanceLayerAction',
-  'AdminInstanceLayerHealth',
-  'AdminSandboxHealth',
-  'AdminSandboxHealthBatchResponse',
-  'ExecResult',
-  'ProxyTokenResult',
-  'fetchAdminSandboxProxyToken',
-  'AdminAccountSandbox',
-];
-
-/** `react/use-opencode-sessions` hooks no first-party host calls. */
-const UNUSED_SESSION_HOOKS = [
-  'useOpenCodeRuntimeReady',
-  'useOpenCodeSessions',
-  'useOpenCodeSession',
-  'useCreateOpenCodeSession',
-  'useUpdateRuntimeSession',
-  'useUpdateOpenCodeSession',
-  'useDeleteOpenCodeSession',
-  'useRuntimeSessionDiff',
-  'useOpenCodeSessionDiff',
-  'useOpenCodeSessionTodo',
-  'useSummarizeOpenCodeSession',
-  'useInitSession',
-  'useOpenCodeMessages',
-  'useSendRuntimeMessage',
-  'useSendOpenCodeMessage',
-  'useAbortOpenCodeSession',
-  'useRuntimeAgent',
-  'useOpenCodeAgents',
-  'useOpenCodeAgent',
-  'useRuntimeTools',
-  'useOpenCodeTools',
-  'useOpenCodeToolIds',
-  'useOpenCodeSkills',
-  'useOpenCodeProjects',
-  'useOpenCodeCurrentProject',
-  'useOpenCodePathInfo',
-  'useOpenCodeCommands',
-  'useExecuteOpenCodeCommand',
-  'useOpenCodeProviders',
-  'useShareSession',
-  'useUnshareSession',
-  'useUpdatePart',
-  'useDeletePart',
-  'useOpenCodeVcsDiff',
-];
-
-/** Subpaths removed in the next major: the 20 legacy shims, 4 unused internal stores, the queue. */
-const NEXT_MAJOR_SUBPATHS = [
-  './opencode-client',
-  './config',
-  './auth',
-  './api-client',
-  './projects-client',
-  './feature-flags',
-  './fresh-sessions',
-  './instance-routes',
-  './opencode-errors',
-  './platform-client',
-  './event-stream',
-  './files',
-  './session',
-  './session/url',
-  './turns',
-  './sync-store',
-  './server-store',
-  './sandbox-connection-store',
-  './opencode-pending-store',
-  './idb-sync-cache',
-  './internal/sync-store',
-  './internal/server-store',
-  './internal/sandbox-connection-store',
-  './internal/opencode-pending-store',
-  './message-queue',
-];
+const KEPT_PERMANENTLY = /Kept permanently\./;
 
 const program = ts.createProgram([join(import.meta.dir, 'index.ts'), join(import.meta.dir, 'react/index.ts')], {
   target: ts.ScriptTarget.ES2022,
@@ -249,7 +125,6 @@ function deprecation(name: string): string {
   return ts.displayPartsToString(deprecatedTag(exported)?.text ?? []);
 }
 
-const RETIRED_MODULE_EXPORTS = RETIRED_MODULES.flatMap((entry) => [...exportedSymbols(entry).keys()]);
 const REMOVED_IN_NEXT_MAJOR = /Removed in the next major\./;
 
 describe('deprecated exports', () => {
@@ -257,41 +132,45 @@ describe('deprecated exports', () => {
     expect(KORTIX_MASTER_EXPORTS.length).toBeGreaterThan(100);
   });
 
-  test.each(UNUSED_RUNTIME_EXPORTS)('%s is @deprecated', (name) => {
-    expect(isDeprecated(name)).toBe(true);
-  });
-
   test.each(KORTIX_MASTER_EXPORTS)('%s is @deprecated', (name) => {
     expect(isDeprecated(name)).toBe(true);
   });
 
-  test.each(MESSAGE_ID_CLOCK_EXPORTS)('%s is @deprecated', (name) => {
-    expect(isDeprecated(name)).toBe(true);
-  });
-
-  test('the retired-module sweep is not empty', () => {
-    expect(RETIRED_MODULE_EXPORTS.length).toBeGreaterThan(80);
-  });
-
-  test.each([...MESSAGE_QUEUE_EXPORTS, ...RETIRED_MODULE_EXPORTS, ...RETIRED_HOOKS, ...RETIRED_HOOK_TYPES, ...UNUSED_SESSION_HOOKS, ...TRANSCRIPT_SHARE_EXPORTS])(
+  test.each(TRANSCRIPT_SHARE_EXPORTS)(
     '%s is @deprecated and removed in the next major',
     (name) => {
       expect(deprecation(name)).toMatch(REMOVED_IN_NEXT_MAJOR);
     },
   );
 
-  test.each(NEXT_MAJOR_SUBPATHS)('subpath %s is @deprecated and removed in the next major', (subpath) => {
-    const pkg = JSON.parse(readFileSync(join(import.meta.dir, '..', 'package.json'), 'utf8')) as {
-      exports: Record<string, string>;
-    };
-    const file = pkg.exports[subpath];
-    expect(file).toBeDefined();
-    const header = readFileSync(join(import.meta.dir, '..', file), 'utf8').match(/^\/\*\*[\s\S]*?\*\//)?.[0] ?? '';
-    expect(header).toContain('@deprecated');
-    expect(header).toMatch(REMOVED_IN_NEXT_MAJOR);
+  test.each(Object.entries(WORKSPACE_EQUIVALENTS))(
+    '%s is @deprecated in favour of %s and kept permanently',
+    (name, replacement) => {
+      const text = deprecation(name);
+      expect(text).toContain(`\`${replacement}`);
+      expect(text).toMatch(KEPT_PERMANENTLY);
+      expect(text).not.toMatch(REMOVED_IN_NEXT_MAJOR);
+    },
+  );
+
+  test.each([...new Set(Object.values(WORKSPACE_EQUIVALENTS))])('%s, the workspace name, is current', (name) => {
+    expect(isDeprecated(name)).toBe(false);
   });
 
-  test.each(['mintWireMessageId', 'WIRE_MESSAGE_ID'])('%s stays current (the Kortix message id format)', (name) => {
+  // createAccountToken mints a PERSONAL key (acts as the person in every
+  // workspace); createWorkspaceToken mints a key bound to one workspace.
+  // Different reach: not an equivalent.
+  // The project names (getProject, listProjectsForAccount, …) are covered by
+  // workspace-names.test.ts since the Naming stage (2026-11-06): each has a
+  // workspace twin or a named replacement.
+  test.each(['KortixAccount', 'listAccounts', 'createAccountToken'])(
+    '%s has no exact workspace equivalent and stays current',
+    (name) => {
+      expect(isDeprecated(name)).toBe(false);
+    },
+  );
+
+  test.each(MESSAGE_ID_EXPORTS)('%s stays current (the Kortix message id format)', (name) => {
     expect(isDeprecated(name)).toBe(false);
   });
 });

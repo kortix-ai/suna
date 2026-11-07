@@ -104,7 +104,7 @@ const ERROR_CASES: ErrorCase[] = [
 ];
 
 const VARIANTS: { variant: ToastVariant; message: string; description?: string }[] = [
-  { variant: 'success', message: 'Project created' },
+  { variant: 'success', message: 'Workspace created' },
   {
     variant: 'error',
     message: 'Could not save',
@@ -161,7 +161,7 @@ export default function ToastsDebugPage() {
 
         <Section title="Fire the real toasts">
           <div className="flex flex-wrap gap-2">
-            <Button size="xs" variant="outline" onClick={() => successToast('Project created')}>
+            <Button size="xs" variant="outline" onClick={() => successToast('Workspace created')}>
               Success
             </Button>
             <Button

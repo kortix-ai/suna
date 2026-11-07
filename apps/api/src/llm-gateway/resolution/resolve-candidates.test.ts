@@ -53,6 +53,10 @@ mock.module('../../secrets/account-resource', () => ({
   resolveProjectSharedProviderSecrets,
   encryptAccountSecret: (_accountId: string, value: string) => value,
   decryptAccountSecret: (_accountId: string, value: string) => value,
+  // Imported by modules this suite loads (subscription usage, #11816); never called here.
+  readAccountSecret: () => null,
+  resolveDefaultProviderAccountSecret: async () => null,
+  listUsableGatewaySecrets: async () => [],
 }));
 const getProjectSecretValueForConsumer = mock(async (input: { name: string }) => {
   const name = input.name;
@@ -1003,6 +1007,8 @@ describe('resolveCandidates — codex, unconfigured session, project-shared Chat
     expect(resolveProjectSharedProviderSecrets).toHaveBeenCalledWith({
       accountId: actor.accountId, projectId: 'p1', userId: 'u1', grantUserId: null,
       providerId: 'codex', name: 'CODEX_AUTH_JSON',
+      // The session's call: its pinned shared account serves first (account-routing.ts).
+      sessionId: 'trigger-session', probe: undefined,
     });
     expect(resolveDefaultCodexAccountSecret).not.toHaveBeenCalled();
     expect(resolveCodexCredential).not.toHaveBeenCalled();

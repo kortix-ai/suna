@@ -32,10 +32,10 @@ optional Generative UI peers (`zod`, `@openuidev/lang-core`); `./genui/fence`
 loads neither. `./wire-message-id` is the message-id mint alone — it has no
 imports, so a server loads it without the root barrel; the root exports the same
 names. `./capture-rules` holds the Kortix Capture constants (also at the root).
-`./workspace-search` is isolated from the root on purpose. The 21 legacy subpaths
+`./workspace-search` is isolated from the root on purpose. The legacy subpaths
 (`@kortix/sdk/projects-client`, `/turns`, `/files`, `/session`, `/event-stream`,
-the zustand stores, …) are `@deprecated` aliases that still resolve — import from
-the root instead. That the root really does cover all of them is asserted by
+the zustand stores, `/message-queue`, …) were removed in 0.15.0 — import from
+the root instead. That the root covers every public name is asserted by
 `src/root-canonical.test.ts`, not merely claimed here. `./internal/*` backs `apps/web`'s zustand stores and is not
 reachable from `window.Kortix`; treat it as visible implementation detail, not
 designed API.
@@ -56,31 +56,39 @@ try/catching every call.
 ### 1c. Mobile release policy  ✅
 `kortix.mobileClientPolicy()` → `GET /v1/clients/mobile`. Public (no token): a mobile build reads it before login. Resolves `{minimum_version, store_url_ios, store_url_android}` (strings or `null`). `compareSemver(a, b)` compares versions.
 
+### 1d. Workspaces  ✅
+
+A workspace is one account and its one project; `workspace_id` = `project_id`.
+Module: `projects-client/workspaces.ts`. Facade: `kortix.workspaces.{list,get,update,create}`,
+`kortix.workspace(id)` (the whole `project(id)` handle plus `get`, `update`, `accountId`,
+`members.*`, `leave`, `billing.state`, `tokens.*`, `iam.*`). Hooks: `useWorkspaces`, `useWorkspace`.
+
+| Capability | Route | SDK |
+|---|---|---|
+| list | `GET /v1/accounts`, then `GET /v1/projects?account_id=` per account (`GET /v1/workspaces` lists one account's workspace) | `listWorkspaces` ✅ |
+| get (role + settings) | `GET /v1/workspaces/:workspaceId` (the project record plus its `workspace` settings block and `account_role`) | `getWorkspace` ✅ |
+| update | `PATCH /v1/workspaces/:workspaceId` | `updateWorkspace` ✅ |
+| create | `POST /v1/projects/provision{,-stream}` with `new_workspace: true` | `createWorkspace` ✅ |
+| members / invites / leave | `/v1/workspaces/:workspaceId/{members,invites,leave}` | `*WorkspaceMember*`, `*WorkspaceInvite*`, `leaveWorkspace` ✅ |
+| personal access tokens | `/v1/workspaces/:workspaceId/tokens` | `list/create/revokeWorkspaceToken` ✅ |
+| billing state | `GET /v1/billing/account-state?account_id=<workspaceId>` (the billing routes accept either id) | `getWorkspaceBillingState` ✅ |
+| IAM | `/v1/workspaces/:workspaceId/iam/{assignments,roles,groups,members/:userId/effective:batch}` | `*WorkspaceAssignment*`, `listWorkspaceRoles`, `listWorkspaceGroups`, `probeWorkspacePermission(s)` ✅ |
+
+Each workspace-scoped call is one request keyed by the workspace id; none resolves the account first.
+The older `/v1/projects/*` and `/v1/accounts/*` routes stay permanently, and the older functions keep calling them.
+Every `Project*`/`Account*` name stays permanently; exact equivalents carry `@deprecated`.
+"Workspace files" (section 10) is the sandbox's `/workspace` directory, not this entity.
+
 ### 2. Projects  ✅
 | op | Kortix REST | SDK |
 |---|---|---|
 | list / get / create / update | `GET/POST /v1/projects`, `GET/PUT /v1/projects/:id` | ✅ |
 | detail (config+agents+skills+files) | `GET /v1/projects/:id/detail` | ✅ |
 | provision / import linked repo / create repo | `POST /v1/projects/{provision,link-repository,create-repo}` | ✅ |
+| create a workspace (account + project) | `POST /v1/projects/provision{,-stream}` with `new_workspace: true` | ✅ `createWorkspace` |
 | github installs / repos / repository branches / collaborators | `GET /v1/projects/github/*`, `/:id/git/collaborators` | ✅ |
 | model catalogs | `GET /v1/projects/:id/llm-catalog` (full runtime), `GET /v1/projects/:id/model-picker` (compact connected UI picker) | ✅ |
 | experimental flags / onboarding | `GET/PUT /v1/projects/:id/{experimental,onboarding}` | ✅ |
-
-### 2b. Artifact comments and activity ✅
-
-`project(id).artifacts.comments.{list,get,create,reply,setStatus,edit,remove,send}`
-and `.artifacts.activity` wrap the authenticated Artifact comment and activity
-routes. The `get` lookup takes a project-scoped thread id. User and session
-authors have separate identity shapes. `ArtifactCommentMention` distinguishes
-resolved people, sessions, and project agents. `useArtifactComments` owns comment
-writes and refreshes both tabs; `useArtifactActivity` reads cursor pages.
-`useArtifactCommentContext` supplies permissions, insertion tokens, selected
-version identity, and eligible Send targets. `readArtifactCommentSnapshot`
-pins text to the context's Files commit. Historical comment hooks reject
-writes. `useInfiniteArtifactActivity` owns complete cursor-page state and
-deduplicates timeline items.
-Both hooks have a mounted 10-second polling fallback. Requires the default-off
-`artifact_comments` project flag and `artifacts`.
 
 ### 3. Project secrets / env  ✅
 `GET/POST/PUT/DELETE /v1/projects/:id/secrets[/:name]` · personal overrides · OAuth credential flow (`/oauth/:provider/{start,poll}`) · git-credential. → SDK `projects-client/secrets.ts`.
@@ -106,7 +114,7 @@ Both hooks have a mounted 10-second polling fallback. Requires the default-off
 ### 5b. Token minting (CLI PATs) — Kortix-as-a-Backend-critical  ✅
 | op | REST | SDK |
 |---|---|---|
-| list / create / revoke (account-scoped) | `GET/POST /v1/accounts/tokens`, `DELETE /v1/accounts/tokens/:tokenId` | `projects-client/tokens.ts` ✅, facade `kortix.accounts.tokens.{list,create,revoke}` ✅ |
+| list / create / revoke (account-scoped) | `GET/POST /v1/accounts/tokens`, `DELETE /v1/accounts/tokens/:tokenId` | `projects-client/tokens.ts` ✅, facade `kortix.accounts.tokens.{list,create,revoke}` ✅; workspace names `kortix.workspace(id).tokens.{list,create,revoke}` ✅ |
 | list / create / revoke (project-scoped, `KORTIX_TOKEN`) | `GET/POST /v1/projects/:id/cli-token`, `DELETE .../cli-token/:tokenId` | ✅, facade `project(id).tokens.{list,create,revoke}` ✅ |
 
 ### 6. Session runtime  ✅
@@ -155,7 +163,7 @@ Kortix-native (`core/runtime/pty.ts`), independent of the agent runtime — daem
 → `getKortixPtyWebSocketUrl`. Hooks: `useRuntimePtyList`, `useCreatePty`,
 `useRemovePty`, `useUpdatePty`, `getPtyWebSocketUrl`.
 
-### 10. Workspace files  ✅ (client) · 🟡 (hooks)
+### 10. Workspace files (the sandbox's `/workspace` directory)  ✅ (client) · 🟡 (hooks)
 Daemon-direct, full 12-op client in the SDK root (`core/files/client.ts`; the session handle binds it as `s.files.*`):
 | op | daemon HTTP | SDK |
 |---|---|---|

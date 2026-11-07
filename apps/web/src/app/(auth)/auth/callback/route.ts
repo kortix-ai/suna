@@ -1,3 +1,4 @@
+import { desktopShellPath, isDesktopShell } from '@/lib/workspace-redirects';
 import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
 import {
@@ -257,9 +258,8 @@ export async function GET(request: NextRequest) {
         const billingEnabled = runtimeEnv.BILLING_ENABLED;
         // Skip the billing-aware landing for invited users: a returnUrl pointing
         // at /invites/:id must be honored verbatim so they reach the accept/decline
-        // dialog, instead of being bounced to the billing page or a freshly
-        // provisioned first project (either of which skips the dialog and leaves
-        // the invite unaccepted).
+        // dialog, instead of being bounced to the billing page or the door
+        // (either of which skips the dialog and leaves the invite unaccepted).
         if (billingEnabled && backendUrl && accessToken && !isInviteReturnUrl(next)) {
           try {
             const accountState = await fetchAccountStateWithToken({
@@ -269,17 +269,15 @@ export async function GET(request: NextRequest) {
             });
 
             // The ONLY backend call left on this redirect's critical path, and
-            // the only reason to override the destination here. First-project
-            // provisioning deliberately does NOT happen in this handler any
-            // more: it used to await accounts (8s) + projects (8s) + a managed
-            // git repo create AND a full starter push (90s) before the browser
-            // received any redirect at all, so a fresh signup stared at a blank
-            // callback page for the whole provision. `PROJECT_LANDING_PATH`
-            // now paints instantly and does that work behind the real UI.
-            // `/settings/billing`, not `/projects/start`: this branch exists
-            // so an account with no app access is NOT given a project, and
-            // the landing door provisions one. The settings route mounts the
-            // panel directly for exactly this reason — see
+            // the only reason to override the destination here. Nothing is
+            // created at sign-up (Workspaces D3): a new user has no workspace
+            // until they create or join one, on the chooser the door opens.
+            // `PROJECT_LANDING_PATH` paints instantly and decides there.
+            // `/settings/billing`, not `/workspaces/start`: this branch exists
+            // so an account with no app access lands on billing first. The
+            // door never creates anything: with no workspace it shows the
+            // create-or-join chooser. The settings route mounts the panel
+            // directly for exactly this reason — see
             // `features/workspace/settings/standalone-settings-route.tsx`.
             if (accountState && !accountHasAppAccess(accountState)) {
               finalDestination = '/settings/billing';
@@ -305,6 +303,9 @@ export async function GET(request: NextRequest) {
       }
 
       // Web redirect - include auth event params for client-side tracking
+      // An installed desktop shell loads only its own app paths (/projects):
+      // a redirect to /workspaces would open in the system browser.
+      if (isDesktopShell(request.headers?.get('user-agent'))) finalDestination = desktopShellPath(finalDestination);
       const redirectUrl = new URL(`${baseUrl}${finalDestination}`);
       redirectUrl.searchParams.set('auth_event', authEvent);
       redirectUrl.searchParams.set('auth_method', authMethod);

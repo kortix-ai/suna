@@ -134,28 +134,28 @@ describe('isOtherProject: both sides are known and they differ', () => {
   });
 
   test('the project in the URL is not another project', () => {
-    at('/projects/p1/sessions/s1');
+    at('/workspaces/p1/sessions/s1');
     expect(isOtherProject('p1')).toBe(false);
   });
 
   test('a different project is another project', () => {
-    at('/projects/p1/sessions/s1');
+    at('/workspaces/p1/sessions/s1');
     expect(isOtherProject('p2')).toBe(true);
   });
 
   test('a locale prefix does not hide the project in the URL', () => {
-    at('/de/projects/p2/sessions/s1');
+    at('/de/workspaces/p2/sessions/s1');
     expect(isOtherProject('p1')).toBe(true);
     expect(isOtherProject('p2')).toBe(false);
   });
 
   test('the project list has no project in the URL', () => {
-    at('/projects');
+    at('/workspaces');
     expect(isOtherProject('p1')).toBe(false);
   });
 
-  test('/projects/new is a page, not a project', () => {
-    at('/projects/new');
+  test('/workspaces/new is a page, not a project', () => {
+    at('/workspaces/new');
     expect(isOtherProject('p1')).toBe(false);
   });
 
@@ -165,7 +165,7 @@ describe('isOtherProject: both sides are known and they differ', () => {
   });
 
   test('a payload without a project is not another project', () => {
-    at('/projects/p1');
+    at('/workspaces/p1');
     expect(isOtherProject(null)).toBe(false);
     expect(isOtherProject(undefined)).toBe(false);
   });
@@ -177,7 +177,7 @@ describe('markSessionOnScreen: a mounted surface whose session id is not in the 
 
   beforeEach(() => {
     globalThis.window = {
-      location: { pathname: '/projects/p1/artifacts/a1', search: '' },
+      location: { pathname: '/workspaces/p1/artifacts/a1', search: '' },
     } as unknown as typeof globalThis.window;
   });
 
@@ -228,11 +228,11 @@ describe('notifyQuestion and notifyPermissionRequest', () => {
   beforeEach(() => {
     bodies.length = 0;
     useWebNotificationStore.setState({
-      preferences: { ...realPreferences, enabled: true, onQuestion: true, onPermission: true, playSound: false },
+      preferences: { ...realPreferences, enabled: true, playSound: false },
     });
     globalThis.Notification = FakeNotification as unknown as typeof Notification;
     globalThis.window = {
-      location: { pathname: '/projects/p1/artifacts/a1', search: '' },
+      location: { pathname: '/workspaces/p1/artifacts/a1', search: '' },
       Notification: FakeNotification,
     } as unknown as typeof globalThis.window;
   });

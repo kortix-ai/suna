@@ -15,7 +15,7 @@ import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
  *   - `project_sessions.updated_at` is bookkeeping. Runtime stop/resume, title
  *     sync, branch telemetry, and mapping repairs all advance it with no turn
  *     behind them, so an idle session drifts to the top of the list.
- *   - `metadata.opencode_sessions[].updated_at` is real conversation activity,
+ *   - `metadata.runtime_sessions[].updated_at` is real conversation activity,
  *     but it is a CACHE of the runtime's state document, written each time a
  *     projection is stored (`writeRuntimeSessionList`). The box may be
  *     unreachable and the root may not resolve, so it can be missing. Before

@@ -155,7 +155,7 @@ describe('settledTurnOutcome', () => {
 
 const PROJECT_ID = '00000000-0000-4000-a000-00000000c411';
 const ACCOUNT_ID = '00000000-0000-4000-a000-00000000c422';
-const OPENCODE_SESSION_ID = 'ses_cli_wait';
+const RUNTIME_SESSION_ID = 'ses_cli_wait';
 const TOKEN = 'kortix_pat_cli_wait';
 // One session per test: the SDK caches start/ready records per
 // (projectId, sessionId) process-globally, so two tests sharing an id would
@@ -176,7 +176,7 @@ function sessionRow() {
     sandbox_provider: 'daytona',
     sandbox_id: sessionId,
     sandbox_url: null,
-    opencode_session_id: OPENCODE_SESSION_ID,
+    runtime_session_id: RUNTIME_SESSION_ID,
     name: 'SDK wait',
     custom_name: null,
     agent_name: 'default',
@@ -244,25 +244,25 @@ describe('wait-for carries a failed turn out through the exit code', () => {
         const url = new URL(request.url);
         if (
           request.method === 'GET' &&
-          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${sessionId}`
+          url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions/${sessionId}`
         ) {
           return Response.json(sessionRow());
         }
         if (
           request.method === 'POST' &&
-          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${sessionId}/start`
+          url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions/${sessionId}/start`
         ) {
           return Response.json({
             stage: 'ready',
             agent_name: 'default',
             retriable: false,
             sandbox: { external_id: externalId },
-            opencode_session_id: OPENCODE_SESSION_ID,
+            runtime_session_id: RUNTIME_SESSION_ID,
           });
         }
         if (
           request.method === 'GET' &&
-          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${sessionId}/turn`
+          url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions/${sessionId}/turn`
         ) {
           return Response.json(turnStatus);
         }

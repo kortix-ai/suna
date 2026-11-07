@@ -16,13 +16,14 @@
  *    superseded/cancelled rows never block a fresh switch.
  */
 import { and, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
-import { providerTransitions, projects, type Database } from '@kortix/db';
+import { providerTransitions, type Database } from '@kortix/db';
 import { auditProviderTransition } from './provider-transition-audit';
 import {
   LIVE_TRANSITION_STATUSES,
   type PrepIdentity,
   type ProviderTransitionStatus,
 } from './provider-transition-core';
+import { projectsView, updateProjectRows } from '../../workspaces/rows';
 
 export type ProviderTransitionRow = typeof providerTransitions.$inferSelect;
 
@@ -108,9 +109,9 @@ export async function reserveSwitchTransition(
 ): Promise<ReserveResult> {
   return db.transaction(async (tx) => {
     const [project] = await tx
-      .select({ generation: projects.sandboxProviderGeneration })
-      .from(projects)
-      .where(eq(projects.projectId, input.identity.projectId))
+      .select({ generation: projectsView.sandboxProviderGeneration })
+      .from(projectsView)
+      .where(eq(projectsView.projectId, input.identity.projectId))
       .for('update')
       .limit(1);
     if (!project) throw new Error(`project ${input.identity.projectId} not found`);
@@ -122,16 +123,21 @@ export async function reserveSwitchTransition(
     }
 
     const newGen = (project.generation ?? 0) + 1;
-    await tx
-      .update(projects)
-      .set({ sandboxProviderGeneration: newGen, updatedAt: new Date() })
-      .where(eq(projects.projectId, input.identity.projectId));
+    await updateProjectRows(eq(projectsView.projectId, input.identity.projectId), { sandboxProviderGeneration: newGen, updatedAt: new Date() }, tx);
 
     // Newer intent supersedes any older live SWITCH (NULL-generation prebuilds
     // are excluded by `lt`, so a switch never nukes an unrelated prebuild).
+    // The epoch bump fences the runner that still drives the old row: every
+    // fenced write it makes after this matches 0 rows, so it cannot write
+    // `building`/`ready` over the terminal `superseded`.
     await tx
       .update(providerTransitions)
-      .set({ status: 'superseded', heartbeatAt: null, updatedAt: new Date() })
+      .set({
+        status: 'superseded',
+        heartbeatAt: null,
+        leaseEpoch: sql`COALESCE(${providerTransitions.leaseEpoch}, 0) + 1`,
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(providerTransitions.projectId, input.identity.projectId),

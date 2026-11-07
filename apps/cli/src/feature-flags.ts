@@ -45,7 +45,7 @@ export async function enabledFeatureFlags(
   let projectArg: string | undefined;
   let hostArg: string | undefined;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
   } catch {
     return null; // a flag without its value: the command itself reports it
@@ -54,7 +54,7 @@ export async function enabledFeatureFlags(
   const { auth } = resolveProjectAuth({ hostArg });
   if (!ref?.projectId || !auth?.token) return null;
   const read = clientFromAuth(auth)
-    .get<{ experimental_features?: FeatureRow[] }>(`/projects/${ref.projectId}`)
+    .get<{ experimental_features?: FeatureRow[] }>(`/workspaces/${ref.projectId}`)
     .then((project) => new Set((project.experimental_features ?? []).filter((r) => r.enabled).map((r) => r.key)))
     .catch(() => null);
   const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), opts.timeoutMs ?? 10_000).unref?.());
@@ -69,7 +69,7 @@ export function featureShown(flag: string | null | undefined, flags: Set<string>
 /** The one line a hidden item prints instead of itself. */
 export function featureOffMessage(what: string, flag: string, flags: Set<string> | null): string {
   if (flags === null) {
-    return `${what} is behind the \`${flag}\` feature flag, and this project's flags could not be read. Link a project (kortix projects use) or pass --project <id>.`;
+    return `${what} is behind the \`${flag}\` feature flag, and this workspace's flags could not be read. Link a workspace (kortix workspaces use) or pass --workspace <id>.`;
   }
-  return `${what} is behind the \`${flag}\` feature flag, which is off for this project. A project admin turns it on: kortix projects features enable ${flag}`;
+  return `${what} is behind the \`${flag}\` feature flag, which is off for this workspace. A workspace admin turns it on: kortix workspaces features enable ${flag}`;
 }

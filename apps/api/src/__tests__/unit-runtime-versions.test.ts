@@ -7,7 +7,6 @@ import {
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   BUN_VERSION,
-  OPENCODE_SDK_VERSION,
   OPENCODE_USER_AGENT,
   PLAYWRIGHT_VERSION,
   PNPM_SHA256_AMD64,
@@ -28,23 +27,16 @@ function readRepoFile(path: string): string {
 }
 
 describe('runtime version drift guards', () => {
-  test('the OpenCode SDK types are pinned to the canonical version, for the transcript conformance check only', () => {
-    // @kortix/sdk owns its types (kortix.transcript.v1) and must not depend on OpenCode's SDK.
-    const sdkPackage = JSON.parse(readRepoFile('packages/sdk/package.json')) as {
-      dependencies?: Record<string, string>;
-    };
-    expect(sdkPackage.dependencies?.['@opencode-ai/sdk']).toBeUndefined();
-    // apps/api type-checks OpenCode's frames against the Kortix transcript
-    // (unit-transcript-contract-drift.test.ts), at the OpenCode release the sandbox runs.
-    const apiPackage = JSON.parse(readRepoFile('apps/api/package.json')) as {
-      devDependencies?: Record<string, string>;
-    };
-    expect(apiPackage.devDependencies?.['@opencode-ai/sdk']).toBe(OPENCODE_SDK_VERSION);
-
-    const lockfile = readRepoFile('pnpm-lock.yaml');
-    expect(lockfile).toContain(`'@opencode-ai/sdk':`);
-    expect(lockfile).toContain(`specifier: ${OPENCODE_SDK_VERSION}`);
-    expect(lockfile).toContain(`/@opencode-ai/sdk@${OPENCODE_SDK_VERSION}:`);
+  test('no package depends on the OpenCode SDK', () => {
+    // @kortix/sdk owns its types (kortix.transcript.v1); no runtime is OpenCode.
+    for (const path of ['packages/sdk/package.json', 'apps/api/package.json']) {
+      const pkg = JSON.parse(readRepoFile(path)) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+      };
+      expect(pkg.dependencies?.['@opencode-ai/sdk']).toBeUndefined();
+      expect(pkg.devDependencies?.['@opencode-ai/sdk']).toBeUndefined();
+    }
   });
 
   test('sandbox Dockerfile reads runtime pins from the shared manifest', () => {

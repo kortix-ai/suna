@@ -81,7 +81,7 @@ for real use) running Linux, and a domain you control.
    [Unconfirmed email addresses](https://kortix.com/docs/host#unconfirmed-email-addresses).
    Then:
    - **Settings → Git** — connect a GitHub App (or PAT) so the platform can
-     create project repos. This one dashboard flow replaces the old
+     create workspace repos. This one dashboard flow replaces the old
      env-var-only managed-git setup.
    - **Settings → Model** — connect your own model key (BYOK: Anthropic,
      OpenAI, OpenRouter, etc.).
@@ -93,8 +93,8 @@ against it like you would against Kortix Cloud:
 kortix hosts use selfhost   # already registered + pointed at your instance by `init`/`start`
 kortix login
 kortix whoami
-kortix projects ls
-cd your-project && kortix ship
+kortix workspaces ls
+cd your-workspace && kortix ship
 ```
 
 ## 2. Want something more robust on AWS? There's a Terraform for that

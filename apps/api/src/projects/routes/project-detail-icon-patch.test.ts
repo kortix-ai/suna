@@ -74,6 +74,7 @@ let returningRow: Record<string, unknown> = projectRow();
 // reachable from this handler, so only that chain is implemented; anything else
 // throws rather than silently resolving.
 mock.module('../../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: true,
   db: {
     update: () => ({
@@ -111,6 +112,14 @@ mock.module('../lib/manifest-project-name', () => ({
   commitProjectName: async () => ({ ok: true }),
 }));
 
+// ── A rename also renames the workspace's account (workspace-name.ts): that
+// write is not what this suite covers.
+const realWorkspaceName = await import('../lib/workspace-name');
+mock.module('../lib/workspace-name', () => ({
+  ...realWorkspaceName,
+  renameAccountOfSoleProject: async () => {},
+}));
+
 // Registers project-detail.ts's routes onto the shared `projectsApp` singleton. projects.ts
 // (which attaches the `supabaseAuth` middleware) is deliberately NOT imported,
 // so these requests need no Authorization header.
@@ -141,7 +150,7 @@ function lastSet(): Record<string, unknown> {
 function metadataQuery(): { sql: string; params: unknown[] } {
   const value = lastSet().metadata;
   // A plain object here would mean the handler went back to read-modify-write
-  // on the jsonb, which is exactly what metadata-merge.ts exists to prevent.
+  // on the jsonb, which is exactly what the metadata merge helpers exist to prevent.
   expect(typeof (value as SQL)?.getSQL).toBe('function');
   const { sql, params } = dialect.sqlToQuery(value as SQL);
   return { sql, params };

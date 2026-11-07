@@ -88,6 +88,7 @@
     "@tiptap/core": "3.30.5",
     "@tiptap/extension-bubble-menu": "3.30.5",
     "@tiptap/extension-code-block": "3.30.5",
+    "@tiptap/extension-collaboration": "3.30.5",
     "@tiptap/extension-document": "3.30.5",
     "@tiptap/extension-floating-menu": "3.30.5",
     "@tiptap/extension-hard-break": "3.30.5",
@@ -103,6 +104,7 @@
     "@tiptap/react": "3.30.5",
     "@tiptap/starter-kit": "3.30.5",
     "@tiptap/suggestion": "3.30.5",
+    "@tiptap/y-tiptap": "3.0.12",
     "@types/jszip": "^3.4.0",
     "@types/three": "^0.183.1",
     "@uiw/codemirror-extensions-langs": "^4.23.10",
@@ -180,8 +182,10 @@
     "typescript": "^5",
     "unified": "^11.0.5",
     "vaul": "^1.1.2",
+    "y-protocols": "1.0.7",
     "yaml": "^2.8.2",
-    "zod": "^3.25.76",
+    "yjs": "13.6.33",
+    "zod": "^4.6.7",
     "zustand": "^5.0.3"
   },
   "devDependencies": {

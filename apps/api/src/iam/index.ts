@@ -11,6 +11,7 @@ export {
   assertAuthorized,
   listAccessible,
   filterAccessibleObjects,
+  workspaceRoleFor,
   type Obj,
   type Verdict,
   type Accessible,
@@ -77,16 +78,30 @@ export {
 export {
   normalizeProjectRole,
   parseAssignableProjectRole,
+  parseWorkspaceRole,
+  accountRoleForWorkspaceRole,
   isAccountManager,
   PROJECT_ROLE_INPUT_ERROR,
+  WORKSPACE_ROLES,
   type AccountRole,
   type ProjectRole,
+  type WorkspaceRole,
 } from './roles';
+export { workspaceFactsOf, invalidateWorkspaceFactsForAccount, type WorkspaceFacts } from './workspace-facts';
+export {
+  addWorkspaceMember,
+  type AddWorkspaceMemberOptions,
+  type AddWorkspaceMemberResult,
+  type ExplicitProjectGrant,
+} from './workspace-members';
 export {
   ACCOUNT_ACTIONS,
   PROJECT_ACTIONS,
   ACTION_CATALOG,
   VALID_ACTIONS,
+  isKnownAction,
   resourceTypeForAction,
+  toLegacyAction,
+  toWorkspaceAction,
   type ResourceType,
 } from './actions';

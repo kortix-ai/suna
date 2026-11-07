@@ -78,7 +78,7 @@ import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import { FadedScrollArea } from '@kortix/ui/faded-scroll-area';
 import { type GlyphSelection } from '@kortix/ui/glyph-picker';
 import { glyphComponent } from '@kortix/ui/glyph-registry';
-import { glyphForeground, glyphTint, glyphTintHover } from '@kortix/ui/glyph-tint';
+import { glyphForeground, glyphStyle, glyphTint, glyphTintHover } from '@kortix/ui/glyph-tint';
 import { InfoBanner } from '@kortix/ui/info-banner';
 import { InlineMeta } from '@kortix/ui/inline-meta';
 import { Input } from '@kortix/ui/input';
@@ -511,7 +511,7 @@ const TOC_SECTIONS = [
       { id: 'comp-tooltip', label: 'Tooltip' },
       { id: 'comp-popover', label: 'Popover' },
       { id: 'comp-emoji-picker', label: 'Emoji Picker' },
-      { id: 'comp-project-icon-picker', label: 'Project Icon Picker' },
+      { id: 'comp-project-icon-picker', label: 'Workspace Icon Picker' },
       { id: 'comp-alert', label: 'Alert' },
       { id: 'comp-toast', label: 'Toast' },
       { id: 'comp-alert-dialog', label: 'Alert Dialog' },
@@ -898,7 +898,7 @@ function ProjectIconPickerDemo() {
             }
             className={cn(
               'hit-area-1 size-9 shrink-0 transition-[color,background-color,box-shadow,scale] duration-normal active:scale-[0.96]',
-              glyph && [glyphTint(glyph.color), glyphTintHover(glyph.color), 'hover:inset-ring-2'],
+              glyph && [glyphTint(glyph.color), glyphTintHover(glyph.color), 'hover:brightness-110'],
             )}
           >
             {emoji ? (
@@ -908,7 +908,7 @@ function ProjectIconPickerDemo() {
                 {emoji.emoji}
               </span>
             ) : glyph && Glyph ? (
-              <Glyph aria-hidden className={cn('size-4', glyphForeground(glyph.color))} />
+              <Glyph aria-hidden weight="fill" className={cn('size-4', glyphForeground(glyph.color))} style={glyphStyle(glyph.color)} />
             ) : (
               <Smiley className="text-muted-foreground size-4" />
             )}

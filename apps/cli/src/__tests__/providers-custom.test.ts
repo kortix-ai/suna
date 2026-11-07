@@ -12,7 +12,7 @@ import { parseCustomModel } from '../commands/providers.ts';
 const CLI_ROOT = resolve(import.meta.dir, '..', '..');
 const CLI_ENTRY = join(CLI_ROOT, 'src', 'index.ts');
 const PROJECT_ID = 'proj-test-1234';
-const BASE = `/v1/projects/${PROJECT_ID}`;
+const BASE = `/v1/workspaces/${PROJECT_ID}`;
 
 const SAVED = {
   id: 'my-vllm',
@@ -87,7 +87,8 @@ beforeAll(() => {
       if (url.pathname === `${BASE}/secrets` && req.method === 'POST') {
         return json({ identifier: body.name, name: body.name });
       }
-      if (url.pathname.startsWith(`/v1/accounts/${ACCOUNT_ID}/secret-resources`)) {
+      // `/workspaces/:id/secret-resources`: the account key or a workspace id (`--project`).
+      if (/^\/v1\/workspaces\/[^/]+\/secret-resources/.test(url.pathname)) {
         resourceRequests.push({ method: req.method, url });
         if (req.method === 'POST') return json({ ...COOLING, cooldown_until: null });
         // Like the API: without project_id only account-wide (null-project) rows.
@@ -272,15 +273,16 @@ describe('kortix providers retry', () => {
     expect(r.code).toBe(0);
     expect(resourceRequests[0]?.url.searchParams.get('project_id')).toBe(PROJECT_ID);
     expect(resourceRequests.map((q) => `${q.method} ${q.url.pathname}`)).toEqual([
-      `GET /v1/accounts/${ACCOUNT_ID}/secret-resources`,
-      `POST /v1/accounts/${ACCOUNT_ID}/secret-resources/sec-1/retry`,
+      `GET /v1/workspaces/${ACCOUNT_ID}/secret-resources`,
+      `POST /v1/workspaces/${ACCOUNT_ID}/secret-resources/sec-1/retry`,
     ]);
     expect(r.stdout).toContain('ChatGPT (codex) is usable again');
   });
 
-  test('--project names the project to read', async () => {
+  test('--project names the workspace to read, ahead of the hidden --account alias', async () => {
     const r = await runRetry(['--project', 'proj-other']);
     expect(r.code).toBe(0);
+    expect(resourceRequests[0]?.url.pathname).toBe('/v1/workspaces/proj-other/secret-resources');
     expect(resourceRequests[0]?.url.searchParams.get('project_id')).toBe('proj-other');
   });
 });

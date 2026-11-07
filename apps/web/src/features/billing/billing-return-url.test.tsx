@@ -7,7 +7,7 @@ mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({ user: { id: 'synthetic-user' } }),
 }));
 mock.module('@kortix/ui/internal/lib/onboarding/last-project-cookie', () => ({
-  latestProjectPath: () => '/projects/start',
+  latestProjectPath: () => '/workspaces/start',
 }));
 const syncedAccounts: Array<string | undefined> = [];
 const sdk = await import('@kortix/sdk');
@@ -65,7 +65,7 @@ test('unscoped checkout keeps its marker for the server to attach the resolved a
     </BillingAccountProvider>,
   );
   const url = new URL(destination);
-  expect(url.pathname).toBe('/projects/start');
+  expect(url.pathname).toBe('/workspaces/start');
   expect(url.searchParams.has('accountId')).toBe(false);
   expect(url.searchParams.get('team_signup')).toBe('success');
 });

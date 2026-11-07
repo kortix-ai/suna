@@ -40,7 +40,7 @@
  * week before the incident.
  */
 
-import { type AgentGrant, accountTokens, readStoredAgentGrant, projectSessions, projects } from '@kortix/db';
+import { type AgentGrant, accountTokens, readStoredAgentGrant, projectSessions } from '@kortix/db';
 import { isMyKortixAgentName } from '@kortix/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
@@ -52,6 +52,7 @@ import {
   resolveSessionAgentGrant,
   withGrantProvenance,
 } from './secret-grant';
+import { projectsView } from '../../workspaces/rows';
 
 /** The re-mint could not be written. The caller must FAIL the prompt: letting it
  *  through would run the new agent against the previous agent's grant, which is
@@ -259,12 +260,12 @@ async function myKortixEnabled(projectId: string): Promise<boolean> {
   try {
     const [project] = await db
       .select({
-        repoUrl: projects.repoUrl,
-        defaultBranch: projects.defaultBranch,
-        manifestPath: projects.manifestPath,
+        repoUrl: projectsView.repoUrl,
+        defaultBranch: projectsView.defaultBranch,
+        manifestPath: projectsView.manifestPath,
       })
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
+      .from(projectsView)
+      .where(eq(projectsView.projectId, projectId))
       .limit(1);
     if (!project) return false;
     const loaded = project.defaultBranch
@@ -287,12 +288,12 @@ async function myKortixEnabled(projectId: string): Promise<boolean> {
 async function loadGitProjectRow(projectId: string) {
   const [project] = await db
     .select({
-      repoUrl: projects.repoUrl,
-      defaultBranch: projects.defaultBranch,
-      manifestPath: projects.manifestPath,
+      repoUrl: projectsView.repoUrl,
+      defaultBranch: projectsView.defaultBranch,
+      manifestPath: projectsView.manifestPath,
     })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   return project;
 }

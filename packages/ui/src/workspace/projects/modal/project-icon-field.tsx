@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from '../../../i18n';
-import { SmileyIcon, XIcon } from '@phosphor-icons/react';
+import { SmileyIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useState } from 'react';
 
@@ -10,7 +10,8 @@ import { emojiTint, emojiTintHover } from '../../../primitives/emoji-tint';
 import { EntityAvatar } from '../../../primitives/entity-avatar';
 import type { GlyphSelection } from '../../../primitives/glyph-picker';
 import { glyphFace as glyphDrawing } from '../../../primitives/glyph-face';
-import { glyphForeground, glyphTint, glyphTintHover } from '../../../primitives/glyph-tint';
+import { glyphForeground, glyphStyle, glyphTint, glyphTintHover } from '../../../primitives/glyph-tint';
+import { FULL_BLEED_BORDER, useFullBleedGlyph } from '../../../primitives/kortix-glyphs';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../primitives/popover';
 import { preloadProjectIconPicker, ProjectIconPicker } from '../../../primitives/project-icon-picker';
 import { cn } from '../../../internal/lib/utils';
@@ -49,7 +50,7 @@ const SWAP_REDUCED = {
  * `icon` / `icon_glyph` was NOT just written, so modelling the value as one
  * field rather than two is what makes it impossible for a host to construct a
  * state (and therefore a request) that sets both, or that clears one without
- * the other reflecting it. `NewWorkspacePage` (`/new`, create) and
+ * the other reflecting it. `NewWorkspacePage` (`/workspaces/new`, create) and
  * `GeneralProjectCard` (workspace Settings, edit — `settings-view.tsx`) hold
  * exactly this type as their icon state and pass it straight through.
  */
@@ -69,7 +70,7 @@ function resolveGlyphFace(glyph: GlyphSelection | null) {
   return GlyphComponent ? { GlyphComponent, name: glyph.name, color: glyph.color } : null;
 }
 
-/** Icon trigger for `/new`'s create form and workspace Settings' edit
+/** Icon trigger for `/workspaces/new`'s create form and workspace Settings' edit
  *  section. Sits beside the name input and opens the Emoji/Icon picker in a
  *  popover. Controlled: the host owns the icon so it can send it with its
  *  payload (create) or diff it against the stored project (edit), and reset
@@ -85,7 +86,7 @@ export function ProjectIconField({
   align = 'start',
 }: {
   /**
-   * Sizing override for the trigger. `/new` renders this as the page's own
+   * Sizing override for the trigger. `/workspaces/new` renders this as the page's own
    * `size-12` subject above the name field; everywhere else it sits inline
    * beside a `size="sm"` input and keeps the `size-9` default that matches it.
    */
@@ -103,7 +104,7 @@ export function ProjectIconField({
   fallbackLabel?: string;
   /**
    * Where the picker hangs relative to the trigger. Defaults to `start` —
-   * `/new` and the create modal put the trigger on the leading edge of its
+   * `/workspaces/new` and the create modal put the trigger on the leading edge of its
    * row, so `center`/`end` would push a ~278px popover past the edge.
    * Settings' Icon row passes `end` because the control sits on the trailing
    * side of a `SettingsRow`.
@@ -128,7 +129,7 @@ export function ProjectIconField({
    * field offers a remove control at all — so "can this field clear?" is a host
    * decision expressed in the type, not a runtime flag.
    *
-   * `/new` deliberately does not pass it: there is nothing saved to undo
+   * `/workspaces/new` deliberately does not pass it: there is nothing saved to undo
    * there, and the trigger already stays live so you reopen it and switch.
    * Workspace Settings does, because an existing project's icon IS saved, and
    * without this there would be no way to ever take one back off.
@@ -154,6 +155,8 @@ export function ProjectIconField({
   const emoji = value && 'emoji' in value ? value.emoji : null;
   const glyph = value && 'glyph' in value ? value.glyph : null;
   const glyphFace = resolveGlyphFace(glyph);
+  // An Enterprise brand icon fills the whole tile, edge to edge.
+  const fullBleed = useFullBleedGlyph(glyphFace?.name);
   // The face the trigger shows and the identity the cross-fade re-keys on —
   // one derivation for both, so they cannot drift apart. Keyed on colour too,
   // not just name: recolouring the same glyph is still a visible change the
@@ -195,12 +198,12 @@ export function ProjectIconField({
     // 240.31px of the picker, including the point the wheel was aimed at.
     // `modal` leaves the popover's geometry byte-identical to before.
     //
-    // On `/new` this field has no Dialog ancestor at all, so the bug above
+    // On `/workspaces/new` this field has no Dialog ancestor at all, so the bug above
     // cannot occur there — `modal` is simply inert in that host, not wrong.
     <Popover open={open && !disabled} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
-          // On `/new` the field renders inside that page's <form>, where a
+          // On `/workspaces/new` the field renders inside that page's <form>, where a
           // missing `type="button"` would submit it on click. Workspace
           // Settings has no surrounding <form>, so this is a no-op there —
           // still correct to keep, since a shared control should not assume
@@ -255,21 +258,18 @@ export function ProjectIconField({
           // the tint out to neutral grey and back. Restating the fill at the
           // same modifier makes tailwind-merge drop the variant's hover
           // entirely — which then leaves the trigger with no pointer feedback
-          // at all, so `hover:inset-ring-2` firms the ring 1px -> 2px instead.
-          // The feedback stays inside the tint's own language rather than
-          // borrowing a neutral fill.
+          // at all, so `hover:brightness-110` lifts the tile instead. No icon
+          // tile draws a border or ring.
           className={cn(
-            'hit-area-1 size-9 shrink-0 transition-[color,background-color,box-shadow,scale] duration-150 active:scale-[0.96]',
+            'hit-area-1 size-9 shrink-0 transition-[color,background-color,filter,scale] duration-150 active:scale-[0.96]',
             // Last, so `cn`'s tailwind-merge lets a caller's own `size-*` beat
             // the `size-9` default rather than both landing in the class list.
             triggerClassName,
-            emoji && [emojiTint(emoji), emojiTintHover(emoji), 'hover:inset-ring-2'],
-            glyphFace && [
-              glyphTint(glyphFace.color),
-              glyphTintHover(glyphFace.color),
-              'hover:inset-ring-2',
-            ],
+            emoji && [emojiTint(emoji), emojiTintHover(emoji), 'hover:brightness-110'],
+            glyphFace && [glyphTint(glyphFace.color), glyphTintHover(glyphFace.color), 'hover:brightness-110'],
+            fullBleed && [FULL_BLEED_BORDER, 'p-0'],
           )}
+          style={glyphFace ? glyphStyle(glyphFace.color) : undefined}
         >
           {/* Both faces share one fixed box and cross-fade in place. Picking an
               icon closes the popover, so the eye is already on the trigger
@@ -284,7 +284,7 @@ export function ProjectIconField({
               'relative inline-flex items-center justify-center',
               // The initial tile fills the trigger; an emoji or glyph keeps the
               // measured size-6 box the comment above explains.
-              !emoji && !glyphFace && fallbackLabel?.trim() ? 'size-full' : 'size-6',
+              glyphFace || (!emoji && fallbackLabel?.trim()) ? 'size-full' : 'size-6',
             )}
           >
             <AnimatePresence initial={false} mode="popLayout">
@@ -300,7 +300,8 @@ export function ProjectIconField({
                   // emoji does below — Phosphor's <svg> carries no implicit
                   // role, but the sizing/colour treatment matches on purpose.
                   <glyphFace.GlyphComponent
-                    className={cn('size-4', glyphForeground(glyphFace.color))}
+                    weight="fill"
+                    className={cn(fullBleed ? 'size-full' : 'size-1/2', glyphForeground(glyphFace.color))}
                   />
                 ) : emoji ? (
                   // Named by the button's aria-label, so the glyph itself stays
@@ -327,113 +328,56 @@ export function ProjectIconField({
         </Button>
       </PopoverTrigger>
       {/*
-        The width is the emoji grid's exact width, not a round number.
-        `EmojiPicker` lays out 9 columns (frimousse 0.3.0's `columns` default;
-        the picker passes no override) of `size-8` cells in a row padded
-        `px-1.5` — in Tailwind `--spacing` units, 9*8 + 2*1.5 = 75. The `+2px`
-        covers the 1px border per side, because PopoverContent is `border-box`.
-        `GlyphPicker`, rendered on the Icon tab inside `ProjectIconPicker`,
-        copies the same four literals for exactly this reason — see its own
-        file header — so the popover never resizes on tab switch.
-
-        This is a TRADEOFF, not a clean win. It is chosen for the
-        overlay-scrollbar case, which is what this app is otherwise built
-        against. A frimousse row is a bare flex line with no justification, and
-        its `size-8` cells keep the default `flex-shrink: 1`:
-
-        - Overlay scrollbars (macOS default; every measurement below). The 292px
-          this file was first written with left 14.03px of surplus on the right
-          of every row — the grid's right edge 12.19px short of the search
-          field's while its left edge sat 1.84px outside it. At this width the
-          surplus is 0.03px and the cells are square.
-        - Classic scrollbars (Windows, Linux, macOS "Show scroll bars: Always").
-          The viewport loses ~15px. At 292px the surplus absorbs almost all of
-          it and each cell gives up ~0.11px, staying square. Here there is no
-          surplus, so the whole ~15px comes out of the nine cells — ~1.67px
-          each, and they visibly stop being square. This width is WORSE there.
-          Not verified on such a platform; the real fix belongs in the picker,
-          which owns the scrolling viewport, and is deliberately not made here.
-
-        Beware: putting `scrollbar-gutter: stable` on that viewport would
-        reserve the gutter on EVERY platform, so at this width the cells would
-        squash everywhere. The geometry tests read column count, cell size and
-        row padding from source — none of those change, so they would not catch
-        it.
-
-        `w-fit` lands on the same number today and was rejected: it makes the
-        popover's geometry an emergent property of everything inside the picker,
-        including the `truncate`d active-emoji label in its footer, whose
-        intrinsic width is the full untruncated string.
-
-        p-0 because each picker owns its own padding — `p-2` around the search
-        field, `px-1.5` on the grid rows, and EmojiPicker's own `px-2` footer
-        (GlyphPicker has none; its colour row sits inside the search's `p-2`
-        block instead) — PopoverContent's default p-4 would inset it a second
-        time.
-
-        Radix gives the content role="dialog"; without a label it is announced
-        as an unnamed one.
+        Width: the emoji grid's exact width. 12 columns of `size-8` cells in rows
+        padded `px-3` is 12*8 + 2*3 = 102 `--spacing` units; `+2px` is the 1px
+        border per side. The Icons tab fills the same width with 10 columns.
+        p-0 because each panel owns its padding. Radix gives the content
+        role="dialog", so it carries a label.
       */}
       <PopoverContent
         align={align}
         aria-label={tI18nComplete.raw('text39a1c11af6d3')}
-        className="w-[calc(75*var(--spacing)+2px)] overflow-hidden p-0"
+        // Focus lands in the search field, not on the first tab: the tab took
+        // a focus ring on every open.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          const content = event.currentTarget as HTMLElement;
+          const focusSearch = (tries: number) => {
+            const input = content.querySelector<HTMLInputElement>('input');
+            if (input) input.focus();
+            else if (tries > 0) requestAnimationFrame(() => focusSearch(tries - 1));
+            else content.focus();
+          };
+          focusSearch(20);
+        }}
+        className="w-[calc(102*var(--spacing)+2px)] overflow-hidden p-0"
       >
         <ProjectIconPicker
-          onEmojiSelect={(picked) => {
-            onChange(picked.emoji);
-            setOpen(false);
-          }}
-          onGlyphSelect={(picked) => {
-            onGlyphChange(picked);
-            setOpen(false);
-          }}
+          // A pick never closes the popover: you try icons and colours in any
+          // order and the trigger repaints live. Clicking outside closes it.
+          onEmojiSelect={(picked) => onChange(picked.emoji)}
+          onGlyphSelect={(picked) => onGlyphChange(picked)}
+          selectedGlyph={glyphFace?.name}
           // Reopening lands on the tab you last used: a glyph project reopens
           // on Icon rather than defaulting back to Emoji every time.
-          defaultTab={glyphFace ? 'icon' : 'emoji'}
+          defaultTab={emoji ? 'emoji' : 'icon'}
           // Only meaningful when there IS a current glyph — otherwise the
           // picker keeps its own default (grey). `glyphFace?.color` reaching
           // `undefined` here is what lets ProjectIconPicker's own default
           // parameter apply; passing it explicitly would fight that default.
           defaultColor={glyphFace?.color}
+          // The trash button in the picker header. Only when the host can
+          // accept a removal (`onClear`) AND there is an icon to remove.
+          removeLabel={tI18nComplete.raw('text93d6de7104f0')}
+          onRemove={
+            onClear && value
+              ? () => {
+                  onClear();
+                  setOpen(false);
+                }
+              : undefined
+          }
         />
-        {/*
-          Gated on BOTH: `onClear` because only a host that can accept a removal
-          may offer one, and `value` because a control that removes nothing is
-          noise — and, worse, a control whose click is a no-op.
-
-          It sits under the picker rather than above it because the primary path
-          through this popover is search-then-pick; a removal row at the top
-          would displace the search field every time an icon happens to be set.
-          Bottom is also where this app already puts a secondary action in a
-          menu-shaped surface (DropdownMenuSeparator + trailing item).
-
-          `XIcon`, not `TrashIcon`. Nothing is deleted here: the icon is a draft
-          value until the modal saves, and Cancel puts it back. In this codebase
-          X is the glyph for taking a selection off (members-view's invite
-          chips, the composer's attachment previews) while Trash is for removing
-          a persisted row.
-        */}
-        {onClear && value ? (
-          <div className="border-border/60 border-t p-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                onClear();
-                setOpen(false);
-              }}
-              // Same shape as the trigger: an explicit transition list in place
-              // of Button's base `transition-all` (button.tsx:8), so
-              // active:scale-[0.96] does not animate on `all`.
-              className="h-9 w-full justify-start gap-2 px-2 font-normal transition-[color,background-color,scale] duration-150 active:scale-[0.96]"
-            >
-              <XIcon className="text-muted-foreground size-3.5 shrink-0" />
-              {tI18nComplete.raw('text93d6de7104f0')}
-            </Button>
-          </div>
-        ) : null}
       </PopoverContent>
     </Popover>
   );

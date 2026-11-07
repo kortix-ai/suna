@@ -18,8 +18,8 @@
  *
  *   agents:
  *     worker:                             # default GP agent (∩ user)
- *       connectors: all
- *       kortix_permissions: all
+ *       connectors: "*"                 # every connector (`all` is the same)
+ *       kortix_permissions: "*"
  *     release-bot:
  *       connectors: ["github"]            # which connectors
  *       kortix_permissions: ["project.trigger.create", "project.gitops.push"]   # Kortix permissions
@@ -31,7 +31,7 @@
 export { GRANTABLE_KORTIX_PERMISSIONS, extractAgents, loadProjectAgents, agentNotDeclaredError } from './agents/parse';
 export {
   DEFAULT_AGENT_SENTINEL,
-  OPENCODE_BUILTIN_AGENT_NAMES,
+  RUNTIME_BUILTIN_AGENT_NAMES,
   grantFromLoadedAgents,
   grantsByAgent,
   grantsOfManifestText,

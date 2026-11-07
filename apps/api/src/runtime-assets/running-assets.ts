@@ -1,6 +1,6 @@
 /**
  * What the API last SAW a box running for RUNTIME ASSETS — the daemon, the CLI,
- * the managed-skill overlay and OpenCode — per session.
+ * the managed-skill overlay and the `opencode` component of old boxes — per session.
  *
  * The sibling of `config-releases/running-release.ts`, and a LEAF for the same
  * reason: it imports nothing. `projects/lib/turn-start-convergence.ts` writes and

@@ -22,6 +22,8 @@ import {
   getAppAccess,
   getAppDeployment,
   listAppDeployments,
+  listAppEvents,
+  sendAppTestEvent,
   listApps,
   rollbackApp,
   startApp,
@@ -32,8 +34,11 @@ import {
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
-export const projectAppsKey = (projectId: string | null | undefined) =>
+export const workspaceAppsKey = (projectId: string | null | undefined) =>
   qk.project.apps(projectId ?? '');
+
+/** @deprecated Use `workspaceAppsKey`. Kept permanently. */
+export const projectAppsKey = workspaceAppsKey;
 
 export const appDeploymentsKey = (
   projectId: string | null | undefined,
@@ -46,17 +51,22 @@ export const appDeploymentKey = (
   deploymentId: string | null | undefined,
 ) => qk.project.appDeployment(projectId ?? '', appId ?? '', deploymentId ?? '');
 
+export const appEventsKey = (
+  projectId: string | null | undefined,
+  appId: string | null | undefined,
+) => qk.project.appEvents(projectId ?? '', appId ?? '');
+
 /** The project's App list, which also covers every channel's Apps (`qk.project.spaceApps`). */
 function invalidateProjectApps(queryClient: QueryClient, projectId: string | null | undefined) {
-  return queryClient.invalidateQueries({ queryKey: projectAppsKey(projectId) });
+  return queryClient.invalidateQueries({ queryKey: workspaceAppsKey(projectId) });
 }
 
 const SETTLED_DEPLOYMENT = new Set(['ready', 'failed', 'cancelled']);
 
 /** Project App inventory (only the Apps the caller may open; a project manager: every App) and lifecycle mutations. */
-export function useProjectApps(projectId: string | null | undefined) {
+export function useWorkspaceApps(projectId: string | null | undefined) {
   const queryClient = useQueryClient();
-  const queryKey = projectAppsKey(projectId);
+  const queryKey = workspaceAppsKey(projectId);
   const query = useQuery({
     queryKey,
     queryFn: () => listApps(projectId as string),
@@ -84,10 +94,60 @@ export function useProjectApps(projectId: string | null | undefined) {
   });
   const remove = useMutation({
     mutationFn: (appId: string) => deleteApp(projectId as string, appId),
-    onSuccess: invalidate,
+    onSuccess: (_deleted: unknown, appId: string) => {
+      // The deleted App's own queries (access, deployments, events) sit under
+      // the list key; refetched, each answers 404 while its detail closes.
+      const list = workspaceAppsKey(projectId);
+      void queryClient.invalidateQueries({ queryKey: list, predicate: (q) => q.queryKey[list.length] !== appId });
+      // A delete takes the triggers that name the App.
+      return queryClient.invalidateQueries({ queryKey: qk.project.triggers(projectId ?? '') });
+    },
   });
 
   return { ...query, create, update, start, stop, remove };
+}
+
+/** @deprecated Use `useWorkspaceApps`. Kept permanently. */
+export const useProjectApps = useWorkspaceApps;
+
+/**
+ * The App's event log, newest first (`listAppEvents`): what it posted and what
+ * came of each event. Needs project.app.deploy: pass `enabled: false` for a
+ * viewer without the operations view. Refreshed every 10 s.
+ */
+export function useAppEvents(
+  projectId: string | null | undefined,
+  appId: string | null | undefined,
+  /** `id`: only the rows of that event (one per trigger it reached), as a trigger run links to it. */
+  options: { enabled?: boolean; limit?: number; id?: string | null } = {},
+) {
+  const id = options.id || null;
+  return useQuery({
+    // Under the log's key: a test event or an App mutation refreshes it too.
+    queryKey: id ? [...appEventsKey(projectId, appId), { id }] : appEventsKey(projectId, appId),
+    queryFn: () => listAppEvents(projectId as string, appId as string, { limit: options.limit ?? 20, ...(id ? { id } : {}) }),
+    enabled: !!projectId && !!appId && options.enabled !== false,
+    ...contract('inventory'),
+    refetchInterval: 10_000,
+  });
+}
+
+/**
+ * Send a test event as if the App posted it (`sendAppTestEvent`): it takes the
+ * real path, with an id starting `test-`. Refreshes the App's event log.
+ */
+export function useSendAppTestEvent(
+  projectId: string | null | undefined,
+  appId: string | null | undefined,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Parameters<typeof sendAppTestEvent>[2]) =>
+      sendAppTestEvent(projectId as string, appId as string, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: appEventsKey(projectId, appId) });
+    },
+  });
 }
 
 /** Immutable deployment history and deployment-specific mutations. */

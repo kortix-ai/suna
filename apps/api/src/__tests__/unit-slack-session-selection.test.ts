@@ -59,6 +59,7 @@ function makeChain(): any {
 // Every table a delete targeted, so a released claim can be asserted.
 const deletedFrom: unknown[] = [];
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: {
     select: () => makeChain(),
     insert: () => makeChain(),
@@ -247,11 +248,11 @@ beforeEach(() => {
 });
 
 test('channel agent + model override flow into the session body', async () => {
-  selection = { projectId: 'proj-1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8' };
+  selection = { projectId: 'proj-1', agentName: 'reviewer', sessionModel: 'anthropic/claude-opus-4-8' };
   newThreadFifo();
   await spawnAgentTurn('proj-1', envelope, event);
   expect(lastBody?.agent_name).toBe('reviewer');
-  expect(lastBody?.opencode_model).toBe('anthropic/claude-opus-4-8');
+  expect(lastBody?.model).toBe('anthropic/claude-opus-4-8');
 });
 
 // The lifecycle keeps an idempotency key forever. Under the thread's key, the
@@ -279,12 +280,12 @@ test('the create key is per message, not per thread', async () => {
   expect(keys).toEqual(['slack:create:T1:90.0:100.1', 'slack:create:T1:90.0:100.2', 'slack:create:T1:90.0:100.1']);
 });
 
-test('no overrides → agent "default" and NO opencode_model key', async () => {
-  selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
+test('no overrides → agent "default" and NO model key', async () => {
+  selection = { projectId: 'proj-1', agentName: null, sessionModel: null };
   newThreadFifo();
   await spawnAgentTurn('proj-1', envelope, event);
   expect(lastBody?.agent_name).toBe('default');
-  expect('opencode_model' in (lastBody ?? {})).toBe(false);
+  expect('model' in (lastBody ?? {})).toBe(false);
 });
 
 test('unbound channel (null selection) → agent "default", no model', async () => {
@@ -292,7 +293,7 @@ test('unbound channel (null selection) → agent "default", no model', async () 
   newThreadFifo();
   await spawnAgentTurn('proj-1', envelope, event);
   expect(lastBody?.agent_name).toBe('default');
-  expect('opencode_model' in (lastBody ?? {})).toBe(false);
+  expect('model' in (lastBody ?? {})).toBe(false);
 });
 
 // Regression guard: previously Slack ALWAYS sent the literal 'default' as
@@ -302,7 +303,7 @@ test('unbound channel (null selection) → agent "default", no model', async () 
 // showed as "Project default (agentX)". No channel override should now
 // resolve to the project's configured default, not the bare sentinel.
 test('no channel override, but project has a configured default_agent → that agent is used', async () => {
-  selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
+  selection = { projectId: 'proj-1', agentName: null, sessionModel: null };
   dbResults = [
     [{ ...project, metadata: { default_agent: 'shipper' } }], // spawnAgentTurn project lookup
     [], // chat_threads lookup → brand-new thread
@@ -320,7 +321,7 @@ test('no channel override, but project has a configured default_agent → that a
 // collapses into the dead-end "try again" copy — it renders an inline picker of
 // the project's live agents so the user re-points the channel in one click.
 test('deleted channel agent (AGENT_NOT_DECLARED) → in-thread agent picker, not the generic error', async () => {
-  selection = { projectId: 'proj-1', agentName: 'ghost', opencodeModel: null };
+  selection = { projectId: 'proj-1', agentName: 'ghost', sessionModel: null };
   scopedAgents = [
     { name: 'reviewer', description: null },
     { name: 'shipper', description: 'Ships things.' },
@@ -396,7 +397,7 @@ test('a follow-up image no model can read carries the no-vision note', async () 
   });
   expect(plan).toEqual({ model: null, imagesUnavailable: true });
   const prompt = renderFollowUpPrompt(envelope, imageEvent, undefined, plan.imagesUnavailable);
-  expect(prompt).toContain('no image-capable model is available in this project');
+  expect(prompt).toContain('no image-capable model is available in this Kortix workspace');
 });
 
 test('a follow-up with no image carries no no-vision note', async () => {
@@ -419,7 +420,7 @@ test('a follow-up with no image carries no no-vision note', async () => {
 // was dropped without a word.
 test('a failed start releases the thread-create claim', async () => {
   const { chatEventDedup } = await import('@kortix/db');
-  selection = { projectId: 'proj-1', agentName: 'ghost', opencodeModel: null };
+  selection = { projectId: 'proj-1', agentName: 'ghost', sessionModel: null };
   setSlackSessionLifecycleForTest({
     deliverFollowUp: async () => 'delivered',
     createSession: async () => ({
@@ -437,7 +438,7 @@ test('a failed start releases the thread-create claim', async () => {
 });
 
 test('out-of-credits (402) → credit copy, no picker blocks', async () => {
-  selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
+  selection = { projectId: 'proj-1', agentName: null, sessionModel: null };
   setSlackSessionLifecycleForTest({
     deliverFollowUp: async () => 'delivered',
     createSession: async () => ({

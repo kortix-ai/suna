@@ -122,6 +122,19 @@ describe('runtimeTriggerSpec', () => {
     expect(built.reminder).toBeUndefined();
   });
 
+  test('an App event into a session keeps expect_event_within: the watcher\'s silence alert reaches the chat\'s owner', () => {
+    const body = parsed({ prompt: 'Status changed', source: { type: 'app', app: 'github-status', expect_event_within: '1h' }, target: { session_id: SESSION } });
+    const built = runtimeTriggerSpec({ id: 'trigger.0123456789ab', body, agent: 'kortix', now: NOW });
+    if ('error' in built) throw new Error(built.error);
+    expect(built).toMatchObject({ type: 'app', app: 'github-status', expectEventWithinSeconds: 3600, sessionMode: 'pinned', pinnedSessionId: SESSION });
+    const tooShort = parsed({ prompt: 'x', source: { type: 'app', app: 'github-status', expect_event_within: '1m' }, target: { session_id: SESSION } });
+    expect(runtimeTriggerSpec({ id: 'trigger.0123456789ab', body: tooShort, agent: 'kortix', now: NOW })).toEqual({ error: 'expect_event_within must be at least 300s (got "1m")' });
+    const none = parsed({ prompt: 'x', source: { type: 'app', app: 'github-status' }, target: { session_id: SESSION } });
+    const plain = runtimeTriggerSpec({ id: 'trigger.0123456789ab', body: none, agent: 'kortix', now: NOW });
+    if ('error' in plain) throw new Error(plain.error);
+    expect(plain.expectEventWithinSeconds).toBeUndefined();
+  });
+
   test('a schedule into a session is the loop spec, under the trigger id', () => {
     const body = parsed({ prompt: 'check', source: { type: 'schedule', in: '2h' }, target: { session_id: SESSION } });
     const built = runtimeTriggerSpec({ id: 'trigger.0123456789ab', body, agent: 'kortix', now: NOW });

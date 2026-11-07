@@ -74,9 +74,9 @@ describe.skipIf(!databaseUrl)('computer_accounts backfill — migrated PostgreSQ
       [TEAM, PERSON, FOREIGN_TEAM],
     );
     await client.query(
-      `insert into kortix.projects (project_id, account_id, name, repo_url)
-       values ($1, $2, 'backfill', 'https://example.invalid/backfill.git'),
-              ($3, $2, 'backfill-other', 'https://example.invalid/backfill-other.git')`,
+      `insert into kortix.projects (project_id, account_id, name, repo_url, split_pending)
+       values ($1, $2, 'backfill', 'https://example.invalid/backfill.git', true),
+              ($3, $2, 'backfill-other', 'https://example.invalid/backfill-other.git', true)`,
       [PROJECT, TEAM, OTHER_PROJECT],
     );
     await client.query(

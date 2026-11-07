@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 
 import {
   __testing,
@@ -278,6 +278,23 @@ describe('on-demand grammars', () => {
 
   test('an unknown hint resolves to null (plain text), not a rejection', async () => {
     expect(await highlightAsync('x', 'not-a-language', SHIKI_THEME_DARK)).toBeNull();
+  });
+
+  // KRTX-4265: a `conf` fence rejected with `no bundled grammar for "conf"`.
+  // The await caught it, but an engine that reports a rejection before its
+  // handler attaches (the Lightpanda crawler) sent it to Sentry as unhandled.
+  // An unknown hint is an expected state: no Error, no warning.
+  test('an unknown hint creates no Error and logs no warning', async () => {
+    const warn = spyOn(console, 'warn');
+    const reject = spyOn(Promise, 'reject');
+    try {
+      expect(await highlightAsync('listen 80;', 'conf', SHIKI_THEME_DARK)).toBeNull();
+      expect(reject).not.toHaveBeenCalled();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+      reject.mockRestore();
+    }
   });
 
   test('plain-text hints highlight without a grammar', async () => {

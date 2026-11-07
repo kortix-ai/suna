@@ -39,10 +39,11 @@
       // by the kortixd/import-style lint rule).
       "@/*": ["./src/*"],
       "@kortix/shared/ssrf-guard": ["../../packages/shared/src/ssrf-guard.ts"],
-      // The prompt envelopes a cross-session or room message arrives in: pi reads a
-      // turn's origin from them (the workflow origin gate). Both files import nothing.
+      // Tests only (platform-tools.test.ts): the Settings panel registry the tool cards' links match.
+      "@kortix/shared/workspace-settings": ["../../packages/shared/src/workspace-settings.ts"],
+      // The prompt envelope a cross-session message arrives in: pi reads a turn's
+      // origin from it (the workflow origin gate). The file imports nothing.
       "@kortix/shared/peer-message-prompt": ["../../packages/shared/src/peer-message-prompt.ts"],
-      "@kortix/shared/room-prompt": ["../../packages/shared/src/room-prompt.ts"],
       "@kortix/api-contract/*": ["../../packages/api-contract/src/*"],
       "@kortix/voice/*": ["../../packages/voice/src/*"],
       // pi mints message ids with the platform codec. The file imports nothing;

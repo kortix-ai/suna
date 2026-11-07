@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chargeReply } from './cost'
 import { type Mode, type Persona, parseSet } from './persona'
-import { fastFetch } from './models'
+import { fastFetch, fastOn } from './models'
 
 export type On = 'screen' | 'camera' | 'call'
 export type What = 'screen' | 'camera' | 'voice'
@@ -138,8 +138,10 @@ export function parseAction(o: Record<string, unknown>): Action | undefined {
 /** A reminder or a watch, as the call holds it. */
 export type Pending = { id: string; kind: 'later' | 'watch'; say: string; at?: number; mode?: Mode; on?: On; for?: string; by: string; since: number }
 
-/** What the voice is told each turn about its own call and how to act on it (short: it is on every turn's path). */
-export function metaNote(s: { pending: Pending[]; shared: string[]; background?: string; now: number; voices: string; people?: string[]; sinceS?: number; usd?: number }): string {
+/** What the voice is told each turn about its own call and how to act on it (short: it is on every turn's path).
+ * `tools`: the agent has the voice's tools (src/voice-tools.ts, given by its host): one line names them in place of
+ * the tag list, the actions being the same. */
+export function metaNote(s: { pending: Pending[]; shared: string[]; background?: string; now: number; voices: string; people?: string[]; sinceS?: number; usd?: number }, tools?: 'tools'): string {
   const left = (at: number) => {
     const sec = Math.max(0, Math.round((at - s.now) / 1000))
     return sec >= 90 ? `${Math.round(sec / 60)} min` : `${sec} s`
@@ -152,6 +154,9 @@ export function metaNote(s: { pending: Pending[]; shared: string[]; background?:
     s.people?.length ? `in the meeting: ${s.people.slice(0, 12).join(', ')}` : '',
     s.sinceS !== undefined ? `the call has run ${s.sinceS >= 90 ? `${Math.round(s.sinceS / 60)} min` : `${s.sinceS} s`}${s.usd ? ` and cost about $${s.usd < 0.01 ? s.usd.toFixed(4) : s.usd.toFixed(2)}` : ''}` : '',
   ].filter(Boolean).join('; ')
+  if (tools)
+    return `\n(This call now: ${now}. Questions about you or this call are answered from this.\n` +
+      `Only when they ask for it, act on the call with your voice tools, then say a few words in the new way: voice_set (name, voice, look, style, rate, mode, a quiet time with back; some voices: ${s.voices}), voice_later, voice_watch, voice_cancel, voice_capture. Asked to hang up: begin your reply with [end], then your goodbye (the one tag; the call ends once it is heard). A bare stop (only stop, nothing more asked) just ends what you were saying: reply with exactly (nothing).)`
   return `\n(This call now: ${now}. Questions about you or this call are answered from this.\n` +
     'Only when they ask for one of these, begin your reply with its tag (never read aloud), then a few words they hear (a tag alone is silence):\n' +
     `- change your name, voice, look or manner: [set name="..." voice="..." look="..." style="..." rate="..."] with only what changes, then a few words in the new way (voice: a name, or what they asked for in a few words; some: ${s.voices}; look: an emoji or image link; style: how to behave from now on; rate: how fast you speak, 1 normal, 0.85 slower, 1.2 faster)\n` +
@@ -168,7 +173,7 @@ export function metaNote(s: { pending: Pending[]; shared: string[]; background?:
 // The watch's check: does what is seen or said now show what they wait for? A fast model, a yes or a no (~150 ms).
 const WATCH_MODEL = process.env.VOICE_WATCH_MODEL ?? 'qwen/qwen3.8-27b'
 export async function happened(condition: string, observed: string, signal?: AbortSignal): Promise<boolean> {
-  if (!process.env.GROQ_API_KEY || !observed.trim()) return false
+  if (!fastOn() || !observed.trim()) return false
   try {
     const res = await fastFetch({
       method: 'POST',

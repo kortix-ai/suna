@@ -1,5 +1,5 @@
 import { memoInRequest } from '../shared/request-memo';
-import { projects, projectLlmRoutingPolicies, projectSecrets } from '@kortix/db';
+import { projectLlmRoutingPolicies, projectSecrets } from '@kortix/db';
 import { and, eq, isNull, like, sql } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { db } from '../shared/db';
@@ -11,10 +11,11 @@ import {
   readCustomProviders,
   upsertCustomProvider,
 } from '../llm-gateway/custom-providers';
+import { projectsView, updateProjectRows } from '../workspaces/rows';
 
 export async function getProjectModelAccess(projectId: string) {
-  const [row] = await db.select({ metadata: projects.metadata }).from(projects)
-    .where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select({ metadata: projectsView.metadata }).from(projectsView)
+    .where(eq(projectsView.projectId, projectId)).limit(1);
   if (!row) throw new Error('Project not found');
   return readModelAccess(row.metadata);
 }
@@ -26,8 +27,8 @@ export function getProjectGatewayResolution(projectId: string) {
 }
 
 async function readProjectGatewayResolution(projectId: string) {
-  const [row] = await db.select({ metadata: projects.metadata }).from(projects)
-    .where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select({ metadata: projectsView.metadata }).from(projectsView)
+    .where(eq(projectsView.projectId, projectId)).limit(1);
   if (!row) throw new Error('Project not found');
   return {
     access: readModelAccess(row.metadata),
@@ -44,17 +45,17 @@ export async function changeProjectModelAccess(input: {
   change: ModelAccessChange;
 }) {
   return db.transaction(async (tx) => {
-    const [row] = await tx.select({ metadata: projects.metadata }).from(projects)
-      .where(eq(projects.projectId, input.projectId)).for('update');
+    const [row] = await tx.select({ metadata: projectsView.metadata }).from(projectsView)
+      .where(eq(projectsView.projectId, input.projectId)).for('update');
     if (!row) throw new Error('Project not found');
     const policy = updateModelAccess(readModelAccess(row.metadata), input.change);
     if (!input.change.enabled && input.defaultModel && !modelAccessAllows(policy, input.defaultModel)) {
       return { conflict: true as const };
     }
-    await tx.update(projects).set({
-      metadata: sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{model_access}', ${JSON.stringify(policy)}::jsonb)`,
+    await updateProjectRows(eq(projectsView.projectId, input.projectId), {
+      metadata: sql`jsonb_set(coalesce(${projectsView.metadata}, '{}'::jsonb), '{model_access}', ${JSON.stringify(policy)}::jsonb)`,
       updatedAt: new Date(),
-    }).where(eq(projects.projectId, input.projectId));
+    }, tx);
     // Enabling a model also makes it visible, including an older catalog model.
     // Other display preferences survive this single-model update.
     if (input.change.target === 'model' && input.change.enabled) {
@@ -74,7 +75,7 @@ export async function changeProjectModelAccess(input: {
 /** The project's custom providers and the names of its project-wide `CUSTOM_*_API_KEY` secrets. */
 export async function listProjectCustomProviders(projectId: string) {
   const [[row], secrets] = await Promise.all([
-    db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1),
+    db.select({ metadata: projectsView.metadata }).from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1),
     db.select({ name: projectSecrets.name }).from(projectSecrets).where(and(
       eq(projectSecrets.projectId, projectId),
       isNull(projectSecrets.ownerUserId),
@@ -96,16 +97,16 @@ export async function writeProjectCustomProvider(
   detected?: Parameters<typeof upsertCustomProvider>[3],
 ): Promise<CustomLlmProviderDefinition[] | null> {
   return db.transaction(async (tx) => {
-    const [row] = await tx.select({ metadata: projects.metadata }).from(projects)
-      .where(eq(projects.projectId, projectId)).for('update');
+    const [row] = await tx.select({ metadata: projectsView.metadata }).from(projectsView)
+      .where(eq(projectsView.projectId, projectId)).for('update');
     if (!row) throw new Error('Project not found');
     const current = readCustomProviders(row.metadata);
     if (!input && !current.some((provider) => provider.id === id)) return null;
     const next = input ? upsertCustomProvider(current, id, input, detected) : current.filter((provider) => provider.id !== id);
-    await tx.update(projects).set({
-      metadata: sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), ${`{${CUSTOM_PROVIDERS_METADATA_KEY}}`}::text[], ${JSON.stringify(next)}::jsonb)`,
+    await updateProjectRows(eq(projectsView.projectId, projectId), {
+      metadata: sql`jsonb_set(coalesce(${projectsView.metadata}, '{}'::jsonb), ${`{${CUSTOM_PROVIDERS_METADATA_KEY}}`}::text[], ${JSON.stringify(next)}::jsonb)`,
       updatedAt: new Date(),
-    }).where(eq(projects.projectId, projectId));
+    }, tx);
     return next;
   });
 }

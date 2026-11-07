@@ -55,7 +55,7 @@ describe('makeRequest admin-bypass header', () => {
     const stub = stubFetch();
     try {
       setAdminBypass(true);
-      await backendApi.get('/projects/abc/detail');
+      await backendApi.get('/workspaces/abc/detail');
       expect(stub.getHeaders()?.['x-kortix-admin-bypass']).toBeUndefined();
     } finally {
       stub.restore();
@@ -70,7 +70,7 @@ describe('makeRequest admin-bypass header', () => {
     const stub = stubFetch();
     try {
       setAdminBypass(false);
-      await backendApi.get('/projects/abc/detail');
+      await backendApi.get('/workspaces/abc/detail');
       expect(stub.getHeaders()?.['x-kortix-admin-bypass']).toBeUndefined();
     } finally {
       stub.restore();
@@ -85,7 +85,7 @@ describe('makeRequest admin-bypass header', () => {
     });
     const stub = stubFetch();
     try {
-      await backendApi.get('/projects/abc/detail');
+      await backendApi.get('/workspaces/abc/detail');
       expect(stub.getHeaders()?.['X-Kortix-Client']).toBeUndefined();
     } finally {
       stub.restore();
@@ -119,7 +119,7 @@ describe('makeRequest keeps ApiError.message a string for non-string body fields
     });
     const restore = stubErrorBody(403, { message: { code: 'FORBIDDEN' } });
     try {
-      const res = await backendApi.get('/projects/abc/files');
+      const res = await backendApi.get('/workspaces/abc/files');
       expect(res.success).toBe(false);
       expect(typeof res.error?.message).toBe('string');
       // The default fallback (`HTTP 403: …`) is used instead of the object.
@@ -137,7 +137,7 @@ describe('makeRequest keeps ApiError.message a string for non-string body fields
     });
     const restore = stubErrorBody(404, { detail: { message: 404 } });
     try {
-      const res = await backendApi.get('/projects/abc/files');
+      const res = await backendApi.get('/workspaces/abc/files');
       expect(res.success).toBe(false);
       expect(typeof res.error?.message).toBe('string');
       expect(res.error?.message.includes('404')).toBe(true);
@@ -155,7 +155,7 @@ describe('makeRequest keeps ApiError.message a string for non-string body fields
       message: 'Not allowed to read project files',
     });
     try {
-      const res = await backendApi.get('/projects/abc/files');
+      const res = await backendApi.get('/workspaces/abc/files');
       expect(res.success).toBe(false);
       expect(res.error?.message).toBe('Not allowed to read project files');
     } finally {
@@ -204,7 +204,7 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
       { status: 200, body: { ok: true } }, // retry succeeds
     ]);
     try {
-      const res = await backendApi.get('/projects/abc/sessions/s1/audit');
+      const res = await backendApi.get('/workspaces/abc/sessions/s1/audit');
       expect(res.success).toBe(true);
       expect(res.data).toEqual({ ok: true });
       expect(stub.attemptCount()).toBe(2);
@@ -221,7 +221,7 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
     for (const status of [503, 504]) {
       const stub = stubFetchSequence([{ status }, { status: 200, body: { ok: true } }]);
       try {
-        const res = await backendApi.get('/projects/abc/sessions/s1/audit');
+        const res = await backendApi.get('/workspaces/abc/sessions/s1/audit');
         expect(res.success).toBe(true);
         expect(stub.attemptCount()).toBe(2);
       } finally {
@@ -237,7 +237,7 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
     });
     const stub = stubFetchSequence([{ status: 502 }]); // always 502
     try {
-      const res = await backendApi.get('/projects/abc/sessions/s1/audit');
+      const res = await backendApi.get('/workspaces/abc/sessions/s1/audit');
       expect(res.success).toBe(false);
       expect(res.error?.status).toBe(502);
       // 1 initial + 2 retries = 3 attempts
@@ -254,7 +254,7 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
     });
     const stub = stubFetchSequence([{ status: 502 }, { status: 200, body: { ok: true } }]);
     try {
-      const res = await backendApi.post('/projects/abc/sessions', { foo: 1 });
+      const res = await backendApi.post('/workspaces/abc/sessions', { foo: 1 });
       expect(res.success).toBe(false);
       expect(res.error?.status).toBe(502);
       expect(stub.attemptCount()).toBe(1);
@@ -270,7 +270,7 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
     });
     const stub = stubFetchSequence([{ status: 500 }, { status: 200, body: { ok: true } }]);
     try {
-      const res = await backendApi.get('/projects/abc/sessions/s1/audit');
+      const res = await backendApi.get('/workspaces/abc/sessions/s1/audit');
       expect(res.success).toBe(false);
       expect(res.error?.status).toBe(500);
       expect(stub.attemptCount()).toBe(1);
@@ -286,7 +286,7 @@ describe('makeRequest retries transient gateway (502/503/504) on idempotent read
     });
     const stub = stubFetchSequence([{ status: 404 }, { status: 200, body: { ok: true } }]);
     try {
-      const res = await backendApi.get('/projects/abc/sessions/s1/audit');
+      const res = await backendApi.get('/workspaces/abc/sessions/s1/audit');
       expect(res.success).toBe(false);
       expect(res.error?.status).toBe(404);
       expect(stub.attemptCount()).toBe(1);
@@ -314,7 +314,7 @@ describe('makeRequest retries transient transport failures on idempotent reads',
       return Response.json({ ok: true });
     }) as unknown as typeof fetch;
     try {
-      const response = await backendApi.get('/projects/p1/sessions/s1/audit');
+      const response = await backendApi.get('/workspaces/p1/sessions/s1/audit');
       expect(response.success).toBe(true);
       expect(response.data).toEqual({ ok: true });
       // A successful response also carries its headers (ApiResponse.headers) so
@@ -345,7 +345,7 @@ describe('makeRequest retries transient transport failures on idempotent reads',
       throw new TypeError('Failed to fetch');
     }) as unknown as typeof fetch;
     try {
-      const response = await backendApi.get('/projects/p1/sessions/s1/audit');
+      const response = await backendApi.get('/workspaces/p1/sessions/s1/audit');
       expect(response.success).toBe(false);
       expect(response.error?.message).toBe('Failed to fetch');
       expect(attempts).toBe(3);
@@ -362,12 +362,12 @@ describe('makeRequest retries transient transport failures on idempotent reads',
       throw new TypeError('Failed to fetch');
     }) as unknown as typeof fetch;
     try {
-      const response = await backendApi.post('/projects/p1/secrets', {
+      const response = await backendApi.post('/workspaces/p1/secrets', {
         name: 'SAMPLE',
         value: 'synthetic-secret',
       });
       expect(response.success).toBe(false);
-      expect(response.error?.message).toContain('POST /projects/p1/secrets');
+      expect(response.error?.message).toContain('POST /workspaces/p1/secrets');
       expect(response.error?.message).not.toContain('synthetic-secret');
     } finally {
       globalThis.fetch = originalFetch;
@@ -386,7 +386,7 @@ describe('makeRequest retries transient transport failures on idempotent reads',
       throw new TypeError('Failed to fetch');
     }) as unknown as typeof fetch;
     try {
-      const response = await backendApi.post('/projects/p1/sessions', {});
+      const response = await backendApi.post('/workspaces/p1/sessions', {});
       expect(response.success).toBe(false);
       expect(attempts).toBe(1);
     } finally {
@@ -422,7 +422,7 @@ describe('makeRequest retries a DELETE on transport failure (idempotent soft-del
       return Response.json({ ok: true });
     }) as unknown as typeof fetch;
     try {
-      const response = await backendApi.delete('/projects/p1/sessions/s1');
+      const response = await backendApi.delete('/workspaces/p1/sessions/s1');
       expect(response.success).toBe(true);
       expect(response.data).toEqual({ ok: true });
       expect(attempts).toBe(2);
@@ -443,7 +443,7 @@ describe('makeRequest retries a DELETE on transport failure (idempotent soft-del
       throw new TypeError('Failed to fetch');
     }) as unknown as typeof fetch;
     try {
-      const response = await backendApi.delete('/projects/p1/sessions/s1');
+      const response = await backendApi.delete('/workspaces/p1/sessions/s1');
       expect(response.success).toBe(false);
       expect(response.error?.message).toBe('Failed to fetch');
       expect(attempts).toBe(3);
@@ -467,7 +467,7 @@ describe('makeRequest retries a DELETE on transport failure (idempotent soft-del
       });
     }) as unknown as typeof fetch;
     try {
-      const response = await backendApi.delete('/projects/p1/sessions/s1');
+      const response = await backendApi.delete('/workspaces/p1/sessions/s1');
       expect(response.success).toBe(false);
       expect(response.error?.status).toBe(502);
       expect(attempts).toBe(1);
@@ -488,7 +488,7 @@ describe('makeRequest retries a DELETE on transport failure (idempotent soft-del
       throw new TypeError('Failed to fetch');
     }) as unknown as typeof fetch;
     try {
-      const response = await backendApi.post('/projects/p1/sessions', {});
+      const response = await backendApi.post('/workspaces/p1/sessions', {});
       expect(response.success).toBe(false);
       expect(attempts).toBe(1);
     } finally {
@@ -527,7 +527,7 @@ describe('makeRequest retries a DELETE on transport failure (idempotent soft-del
       return Promise.resolve(Response.json({ ok: true }));
     }) as unknown as typeof fetch;
     try {
-      const response = await backendApi.delete('/projects/p1/sessions/s1', {
+      const response = await backendApi.delete('/workspaces/p1/sessions/s1', {
         timeout: 10,
       });
       expect(response.success).toBe(true);
@@ -563,13 +563,13 @@ describe('makeRequest keeps request deadlines silent to the global host error ha
         );
       })) as unknown as typeof fetch;
     try {
-      const response = await backendApi.get('/projects/p1/sessions/s1/audit', {
+      const response = await backendApi.get('/workspaces/p1/sessions/s1/audit', {
         timeout: 5,
       });
       expect(response.success).toBe(false);
       expect(response.error).toMatchObject({
         code: 'TIMEOUT',
-        endpoint: '/projects/p1/sessions/s1/audit',
+        endpoint: '/workspaces/p1/sessions/s1/audit',
         timeout: 5,
       });
       expect(errors).toEqual([]);
@@ -599,7 +599,7 @@ describe('makeRequest keeps request deadlines silent to the global host error ha
         { status: 503 },
       )) as unknown as typeof fetch;
     try {
-      const response = await backendApi.get('/projects/p1/sessions/s1/audit');
+      const response = await backendApi.get('/workspaces/p1/sessions/s1/audit');
       expect(response.success).toBe(false);
       expect(response.error).toMatchObject({
         status: 503,
@@ -632,7 +632,7 @@ describe('makeRequest keeps request deadlines silent to the global host error ha
         { status: 503 },
       )) as unknown as typeof fetch;
     try {
-      const response = await backendApi.get('/projects/p1/secrets');
+      const response = await backendApi.get('/workspaces/p1/secrets');
       expect(response.success).toBe(false);
       expect(response.error?.code).toBe('request_deadline');
       expect(errors).toEqual([]);
@@ -654,7 +654,7 @@ describe('makeRequest keeps request deadlines silent to the global host error ha
     globalThis.fetch = (async () =>
       Response.json({ message: 'sandbox waking up' }, { status: 503 })) as unknown as typeof fetch;
     try {
-      const response = await backendApi.get('/projects/p1/sessions/s1');
+      const response = await backendApi.get('/workspaces/p1/sessions/s1');
       expect(response.success).toBe(false);
       expect(response.error).toMatchObject({ status: 503, code: '503' });
       expect(errors).toHaveLength(1);
@@ -704,7 +704,7 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
     });
     const win = stubWindow();
     try {
-      const res = await backendApi.get('/accounts/abc/iam/groups');
+      const res = await backendApi.get('/workspaces/abc/iam/groups');
       expect(res.success).toBe(false);
       expect(win.dispatched).toContain('kortix:mfa-required');
     } finally {
@@ -741,7 +741,7 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
     });
     const win = stubWindow();
     try {
-      const res = await backendApi.get('/accounts/abc/iam/groups');
+      const res = await backendApi.get('/workspaces/abc/iam/groups');
       expect(res.success).toBe(false);
       expect(win.dispatched.length).toBe(0);
     } finally {
@@ -787,7 +787,7 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
     });
     const restoreFetch = stubFetch403({ error: 'mfa needed', code: 'account_mfa_required' });
     try {
-      await backendApi.get('/accounts/abc/iam/groups');
+      await backendApi.get('/workspaces/abc/iam/groups');
       expect(remedies).toEqual(['account_mfa_required']);
     } finally {
       restoreFetch();
@@ -803,7 +803,7 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
     });
     const restoreFetch = stubFetch403({ error: 'forbidden', code: 'forbidden' });
     try {
-      await backendApi.get('/accounts/abc/iam/groups');
+      await backendApi.get('/workspaces/abc/iam/groups');
       expect(remedies).toEqual([]);
     } finally {
       restoreFetch();
@@ -871,7 +871,7 @@ describe('makeRequest classifies a typed feature_not_supported 501 as silent to 
       feature: 'connector_auth_discovery',
     });
     try {
-      const res = await backendApi.post('/connectors/projects/p1/connectors/auth-discovery', {
+      const res = await backendApi.post('/connectors/workspaces/p1/connectors/auth-discovery', {
         provider: 'openapi',
         spec: 'https://example.com/openapi.json',
       });
@@ -904,7 +904,7 @@ describe('makeRequest classifies a typed feature_not_supported 501 as silent to 
       message: 'something broke',
     });
     try {
-      const res = await backendApi.post('/connectors/projects/p1/connectors/auth-discovery', {});
+      const res = await backendApi.post('/connectors/workspaces/p1/connectors/auth-discovery', {});
       expect(res.success).toBe(false);
       expect(res.error).toBeInstanceOf(ApiError);
       expect(res.error?.status).toBe(501);
@@ -961,7 +961,7 @@ describe('makeRequest classifies a typed model_not_servable 409 as silent to Sen
       code: 'model_not_servable',
     });
     try {
-      const res = await backendApi.put('/projects/p1/model-defaults', {
+      const res = await backendApi.put('/workspaces/p1/model-defaults', {
         scope: 'project',
         model: 'nvidia/minimaxai/minimax-m3',
       });
@@ -995,7 +995,7 @@ describe('makeRequest classifies a typed model_not_servable 409 as silent to Sen
       message: 'Conflict',
     });
     try {
-      const res = await backendApi.put('/projects/p1/model-defaults', {
+      const res = await backendApi.put('/workspaces/p1/model-defaults', {
         scope: 'project',
         model: 'x/y',
       });
@@ -1046,7 +1046,7 @@ describe('makeRequest classifies a typed provision_in_flight 409 as silent to Se
       code: PROVISION_IN_FLIGHT_CODE,
     });
     try {
-      const res = await backendApi.post('/projects/provision', {
+      const res = await backendApi.post('/workspaces/provision', {
         account_id: 'a1',
         idempotency_key: 'onboarding-first-project:abc',
       });
@@ -1076,7 +1076,7 @@ describe('makeRequest classifies a typed provision_in_flight 409 as silent to Se
       message: 'Conflict',
     });
     try {
-      const res = await backendApi.post('/projects/provision', {
+      const res = await backendApi.post('/workspaces/provision', {
         account_id: 'a1',
       });
       expect(res.success).toBe(false);
@@ -1126,7 +1126,7 @@ describe('makeRequest classifies a typed sandbox_state_change_in_progress 409 as
       status: 409,
     });
     try {
-      const res = await backendApi.post('/projects/p-1/apps/app-1/stop', {});
+      const res = await backendApi.post('/workspaces/p-1/apps/app-1/stop', {});
       expect(res.success).toBe(false);
       expect(res.error).toBeInstanceOf(ApiError);
       expect(res.error?.status).toBe(409);
@@ -1155,7 +1155,7 @@ describe('makeRequest classifies a typed sandbox_state_change_in_progress 409 as
       status: 409,
     });
     try {
-      const res = await backendApi.post('/projects/p-1/apps/app-1/stop', {});
+      const res = await backendApi.post('/workspaces/p-1/apps/app-1/stop', {});
       expect(res.success).toBe(false);
       expect(res.error?.status).toBe(409);
       expect(onErrorCalls).toBe(1);
@@ -1205,7 +1205,7 @@ describe('makeRequest classifies a typed git_mirror_unavailable 503 as silent to
       status: 503,
     });
     try {
-      const res = await backendApi.post('/projects/p1/sessions', {});
+      const res = await backendApi.post('/workspaces/p1/sessions', {});
       expect(res.success).toBe(false);
       // The ApiError is still returned so the caller can branch on `.code`.
       expect(res.error).toBeInstanceOf(ApiError);
@@ -1235,7 +1235,7 @@ describe('makeRequest classifies a typed git_mirror_unavailable 503 as silent to
       status: 503,
     });
     try {
-      const res = await backendApi.post('/projects/p1/sessions', {});
+      const res = await backendApi.post('/workspaces/p1/sessions', {});
       expect(res.error?.status).toBe(503);
       expect(onErrorCalls).toBe(0);
     } finally {
@@ -1258,7 +1258,7 @@ describe('makeRequest classifies a typed git_mirror_unavailable 503 as silent to
       status: 503,
     });
     try {
-      const res = await backendApi.post('/projects/p1/sessions', {});
+      const res = await backendApi.post('/workspaces/p1/sessions', {});
       expect(res.success).toBe(false);
       // A real 503 (no typed code) still reports — the classification gate
       // must never swallow a genuine defect.
@@ -1453,7 +1453,7 @@ describe('makeRequest surfaces the body `code` on a 403 feature_disabled gate', 
     configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
 
     try {
-      const { error } = await backendApi.get('/projects/p1/apps', { showErrors: false });
+      const { error } = await backendApi.get('/workspaces/p1/apps', { showErrors: false });
 
       expect(error).toBeInstanceOf(ApiError);
       const apiError = error as ApiError;
@@ -1499,7 +1499,7 @@ describe('makeRequest prefers the human-readable body field over the machine `re
       reason: 'runtime_identity_unavailable',
     });
     try {
-      const res = await backendApi.post('/projects/p1/sessions/s1/restart', {});
+      const res = await backendApi.post('/workspaces/p1/sessions/s1/restart', {});
       expect(res.success).toBe(false);
       expect(res.error?.message).toBe(
         'The original sandbox is unavailable. Its identity was preserved and no replacement sandbox was created.',
@@ -1515,7 +1515,7 @@ describe('makeRequest prefers the human-readable body field over the machine `re
     configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
     const restore = stubErrorBody(400, { message: 'Pick a smaller file.', reason: 'file_too_big' });
     try {
-      const res = await backendApi.post('/projects/p1/files', {});
+      const res = await backendApi.post('/workspaces/p1/files', {});
       expect(res.error?.message).toBe('Pick a smaller file.');
     } finally {
       restore();
@@ -1526,7 +1526,7 @@ describe('makeRequest prefers the human-readable body field over the machine `re
     configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
     const restore = stubErrorBody(409, { reason: 'in_flight' });
     try {
-      const res = await backendApi.post('/projects/p1/sessions/s1/restart', {});
+      const res = await backendApi.post('/workspaces/p1/sessions/s1/restart', {});
       expect(res.error?.message).toBe('in_flight');
     } finally {
       restore();
@@ -1553,7 +1553,7 @@ describe('retry and error characterization', () => {
           },
         ),
     });
-    const result = await backendApi.get('/projects/provision');
+    const result = await backendApi.get('/workspaces/provision');
     expect(statuses).toEqual([]);
     expect(result.error?.code).toBe(PROVISION_IN_FLIGHT_CODE);
     expect(result.error?.message).toBe('Still provisioning');

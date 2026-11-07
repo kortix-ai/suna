@@ -26,13 +26,13 @@ const ready: SessionStartResult = {
   agent_name: 'default',
   retriable: false,
   sandbox: sandbox('s1'),
-  opencode_session_id: 'ses_1',
+  runtime_session_id: 'ses_1',
   runtime_url: '/p/sbx_s1/8000',
   reason: 'unchanged',
 };
 
 function starting(reason: string, box: SessionStartResult['sandbox'] = sandbox('s1')): SessionStartResult {
-  return { ...ready, stage: 'starting', retriable: true, sandbox: box, opencode_session_id: null, reason };
+  return { ...ready, stage: 'starting', retriable: true, sandbox: box, runtime_session_id: null, reason };
 }
 
 describe('holdLiveStart — a live session leaves live only on a lifecycle fact', () => {
@@ -48,7 +48,7 @@ describe('holdLiveStart — a live session leaves live only on a lifecycle fact'
   });
 
   test('a new ready answer replaces the held one', () => {
-    const next = { ...ready, opencode_session_id: 'ses_2' };
+    const next = { ...ready, runtime_session_id: 'ses_2' };
     expect(holdLiveStart(ready, next)).toBe(next);
   });
 

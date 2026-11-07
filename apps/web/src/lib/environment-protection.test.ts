@@ -35,6 +35,27 @@ describe('authorizeEnvironment', () => {
     ).toEqual({ allowed: true, source: 'health' });
   });
 
+  test('always allows security.txt so the disclosure policy stays reachable (RFC 9116)', () => {
+    for (const password of ['test-password', undefined]) {
+      expect(
+        authorizeEnvironment({
+          enabled: 'true',
+          password,
+          authorization: null,
+          pathname: '/.well-known/security.txt',
+        }),
+      ).toEqual({ allowed: true, source: 'security-txt' });
+    }
+    expect(
+      authorizeEnvironment({
+        enabled: 'true',
+        password: 'test-password',
+        authorization: null,
+        pathname: '/.well-known/other.txt',
+      }),
+    ).toEqual({ allowed: false, reason: 'credentials_required' });
+  });
+
   test('fails closed when protection is enabled without a password', () => {
     expect(
       authorizeEnvironment({
@@ -70,7 +91,7 @@ describe('authorizeEnvironment', () => {
       '/auth/callback/extra',
       '/auth',
       '/auth/signup',
-      '/projects',
+      '/workspaces',
     ]) {
       expect(
         authorizeEnvironment({
@@ -106,7 +127,7 @@ describe('authorizeEnvironment', () => {
           enabled: 'true',
           password: 'test-password',
           authorization,
-          pathname: '/projects',
+          pathname: '/workspaces',
         }),
       ).toEqual({ allowed: false, reason: 'credentials_required' });
     }
@@ -118,7 +139,7 @@ describe('authorizeEnvironment', () => {
         enabled: 'true',
         password: 'test-password',
         authorization: basic(ENVIRONMENT_PROTECTION_USERNAME, 'test-password'),
-        pathname: '/projects',
+        pathname: '/workspaces',
       }),
     ).toEqual({ allowed: true, source: 'basic' });
   });
@@ -134,7 +155,7 @@ describe('authorizeEnvironment', () => {
         authorization: null,
         accessCookie: expectedAccessCookie,
         expectedAccessCookie,
-        pathname: '/projects',
+        pathname: '/workspaces',
       }),
     ).toEqual({ allowed: true, source: 'cookie' });
   });
@@ -147,7 +168,7 @@ describe('authorizeEnvironment', () => {
         authorization: null,
         accessCookie: await deriveEnvironmentAccessCookie('wrong-password'),
         expectedAccessCookie: await deriveEnvironmentAccessCookie('test-password'),
-        pathname: '/projects',
+        pathname: '/workspaces',
       }),
     ).toEqual({ allowed: false, reason: 'credentials_required' });
   });

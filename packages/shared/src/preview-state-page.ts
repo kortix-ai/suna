@@ -33,16 +33,8 @@
  * through by every intermediary, and a crawler or monitor should see them.
  */
 
-/** Escapes `& < > " '`, so the output is safe in element text and quoted
- *  attribute values. Same rules as the API's `shared/html.ts` escaper. */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+import { escapeHtml } from './html';
+import { stripTrailingSlashes } from './utils/string';
 
 /** States in which the app is still coming up: the sandbox is waking, or no
  *  process has bound the port yet. `unreachable` is NOT one: something was
@@ -61,13 +53,6 @@ export const PREVIEW_STATE_HEADER = 'x-kortix-preview-state';
 
 /** The `postMessage` type the page sends to the card that embeds it. */
 export const PREVIEW_STATE_MESSAGE = 'kortix:preview-state';
-
-/** Linear strip; the regex form backtracks on adversarial input. */
-function stripTrailingSlashes(value: string): string {
-  let end = value.length;
-  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) end--;
-  return value.slice(0, end);
-}
 
 export type PreviewState =
   | 'signed-out'

@@ -87,9 +87,9 @@ export function reviewDetailRows(item: ReviewItem, extras: ReviewDetailExtras = 
 export function changeRequestWebUrl(projectId: string, item: ReviewItem): string {
   const crId = item.kind === 'change' ? item.detail.crId : undefined;
   if (item.sessionId && crId) {
-    return `${KORTIX_WEB_URL}/projects/${projectId}/sessions/${item.sessionId}?cr=${crId}`;
+    return `${KORTIX_WEB_URL}/workspaces/${projectId}/sessions/${item.sessionId}?cr=${crId}`;
   }
-  return `${KORTIX_WEB_URL}/projects/${projectId}/review`;
+  return `${KORTIX_WEB_URL}/workspaces/${projectId}/review`;
 }
 
 /** A file row's name and folder. */

@@ -1,9 +1,10 @@
 import { and, eq } from 'drizzle-orm';
-import { chatChannelBindings, projects } from '@kortix/db';
+import { chatChannelBindings } from '@kortix/db';
 import { db } from '../../shared/db';
 import { withProjectGitAuth } from '../../projects/lib/git';
 import { listRepoFiles, loadProjectConfig } from '../../projects/git';
 import { savedProjectConfig } from '../../projects/surface';
+import { projectsView } from '../../workspaces/rows';
 
 // Per-channel agent + model selection. A Slack channel is bound to a project
 // (chat_channel_bindings); these helpers read/write the optional agent + model
@@ -13,7 +14,7 @@ import { savedProjectConfig } from '../../projects/surface';
 export interface ChannelSelection {
   projectId: string;
   agentName: string | null;
-  opencodeModel: string | null;
+  sessionModel: string | null;
   conversationPolicy: string | null;
 }
 
@@ -29,19 +30,19 @@ export interface ChannelCtx {
 /** The channel's bound project + its agent/model overrides, or null if unbound. */
 export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelSelection | null> {
   if (!ctx.channelId) return null;
-  let binding: { projectId: string | null; agentName: string | null; opencodeModel: string | null; conversationPolicy: string | null } | undefined;
+  let binding: { projectId: string | null; agentName: string | null; sessionModel: string | null; conversationPolicy: string | null } | undefined;
   try {
     [binding] = await db
       .select({
         projectId: chatChannelBindings.projectId,
         agentName: chatChannelBindings.agentName,
-        opencodeModel: chatChannelBindings.model,
+        sessionModel: chatChannelBindings.model,
         conversationPolicy: chatChannelBindings.conversationPolicy,
       })
       .from(chatChannelBindings)
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.platformTeamId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
       .limit(1);
@@ -49,13 +50,13 @@ export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelS
     if (!isMissingSelectionColumnError(err)) throw err;
     console.warn('[slack-selection] optional channel override columns missing; falling back to project-only routing');
     const projectId = await currentChannelProjectId(ctx);
-    return projectId ? { projectId, agentName: null, opencodeModel: null, conversationPolicy: null } : null;
+    return projectId ? { projectId, agentName: null, sessionModel: null, conversationPolicy: null } : null;
   }
   if (!binding?.projectId) return null;
   return {
     projectId: binding.projectId,
     agentName: binding.agentName ?? null,
-    opencodeModel: binding.opencodeModel ?? null,
+    sessionModel: binding.sessionModel ?? null,
     conversationPolicy: binding.conversationPolicy ?? null,
   };
 }
@@ -68,7 +69,7 @@ export async function setChannelConversationPolicy(ctx: ChannelCtx, conversation
       .set({ conversationPolicy })
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.platformTeamId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
       .returning({ id: chatChannelBindings.bindingId });
@@ -115,7 +116,7 @@ export async function setChannelAgent(
       .set({ agentName })
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.platformTeamId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
       .returning({ id: chatChannelBindings.bindingId });
@@ -128,15 +129,15 @@ export async function setChannelAgent(
 }
 
 /** Update the channel binding's model (null clears → project/platform default). */
-export async function setChannelModel(ctx: ChannelCtx, opencodeModel: string | null): Promise<boolean> {
+export async function setChannelModel(ctx: ChannelCtx, sessionModel: string | null): Promise<boolean> {
   if (!ctx.channelId) return false;
   try {
     const rows = await db
       .update(chatChannelBindings)
-      .set({ model: opencodeModel })
+      .set({ model: sessionModel })
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.platformTeamId, ctx.teamId),
         eq(chatChannelBindings.channelId, ctx.channelId),
       ))
       .returning({ id: chatChannelBindings.bindingId });
@@ -154,7 +155,7 @@ async function currentChannelProjectId(ctx: ChannelCtx): Promise<string | null> 
     .from(chatChannelBindings)
     .where(and(
       eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
-      eq(chatChannelBindings.workspaceId, ctx.teamId),
+      eq(chatChannelBindings.platformTeamId, ctx.teamId),
       eq(chatChannelBindings.channelId, ctx.channelId),
     ))
     .limit(1);
@@ -169,7 +170,7 @@ function isMissingSelectionColumnError(err: unknown): boolean {
   ].filter(Boolean).join('\n');
   return (
     parts.includes('column "agent_name" does not exist') ||
-    parts.includes('column "opencode_model" does not exist') ||
+    parts.includes('column "model" does not exist') ||
     parts.includes('column "conversation_policy" does not exist')
   );
 }
@@ -195,16 +196,15 @@ export interface ProjectAgentGovernance {
 }
 
 /**
- * The project's launchable agents from the server-side config summary:
- * declarative `kortix.yaml` `agents:` for adopted projects, OpenCode markdown
- * discovery for legacy projects. Touches git, so callers must use the async
+ * The project's launchable agents from the server-side config summary (the
+ * `kortix.yaml` `agents:` block). Touches git, so callers must use the async
  * slash response path (response_url) to stay inside Slack's 3s window.
  */
 export async function loadProjectAgentGovernance(projectId: string): Promise<ProjectAgentGovernance> {
   const [row] = await db
     .select()
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!row) return { agents: [], declared: false };
   // The saved config summary first: no git inside Slack's 3 s window.
@@ -239,7 +239,7 @@ export interface ChannelBindingRow {
   channelName: string | null;
   channelType: string | null;
   agentName: string | null;
-  opencodeModel: string | null;
+  sessionModel: string | null;
   conversationPolicy: string;
   installedAt: Date;
 }
@@ -251,12 +251,12 @@ export async function listChannelBindingsForProject(projectId: string): Promise<
       bindingId: chatChannelBindings.bindingId,
       projectId: chatChannelBindings.projectId,
       platform: chatChannelBindings.platform,
-      workspaceId: chatChannelBindings.workspaceId,
+      workspaceId: chatChannelBindings.platformTeamId,
       channelId: chatChannelBindings.channelId,
       channelName: chatChannelBindings.channelName,
       channelType: chatChannelBindings.channelType,
       agentName: chatChannelBindings.agentName,
-      opencodeModel: chatChannelBindings.model,
+      sessionModel: chatChannelBindings.model,
       conversationPolicy: chatChannelBindings.conversationPolicy,
       installedAt: chatChannelBindings.installedAt,
     })
@@ -278,12 +278,12 @@ export async function getChannelBindingById(
       bindingId: chatChannelBindings.bindingId,
       projectId: chatChannelBindings.projectId,
       platform: chatChannelBindings.platform,
-      workspaceId: chatChannelBindings.workspaceId,
+      workspaceId: chatChannelBindings.platformTeamId,
       channelId: chatChannelBindings.channelId,
       channelName: chatChannelBindings.channelName,
       channelType: chatChannelBindings.channelType,
       agentName: chatChannelBindings.agentName,
-      opencodeModel: chatChannelBindings.model,
+      sessionModel: chatChannelBindings.model,
       conversationPolicy: chatChannelBindings.conversationPolicy,
       installedAt: chatChannelBindings.installedAt,
     })
@@ -294,7 +294,7 @@ export async function getChannelBindingById(
   return row as ChannelBindingRow;
 }
 
-async function loadLiveConfig(row: typeof projects.$inferSelect) {
+async function loadLiveConfig(row: typeof projectsView.$inferSelect) {
   const gitProject = await withProjectGitAuth(row);
   let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
   try {

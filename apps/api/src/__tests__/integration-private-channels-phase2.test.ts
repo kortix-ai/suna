@@ -124,7 +124,7 @@ const CONV_SLUG = `conv-${P.slice(0, 6)}`;
 const P_THREAD = crypto.randomUUID();
 const GENERAL_THREAD = crypto.randomUUID();
 const WORD = `zebracorn${P.slice(0, 6)}`;
-const metadata = { experimental: { project_channels: true, drives: true, artifacts: true, shared_drives: true } };
+const metadata = { experimental: { chat: true, drives: true, artifacts: true, shared_drives: true } };
 /** Turn the project's `shared_drives` flag on or off, the other flags unchanged. */
 const setSharedDrives = (on: boolean) =>
   db.update(projects).set({ metadata: { experimental: { ...metadata.experimental, shared_drives: on } } }).where(eq(projects.projectId, PROJECT));
@@ -526,13 +526,13 @@ describe('artifacts follow the one Drive rule', () => {
   test('a member shares it privately; a non-member never views or lists it, even when named in its sharing', async () => {
     const row = await share(scope, { userId: ALICE, sessionId: null }, await viewerOf(ALICE), { path: `${FOLDER}/deck` });
     artifactId = row.artifactId;
-    const named = await updateArtifactMeta(row, { shared_with_user_ids: [BOB, CAROL] }, { userId: ALICE, sessionId: null });
+    const named = await updateArtifactMeta(row, { shared_with_user_ids: [BOB, CAROL] });
     expect(canView(named, await viewerOf(BOB))).toBe(false);
     expect(canView(named, await viewerOf(MANAGER))).toBe(false);
     expect(canView(named, await viewerOf(CAROL))).toBe(true);
     expect((await listArtifacts(PROJECT, await viewerOf(BOB), { scope: 'all', limit: 50 })).map((a) => a.artifactId)).not.toContain(artifactId);
     expect((await listArtifacts(PROJECT, await viewerOf(CAROL), { scope: 'all', limit: 50 })).map((a) => a.artifactId)).toContain(artifactId);
-    await expect(updateArtifactMeta(named, { visibility: 'public' }, { userId: ALICE, sessionId: null })).rejects.toMatchObject({ status: 403, code: 'private_channel' });
+    await expect(updateArtifactMeta(named, { visibility: 'public' })).rejects.toMatchObject({ status: 403, code: 'private_channel' });
   });
 });
 

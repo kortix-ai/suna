@@ -5,7 +5,7 @@ description: "Onboard a person to Kortix in chat, end to end, for any company, r
 
 # Onboarding
 
-A new project opens on "Your first chat with Kortix", and its composer sends
+A new workspace opens on "Your first chat with Kortix", and its composer sends
 "Onboard me" by itself the moment a model is connected. That message starts
 you. There is no form and no wizard: **you are the onboarding.** The person
 leaves it understanding what Kortix is, known (memory), connected (team,
@@ -48,14 +48,14 @@ app. Read `/drives/README.md` first: it lists what this session has mounted.
 | **The company**: what it does, customers, team, software, how work runs, glossary | `/drives/me/Memory/company/` (`company.md`, `team.md`, `software.md`, `how-we-work.md`, indexed by `/drives/me/Memory/MEMORY.md`) | Only them | Drive → My files → Memory → company |
 | **The company's files**: docs, decks, policies, data they work from | `/drives/me/Company/` | Only them | Drive → My files → Company |
 
-- Nothing in Drive is shared with the whole project: everything you write
+- Nothing in Drive is shared with the whole workspace: everything you write
   here is the person's own. Say that in one line the first time you write.
 - Keep company facts in `Memory/company/`, apart from the person's own facts.
   A fact about the person's job at the company ("runs operations") is
   personal; a fact about the company ("6 clinics") is company.
 - `kortix-user-memory` is the protocol for the personal folder; follow it.
-- When `/drives/me` is missing, Drive is off for this project: keep the same
-  files in the project brain `memory/` (the `kortix-memory` change-request
+- When `/drives/me` is missing, Drive is off for this workspace: keep the same
+  files in the workspace brain `memory/` (the `kortix-memory` change-request
   flow) and say so in one line. Never create `/drives/*` yourself.
 
 ## Agnostic by construction
@@ -66,7 +66,7 @@ You know nothing about this one until you learn it.
 
 - **Build every option list from evidence**, never from a preset menu: what the
   person said, their email domain and the company's public website, the files
-  and memory already in the project, and the connectors already connected.
+  and memory already in the workspace, and the connectors already connected.
   Read the company first: for a company email domain, open its website
   (`web_search`, `scrape_webpage`) and learn what the company does, who it
   serves, and how big it is. A consumer email domain (Gmail, Outlook.com, iCloud) tells
@@ -189,8 +189,8 @@ what the options say.
 - `cat /drives/me/Memory/MEMORY.md`: what you already know about this person
   (`kortix-user-memory`).
 - `ls /drives/me/Memory/company /drives/me/Company`: what the company
-  workspace already holds. `ls memory/`: the project brain.
-- `kortix access ls`: who is in the project. More than one member → this
+  workspace already holds. `ls memory/`: the workspace brain.
+- `kortix access ls`: who is in the workspace. More than one member → this
   person may be a teammate (see **Teammates**).
 - `kortix channels status`: Slack or Microsoft Teams already connected.
 - `kortix connectors ls`: software already connected.
@@ -272,7 +272,8 @@ Say what you built in one line: this is "all data in one place".
 
 **Team → invite.** Ask for teammates' emails (`custom` free text, a Skip
 option). For each: `kortix access invite <email> --role member`. When the
-output says no email was sent, give them the printed invite link. Each invitee
+output says no email was sent, give them the printed invite link. Invitations
+and members show in Workspace settings → Members. Each invitee
 gets their own private folder and personal onboarding when they first chat
 (see **Teammates**).
 
@@ -323,7 +324,7 @@ Propose three concrete first tasks built from their own words in stages 1–4 as
 a GenUI `RankedList`, then one `question` with those three as options plus
 `custom`. Do the chosen task end to end until it ends in a real object: a
 file, an artifact, a hosted App, a sent message, a filled sheet. A task a
-project agent is made for goes to that agent with the `agent` tool (default
+workspace agent is made for goes to that agent with the `agent` tool (default
 `session: "separate"`): one call starts its session, waits and returns its
 final message. Ask it to end with the result and the paths of its files, and
 show that. Never delegate or wait with `kortix sessions new`, `kortix sessions
@@ -347,7 +348,7 @@ complete; from here they are a user.
 
 A teammate (stage 0: other members exist, their own `/drives/me/Memory` is
 empty) gets every stage in their own folder: their company workspace is theirs
-too, since nothing in Drive is shared with the whole project. Tell the story
+too, since nothing in Drive is shared with the whole workspace. Tell the story
 from what the team already set up ("Your team already runs <connected
 software> through Kortix"). Skip stage 3 when a channel is connected.
 

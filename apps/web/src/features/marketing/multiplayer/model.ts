@@ -157,7 +157,7 @@ export const tabs = {
     {
       id: 'access',
       title: 'Who may run which agent',
-      description: 'Roles per account and project, agents per person.',
+      description: 'Roles per workspace and resource, agents per person.',
       body: [
         'Each person has an account role and a role in each project. A group gives a project to everyone in it.',
         'A member starts sessions only with an agent assigned to them, their group or the whole project.',
@@ -192,7 +192,7 @@ export const shareOptions = [
     k: 'Specific people',
     v: 'The owner, plus the members and groups they pick.',
   },
-  { id: 'project', k: 'Whole project', v: 'Every member of the project.' },
+  { id: 'project', k: 'Whole workspace', v: 'Every member of the project.' },
 ] as const;
 
 export const joinPolicies = [

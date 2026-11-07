@@ -6,7 +6,7 @@
  * fail-open default and the warning that explains it stay at the call site.
  */
 
-import { RUNTIME_ACTIONS_CAPABILITY, RUNTIME_LOG_CAPABILITY } from '@kortix/api-contract/runtime-relay';
+import { RUNTIME_LOG_CAPABILITY } from '@kortix/api-contract/runtime-relay';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 
 /** The directory every runtime read and write is forwarded under. */
@@ -15,7 +15,7 @@ export const WORKSPACE = '/workspace';
 /** A session whose signed runtime endpoint is resolved. */
 export interface ResolvedSessionRuntime {
   endpoint: { url: string; headers: Record<string, string> };
-  opencodeSessionId: string;
+  runtimeSessionId: string;
   externalId?: string;
 }
 
@@ -43,10 +43,6 @@ const segment = encodeURIComponent;
 
 /** The Kortix turn routes (`routes/kortix/runtime.ts` in kortixd). */
 export const runtimeVerbPaths = {
-  messages: (sessionId: string, opts: { limit: number; before?: string | null }) =>
-    `/kortix/runtime/messages/${segment(sessionId)}?limit=${opts.limit}${opts.before ? `&before=${segment(opts.before)}` : ''}`,
-  message: (sessionId: string, messageId: string) =>
-    `/kortix/runtime/messages/${segment(sessionId)}/${segment(messageId)}`,
   /** Take back a user message no model call has read (`runtime.retract.v1`). */
   retract: (sessionId: string, messageId: string) =>
     `/kortix/runtime/messages/${segment(sessionId)}/${segment(messageId)}/retract`,
@@ -57,6 +53,10 @@ export const runtimeVerbPaths = {
   steer: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/steer`,
   /** The session-log actions (`runtime.actions.v1`). */
   questionReply: (requestId: string) => `/kortix/runtime/questions/${segment(requestId)}/reply`,
+  questionReject: (requestId: string) => `/kortix/runtime/questions/${segment(requestId)}/reject`,
+  permissionReply: (requestId: string) => `/kortix/runtime/permissions/${segment(requestId)}/reply`,
+  /** Stop holding every call that waits on a person (session-asks.ts). A daemon built before parking answers 404. */
+  parkAsks: '/kortix/runtime/asks/park',
   /** The box's own session log (`runtime.log.v1`): a page of the root, newest `limit` before `before_seq`. */
   log: (opts: { limit: number; beforeSeq?: number | null }) =>
     `/kortix/runtime/log?limit=${opts.limit}${opts.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ''}`,
@@ -68,7 +68,9 @@ export const runtimeVerbPaths = {
 const CAPABILITIES_TTL_MS = 5 * 60_000;
 const CAPABILITIES_MEMO_MAX = 5_000;
 // ponytail: per-process memo, cleared when full; a box whose daemon updates in
-// place is read again after the TTL.
+// place is read again after the TTL. A list without `runtime.log.v1` is never
+// kept: that daemon is below the runtime floor and is about to be replaced
+// (session-open/runtime-floor-policy.ts), so the next read must see its successor.
 const capabilitiesMemo = new Map<string, { capabilities: string[]; at: number }>();
 
 /**
@@ -96,34 +98,13 @@ export async function runtimeCapabilities(
     const capabilities = Array.isArray(body?.capabilities)
       ? body.capabilities.filter((value): value is string => typeof value === 'string')
       : [];
+    if (!capabilities.includes(RUNTIME_LOG_CAPABILITY)) return capabilities;
     if (capabilitiesMemo.size >= CAPABILITIES_MEMO_MAX) capabilitiesMemo.clear();
     capabilitiesMemo.set(externalId, { capabilities, at: now });
     return capabilities;
   } catch {
     return null;
   }
-}
-
-/**
- * Does this sandbox's daemon serve the session-log actions (`runtime.actions.v1`)?
- * A failed read answers false: the caller uses the route every daemon serves.
- */
-export async function runtimeServesActions(
-  externalId: string | undefined,
-  endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
-): Promise<boolean> {
-  return (await runtimeCapabilities(externalId, endpoint))?.includes(RUNTIME_ACTIONS_CAPABILITY) ?? false;
-}
-
-/**
- * Does the box serve its own session log (`runtime.log.v1`): whole pages, and a prompt in the log
- * from its admission? Then the log is the transcript the API reads. Same memo as above.
- */
-export async function runtimeServesLog(
-  externalId: string | undefined,
-  endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
-): Promise<boolean> {
-  return (await runtimeCapabilities(externalId, endpoint))?.includes(RUNTIME_LOG_CAPABILITY) ?? false;
 }
 
 /** Test-only. */

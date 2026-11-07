@@ -22,12 +22,12 @@
 // in its original position before any routes), and the shared helpers all live
 // in `./app`, which every route module imports first.
 
-import { accounts } from '@kortix/db';
 import { scimRouter } from './app';
 
 import { registerScimServiceProviderRoutes } from './service-provider';
 import { registerScimUsersRoutes } from './users';
 import { registerScimGroupsRoutes } from './groups';
+import { accountsView } from '../workspaces/rows';
 
 /** Registers the SCIM routes in their original order. app.ts calls it right before it mounts `scimRouter`. */
 export function registerScimRoutes(): void {
@@ -38,6 +38,6 @@ export function registerScimRoutes(): void {
 
 // `accounts` import kept only so future endpoints (e.g. /Me) can resolve
 // the account by URL without re-importing. Silences unused-import lints.
-void accounts;
+void accountsView;
 
 export { scimRouter };

@@ -55,6 +55,7 @@ const { chatEventDedup: chatEventDedupTable } = await import('@kortix/db');
 
 let selectCount = 0;
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: true,
   db: {
     select: () => {
@@ -413,7 +414,7 @@ describe('createOrJoinTeamsConversationSession — in a channel or group chat th
   });
 
   test('the sender is scoped out of the agent: no card for everyone, and only they read why', async () => {
-    channelSelection = { projectId: PROJECT_ID, agentName: 'reviewer', opencodeModel: null };
+    channelSelection = { projectId: PROJECT_ID, agentName: 'reviewer', sessionModel: null };
     agentAllowed = false;
     await start('groupChat');
     expect(calls).not.toContain('startTurn');
@@ -838,7 +839,7 @@ describe('models and keys — a chat runs what its /model picked, on the keys it
   });
 
   test('someone scoped out of the conversation`s agent starts no session on it', async () => {
-    channelSelection = { projectId: PROJECT_ID, agentName: 'reviewer', opencodeModel: null };
+    channelSelection = { projectId: PROJECT_ID, agentName: 'reviewer', sessionModel: null };
     agentAllowed = false;
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat('groupChat') });
     expect(agentChecks).toEqual([{ userId: 'user-1', agentName: 'reviewer' }]);
@@ -863,7 +864,7 @@ describe('models and keys — a chat runs what its /model picked, on the keys it
     ] as const) {
       created.length = 0;
       selectCount = 0;
-      channelSelection = { projectId: PROJECT_ID, agentName: null, opencodeModel: null, conversationPolicy: policy };
+      channelSelection = { projectId: PROJECT_ID, agentName: null, sessionModel: null, conversationPolicy: policy };
       await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat('groupChat') });
       expect(created[0].visibility).toBe(visibility);
       expect((created[0].metadata as { teams: { conversation_policy: string } }).teams.conversation_policy).toBe(policy);
@@ -884,7 +885,7 @@ describe('models and keys — a chat runs what its /model picked, on the keys it
   });
 
   test('the conversation`s choice and the keys planned for it start the session', async () => {
-    channelSelection = { projectId: PROJECT_ID, agentName: 'reviewer', opencodeModel: 'kortix/codex/gpt-6-astra' };
+    channelSelection = { projectId: PROJECT_ID, agentName: 'reviewer', sessionModel: 'kortix/codex/gpt-6-astra' };
     startPlan = { model: 'kortix/codex/gpt-6-astra', pools: { codex: ['k1', 'k2'] } };
 
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat('personal') });
@@ -892,7 +893,7 @@ describe('models and keys — a chat runs what its /model picked, on the keys it
     expect(startPlans[0]).toMatchObject({ userId: 'user-1', chosenModel: 'kortix/codex/gpt-6-astra', agentName: 'reviewer' });
     expect(created[0].body).toMatchObject({
       agent_name: 'reviewer',
-      opencode_model: 'kortix/codex/gpt-6-astra',
+      model: 'kortix/codex/gpt-6-astra',
       provider_secret_pools: { codex: ['k1', 'k2'] },
     });
   });
@@ -907,10 +908,10 @@ describe('models and keys — a chat runs what its /model picked, on the keys it
     existingThread = [{
       sessionId: 'sess-existing',
       createdBy: 'user-1',
-      metadata: { opencode_model: 'kortix/codex/gpt-6-astra' },
+      metadata: { model: 'kortix/codex/gpt-6-astra' },
       status: 'running',
     }];
-    channelSelection = { projectId: PROJECT_ID, opencodeModel: 'kortix/deepseek-v4.1-flash' };
+    channelSelection = { projectId: PROJECT_ID, sessionModel: 'kortix/deepseek-v4.1-flash' };
     followUpModel = 'deepseek-v4.1-flash';
 
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });

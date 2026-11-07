@@ -79,7 +79,7 @@ export async function PUT(req: NextRequest) {
     // REQUIRED live push may not have. Dropping it here is what made the UI
     // report a half-applied change as saved. See classifyModelChange.
     return Response.json({
-      model: result.model ?? result.opencode_model,
+      model: result.model,
       appliedLive: result.applied_live,
       ...(result.push_failed ? { pushFailed: true } : {}),
       ...(result.detail ? { detail: result.detail } : {}),

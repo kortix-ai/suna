@@ -9,7 +9,7 @@ import {
 import { fileServerHealthState } from './server-health-state';
 
 /**
- * Check if the active OpenCode server is reachable and healthy.
+ * Check if the active sandbox runtime is reachable and healthy.
  *
  * CONSOLIDATED: This now reads from the sandbox-connection-store (Zustand)
  * which is populated by the single health-check polling loop in
@@ -22,7 +22,7 @@ import { fileServerHealthState } from './server-health-state';
 export function useServerHealth(options?: { enabled?: boolean }) {
   const status = useRuntimeConnectionStore((s) => s.status);
   const runtimeHealthy = useRuntimeConnectionStore((s) => s.healthy);
-  const version = useRuntimeConnectionStore((s) => s.openCodeVersion);
+  const version = useRuntimeConnectionStore((s) => s.harnessVersion);
   // The control plane answered the probe from the session row: the box is
   // asleep, not merely un-ready. `status` does not carry this — nothing clears
   // it when a box parks — so without reading it here the gate opens over a box
@@ -52,7 +52,7 @@ export function useServerHealth(options?: { enabled?: boolean }) {
 }
 
 /**
- * Get current project info from the active OpenCode server.
+ * Get current project info from the active sandbox runtime.
  *
  * CONSOLIDATED: Now uses the same React Query key as useRuntimeCurrentProject
  * (runtimeKeys.currentProject()) to share cache and prevent duplicate fetches.

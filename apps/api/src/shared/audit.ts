@@ -1,3 +1,4 @@
+import { asLegacyWorkspaceRoute } from '@kortix/shared/workspace-routes';
 import { createHash } from 'node:crypto';
 import { type Database, auditEvents } from '@kortix/db';
 import {
@@ -32,7 +33,7 @@ export interface AuditEventInput {
   accountId?: string | null;
   projectId?: string | null;
   sessionId?: string | null;
-  opencodeSessionId?: string | null;
+  runtimeSessionId?: string | null;
   turnId?: string | null;
   messageId?: string | null;
   toolCallId?: string | null;
@@ -80,7 +81,9 @@ export interface AuditEventInput {
   metadata?: Record<string, unknown>;
 }
 
-function pathIds(path: string): { projectId: string | null; sessionId: string | null } {
+function pathIds(rawPath: string): { projectId: string | null; sessionId: string | null } {
+  // `/v1/workspaces/<id>/…` names the same workspace as `/v1/projects/<id>/…`.
+  const path = asLegacyWorkspaceRoute(rawPath);
   const projectMatch = path.match(/\/projects\/([^/]+)/);
   const sessionMatch = path.match(/\/projects\/[^/]+\/sessions\/([^/]+)/);
   const projectId = projectMatch?.[1] && isUuid(projectMatch[1]) ? projectMatch[1] : null;
@@ -95,7 +98,8 @@ function inferResource(path: string): { resourceType: string; resourceId: string
   if (ids.sessionId) return { resourceType: 'project_session', resourceId: ids.sessionId };
   if (ids.projectId) return { resourceType: 'project', resourceId: ids.projectId };
 
-  const parts = path.split('/').filter(Boolean);
+  // A canonical name records the resource its legacy twin always recorded.
+  const parts = asLegacyWorkspaceRoute(path).split('/').filter(Boolean);
   const v1Index = parts.indexOf('v1');
   const root = v1Index >= 0 ? parts[v1Index + 1] : parts[0];
   const id = v1Index >= 0 ? parts[v1Index + 2] : parts[1];
@@ -128,7 +132,8 @@ function actorTypeForSnapshot(
   actorUserId: string | null,
 ): AuditActorType | null {
   const { authType } = snapshot;
-  if (authType === 'service_account') return 'service_account';
+  // An agent key (a workspace key that acts as an agent's identity) is the agent.
+  if (authType === 'service_account') return snapshot.hasAgentGrant ? 'agent' : 'service_account';
   const hasProjectSession =
     authType !== 'supabase' && (snapshot.sessionIdVar != null || snapshot.hasAgentGrant);
   if (hasProjectSession || (authType === 'apiKey' && snapshot.apiKeyType === 'sandbox')) {
@@ -365,7 +370,7 @@ function buildAuditRow(rawInput: AuditEventInput): AuditRow {
     accountId: uuidOrNull(input.accountId || request?.accountId),
     projectId: uuidOrNull(input.projectId || request?.projectId),
     sessionId: input.sessionId || request?.sessionId || null,
-    runtimeSessionId: input.opencodeSessionId ?? null,
+    runtimeSessionId: input.runtimeSessionId ?? null,
     turnId: input.turnId ?? null,
     messageId: input.messageId ?? null,
     toolCallId: input.toolCallId ?? null,
@@ -569,6 +574,9 @@ async function agentAttributionForSnapshot(
   const actor = snapshot.actor as Actor | undefined;
   const credential = actor?.credential;
   if (!credential || credential.kind !== 'agent_session') return null;
+  // A bot key acts as its service account and names no agent: it audits like
+  // the bot's own bearer (actor = the service account).
+  if (credential.serviceAccountKey && !credential.agentGrant) return null;
   try {
     return await resolveAgentAuditAttribution({
       sessionId: credential.sessionId ?? snapshot.sessionIdVar ?? null,
@@ -753,6 +761,15 @@ function anonymousSummaryEvent(summary: AnonymousAuditSummary): AuditEventInput 
 const AUDIT_INGEST_ACTION = 'audit.session.ingest';
 
 /**
+ * Route-label actions whose SUCCESSFUL requests write no row of their own
+ * (packages/shared audit-route-labels). A refused or failed one (status >= 400)
+ * keeps its row.
+ *   audit.session.ingest       the sandbox relay's delivery of audit events:
+ *                              the events it carries are the record
+ */
+const UNAUDITED_ON_SUCCESS: ReadonlySet<string> = new Set([AUDIT_INGEST_ACTION]);
+
+/**
  * Write the one row for an inbound request. Idempotent per scope, and never
  * throws: an audit failure must not fail the request it describes.
  */
@@ -768,11 +785,14 @@ export async function emitInboundAuditRow(scope: InboundAuditScope, status: numb
     // failed or refused request keeps its own row, with the status.
     const standIns = [input.action, ...(routeLabel(scope)?.events ?? [])];
     if (status < 400 && standIns.some((action) => scope.recordedActions.has(action))) return;
-    // The sandbox relay's own delivery of audit events is not an action: the
-    // events it carries are the record. A row per batch (one per 10 s per busy
-    // session) only added load on the table it writes to. A refused or failed
-    // batch (status >= 400) keeps its row.
-    if (status < 400 && input.action === AUDIT_INGEST_ACTION) return;
+    // High-frequency transport that is not an action (`UNAUDITED_ON_SUCCESS`):
+    // the sandbox relay's audit batches (one per 10 s per busy session) and a
+    // co-edited doc's pushes and pulls. A row per request only added load on
+    // the table it writes to. A refused or failed one (status >= 400) keeps its row.
+    if (status < 400 && UNAUDITED_ON_SUCCESS.has(input.action)) return;
+    // A heartbeat the handler marked (`markInboundAuditHeartbeat`): a lease
+    // renewal changed nothing that was not already in force.
+    if (status < 400 && scope.heartbeat) return;
     // A deployed app's public traffic is the customer's end users, not a
     // principal acting on the account. A signed-in viewer is still audited.
     if (scope.entrypoint === 'app_origin' && input.actorType === 'anonymous') return;

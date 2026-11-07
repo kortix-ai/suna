@@ -10,8 +10,8 @@ const getApiUrl = () => platformConfig().backendUrl || '';
 
 // Ported from web's error-handler. User-facing error handling is routed
 // through platformConfig().onError?.() instead of web's handleApiError.
-// The error classes live in ./api/errors — re-exported here so both the
-// root barrel and the `@kortix/sdk/api-client` subpath expose them.
+// The error classes live in ./api/errors — re-exported here so the root
+// barrel exposes them.
 export {
   ApiError,
   AuthError,

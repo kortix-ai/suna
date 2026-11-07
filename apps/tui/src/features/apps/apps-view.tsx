@@ -374,7 +374,7 @@ export function AppsView({
         <box flexDirection="column">
           <text fg={theme.fg}>No Apps yet</text>
           <text fg={theme.faint}>
-            Deploy a static site, bundle, Dockerfile or OCI image from the project directory.
+            Deploy a static site, bundle, Dockerfile or OCI image from a local directory.
           </text>
           {emptyHint ? <text fg={theme.dim}>{`  ${emptyHint}`}</text> : null}
         </box>

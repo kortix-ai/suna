@@ -72,7 +72,7 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'A skill is a directory with a SKILL.md at its root. Frontmatter names it and says when to reach for it; the body is the procedure. Every session can load it, so the thing you explained to one agent in March is still true for every agent in November.':
     'text75b544946dc2',
   'A workforce you can fork': 'text26befd6b522a',
-  'Account-level administration — members, billing, creating projects — is outside the set an agent can hold at all. There is no value you can write in a file that turns that on.':
+  'Workspace administration — members and billing — is outside the set an agent can hold at all. There is no value you can write in a file that turns that on.':
     'text3d8daa98fdbe',
   Actual: 'textc406421c2b35',
   'Add it': 'textc4151430c9f0',
@@ -81,7 +81,7 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Agents & skills': 'text7dcc43066a24',
   'Agents and skills are not rows in a table you cannot see. They are markdown in the repo the cloud computer clones, so changing your workforce is the same act as changing your code — and it gets the same review.':
     'text76a5a9f6ea15',
-  'agents in a new project: a generalist and a memory curator': 'text4b01ba36b85c',
+  'agents in a new workspace: a generalist and a memory curator': 'text4b01ba36b85c',
   'Agents open change requests. Merge is default-deny for an agent and granted explicitly in kortix.yaml — so an agent cannot widen its own reach without a change someone else approves.':
     'text25e8e1211a52',
   'Agents rewrite themselves — and get reviewed for it': 'text5cb597e2c71c',
@@ -94,29 +94,24 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
     'text11c1a5b0fa54',
   'An agent decides whether to load a skill from its name and description alone. A vague description means the skill never fires — which is why the description reads like a list of the things a person would actually say.':
     'textf4b3042a5a94',
-  'An agent has exactly two homes. The markdown file carries how it thinks — its prompt, its mode, its model, its permission tree — and it is a stock OpenCode agent file, because Kortix adds no dialect to it. The manifest block carries what it may touch. Nothing about an agent lives in a database you cannot read.':
-    'text7b6762537105',
   'An agent is': 'text586ce9d865c1',
-  'An agent is an OpenCode agent: markdown at baseline, and past that your own tools, plugins, models and a per-capability permission tree. A grant in kortix.yaml decides what it reaches — its machine, its connectors and channels, its secrets, its skills. A skill encodes how your company does one specific job. Both are files in your repo. Both are reviewed like code.':
-    'texte1e906a3a02b',
   'An agent never exceeds its human': 'text467d579386a6',
   'An agent’s block lists the secrets it may use by name — identifiers, never values. A session receives only the intersection of that grant and the role of whoever started it.':
     'texta548eb412acd',
-  'An OpenCode agent, plus its grants': 'textc859e57c7ce7',
   API: 'textc8e5998f6a39',
   ask: 'text2f2fc7f2e9ce',
   'Audit trail': 'textc1ada08ce138',
   'bank feed sync': 'textdc6d1d15031b',
-  'Because it is all text in one repo, you can branch your whole workforce, try a different set of grants, roll it back, or hand the lot to a new project. The configuration travels with the clone.':
+  'Because it is all text in one repo, you can branch your whole workforce, try a different set of grants, roll it back, or hand the lot to a new workspace. The configuration travels with the clone.':
     'textc0e1f163ffe0',
   Bedrock: 'text4b7159920f77',
   'Blocked outright. Not a warning — a wall.': 'text14252254ce31',
   'Both land via': 'texta5b1c9fd89fc',
   'Brand & content': 'text6c8a12831e1d',
-  'Browse agents, skills and whole projects, add one to your project in a click, and what arrives is files in your repo — not a dependency you rent. It is labelled beta because sources and updates are still moving, and it is on for every project.':
+  'Browse agents, skills and whole workspaces, add one to your workspace in a click, and what arrives is files in your repo — not a dependency you rent. It is labelled beta because sources and updates are still moving, and it is on for every workspace.':
     'text0970b91b1fea',
   'Browse the marketplace': 'textfd5be8c298fd',
-  'Browse the marketplace without signing in. Kortix ships its own registry — 62 agents, 61 skills and 62 project templates — and you can switch on curated outside registries with one click. None load by default.':
+  'Browse the marketplace without signing in. Kortix ships its own registry — 62 agents, 61 skills and 62 workspace templates — and you can switch on curated outside registries with one click. None load by default.':
     'text43298f298ad8',
   'Build the workforce': 'text63803e6b696c',
   'Builds the outbound campaign and runs it.': 'textdf0b5ba1b462',
@@ -130,7 +125,7 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   contacted: 'text943d10d61cf6',
   'Context & Connections': 'text7847decf864b',
   'Cost centre': 'text391fb7ff81a1',
-  'curates the project brain on a cron': 'textbb5f8be51296',
+  'curates the workspace brain on a cron': 'textbb5f8be51296',
   'Customize is deliberately read-only. Pressing “Create new” or “Edit” opens a session that edits the files on a branch and opens a change request you review and merge. There is no button that silently changes how an agent behaves tomorrow.':
     'text0ce6beab574f',
   'Data Science': 'textf25168f39ae8',
@@ -152,8 +147,8 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Every tool your company runs on, connected once and shared across agents and people, so everyone works from the same picture. 3,000+ apps in a click, plus MCP, OpenAPI, GraphQL and raw HTTP.':
     'textb21276f9e4bb',
   'Everything is files': 'text81c55672efb4',
-  'Excerpt of a skill that ships in every new project.': 'text0bc2032da091',
-  'Excerpt of the default agent in every new Kortix project.': 'textbb650fd852da',
+  'Excerpt of a skill that ships in every new workspace.': 'text0bc2032da091',
+  'Excerpt of the default agent in every new Kortix workspace.': 'textbb650fd852da',
   'Export times out over 10k rows': 'textb39845ffaebd',
   'Filter state lost on reload': 'textd1d6f38c037e',
   Finance: 'textb696d75511dc',
@@ -204,8 +199,6 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Large Language Models': 'text0340bfb383fc',
   left: 'text360f84035942',
   Linear: 'texte6950b45d25c',
-  'Markdown is the floor, not the ceiling: the whole OpenCode surface sits beside it in the same repo — your own TypeScript tools, plugins that hook the runtime, the model and provider config. An agent can pin its own model, or inherit the project, account and platform default in that order.':
-    'text65c114ca4304',
   Marketing: 'textf5904cf7a123',
   'marketing/seo-weekly.xlsx': 'text303a578ba016',
   Marketplace: 'textc608981d8d68',
@@ -220,11 +213,10 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'No systems depth': 'textdfa2cff42f0c',
   Notion: 'text73bcfe98830b',
   'Onboarding called out as good': 'textea067db7a54e',
-  'One button. It starts an agent session that reads the item’s source and merges what fits into your project’s own files, rather than dropping a package in and hoping.':
+  'One button. It starts an agent session that reads the item’s source and merges what fits into your workspace’s own files, rather than dropping a package in and hoping.':
     'text8338ea9fb932',
   'one directory per skill': 'text3bf308e3b077',
   'One machine per session': 'text6590dfdb580e',
-  'one OpenCode agent per file': 'text18a59ffd5fa8',
   'One platform': 'text708bb99739ea',
   'One thing this is not: a package manager. There is no lockfile, no version pin and no automatic update — an item you add becomes your own files, exactly like code you wrote. That is a deliberate trade, and it is the one we would make again.':
     'textcd3fefb94c04',
@@ -234,8 +226,6 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or fully on-prem.':
     'text1d9a8dde5629',
   OpenAI: 'text8b7d1a3187ab',
-  OpenCode: 'text3af0e55ccc96',
-  'OpenCode-native · Versioned · Deny by default · Human-merged': 'textb82db800b29f',
   OpenRouter: 'texteb70c3bc14fa',
   'ops@northwind.example': 'text44c4865ba52b',
   'Outbound, error triage, the books, the Monday report — real jobs, on real machines, landing as changes you can read.':
@@ -288,7 +278,7 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Set one action for a whole capability — read, edit, bash, task, websearch, or reaching outside the workspace — or add glob rules underneath it, so git push asks while everything else is allowed.':
     'text8591ccff74ef',
   Signal: 'text1e9806e4227b',
-  'skills committed into a new project repo on day one': 'text5237227aa130',
+  'skills committed into a new workspace repo on day one': 'text5237227aa130',
   Slack: 'textb27fb38ba323',
   'skills/agent-browser/SKILL.md': 'text1bda825417f9',
   'SOC 2': 'text307197603f08',
@@ -309,13 +299,11 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
     'text035c0a5dcf1d',
   'The description is the trigger': 'text9f0729000e20',
   'The editor writes a branch, not a row': 'textab0cd0201348',
-  'the generalist, in every project': 'text573c97ef1fcf',
+  'the generalist, in every workspace': 'text573c97ef1fcf',
   'The grant block covers the whole surface, not just tools: which sandbox image the agent boots, which connectors and channels it may call, which secrets it may receive, which skills it may invoke, and what it may do to Kortix itself. An agent with no grants gets none of it. You grant explicitly, or the answer is no — and on top of that sits a ceiling nothing in the config can lift.':
     'text2abfd058360d',
   'The grant that applies at session start is what the agent declares, intersected with the role of whoever launched it. Grant an agent everything and it still gets exactly your own permissions — no more, on any path.':
     'textea25cb521ec9',
-  'The layer that turns a model into an agent: planning, tool use, and multi-step runs it actually finishes. Fully customizable and powered by OpenCode, so the way your agents think is yours to edit.':
-    'textcd3a5d4a1364',
   'The leading open-source alternative to': 'text3d40244f591d',
   'The manifest rejects a behavioral field in the governance block, with an error pointing at the agent’s own .md file.':
     'textec69732f4600',
@@ -333,7 +321,7 @@ export const AGENTS_LANDING_TRANSLATION_KEYS: Readonly<Record<string, string>> =
   'Thousands in parallel': 'text6643779e9647',
   Total: 'textc9b3c38247f7',
   'Turns what users say into what ships.': 'text5ec9729027c3',
-  'Two agents ship in every new project: kortix, the generalist, and memory-reflector, which curates the project brain.':
+  'Two agents ship in every new workspace: kortix, the generalist, and memory-reflector, which curates the workspace brain.':
     'textf475451ba670',
   'Two files: {skill} behind, and {agent} in front.': 'texta442c09ab113',
   'Two files. No hidden object behind them.': 'texte935b72cac56',

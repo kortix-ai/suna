@@ -292,7 +292,6 @@ export function FileTreeItem({
           !gitStatus &&
             node.name.startsWith('.') &&
             node.name !== '.kortix' &&
-            node.name !== '.opencode' &&
             'opacity-50',
         )}
       >

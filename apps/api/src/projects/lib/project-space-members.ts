@@ -114,7 +114,7 @@ function notProjectMembers(ids: string[]): { error: MembersError } {
   return {
     error: {
       status: 400,
-      body: { error: 'Only members of the project can be added to a channel.', code: 'not_project_member', user_ids: ids },
+      body: { error: 'Only members of the workspace can be added to a channel.', code: 'not_project_member', user_ids: ids },
     },
   };
 }
@@ -123,10 +123,15 @@ function notProjectMembers(ids: string[]): { error: MembersError } {
 export async function insertSpaceMembers(spaceId: string, userIds: readonly string[], addedBy: string): Promise<void> {
   const unique = [...new Set(userIds)];
   if (unique.length === 0) return;
-  await db
+  const added = await db
     .insert(projectSpaceMembers)
     .values(unique.map((userId) => ({ spaceId, userId, addedBy })))
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning({ userId: projectSpaceMembers.userId });
+  // A watched channel's feed (`spaces_proactive`): who joined. Off the request's path.
+  void import('./space-watch/act')
+    .then(({ recordMembersJoined }) => recordMembersJoined(spaceId, added.map((row) => row.userId)))
+    .catch(() => undefined);
 }
 
 /** The ids of `userIds` that are not people of the project; empty when all are. */
@@ -193,8 +198,8 @@ export async function removeSpaceMember(
       error: {
         status: 403,
         body: creator
-          ? { error: 'Only a project manager can remove the channel’s creator.', code: 'creator_not_removable' }
-          : { error: 'Only the channel’s creator or a project manager can remove other people.', code: 'forbidden' },
+          ? { error: 'Only a workspace manager can remove the channel’s creator.', code: 'creator_not_removable' }
+          : { error: 'Only the channel’s creator or a workspace manager can remove other people.', code: 'forbidden' },
       },
     };
   }

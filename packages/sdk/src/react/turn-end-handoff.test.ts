@@ -39,7 +39,7 @@ const RUNNING: SessionTurnStatus = {
       turn_token: 'T1',
       state: 'active',
       message_id: 'm1',
-      opencode_session_id: 'oc1',
+      runtime_session_id: 'oc1',
       started_at: null,
       accepted_at: null,
     },
@@ -263,7 +263,7 @@ describe('useTurnEndHandoff', () => {
       onError: (error) => errors.push(error),
       fetch: async (input) => {
         const url = String(input instanceof Request ? input.url : input);
-        if (!url.endsWith('/projects/P1/sessions/S1/turn')) return new Response('{}', { status: 404 });
+        if (!url.endsWith('/workspaces/P1/sessions/S1/turn')) return new Response('{}', { status: 404 });
         turnReads++;
         return turnReads === 1
           ? new Response(JSON.stringify({ error: 'boom' }), { status: 500 })
@@ -355,7 +355,7 @@ describe('useTurnEndHandoff', () => {
     unmount(mount(page()));
     await settle();
     expect(urls).toHaveLength(1);
-    expect(urls[0]).toContain('/projects/P1/sessions/S1/events');
+    expect(urls[0]).toContain('/workspaces/P1/sessions/S1/events');
     push(control(1, 'kortix.control.session', { known: true }));
     push(control(2, 'kortix.control.turn', { known: true, turns: RUNNING.turns }));
     await settle();

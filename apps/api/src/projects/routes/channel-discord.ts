@@ -20,6 +20,7 @@ import { AnyObject, projectsApp } from '../lib/app';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import type { AppEnv } from '../../types';
 import { channelContext, channelNotConnected, registerChannelAccessRoutes } from './channel-access';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const UserIds = z.array(z.string().regex(DISCORD_USER_ID)).max(CHANNEL_MAX_ALLOWED_USERS);
 
@@ -34,18 +35,18 @@ export function registerChannelDiscordRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/channels/discord/mode',
+      path: '/{workspaceId}/channels/discord/mode',
       tags: ['channels'],
       summary: 'Whether Discord is available, and the Add to Discord link',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: json(z.object({ available: z.boolean(), install_url: z.string().nullable() }), 'OK'),
         ...errors(403, 404),
       },
     }),
     async (c: Context<AppEnv>) => {
-      const projectId = c.req.param('projectId') ?? '';
+      const projectId = workspaceIdParam(c) ?? '';
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       if (!discordConfigured()) return c.json({ available: false, install_url: null }, 200);
@@ -60,11 +61,11 @@ export function registerChannelDiscordRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/channels/discord/installation',
+      path: '/{workspaceId}/channels/discord/installation',
       tags: ['channels'],
       summary: 'Get the Discord server installation',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: { 200: json(z.any(), 'OK'), ...errors(403, 404) },
     }),
     async (c: Context<AppEnv>) => {
@@ -79,12 +80,12 @@ export function registerChannelDiscordRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/channels/discord/oauth/complete',
+      path: '/{workspaceId}/channels/discord/oauth/complete',
       tags: ['channels'],
       summary: 'Complete the Add to Discord install',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: z.object({ code: z.string().min(1).max(512), state: z.string().min(1).max(4096) }) } } },
       },
       responses: {
@@ -93,7 +94,7 @@ export function registerChannelDiscordRoutes(): void {
       },
     }),
     async (c: Context<AppEnv>) => {
-      const projectId = c.req.param('projectId') ?? '';
+      const projectId = workspaceIdParam(c) ?? '';
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
@@ -108,12 +109,12 @@ export function registerChannelDiscordRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/channels/discord/allowed-users',
+      path: '/{workspaceId}/channels/discord/allowed-users',
       tags: ['channels'],
       summary: 'Set the Discord users allowed to talk to the bot',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         // `{ user_ids: string[] }`, validated in the handler so every refusal carries a `code`.
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
@@ -133,11 +134,11 @@ export function registerChannelDiscordRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/channels/discord',
+      path: '/{workspaceId}/channels/discord',
       tags: ['channels'],
       summary: 'Disconnect the Discord server',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: { 200: json(z.object({ ok: z.boolean() }), 'OK'), ...errors(403, 404) },
     }),
     async (c: Context<AppEnv>) => {

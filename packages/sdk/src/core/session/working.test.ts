@@ -21,7 +21,7 @@ function turn(overrides: Partial<SessionTurn> = {}): SessionTurn {
     turn_token: 'tt-1',
     state: 'active',
     message_id: 'msg_01',
-    opencode_session_id: 'ses_01',
+    runtime_session_id: 'ses_01',
     started_at: new Date(T0).toISOString(),
     accepted_at: null,
     ...overrides,

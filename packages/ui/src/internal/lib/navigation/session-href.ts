@@ -2,8 +2,8 @@
 
 import { uiRoutes } from '../../../lib/routes';
 import { useSessionIds } from '../../../providers/session-ids';
-import { MESSAGE_LINK_AT_PARAM, MESSAGE_LINK_PARAM } from '../../../session/thread/message-link';
-import { RUNTIME_SESSION_PARAM } from '../../../session/tool/tools/session-spawn-urls';
+import { MESSAGE_LINK_AT_PARAM, MESSAGE_LINK_PARAM } from './message-link';
+import { RUNTIME_SESSION_PARAM } from './session-spawn-urls';
 
 /**
  * The real, routable URL for a session.
@@ -16,7 +16,7 @@ import { RUNTIME_SESSION_PARAM } from '../../../session/tool/tools/session-spawn
  * appears to work; the URL only betrays itself on reload or Back, which land on
  * a 404.
  *
- * Every caller sits inside `/projects/[id]/...`, so the project id is always
+ * Every caller sits inside `/workspaces/[id]/...`, so the project id is always
  * available from the route. Build the honest URL and the address bar, Back,
  * reload, and "copy link" all agree with what is on screen.
  */

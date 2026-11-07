@@ -38,6 +38,8 @@ import {
   upsertCreditAccount,
 } from '../repositories/credit-accounts';
 import { invalidateAccountBilling } from './billing-cache';
+import { isPaidTier } from './tier-facts';
+import { logger } from '../../lib/logger';
 
 export type AccountPatch = Partial<typeof creditAccounts.$inferInsert>;
 
@@ -101,6 +103,9 @@ export const ADMIN_OWNED_FIELDS = [
   'trialEndsAt',
   'trialNote',
   'trialGrantedBy',
+  // A split-off workspace's comped plan (design.md §3.2 C6): written by
+  // split-off-billing.ts through applyAdminOverride, never by a provider sync.
+  'compPlanUntil',
 ] as const;
 
 /**
@@ -131,7 +136,7 @@ export class AccountWriteOwnershipError extends Error {
 }
 
 /** The subset of a `credit_accounts` row the pin rule reads. */
-export type PinnableAccount = { tier?: string | null } | null;
+export type PinnableAccount = { tier?: string | null; compPlanUntil?: string | null } | null;
 
 /**
  * Is this account's tier owned by an operator rather than by the provider?
@@ -142,6 +147,11 @@ export type PinnableAccount = { tier?: string | null } | null;
  */
 export function accountIsAdminPinned(account: PinnableAccount): boolean {
   return account?.tier === 'enterprise';
+}
+
+/** True while the account holds a split-off comp (`comp_plan_until` in the future). */
+export function accountHoldsComp(account: PinnableAccount, now: Date = new Date()): boolean {
+  return Boolean(account?.compPlanUntil && new Date(account.compPlanUntil) > now);
 }
 
 export interface StripeSyncContext {
@@ -215,6 +225,17 @@ export async function applyStripeSync(
         `[write-owner] applyStripeSync${label}: skipping tier='${String(next.tier)}' for ${accountId} — the account is on Enterprise. Every other provider field is still applied.`,
       );
       delete next.tier;
+    } else if (accountHoldsComp(account ?? null) && !isPaidTier(String(next.tier ?? 'none'))) {
+      // A comped split-off has no subscription, so no provider fact can end
+      // its plan. Only a paid tier from a subscription it bought replaces it.
+      logger.warn('[write-owner] applyStripeSync: skipping a non-paid tier over a split-off comp', {
+        reason: ctx.reason ?? null,
+        accountId,
+        tier: String(next.tier),
+        compPlanUntil: account?.compPlanUntil ?? null,
+      });
+      delete next.tier;
+      delete next.planMonthlyUsd;
     }
   }
 
@@ -225,13 +246,20 @@ export async function applyStripeSync(
     return;
   }
 
+  // A closed account (`payment_status = 'deleted'`) is terminal: no provider
+  // write moves it, whatever the webhook says. The guard is in the statement.
   if (ctx.mode === 'update') {
-    await updateCreditAccount(accountId, next);
+    await updateCreditAccount(accountId, next, { unlessDeleted: true });
   } else {
-    await upsertCreditAccount(accountId, next);
+    await upsertCreditAccount(accountId, next, { unlessDeleted: true });
   }
 
   invalidateAccountBilling(accountId);
+}
+
+/** A closed account: `payment_status = 'deleted'` (account-deletion.ts). Terminal. */
+export function isClosedBillingAccount(account: { paymentStatus?: string | null } | null | undefined): boolean {
+  return account?.paymentStatus === 'deleted';
 }
 
 /**

@@ -17,13 +17,13 @@ export function validateConnectorSecretBinding(
   if (input.secretIdentifier === null) return null;
   if (!input.requiresAuth || input.provider === 'channel') {
     return {
-      error: 'This connector does not accept a project secret credential',
+      error: 'This connector does not accept a workspace secret credential',
       status: 409,
     };
   }
   if (input.hasStoredCredential) {
     return {
-      error: 'Disconnect the stored connector credential before binding a project secret',
+      error: 'Disconnect the stored connector credential before binding a workspace secret',
       status: 409,
     };
   }

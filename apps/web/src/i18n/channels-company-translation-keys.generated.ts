@@ -7,7 +7,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   '      image: python:3.12-slim': 'text0e7e46a78843',
   '      memory: 4': 'text9e4c8fccd622',
   '      memory/ and open one change request': 'text073fce23e704',
-  '      Reflect on the last 24 hours of project': 'texta0d80d6f8177',
+  '      Reflect on the last 24 hours of workspace': 'texta0d80d6f8177',
   '      requests and session digests. Update': 'textc236204dab7f',
   '      there is no durable knowledge.': 'texteb5c07bfd7b7',
   '      titled `memory: ...`. Exit without one when': 'text97adfba5ca4f',
@@ -48,11 +48,9 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   '  - slug: gmail-read': 'textc5fe821106fd',
   '  - slug: memory-reflector': 'text8012e38cdeb6',
   '  - slug: support-inbox': 'text2a53504249e4',
-  '  "$schema": "https://opencode.ai/config.json",': 'texte0eb65e020e7',
   '  "default_agent": "kortix",': 'text3e2a105fd278',
   '  "permission": "allow"': 'text214c21aedcef',
   '  "theme": "system",': 'text9c4061948874',
-  '  // Docs: https://opencode.ai/docs/': 'text797041ba00c3',
   '  // policy.': 'textf4510b04848b',
   '  // The session is already an isolated machine on a': 'text77101dffaadc',
   '  // throwaway branch, so the agent starts wide open.': 'textfe03288dc0ba',
@@ -119,7 +117,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
     'text464cf293fd24',
   'A bad instruction went in on Tuesday? Read the diff, revert the commit, open a change request. The company goes back to how it was.':
     'textf253241a4f3c',
-  'A channel is a chat platform bound to a project — a closed set of four, not an open field. Here is the real state of each one, including the parts a marketing page usually leaves out.':
+  'A channel is a chat platform bound to a workspace — a closed set of four, not an open field. Here is the real state of each one, including the parts a marketing page usually leaves out.':
     'text99ca9eb883cc',
   'A channel is only worth connecting if the answer arrives where the question was asked. Files go both directions, and the decisions an agent needs from you are buttons in the thread rather than a link to somewhere else.':
     'textdc70ef3b3338',
@@ -129,13 +127,13 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'A commit you can diff and revert': 'text361b73d4cf43',
   'A company is going to be a git repository.': 'texte2189e484c2d',
   'A company you can clone': 'text929e6e7385a0',
-  'A connected channel’s token is a connector-scoped secret. It does not appear on the project’s Secrets page, and Kortix never injects it into a cloud computer. It is resolved server-side at the moment the agent sends a message.':
+  'A connected channel’s token is a connector-scoped secret. It does not appear on the workspace’s Secrets page, and Kortix never injects it into a cloud computer. It is resolved server-side at the moment the agent sends a message.':
     'text33455b560348',
   'A file dropped in the thread is pulled into the agent’s cloud computer. A file the agent produces is uploaded back into the same thread. The deck lands where you asked for the deck.':
     'textfd060941db0c',
   'A message in Slack gets no privileges a session in the dashboard would not get. The surface changes. Nothing underneath it does.':
     'text873801d305b0',
-  'A project inbox, so a message to an address starts a session and a reply continues it. Opt in per project under Customize → Feature flags. Real, and not finished.':
+  'A workspace inbox, so a message to an address starts a session and a reply continues it. Opt in per workspace under Customize → Feature flags. Real, and not finished.':
     'text50b5b8b516f3',
   'A prompt change looks like a code change': 'text4ca72552acdf',
   'A session runs on its own machine on its own branch. Nothing it does touches the repo until it commits and opens a change request.':
@@ -180,7 +178,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   Configuration: 'textb332c3492d5e',
   'Connect it': 'text00ff22485ed6',
   'Connect Slack': 'textaa665ddf2727',
-  'Connect Slack to a project and a message in a thread starts a session. The agent picks up its own cloud computer, does the work, and answers in the same thread. Nobody has to open a new tool to ask for something.':
+  'Connect Slack to a workspace and a message in a thread starts a session. The agent picks up its own cloud computer, does the work, and answers in the same thread. Nobody has to open a new tool to ask for something.':
     'texte13fb68bb804',
   'Connecting writes a channel connector into kortix.yaml for you. You never hand-write that entry.':
     'text5b50b847365e',
@@ -207,7 +205,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
     'textd028c565d0f3',
   'Fork it for a second business unit. Branch it to try a different set of agents. Hand the whole thing to a new team and they get the skills, the memory and the grants with it.':
     'textc22bea667103',
-  'From the starter template. Every new project ships with it, switched off.': 'text3eb54d5ae20d',
+  'From the starter template. Every new workspace ships with it, switched off.': 'text3eb54d5ae20d',
   'From the thread': 'textba9b3136ea65',
   'grep your whole company.': 'textf9e0dab461a6',
   'History you can prove': 'text6e01738cffed',
@@ -244,12 +242,10 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'kortix.yaml': 'text1965f383021e',
   'kortix.yaml — triggers': 'text6e68758082bc',
   'kortix.yaml grants': 'text9c9582a7f332',
-  'kortix.yaml is the Kortix layer: the machine sessions boot on, the connectors, the triggers, the secret names, and what each agent is allowed to touch. The OpenCode config is the runtime the agents think in. Everything past those two is files in the repo.':
-    'textbd49211479cd',
   'launch-note.md': 'textdd6b0b63da5a',
   'launch-note.md · +64 −0': 'textbbd67a03b342',
   'Link or unlink your chat identity to your Kortix account': 'textc562664bad32',
-  'List the projects you can bind this channel to': 'text095830453d5a',
+  'List the workspaces you can bind this channel to': 'text095830453d5a',
   'List the recent sessions started from this workspace': 'text61715eaa9236',
   Live: 'textb64ac05f17e6',
   'Live session state': 'text76aee83bb47b',
@@ -266,7 +262,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'No reply relay. A real channel streams the answer back for you; here the agent has to send the outbound message itself, through a connector you have granted it. Inbound is solved. Outbound is your wiring.':
     'text81c1677c6fc1',
   'northwind — main': 'text6d97796afbde',
-  'Not as a metaphor. A Kortix project is a git repo, and that repo is the company: its agents, the skills it has built up, everything it has learned, and the definition of the machines all of it runs on. Versioned. Diffable. Owned outright.':
+  'Not as a metaphor. A Kortix workspace is backed by a git repo, and that repo is the company: its agents, the skills it has built up, everything it has learned, and the definition of the machines all of it runs on. Versioned. Diffable. Owned outright.':
     'textf1a43c68a361',
   'Nothing merges itself': 'text956d3b01e6ca',
   'On a card, in the thread': 'textbcd03103c8c1',
@@ -279,7 +275,6 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'One honest limit: the card carries the decision and a link back into Kortix. Reading the actual diff of a change request happens in the web app, where a diff belongs — Slack is not a code review tool and we are not going to pretend it is.':
     'text635ccd16e45c',
   'One is live. Three are behind a switch. We will say which.': 'text738439725624',
-  'one OpenCode agent per file': 'text18a59ffd5fa8',
   'One repo': 'texta086ad00c629',
   'One search, whole company': 'text0948fa9a3378',
   'One session per conversation. session_key renders from the payload, so a single trigger fans out into a session per chat, per customer, or per repository — separate threads rather than one blended transcript.':
@@ -290,8 +285,6 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or fully on-prem.':
     'text1d9a8dde5629',
   'Open the repo': 'text1fa449139a48',
-  'OpenCode, declared in the repo': 'text8eb07f243576',
-  'opencode:': 'text4ba79f911c93',
   'opened by invoice-clerk': 'textad42c6b4c691',
   'Operator switch': 'text7d92aa0e75c4',
   owner_approval: 'text76f126541788',
@@ -299,8 +292,6 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'permission:': 'textefde4d0d22b4',
   project_open: 'text7053053ce5eb',
   'project:': 'text633dcfcb4a68',
-  'Prompts, models, tools, plugins and permissions. An agent is a stock OpenCode agent — markdown at baseline, and past that the tools, plugins and model config sitting beside it in the same repo. Read the directory and you know exactly what that agent will do.':
-    'text6e3e333d775c',
   'Put it in the thread people already use.': 'text586e55500de2',
   'Reach it where people already work.': 'text438420b155ba',
   'read once, used every session': 'text91549baf8cfd',
@@ -309,13 +300,12 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'Read the manifest spec': 'text4f840cd7cf01',
   'Reading the changelog since v0.9. Drafting launch-note.md on this session’s branch.':
     'text43daf9c5f6cf',
-  'Rebind this channel to a different project, or unbind it': 'text72e3213c16d7',
+  'Rebind this channel to a different workspace, or unbind it': 'text72e3213c16d7',
   'Reviewed by a person, then merged to main': 'text402ce0e016a1',
   'Run it on Kortix Cloud, in your own VPC, or fully on-prem. Read the code, fork it, audit it. Nobody rents your company back to you.':
     'text5b4d78bf9475',
-  'Run the project without leaving the conversation.': 'text429be41120e9',
+  'Run the workspace without leaving the conversation.': 'text429be41120e9',
   Runtime: 'text109311589787',
-  'runtime: opencode': 'text02bb33646c32',
   'Same rules': 'text24c56b85c01b',
   'sandbox:': 'textdb84fa521ad4',
   'Secret values': 'text036141a7185f',
@@ -323,15 +313,14 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   session: 'text3f3af1ecebbd',
   'Set the agent and the model this channel uses': 'textbec01940880b',
   'Set who may start a session here': 'text57cf25efcab3',
-  'Show the panel: project, agent, model, policy, linked identity': 'text4f24019e2cad',
+  'Show the panel: workspace, agent, model, policy, linked identity': 'text4f24019e2cad',
   'skill: reconcile-invoices — handle partial refunds': 'textf634a2b6f327',
   Slack: 'textb27fb38ba323',
   'Slack today · Teams and email behind a switch': 'textca8c5b97d6c5',
   'Someone mentions the bot': 'text52b7ad21e9cb',
-  'Start a project': 'text58265cc01151',
+  'Start a workspace': 'text58265cc01151',
   'Telegram, WhatsApp, SMS and Discord are not channels, and this page will not imply they are on a roadmap it cannot promise. There is also no build-your-own-channel API — the platform list is a closed enum. What there is instead is a signed webhook trigger, and we would rather tell you its limits than sell you the word "extensible".':
     'textd447ff3bae61',
-  'The agent — a stock OpenCode agent file. What it says lives here.': 'text11e51402c1de',
   'The agent answers in the thread. Work it means to keep is committed on the session’s own branch and reaches main only through a change request a person reviews.':
     'textf25f2920368a',
   'The agent works': 'text3a259d3f4995',
@@ -342,7 +331,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'The company learns one approved commit at a time.': 'text8bf9bebf8b3c',
   'The dashboard uses the same install flow as the CLI. Neither one is the real one.':
     'text1a4a6a7b9294',
-  'The default. Any project member who mentions the bot gets a session.': 'text9b5de1279837',
+  'The default. Any workspace member who mentions the bot gets a session.': 'text9b5de1279837',
   'The definition': 'text018069eabbfd',
   'The first message in a thread creates a session. Every later message in that thread reaches the same session — after the sandbox stops overnight, after the person who started it goes home. That mapping is a unique index in the database, not a convention two services agree to honour.':
     'text1f926d1359b8',
@@ -353,7 +342,6 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
     'text3f5c55e70abc',
   'The manifest names secrets and grants them per agent. The values are encrypted in the platform, injected into the machine at runtime, and never written to the repo or the logs.':
     'text71971aadbf54',
-  'The OpenCode config decides': 'textc681d401ded0',
   'The reply lands': 'text52c4b3e90433',
   'The reply lands in the thread as one message that fills in, not a wall of updates. The agent finalises that message rather than posting a second one underneath it.':
     'text1b7b2078f271',
@@ -376,7 +364,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'Three answers to “who may start a session here”': 'text6a1d566e085f',
   'triggers:': 'text84e857cba73b',
   'Turn a directory into a company.': 'text80146a436b03',
-  'Two events for the same brand-new thread arriving at once do not produce two sessions: the second joins the first and is delivered as a follow-up. One Slack workspace bound to more than one project shows a project picker on the first mention instead of guessing.':
+  'Two events for the same brand-new thread arriving at once do not produce two sessions: the second joins the first and is delivered as a follow-up. One Slack workspace bound to more than one Kortix workspace shows a workspace picker on the first mention instead of guessing.':
     'text15b963086594',
   'Two files define the company.': 'textc6208e337ba1',
   'Type these as /kortix <command> in Slack, or as plain text in a direct message. Most of what you would otherwise open the dashboard for is one line in the channel.':
@@ -393,7 +381,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
     'text00f8ca92de43',
   'Which machine, which connectors, which secrets, which skills, which CLI verbs. Governance only. Omit a grant and it resolves to none — an agent gets what you gave it and nothing else.':
     'textec497eddd428',
-  'Which Slack or Teams channel reaches which agent is live project state, set in the dashboard. Connecting one adds a connector the agents can call.':
+  'Which Slack or Teams channel reaches which agent is live workspace state, set in the dashboard. Connecting one adds a connector the agents can call.':
     'texteea46666b98e',
   'Work lands via': 'text230c0a4b3c33',
   'You are the invoice clerk for Northwind.': 'textf78d11e838cf',
@@ -401,6 +389,6 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'You switch it on': 'text4e32fa98498b',
   'Yours to take': 'text18d270539067',
   'Two are live. One is experimental. We will say which.': 'text7d7b98240405',
-  'On for every project, no flag. A tenant admin consents once, or a project brings its own bot app. Same sessions, same identity rules as Slack.':
+  'On for every workspace, no flag. A tenant admin consents once, or a workspace brings its own bot app. Same sessions, same identity rules as Slack.':
     'textb60c863bbacb',
 };

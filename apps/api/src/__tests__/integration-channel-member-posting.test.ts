@@ -82,10 +82,10 @@ const prompt = (sessionId: string, secret: string, agent?: string, project = PRO
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'channel-posting' });
-  const metadata = { experimental: { project_channels: true }, default_agent: 'kortix' };
+  const metadata = { experimental: { chat: true }, default_agent: 'kortix' };
   await db.insert(projects).values([
-    { projectId: PROJECT, accountId: ACCOUNT, name: 'Posting', repoUrl: 'https://example.test/p.git', metadata },
-    { projectId: FLAG_OFF_PROJECT, accountId: ACCOUNT, name: 'Off', repoUrl: 'https://example.test/o.git', metadata: { default_agent: 'kortix' } },
+    { splitPending: true, projectId: PROJECT, accountId: ACCOUNT, name: 'Posting', repoUrl: 'https://example.test/p.git', metadata },
+    { splitPending: true, projectId: FLAG_OFF_PROJECT, accountId: ACCOUNT, name: 'Off', repoUrl: 'https://example.test/o.git', metadata: { default_agent: 'kortix' } },
   ]);
   for (const id of USERS) {
     await db.execute(sql`
@@ -172,7 +172,7 @@ describe('a member with no agent grant posts in a channel', () => {
     expect((await prompt(S.pOut, keys[MEMBER]!)).status).toBe(404);
   });
 
-  test('with project_channels off, the agent grants alone decide: 403', async () => {
+  test('with chat off, the agent grants alone decide: 403', async () => {
     const res = await prompt(S.flagOff, keys[MEMBER]!, undefined, FLAG_OFF_PROJECT);
     expect(res.status).toBe(403);
   });

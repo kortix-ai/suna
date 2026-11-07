@@ -1,20 +1,22 @@
 /**
- * Slack turn-error classification — turns an opencode turn failure into honest,
+ * Slack turn-error classification — turns a runtime turn failure into honest,
  * human copy for the thread.
  *
  * Before this, a run that died (out of credits, rate-limited, provider auth) was
  * relayed to Slack as a blank "_This run ended without a reply._" or a generic
  * "_The run hit an error._" — so a workspace whose credits ran out looked simply
  * broken, even though the web UI said exactly what happened. This mirrors the web
- * UI's classifier (features/session/session-error-banner.tsx) and goes further:
- * every opencode error type gets specific, non-alarming, actionable copy, and we
+ * UI's classifier (packages/ui/src/session/status/session-error-banner.tsx) and goes further:
+ * every runtime error type gets specific, non-alarming, actionable copy, and we
  * never dump raw provider jargon (5xx HTML, safety text) into a public thread.
  *
- * Input is the flattened opencode error (AssistantMessage.error / session.error):
+ * Input is the flattened runtime error (AssistantMessage.error / session.error):
  *   { name, message, statusCode, isRetryable, providerID } where `name` is one of
- *   opencode's error names (ProviderAuthError | APIError | MessageAbortedError |
- *   MessageOutputLengthError | UnknownError) and `statusCode` is the upstream HTTP
- *   status for an APIError (402, 429, 401, 5xx, …).
+ *   the OpenCode-shaped error names the runtime reports (ProviderAuthError |
+ *   APIError | MessageAbortedError | MessageOutputLengthError |
+ *   ContextOverflowError | UnknownError; pi's mapping is `assistantMessageError`
+ *   in kortixd's harness/pi/turn-events.ts) and `statusCode` is the upstream
+ *   HTTP status when the error carries one (402, 429, 401, 5xx, …).
  *
  * A daemon built for W5 also sends `code` (`TurnErrorCode`), its own
  * classification of the failure. A specific code decides the bucket; `unknown`
@@ -88,7 +90,7 @@ function isInsufficientCredits(status: number | undefined, lower: string): boole
   );
 }
 
-// Provider throttling or a plan cap — opencode retries these, so by the time the
+// Provider throttling or a plan cap — the runtime retries these, so by the time the
 // turn ends with one it genuinely couldn't finish.
 function isUsageLimit(status: number | undefined, lower: string): boolean {
   if (status === 429) return true;
@@ -100,10 +102,10 @@ function isUsageLimit(status: number | undefined, lower: string): boolean {
   );
 }
 
-// The conversation outgrew the model's context window. OpenCode names it
-// `ContextOverflowError` ("Conversation history too large to compact - exceeds
-// model context limit" when its own compaction failed); a provider says it in
-// its own words.
+// The conversation outgrew the model's context window. The runtime names it
+// `ContextOverflowError` (an old OpenCode box says "Conversation history too
+// large to compact - exceeds model context limit" when its own compaction
+// failed); a provider says it in its own words.
 function isContextWindow(name: string, lower: string): boolean {
   return (
     name === 'ContextOverflowError' ||
@@ -142,8 +144,8 @@ function isContentFilter(status: number | undefined, isRetryable: boolean | unde
 }
 
 // Provider auth / config: a bad or expired key, or a model the provider rejects.
-// opencode surfaces the same root cause as either ProviderAuthError or an
-// APIError 401/403, depending on where it failed — collapse them.
+// the runtime surfaces the same root cause as either ProviderAuthError or an
+// error with status 401/403, depending on where it failed — collapse them.
 function isProviderConfig(name: string, status: number | undefined): boolean {
   return name === 'ProviderAuthError' || status === 401 || status === 403;
 }
@@ -158,7 +160,7 @@ function isChatGptLoginRefusal(lower: string): boolean {
 // The configured agent doesn't exist — deleted/renamed/disabled since the
 // channel (or project default) was pointed at it. On a governed project this is
 // caught at session-create (400 AGENT_NOT_DECLARED → inline picker); on a legacy
-// project the session boots and opencode fails here when the agent markdown is
+// project the session boots and the runtime fails here when the agent markdown is
 // missing. Requires 'agent' in the text so it can't shadow the model-not-found
 // bucket below (which matches the broad "does not exist").
 function isAgentUnavailable(lower: string): boolean {
@@ -193,7 +195,7 @@ function isModelNotFound(status: number | undefined, lower: string): boolean {
   return status === 404 && lower.includes('model');
 }
 
-// OpenCode names the ref it could not resolve: "Model not found:
+// OpenCode's error names the ref it could not resolve: "Model not found:
 // codex/gpt-6-sol. Did you mean: …?" A model ref has no whitespace.
 function missingModelRef(message: string): string | null {
   const ref = /model not found:\s*(\S+)/i.exec(message)?.[1]?.replace(/\.$/, '');
@@ -201,7 +203,7 @@ function missingModelRef(message: string): string | null {
 }
 
 // Transient provider/network trouble — a temporary upstream error or a dropped
-// connection. Prefer opencode's own isRetryable flag; fall back to the HTTP
+// connection. Prefer the runtime's own isRetryable flag; fall back to the HTTP
 // status and, for socket errors (which carry no status), the message text.
 function isTransient(status: number | undefined, isRetryable: boolean | undefined, lower: string): boolean {
   if (isRetryable === true) return true;
@@ -299,7 +301,7 @@ export function classifyTurnError(
   }
 
   // 4. Output hit the model's max length — the reply was cut off, not "no reply".
-  //    (opencode's MessageOutputLengthError carries no message.)
+  //    (an old OpenCode box's MessageOutputLengthError carries no message.)
   if (
     code
       ? code === 'output_length'
@@ -314,8 +316,9 @@ export function classifyTurnError(
     };
   }
 
-  // 5. Conversation outgrew the context window. OpenCode compacts a session
-  //    on overflow by itself, so this reaches a thread only when that failed.
+  // 5. Conversation outgrew the context window. The runtime compacts the
+  //    session and retries once on overflow, so this reaches a thread only
+  //    when that failed.
   //    A request to summarize needs the same full history and fails the same way.
   if (code ? code === 'context_length' : isContextWindow(name, lower)) {
     return {
@@ -334,7 +337,7 @@ export function classifyTurnError(
       title: 'Agent unavailable',
       text:
         `:warning: *The agent configured for this channel isn't available* — it may have been deleted, renamed, or disabled.` +
-        ` Run \`/kortix agents\` to pick one of this project's current agents, then mention me again.`,
+        ` Run \`/kortix agents\` to pick one of this Kortix workspace's current agents, then mention me again.`,
       aborted: false,
     };
   }

@@ -18,13 +18,14 @@ import {
   acceptTurn,
   beginTurn,
   claimInitialTurn,
-  pinOpencodeSession,
+  pinRuntimeSession,
   readSteer,
   relayContent,
   settleTurnEnd,
 } from './turn-stream-handlers';
-import { normalizeRuntimeRelayBody, TurnStreamRelayBodySchema } from '@kortix/api-contract/runtime-relay';
+import { TurnStreamRelayBodySchema } from '@kortix/api-contract/runtime-relay';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './turn-stream-kind';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerTurnStreamRoutes(): void {
   // POST /v1/projects/:projectId/turn-stream
@@ -37,12 +38,12 @@ export function registerTurnStreamRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/turn-stream',
+      path: '/{workspaceId}/turn-stream',
       tags: ['projects'],
       summary: 'Run a turn and stream the reply',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         // Documents the frame; the handler owns validation (its own 400s) and
         // accepts the pre-W3 spellings an older daemon sends.
         body: { content: { 'application/json': { schema: TurnStreamRelayBodySchema.or(AnyObject) } } },
@@ -56,11 +57,10 @@ export function registerTurnStreamRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       let body: TurnStreamBody;
       try {
-        // A daemon built before W3 sends `opencode_session_id` and kind `opencode_session`.
-        body = normalizeRuntimeRelayBody((await c.req.json()) as TurnStreamBody);
+        body = (await c.req.json()) as TurnStreamBody;
       } catch {
         return c.json({ error: 'Invalid JSON body' }, 400);
       }
@@ -97,7 +97,7 @@ export function registerTurnStreamRoutes(): void {
           )
           .limit(1);
         if (!sandbox) {
-          return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+          return c.json({ error: 'sandbox token is not scoped to this workspace' }, 403);
         }
         authenticatedSandboxId = sandbox.sandboxId;
       } else {
@@ -166,7 +166,7 @@ export function registerTurnStreamRoutes(): void {
           createdBy: projectSessions.createdBy,
           origin: projectSessions.origin,
           metadata: projectSessions.metadata,
-          opencodeSessionId: projectSessions.runtimeSessionId,
+          runtimeSessionId: projectSessions.runtimeSessionId,
         })
         .from(projectSessions)
         .where(
@@ -206,7 +206,7 @@ export function registerTurnStreamRoutes(): void {
             authenticatedSandboxId,
             authenticatedSandboxMetadata,
             turnStreamMetadata,
-            turnStreamSession.opencodeSessionId ?? null,
+            turnStreamSession.runtimeSessionId ?? null,
           );
         case 'turn_abandoned':
           return abandonTurn(c, body, authenticatedSandboxId);
@@ -230,7 +230,7 @@ export function registerTurnStreamRoutes(): void {
             },
           });
         case 'runtime_session':
-          return pinOpencodeSession(c, body, authenticatedSandboxId, projectId, sessionId);
+          return pinRuntimeSession(c, body, authenticatedSandboxId, projectId, sessionId);
         default:
           return relayContent(c, body, sessionId);
       }

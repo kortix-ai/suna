@@ -47,7 +47,7 @@ test.each(['connector', 'runtime', undefined] as const)('secret modal makes no u
   await act(async () => button?.click());
   const dialog = document.querySelector('[role="dialog"]');
   expect(dialog).not.toBeNull();
-  expect(dialog?.textContent).toContain('Add a project secret');
+  expect(dialog?.textContent).toContain('Add a workspace secret');
   expect(dialog?.textContent).toContain('DEMO_KEY');
   expect(dialog?.textContent).not.toContain('never sees the value');
   expect(dialog?.textContent).toContain(scope ? `Delivery: ${scope}` : 'Delivery scope is unavailable');

@@ -35,6 +35,7 @@ import { layoutRow } from '../../ui/index.ts';
 import { ChangeList, type ChangeRow, toChangeRow } from './change-list.tsx';
 import { type DiffState, DiffView, type DiffViewMode, splitUnifiedPatch } from './diff-view.tsx';
 import { matchesReviewBinding } from './keys.ts';
+import { PICK_WORKSPACE_TEXT } from '../../lib/workspaces.ts';
 
 /** How often the age column is recomputed. A minute is its smallest unit. */
 const CLOCK_TICK_MS = 30_000;
@@ -58,7 +59,7 @@ export interface ReviewActions {
 }
 
 export interface ReviewScreenProps {
-  projectId: string;
+  projectId: string | null;
   focused: boolean;
   width: number;
   height: number;
@@ -82,7 +83,14 @@ export function compareRows(a: ChangeRow, b: ChangeRow): number {
   return b.createdAtMs - a.createdAtMs;
 }
 
-export function ReviewScreen({
+export function ReviewScreen(props: ReviewScreenProps) {
+  if (!props.projectId) {
+    return <text fg={theme.faint}>{PICK_WORKSPACE_TEXT}</text>;
+  }
+  return <ReviewScreenBody {...props} projectId={props.projectId} />;
+}
+
+function ReviewScreenBody({
   projectId,
   focused,
   width,
@@ -90,7 +98,7 @@ export function ReviewScreen({
   onBack,
   onOpenSession,
   onToast,
-}: ReviewScreenProps) {
+}: ReviewScreenProps & { projectId: string }) {
   // 'all', not the hook's default 'open': the list prints a status column, and
   // a change request merged an hour ago is exactly what a reviewer looks for
   // right after acting on it.

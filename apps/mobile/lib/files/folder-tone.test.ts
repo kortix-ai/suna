@@ -9,7 +9,7 @@ describe('folderTone', () => {
   });
 
   test('a tone is one of the brand accents', () => {
-    for (const name of ['src', 'docs', 'assets', 'scripts', '.opencode', 'a', 'zz']) {
+    for (const name of ['src', 'docs', 'assets', 'scripts', '.github', 'a', 'zz']) {
       expect(FOLDER_TONES).toContain(folderTone(name));
     }
   });

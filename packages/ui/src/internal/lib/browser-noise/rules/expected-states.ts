@@ -19,7 +19,7 @@ import { normalizeString } from '../evidence';
 const RUNTIME_NOT_READY_NOISE_PATTERNS = [
   'Server URL not ready',
   'sandbox is still loading',
-  // The daemon's not-ready 503, in every spelling (code, pi, OpenCode).
+  // The daemon's not-ready 503, with or without its code.
   ...RUNTIME_NOT_READY_MARKERS,
 ] as const;
 
@@ -50,33 +50,6 @@ const BILLING_GATE_EXPECTED_MESSAGES = [
   'Out of credits. Pick a plan or top up to continue.',
   // `payment_failed` — the last payment failed and the wallet is empty.
   "Your last payment didn't go through and your wallet is empty. Update your payment method or top up to keep running.",
-] as const;
-
-// Expected "no compaction model configured" configuration state. The SDK's
-// `useSummarizeRuntimeSession` mutation
-// (`packages/sdk/src/react/use-opencode-sessions/sessions.ts`) throws a
-// sentinel-marked `NoCompactionModelError`
-// (`packages/sdk/src/react/use-opencode-sessions/no-compaction-model-error.ts`;
-// `apps/mobile` uses the same mutation)
-// when every model-resolution fallback tier fails (no config default, no
-// assistant message in the thread, no connected provider/model). It is an
-// EXPECTED, user-facing configuration outcome — the host already surfaces it
-// via the `loadingToast` error toast ("No model available for compaction.
-// Please configure a model in settings.") and the global react-query mutation
-// `onError` toast — never a code defect.
-//
-// It leaks to Sentry as an unhandled promise rejection: `compact-modal.tsx`
-// fires `void loadingToast(() => summarize.mutateAsync(...))`, and
-// `loadingToast` re-throws the error after showing the toast (toast.tsx), so
-// the `void`-fired rejection is auto-captured by the Sentry SDK's
-// `onunhandledrejection` integration. Drop it here at the telemetry gate so
-// the expected config state never pages Better Stack, regardless of which
-// capture path delivered it. A longer real mutation failure (network error,
-// `summarize` 5xx, a genuine `TypeError`, …) keeps reporting — only an exact
-// match for this message (plus the explicit canonical wrappers below) is
-// suppressed.
-const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
-  'No model available for compaction. Please configure a model in settings.',
 ] as const;
 
 // Expected "model not available for this account" UI validation state. The API
@@ -124,18 +97,18 @@ const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
 // `handled:false`).
 //
 // This is the leak-path backstop for the #6082 SDK gate, sibling to
-// `isExpectedBillingGateMessage` / `isExpectedCompactionNoModelMessage`
+// `isExpectedBillingGateMessage`
 // (also `ApiError`/Error throws that leak via `void` fire-and-forget →
 // `onunhandledrejection`). The model name varies (e.g.
 // `openai/gpt-5.4-mini`, `nvidia/minimaxai/minimax-m3`), so — unlike the
-// billing-gate / compaction exact-string matchers — this is a REGEX anchored
+// billing-gate exact-string matchers — this is a REGEX anchored
 // on the EXACT API wording `Model "…" is not available for this account`
 // (the `Model "` prefix and `is not available for this account` suffix are
 // the API's own canonical strings across all four emitting routes), with the
 // canonical `ApiError: ` / `Unhandled promise rejection: ` wrappers stripped
 // so all capture paths (window.onerror, onunhandledrejection, Sentry
 // exception) classify consistently. Deliberately message-only with NO
-// first-party frame negative guard — mirroring the billing-gate / compaction
+// first-party frame negative guard — mirroring the billing-gate
 // matchers — because (a) the message is the API's own canonical wording
 // (never a coincidental app-logic phrase), (b) the SDK gate already handles
 // the `onError` path, and (c) the unhandled-rejection stack DOES carry
@@ -285,29 +258,6 @@ export function isExpectedBillingGateMessage(message: unknown): boolean {
 }
 
 /**
- * Whether a message is the EXPECTED "no compaction model configured"
- * configuration state thrown by the SDK's `useSummarizeRuntimeSession`
- * mutation (`NoCompactionModelError`) when every model-resolution fallback
- * tier fails. The host already surfaces it via a user-facing toast; it must
- * never page Better Stack, but the sentinel error can leak to Sentry as an
- * unhandled promise rejection (`void loadingToast(...)` re-throws after
- * showing the toast → `onunhandledrejection` auto-capture). Match is exact
- * after trimming, with only the canonical browser/Sentry wrappers we
- * explicitly support, so a longer real error that merely mentions the wording
- * is never matched.
- */
-export function isExpectedCompactionNoModelMessage(message: unknown): boolean {
-  const normalized = normalizeString(message).trim();
-  return COMPACTION_NO_MODEL_EXPECTED_MESSAGES.some(
-    (expected) =>
-      normalized === expected ||
-      normalized === `Error: ${expected}` ||
-      normalized === `Unhandled promise rejection: ${expected}` ||
-      normalized === `Unhandled promise rejection: Error: ${expected}`,
-  );
-}
-
-/**
  * Whether a message is the EXPECTED "model not available for this account"
  * UI validation state — the typed 409 `code: 'model_not_servable'` the API
  * returns (`apps/api/src/projects/routes/models.ts` + `channel-bindings.ts` via
@@ -325,8 +275,8 @@ export function isExpectedCompactionNoModelMessage(message: unknown): boolean {
  * REGEX anchored on the EXACT API wording `Model "…" is not available for
  * this account`, with the canonical `ApiError: ` / `Unhandled promise
  * rejection: ` wrappers, so a longer real error that merely mentions the
- * phrase is never matched. Sibling to `isExpectedBillingGateMessage` /
- * `isExpectedCompactionNoModelMessage` (also `ApiError`/Error throws that
+ * phrase is never matched. Sibling to `isExpectedBillingGateMessage`
+ * (also `ApiError`/Error throws that
  * leak via `void` fire-and-forget); deliberately message-only with NO
  * first-party frame negative guard — see `MODEL_NOT_SERVABLE_NOISE_PATTERNS`
  * for the full rationale. See Better Stack pattern `9784f440…`.
@@ -401,11 +351,6 @@ export const EXPECTED_STATE_RULES: readonly NoiseRule[] = [
     id: 'billing-gate',
     appliesTo: 'both',
     match: ({ message }) => isExpectedBillingGateMessage(message),
-  },
-  {
-    id: 'compaction-no-model',
-    appliesTo: 'both',
-    match: ({ message }) => isExpectedCompactionNoModelMessage(message),
   },
   {
     id: 'model-not-servable',

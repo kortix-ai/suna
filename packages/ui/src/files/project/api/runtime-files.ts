@@ -4,7 +4,7 @@
  * Mirrors the public surface of the sandbox `packages/ui/src/internal/files/runtime-files.ts`
  * (so the copy of all UI components/hooks needs no signature changes), but
  * every function dispatches against `/v1/projects/:projectId/files` instead
- * of the OpenCode SDK.
+ * of the sandbox daemon.
  *
  * Write operations (`writeFile`, `uploadFile`, `deleteFile`, `mkdirFile`,
  * `renameFile`, `createFile`, `copyFile`) throw — project files are
@@ -37,7 +37,7 @@ const READ_ONLY = 'Read-only — project files come from Git';
 /**
  * Strip the legacy `/workspace` prefix and any leading slashes so the path
  * matches what `git ls-tree` returns. The copied UI was built against the
- * OpenCode "absolute under /workspace" convention; the project API uses
+ * sandbox "absolute under /workspace" convention; the project API uses
  * repo-relative paths.
  */
 function toRepoRelative(p: string): string {

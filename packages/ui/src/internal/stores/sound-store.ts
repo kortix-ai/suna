@@ -21,11 +21,11 @@ export type SoundEvent = 'completion' | 'error' | 'notification' | 'send';
 /**
  * Available sound packs.
  *
- * - `off`      – all sounds disabled
- * - `opencode` – default sound pack (OpenCode style)
- * - `kortix`   – Kortix branded sound pack
+ * - `off`     – all sounds disabled
+ * - `classic` – default sound pack (synthesized tones)
+ * - `kortix`  – Kortix branded sound pack
  */
-export type SoundPack = 'off' | 'opencode' | 'kortix';
+export type SoundPack = 'off' | 'classic' | 'kortix';
 
 export interface SoundPreferences {
   /** Active sound pack — 'off' disables all sounds */
@@ -96,6 +96,15 @@ export const useSoundStore = create<SoundState>()(
     }),
     {
       name: 'kortix-sound-preferences',
+      // v1 renamed the default pack from 'opencode' to 'classic'. A saved
+      // 'opencode' keeps playing the same pack.
+      version: 1,
+      migrate: (persisted) => {
+        const state = persisted as { preferences?: SoundPreferences } | null;
+        const preferences = { ...DEFAULT_PREFERENCES, ...state?.preferences };
+        if ((preferences.pack as string) === 'opencode') preferences.pack = 'classic';
+        return { preferences } as SoundState;
+      },
       storage: createSafeJSONStorage(),
       partialize: (state) => ({
         preferences: state.preferences,

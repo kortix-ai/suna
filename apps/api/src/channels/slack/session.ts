@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
+import { chatEventDedup, chatThreads, projectSessions } from '@kortix/db';
 import { slackFollowUpHeader, slackPlainText } from '@kortix/shared';
 import { db } from '../../shared/db';
 import { config } from '../../config';
@@ -36,6 +36,7 @@ import {
   planChannelSessionStart,
   projectChannelModelScope,
 } from '../model-access';
+import { projectsView } from '../../workspaces/rows';
 
 const defaultSlackSessionLifecycle = {
   deliverFollowUp: deliverThroughQueue,
@@ -122,7 +123,7 @@ export async function slackFollowUpModel(input: {
         .where(eq(projectSessions.sessionId, input.sessionId))
         .limit(1)
     )[0];
-  const raw = (row?.metadata as Record<string, unknown> | null)?.opencode_model;
+  const raw = (row?.metadata as Record<string, unknown> | null)?.model;
   const pinned = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
   const hasImage = slackMessageHasImage(input.event);
   const model = await planChannelFollowUp({
@@ -155,8 +156,8 @@ export async function createOrJoinThreadSession(input: {
 
   const [project] = await db
     .select()
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!project) return;
 
@@ -235,7 +236,7 @@ async function reportSlackStartError(
 }
 
 async function launchSlackSession(
-  project: typeof projects.$inferSelect,
+  project: typeof projectsView.$inferSelect,
   { projectId, teamId, threadId, envelope, event, revived, actorUserId: userId }: Parameters<typeof createOrJoinThreadSession>[0],
   { conversationPolicy, launchAgent, start }: NonNullable<Awaited<ReturnType<typeof planSlackLaunch>>>,
   claimKey: string | null,
@@ -249,7 +250,7 @@ async function launchSlackSession(
     body: {
       base_ref: project.defaultBranch,
       agent_name: launchAgent,
-      ...(start.model ? { opencode_model: start.model } : {}),
+      ...(start.model ? { model: start.model } : {}),
       ...(start.pools ? { provider_secret_pools: start.pools } : {}),
       initial_prompt: renderAgentPrompt(envelope, event, revived, labels),
       // Keep scaffolded prompt details out of the project-visible title, and
@@ -281,7 +282,7 @@ async function launchSlackSession(
 }
 
 async function planSlackLaunch(
-  project: typeof projects.$inferSelect,
+  project: typeof projectsView.$inferSelect,
   event: SlackEvent,
   teamId: string,
   userId: string,
@@ -310,7 +311,7 @@ async function planSlackLaunch(
   if (allowedAgents.length === 0) {
     if (handle) {
       await finalizeTurn(handle, {
-        error: `You don't have access to the \`${launchAgent}\` agent in this project. Ask a project manager to grant it, or switch the agent with \`/kortix agents\`.`,
+        error: `You don't have access to the \`${launchAgent}\` agent in this Kortix workspace. Ask a workspace manager to grant it, or switch the agent with \`/kortix agents\`.`,
       });
     }
     return null;
@@ -321,7 +322,7 @@ async function planSlackLaunch(
     accountId: project.accountId,
     userId,
     scope: await slackTurnScope(project, event, userId),
-    chosenModel: selection?.opencodeModel,
+    chosenModel: selection?.sessionModel,
     agentName: launchAgent,
     hasImage: slackMessageHasImage(event),
   });
@@ -339,7 +340,7 @@ async function planSlackLaunch(
 
 /** Return undefined when a mapped thread took the follow-up; otherwise its claim key. */
 async function joinExistingThread(
-  project: typeof projects.$inferSelect,
+  project: typeof projectsView.$inferSelect,
   { projectId, teamId, threadId, envelope, event, actorUserId }: Parameters<typeof createOrJoinThreadSession>[0],
 ): Promise<string | null | undefined> {
   // Claim the thread-create. Losers wait; winners check for a mapping left
@@ -377,7 +378,7 @@ async function joinExistingThread(
 }
 
 function queuedMessage(): string {
-  return "I've queued your task behind the sessions already starting up in this project, and I'll reply right here the moment it begins.";
+  return "I've queued your task behind the sessions already starting up in this Kortix workspace, and I'll reply right here the moment it begins.";
 }
 
 // Fail open on DB errors rather than dropping a message.
@@ -416,7 +417,7 @@ async function waitForThreadSession(teamId: string, threadId: string, projectId:
       .where(
         and(
           eq(chatThreads.platform, 'slack'),
-          eq(chatThreads.workspaceId, teamId),
+          eq(chatThreads.platformTeamId, teamId),
           eq(chatThreads.threadId, threadId),
           eq(chatThreads.projectId, projectId),
         ),

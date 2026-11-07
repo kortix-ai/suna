@@ -120,6 +120,7 @@ import { resolveNewAccountReturnUrl, sanitizeAuthReturnUrl } from '@/lib/auth/re
 import { takeSignOutNotice } from '@/lib/auth/sign-out-notice';
 import { isSessionExpired } from '@/lib/auth/session-expiry';
 import {
+  AUTH_EMAIL_COOLDOWN_SECONDS,
   type CredentialsMode,
   type EmailFlowMode,
   credentialsCopy,
@@ -138,7 +139,9 @@ const GoogleSignIn = lazy(() => import('@/features/auth/google-signin'));
 
 type Step = 'entry' | 'sso' | 'credentials' | 'link';
 
-const RESEND_COOLDOWN_SECONDS = 30;
+// The API's per-address window (apps/api/src/auth/email-cooldown.ts): a resend
+// offered sooner would only be answered "already sent".
+const RESEND_COOLDOWN_SECONDS = AUTH_EMAIL_COOLDOWN_SECONDS;
 const EASE = [0.23, 1, 0.32, 1] as const;
 
 // sessionStorage key holding the address a stale-bundle recovery is handing
@@ -528,6 +531,8 @@ function AuthCardForm({
         email?: string;
         message?: string;
         mode?: EmailFlowMode;
+        alreadySent?: boolean;
+        retryAfterSeconds?: number;
       };
 
       if (result.success) {
@@ -537,7 +542,11 @@ function AuthCardForm({
           : resolveNewAccountReturnUrl(returnUrl);
         setSentEmail(result.email || target);
         setLinkMode(result.mode ?? 'unknown');
-        setResendIn(RESEND_COOLDOWN_SECONDS);
+        // The server owns the window: inside it the action answers "already
+        // sent" with the seconds left, so a reload or a second tab cannot
+        // restart the countdown and mail the address again.
+        setResendIn(result.retryAfterSeconds ?? RESEND_COOLDOWN_SECONDS);
+        if (result.alreadySent && result.message) setInfo(result.message);
         setStep('link');
         // The action's Set-Cookie does not always reach this browser (on the
         // prod edge deployment a successful send left the cookie jar empty —
@@ -896,7 +905,19 @@ function AuthCardForm({
       }
 
       if (result.requiresEmailConfirmation) {
-        setInfo((result.message as string) || t('errors.confirmAccount'));
+        // The confirmation email is in the mailbox: show the check-your-inbox
+        // step with its resend countdown. Staying on the password form left
+        // "Continue" live, and every click mailed the address again.
+        setSentEmail((result.email as string) || email);
+        setLinkMode('signup');
+        setCode('');
+        setResendIn(
+          typeof result.retryAfterSeconds === 'number'
+            ? result.retryAfterSeconds
+            : RESEND_COOLDOWN_SECONDS,
+        );
+        if (result.alreadySent) setInfo((result.message as string) || t('errors.confirmAccount'));
+        setStep('link');
         return;
       }
 
@@ -1446,7 +1467,7 @@ function AuthContent() {
 
   // A session is already established — the effect above is redirecting (or
   // handing off to mobile). This is a hand-off, not a screen, so it shows the
-  // SAME frame the destination shows: `/projects/start` and the project access
+  // SAME frame the destination shows: `/workspaces/start` and the project access
   // boundary both render `ProjectPendingScreen`, so the redirect produces no
   // visual change at all.
   //

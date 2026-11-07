@@ -284,7 +284,7 @@ export async function conversationRefForSession(sessionId: string): Promise<Team
   const [thread] = await db
     .select({
       projectId: chatThreads.projectId,
-      tenantId: chatThreads.workspaceId,
+      tenantId: chatThreads.platformTeamId,
       conversationId: chatThreads.threadId,
     })
     .from(chatThreads)
@@ -715,7 +715,7 @@ async function runtimeStillWorking(sessionId: string): Promise<boolean> {
 
 /**
  * Closing the card is not ending the run. A turn this sweep reaps has been
- * silent for 30 minutes, but OpenCode can still hold its assistant message
+ * silent for 30 minutes, but the runtime can still hold its assistant message
  * OPEN — and while it does, every later prompt in that conversation is
  * accepted and never runs. Seen on dev 2026-09-19: two messages vanished that
  * way over two days. Imported lazily so the channel modules keep no static

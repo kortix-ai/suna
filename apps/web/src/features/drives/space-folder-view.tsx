@@ -40,6 +40,8 @@ export function SpaceFolderView({
   space,
   tab,
   place,
+  path,
+  missing,
 }: SpaceFolder & { projectId: string }) {
   const t = useTranslations('spaces');
   const availability = useDriveAvailability(projectId);
@@ -63,6 +65,24 @@ export function SpaceFolderView({
   if (!drive.data) return null;
   const name = space.kind === 'channel' ? space.slug : space.dm_agent_name;
   const folders = name ? spaceDriveFolders(space.kind, name, drive.data.personalFolder, space.visibility === 'private' ? space.space_id : null) : null;
+  // A folder tab: the Drive folder its path names. Only the space's own folder is made on first open.
+  if (path) {
+    return (
+      <SpaceDriveFolder
+        key={path}
+        projectId={projectId}
+        drive={drive.data}
+        path={path}
+        label={path.split('/').filter(Boolean).at(-1) ?? path}
+        tab="files"
+        place={place}
+        note={null}
+        hidden={null}
+        make={path === folders?.files}
+        missing={missing}
+      />
+    );
+  }
   if (!folders) return <SpaceFolderEmpty tab={tab} place={place} />;
   const note =
     tab === 'memory'
@@ -100,6 +120,8 @@ function SpaceDriveFolder({
   place,
   note,
   hidden,
+  make: makeIfMissing = true,
+  missing: missingState,
 }: {
   projectId: string;
   drive: Drive;
@@ -109,6 +131,9 @@ function SpaceDriveFolder({
   place: string;
   note: string | null;
   hidden: string | null;
+  /** Make the folder when it is not there yet. False: a missing folder shows `missing`. */
+  make?: boolean;
+  missing?: ReactNode;
 }) {
   const t = useTranslations('spaces');
   const { user } = useAuth();
@@ -123,8 +148,8 @@ function SpaceDriveFolder({
   });
   const { mutate: makeFolder, isIdle: notMade } = make;
   useEffect(() => {
-    if (missing && notMade) makeFolder();
-  }, [missing, notMade, makeFolder]);
+    if (missing && notMade && makeIfMissing) makeFolder();
+  }, [missing, notMade, makeFolder, makeIfMissing]);
 
   const store = useMemo(() => {
     const s = createFilesStore();
@@ -132,6 +157,7 @@ function SpaceDriveFolder({
     return s;
   }, [path]);
 
+  if (missing && !makeIfMissing) return missingState ?? <SpaceFolderEmpty tab={tab} place={place} />;
   // Refused, or made but still not listed (storage lag): the empty state.
   if (missing && (make.isError || (make.isSuccess && !folder.isFetching))) {
     return <SpaceFolderEmpty tab={tab} place={place} />;
@@ -232,7 +258,7 @@ function SpaceExplorer({
         onOpenFolder={(p) =>
           router.push(
             driveUrlWithPath(
-              `${window.location.origin}/projects/${projectId}/drive`,
+              `${window.location.origin}/workspaces/${projectId}/drive`,
               drivePathToParam(p, drive.personalFolder),
             ),
           )

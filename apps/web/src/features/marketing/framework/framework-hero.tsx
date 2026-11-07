@@ -261,7 +261,7 @@ const sourceRESULT: Record<WalkStep['id'], { title: string; body: () => ReactNod
   agents: { title: 'Customize · Agents', body: () => <AgentCard /> },
   connectors: { title: 'Review · Approvals', body: () => <ApprovalCard /> },
   triggers: { title: 'Sessions', body: () => <SessionCard /> },
-  ship: { title: 'Project', body: () => <ShippedCard /> },
+  ship: { title: 'Workspace', body: () => <ShippedCard /> },
 };
 
 function Arrow() {

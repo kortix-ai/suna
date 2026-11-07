@@ -5,14 +5,12 @@ import { useTabStore } from '@/stores/tab-store';
 import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 import { useQueryClient } from '@tanstack/react-query';
-import { listCreatedSession, projectKeys, useCreateProjectSession, useProjectSession } from '@/lib/projects/hooks';
+import { projectKeys, useCreateProjectSession, useProjectSession } from '@/lib/projects/hooks';
 import { getSessionHealth, projectSessionForRuntimeId, sessionStartKey } from '@kortix/sdk';
 import { mapSandboxHealth, type SandboxHealth } from './project-health';
 import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 import { useToast } from '@/components/kortix/toast-provider';
-import { clearComposerDraftIfSent } from '@/stores/composer-draft-store';
-import { draftKey } from '@/lib/session/composer-draft';
 import { getSandboxUrl, type SandboxProviderName } from '@/lib/platform/client';
 import { deleteProjectSession, recoverProjectSession, startProjectSession, restartProjectSession, type ProjectSession, type SessionStartResult } from '@/lib/projects/projects-client';
 import {
@@ -25,7 +23,6 @@ import {
   startWaitDeadline,
   type SessionImageStep,
 } from '@/lib/session/connect-step';
-import { createSessionCommitted } from '@/lib/session/create-session';
 import { firstPromptSeed, SEED_BUSY_WATCHDOG_MS, seedUndelivered } from '@/lib/session/first-prompt-seed';
 import {
   addOptimisticMessage,
@@ -38,12 +35,7 @@ import { threadOpenTarget, returnThreadForPage, type PendingThreadFocus } from '
 import { resolveSessionTitle } from '@/lib/session/session-list';
 import type { OpenedThread } from '@/lib/session/session-sandbox';
 import type { AttachedFile } from '@/lib/session/attachments';
-import type { ProjectHomeSubmit } from '@/components/session/ProjectHome';
 import type { SessionConnectError } from '@/components/session/SessionConnecting';
-import { newSessionCreateInput } from '@/lib/session/new-session-input';
-import { newConfigPrompt } from '@kortix/shared';
-import * as Crypto from 'expo-crypto';
-import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { useFocusEffect } from 'expo-router/react-navigation';
 import { leaveSandboxOnFocus, showsSessionContent as showsSessionContentFor } from '@/lib/session/session-sandbox';
 
@@ -86,15 +78,13 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
   // The typed text and picked files of a fresh dashboard send, keyed by the
   // session id it created — shown as the loading page's first message and
   // file tiles (the text is also its title until the session has one) and,
-  // read-and-cleared once, restored into the composer if the user leaves a
-  // failed start ("Back to project", `ProjectHome`'s `takeInitialDraft`).
+  // acknowledged after commit, restored into the composer if the user leaves a
+  // failed start ("Back to project", `ProjectHome`'s `initialDraft`).
   // Cleared once the session connects.
   const firstPromptRef = useRef<Record<string, { text: string; files: AttachedFile[] }>>({});
   const pendingDraftRef = useRef<{ text: string; files: AttachedFile[] }>({ text: '', files: [] });
-  const takeInitialDraft = useCallback(() => {
-    const draft = pendingDraftRef.current;
-    pendingDraftRef.current = { text: '', files: [] };
-    return draft;
+  const consumeInitialDraft = useCallback((draft: { text: string; files: AttachedFile[] }) => {
+    if (pendingDraftRef.current === draft) pendingDraftRef.current = { text: '', files: [] };
   }, []);
   const showUpgradeForError = useCallback(
     (error: unknown) => {
@@ -194,7 +184,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
   // both the sandbox URL and the runtime's root session (`runtime_session_id`).
   const connectToProjectSession = useCallback(
     (ps: ProjectSession) => {
-      const rootId = ps.runtime_session_id ?? ps.opencode_session_id;
+      const rootId = ps.runtime_session_id;
       if (!ps.sandbox_url || !rootId) return false;
       const externalId =
         ps.sandbox_url.match(/\/p\/([^/]+)\//)?.[1] || ps.sandbox_id || ps.session_id;
@@ -303,7 +293,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
           const sandbox = start.sandbox;
           if (step.kind === 'open' && sandbox?.external_id) {
             const sandboxUrl = getSandboxUrl(sandbox.external_id);
-            const rootId = start.runtime_session_id ?? start.opencode_session_id;
+            const rootId = start.runtime_session_id;
             const openSession = (runtimeSessionId: string) => {
               // The SDK's own `/start` read (`useSession`, bound by the switch
               // below) starts from this answer instead of asking again.
@@ -313,7 +303,6 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
                 sandbox_id: sandbox.sandbox_id,
                 sandbox_url: sandboxUrl,
                 runtime_session_id: runtimeSessionId,
-                opencode_session_id: runtimeSessionId,
                 sandbox_provider: sandbox.provider ?? 'platinum',
                 created_at: sandbox.created_at,
                 updated_at: sandbox.updated_at,
@@ -339,7 +328,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
             if (health.bootError) {
               failConnect(sessionId, {
                 title: 'Session runtime is not ready',
-                message: 'The sandbox booted, but the project runtime did not become usable.',
+                message: 'The sandbox booted, but the session runtime did not become usable.',
                 detail: health.bootError,
               });
               return;
@@ -546,7 +535,6 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
     const tabs = useTabStore.getState();
     if (tabs.activeSessionId || tabs.activePageId) tabs.navigateToSession(null);
   }, [clearSandbox]);
-  const handleBack = goHome;
   // Leave a connecting session (COR-146). `SessionConnecting` offers this only
   // in its error state, as "Back to project" (Jay, 2026-09-24: no Cancel bar
   // while it loads); Android back and the drawer leave through `goHome`.
@@ -558,7 +546,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
   // from the list is never deleted or stopped: it may hold real history the
   // user still wants. If the text and files that started this attempt are
   // still known (a dashboard send), they are restored into the project-home
-  // composer (`ProjectHome`'s `takeInitialDraft`, consumed once); the
+  // composer (`ProjectHome`'s `initialDraft`, consumed once); the
   // restored files upload again there, as the deleted session held the old
   // uploads.
   const handleCancelConnect = useCallback(() => {
@@ -591,6 +579,6 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
     isHomeRef, ensuringRef, navigateToSession, goHome, refreshSessionLists,
     firstPromptRef, freshSessionIdRef, erroredSessionRef, setConnectError, setConnectingProjectSessionId, showUpgradeForError,
     handleOpenProjectSession, handleOpenSessionById, handleRestartSession,
-    handleCancelConnect, takeInitialDraft,
+    handleCancelConnect, initialDraft: pendingDraftRef.current, consumeInitialDraft,
   };
 }

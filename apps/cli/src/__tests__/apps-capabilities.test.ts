@@ -12,7 +12,7 @@ const CLI_ENTRY = join(resolve(import.meta.dir, '..', '..'), 'src', 'index.ts');
 const PROJECT = '11111111-2222-4333-8444-555555555555';
 const DB_ID = '99999999-8888-4777-8666-555555555555';
 const SITE_ID = '77777777-6666-4555-8444-333333333333';
-const ISSUER = `https://api.example.test/v1/projects/${PROJECT}`;
+const ISSUER = `https://api.example.test/v1/workspaces/${PROJECT}`;
 
 type Row = Record<string, unknown> & { app_id: string; slug: string; uses: string[] };
 
@@ -84,7 +84,7 @@ const unsupported = (capability: string) =>
   );
 
 function startServer(): string {
-  const base = `/v1/projects/${PROJECT}`;
+  const base = `/v1/workspaces/${PROJECT}`;
   server = Bun.serve({
     port: 0,
     fetch: async (req) => {
@@ -128,7 +128,7 @@ function startServer(): string {
       if (path === `${base}/apps/artifacts/art-1/finalize`) {
         return Response.json({ artifact_id: 'art-1', project_id: PROJECT, kind: 'archive', status: 'ready', image_reference: null, sha256: null, size_bytes: 1, media_type: null, error: null, created_at: '2026-01-01T00:00:00.000Z' });
       }
-      const match = /^\/v1\/projects\/[^/]+\/apps\/([^/]+)(?:\/(.+))?$/.exec(path);
+      const match = /^\/v1\/workspaces\/[^/]+\/apps\/([^/]+)(?:\/(.+))?$/.exec(path);
       const row = match ? byId(match[1]!) : undefined;
       if (!match || !row) return Response.json({ error: 'Not found' }, { status: 404 });
       const rest = match[2];
@@ -257,7 +257,9 @@ describe('kortix apps — capabilities and links', () => {
       expect(r.stdout).toContain(sub);
     }
     // Retired: the convex kind's subcommands and flags. `convex` survives only as a template name.
-    expect(r.stdout).not.toMatch(/backends|--kind|credentials|^ {2}(dashboard|snapshots?|restore|delete-snapshot)\b|--confirm/im);
+    // `credentials` is retired as a top-level subcommand; `events credentials` (#11815) is App events.
+    expect(r.stdout).not.toMatch(/backends|--kind|^ {2}(credentials|dashboard|snapshots?|restore|delete-snapshot)\b|--confirm/im);
+    expect(r.stdout).not.toMatch(/apps credentials/);
   });
 
   test('`kortix backends` is gone', async () => {
@@ -370,7 +372,7 @@ describe('kortix apps — capabilities and links', () => {
     const r = await runCli(['apps', 'delete', 'db', '--yes', ...P], config);
     expect(r.code).toBe(0);
     const del = calls.find((c) => c.method === 'DELETE');
-    expect(del?.path).toBe(`/v1/projects/${PROJECT}/apps/${DB_ID}`);
+    expect(del?.path).toBe(`/v1/workspaces/${PROJECT}/apps/${DB_ID}`);
     expect(del?.query).toBe('');
     expect(r.stdout).toContain('deleted db');
     expect(r.stdout).toContain('freed 1 deployment image');
@@ -402,13 +404,13 @@ describe('kortix apps — capabilities and links', () => {
     const r = await runCli(['apps', 'deploy', ...P], config);
     if (r.code !== 0) console.error(r.stdout, r.stderr);
     expect(r.code).toBe(0);
-    const creates = calls.filter((c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`).map((c) => c.body);
+    const creates = calls.filter((c) => c.method === 'POST' && c.path === `/v1/workspaces/${PROJECT}/apps`).map((c) => c.body);
     expect(creates).toEqual([
       { slug: 'db', name: 'db', cpu: 2 },
       { slug: 'site', name: 'site', uses: ['db'] },
     ]);
     const records = calls.filter((c) => c.method === 'POST' && c.path.endsWith('/deployments')).map((c) => c.path);
-    expect(records).toEqual([`/v1/projects/${PROJECT}/apps/${DB_ID}/deployments`, `/v1/projects/${PROJECT}/apps/${SITE_ID}/deployments`]);
+    expect(records).toEqual([`/v1/workspaces/${PROJECT}/apps/${DB_ID}/deployments`, `/v1/workspaces/${PROJECT}/apps/${SITE_ID}/deployments`]);
   });
 });
 

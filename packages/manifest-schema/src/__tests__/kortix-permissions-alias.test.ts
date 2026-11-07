@@ -9,9 +9,12 @@ import { parse as parseYaml } from 'yaml';
 import {
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   GRANTABLE_KORTIX_PERMISSIONS,
+  GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS,
+  isGrantableKortixPermission,
   LEGACY_TOLERATED_KORTIX_PERMISSIONS,
   validateManifest,
 } from '../index';
+import { HUMAN_ONLY, WORKSPACE_ACTION_BY_LEGACY, toWorkspaceAction } from '@kortix/shared/workspace-actions';
 import { KORTIX_JSON_SCHEMA } from '../json-schema';
 
 function summarize(input: string) {
@@ -30,10 +33,22 @@ describe('kortix_permissions — canonical key', () => {
     expect(r.warnings).toEqual([]);
   });
 
-  test('kortix_permissions checks entries against the grantable catalog', () => {
-    const r = summarize(doc('    kortix_permissions: [billing.read]\n'));
+  test('kortix_permissions checks entries against the action catalog', () => {
+    const r = summarize(doc('    kortix_permissions: [billing.not_an_action]\n'));
     expect(r.valid).toBe(false);
     expect(r.errors.map((e) => e.path)).toContain('agents.w.kortix_permissions[0]');
+  });
+
+  test('a former account action is an ordinary grantable workspace action', () => {
+    const r = summarize(doc('    kortix_permissions: [billing.read, member.invite, workspace.members.manage]\n'));
+    expect(r.valid).toBe(true);
+    expect(r.warnings).toEqual([]);
+  });
+
+  test('a HUMAN_ONLY action validates with a warning that it grants nothing', () => {
+    const r = summarize(doc('    kortix_permissions: [project.read, token.create, workspace.billing.write]\n'));
+    expect(r.valid).toBe(true);
+    expect(r.warnings.map((w) => w.path)).toEqual(['agents.w.kortix_permissions[1]', 'agents.w.kortix_permissions[2]']);
   });
 });
 
@@ -59,15 +74,21 @@ describe('published JSON Schema accepts the canonical key', () => {
   test('kortix_permissions', () => {
     expect(validate(parseYaml(doc('    kortix_permissions: [project.read]\n')))).toBe(true);
   });
-  test('kortix_permissions rejects a non-grantable action', () => {
-    expect(validate(parseYaml(doc('    kortix_permissions: [billing.read]\n')))).toBe(false);
+  test('kortix_permissions rejects an unknown action', () => {
+    expect(validate(parseYaml(doc('    kortix_permissions: [billing.not_an_action]\n')))).toBe(false);
+  });
+  test('kortix_permissions accepts an administration action and a HUMAN_ONLY one (a warning in the validator)', () => {
+    expect(validate(parseYaml(doc('    kortix_permissions: [member.invite, token.create]\n')))).toBe(true);
   });
 });
 
 describe('renamed constants', () => {
-  test('GRANTABLE_KORTIX_PERMISSIONS is the project.* catalog', () => {
+  test('GRANTABLE_KORTIX_PERMISSIONS is every workspace action except HUMAN_ONLY', () => {
     expect(GRANTABLE_KORTIX_PERMISSIONS).toContain('project.read');
-    expect(GRANTABLE_KORTIX_PERMISSIONS.every((a) => a.startsWith('project.'))).toBe(true);
+    expect(GRANTABLE_KORTIX_PERMISSIONS).toContain('member.invite');
+    expect(GRANTABLE_KORTIX_PERMISSIONS).toContain('billing.read');
+    for (const action of HUMAN_ONLY) expect(GRANTABLE_KORTIX_PERMISSIONS).not.toContain(action);
+    expect(GRANTABLE_KORTIX_PERMISSIONS.length).toBe(Object.keys(WORKSPACE_ACTION_BY_LEGACY).length - HUMAN_ONLY.size);
   });
   test('alias tables are exported under the new names', () => {
     expect(DEPRECATED_KORTIX_PERMISSION_ALIASES['project.cr.open']).toEqual(['project.gitops.push']);
@@ -80,5 +101,35 @@ describe('renamed constants', () => {
       'project.agent.write',
     ]);
     expect(LEGACY_TOLERATED_KORTIX_PERMISSIONS).toContain('project.schedule.read');
+  });
+});
+
+describe('kortix_permissions — workspace names (Workspaces, one scope)', () => {
+  const ajv = new Ajv2020({ strict: false, allErrors: true });
+  const validateSchema = ajv.compile(KORTIX_JSON_SCHEMA as Record<string, unknown>);
+
+  test('a workspace name validates with no warning, beside a legacy one', () => {
+    const r = summarize(doc('    kortix_permissions: [workspace.session.start, project.read]\n'));
+    expect(r.valid).toBe(true);
+    expect(r.warnings).toEqual([]);
+  });
+
+  test('an administration workspace name is grantable, like its legacy name', () => {
+    const r = summarize(doc('    kortix_permissions: [workspace.billing.read]\n'));
+    expect(r.valid).toBe(true);
+    expect(r.warnings).toEqual([]);
+  });
+
+  test('every grantable action has exactly one workspace name, in the same order', () => {
+    expect(GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS).toHaveLength(GRANTABLE_KORTIX_PERMISSIONS.length);
+    GRANTABLE_KORTIX_PERMISSIONS.forEach((legacy, i) => {
+      expect(GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS[i]).toBe(toWorkspaceAction(legacy));
+      expect(isGrantableKortixPermission(GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS[i]!)).toBe(true);
+    });
+  });
+
+  test('the published JSON Schema accepts the workspace names', () => {
+    expect(validateSchema(parseYaml(doc('    kortix_permissions: [workspace.read, workspace.gitops.push]\n')))).toBe(true);
+    expect(validateSchema(parseYaml(doc('    kortix_permissions: [workspace.not_an_action]\n')))).toBe(false);
   });
 });

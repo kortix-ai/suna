@@ -17,6 +17,8 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { hostOrigin } from '../../auth/hosts.ts';
 import { hostInfo, kortix } from '../../kortix.ts';
+import { theme } from '../../theme.ts';
+import { NO_WORKSPACE_TEXT } from '../../lib/workspaces.ts';
 import {
   type AccountTab,
   AccountView,
@@ -28,7 +30,7 @@ import {
 } from './account-view.tsx';
 
 export interface AccountScreenProps {
-  accountId: string;
+  accountId: string | null;
   /** Only a focused screen answers keys. */
   focused: boolean;
   width: number;
@@ -57,17 +59,24 @@ function errorText(error: unknown): string {
  */
 export function billingWebUrl(backendUrl: string, accountId: string): string {
   const dashboard = webDashboardUrl(hostOrigin(backendUrl));
-  return `${dashboard}/projects?accountId=${accountId}&accountTab=billing`;
+  return `${dashboard}/workspaces?accountId=${accountId}&accountTab=billing`;
 }
 
-export function AccountScreen({
+export function AccountScreen(props: AccountScreenProps) {
+  if (!props.accountId) {
+    return <text fg={theme.faint}>{NO_WORKSPACE_TEXT}</text>;
+  }
+  return <AccountScreenBody {...props} accountId={props.accountId} />;
+}
+
+function AccountScreenBody({
   accountId,
   focused,
   width,
   height,
   onBack,
   onToast,
-}: AccountScreenProps) {
+}: AccountScreenProps & { accountId: string }) {
   const [tab, setTab] = useState<AccountTab>('members');
   const [busy, setBusy] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());

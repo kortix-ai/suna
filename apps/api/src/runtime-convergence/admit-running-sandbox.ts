@@ -22,7 +22,7 @@
 import { logger } from '../lib/logger';
 import type { GitBackedProject } from '../projects/git/types';
 import { resolveDesiredRelease } from '../config-releases/desired';
-import { sandboxOpencodeEndpoint } from '../projects/opencode-mapping';
+import { sandboxRuntimeEndpoint } from '../projects/runtime-session-mapping';
 import { sandboxRuntimeRequestHeaders } from '../projects/sandbox-fetch';
 import { admitSandboxForSession } from './admit-sandbox';
 import { runtimeAdmissionEnforced, type RuntimeAdmissionVerdict } from './admission';
@@ -57,12 +57,12 @@ async function defaultFetchHealth(
   externalId: string,
   userId: string | undefined,
 ): Promise<{ capabilities?: unknown; runtime_truth?: unknown } | null> {
-  const ep = await sandboxOpencodeEndpoint(externalId, userId);
+  const ep = await sandboxRuntimeEndpoint(externalId, userId);
   if (!ep) return null;
   try {
     const res = await fetch(`${ep.url}/kortix/health`, {
       headers: sandboxRuntimeRequestHeaders(ep.headers),
-      // Matches `listSandboxOpencodeSessions`'s budget: a healthy daemon
+      // Matches `listSandboxRuntimeSessions`'s budget: a healthy daemon
       // answers in well under a second; this call sits on the session-open
       // path, so a wedged connection must fail fast rather than stall it.
       signal: AbortSignal.timeout(3_000),

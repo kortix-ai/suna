@@ -23,7 +23,7 @@ describe('isManagedGitUnavailableError', () => {
   // The API's edge middleware (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES)
   // sends every 502 as a 503 with the body kept, so a bare 503 is not proof of
   // a configuration state. Prod: create-repo under a personal account answered
-  // this exact 503 and `/new` said "Managed git isn't set up on this server".
+  // this exact 503 and `/workspaces/new` said "Managed git isn't set up on this server".
   test('false for an edge-rewritten 502 that carries an upstream failure', async () => {
     const { isManagedGitUnavailableError } = await import('./provision-errors');
     const err = new Error('GitHub /user/repos failed (403): Resource not accessible by integration');

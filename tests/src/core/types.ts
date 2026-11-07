@@ -84,7 +84,7 @@ export interface TeamFixture {
 /** Fixture sugar bound to the current run (auto-tracked for teardown). */
 export interface Fixtures {
   /**
-   * Create a fresh run-scoped project (default: OWNER's personal account).
+   * Create a fresh run-scoped project (default: OWNER's account).
    * The default fixture creates only database state. It does not create an
    * upstream Git repository. Use `managedGit: true` when a flow exercises Git.
    * `seed: true` implies managed Git and seeds the starter so a sandbox can
@@ -106,20 +106,29 @@ export interface Fixtures {
   /** Create a session in a project (provisions a real sandbox). */
   session(
     project: CreatedProject,
-    opts?: { prompt?: string; opencodeModel?: string; agentName?: string },
+    opts?: { prompt?: string; sessionModel?: string; agentName?: string },
   ): Promise<CreatedSession>;
   /** Mint a fresh run-scoped account-scoped PAT. */
   pat(opts?: { name?: string }): Promise<string>;
-  /** Create a team account with member/role helpers (auto-torn-down). */
-  team(opts?: { name?: string; enterprise?: boolean }): Promise<TeamFixture>;
-  /** Create an isolated user with only its personal account (auto-torn-down). */
-  user(opts?: { label?: string }): Promise<Principal>;
+  /**
+   * Create a team account with member/role helpers (auto-torn-down). The team
+   * starts with the Free plan's monthly credits; `credits: false` leaves it at
+   * 0 credits (no credit row at all).
+   */
+  team(opts?: { name?: string; enterprise?: boolean; credits?: boolean }): Promise<TeamFixture>;
+  /**
+   * Create an isolated user (auto-torn-down). No account exists at sign-up
+   * (Workspaces D3), so by default the fixture creates one account the user
+   * owns (POST /v1/accounts) and sets `accountId`. `noAccount: true` leaves
+   * the user with zero workspaces and `accountId` undefined.
+   */
+  user(opts?: { label?: string; noAccount?: boolean }): Promise<Principal>;
   /**
    * Create an isolated user with a SPECIFIC email (auto-torn-down). Use this to
    * become the addressee of a previously-created account/project invite — the
    * accept/decline handlers reject callers whose email doesn't match the invite.
    */
-  userWithEmail(email: string, opts?: { label?: string }): Promise<Principal>;
+  userWithEmail(email: string, opts?: { label?: string; noAccount?: boolean }): Promise<Principal>;
   /**
    * A unique run-scoped name with the `e2e-<runId>-` prefix.
    *

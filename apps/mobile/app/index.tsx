@@ -1,12 +1,14 @@
 /**
  * Start screen — the door into the app (mirror of web's /projects/start).
  *
- * Signed out → /auth. Signed in → the project the user had open last, else the
- * first project (lib/projects/landing.ts), opened with `router.replace` so no
- * screen sits under the project and back can never leave it. With no project
- * in any account (a new user): the upgrade screen once per user
- * (`/welcome`), then `/new` to create the first project — never an empty
- * list (`startDestination`, lib/onboarding/onboarding.ts; COR-161).
+ * Signed out → /auth. Signed in → the workspace the user had open last, else
+ * the first workspace (lib/projects/landing.ts), opened with `router.replace`
+ * so no screen sits under it and back can never leave it. A workspace is a
+ * project and its account; the workspace id is the `project_id`. With no
+ * workspace anywhere (a new user has 0 accounts: Workspaces D3, no account
+ * at sign-up): `/new`, the create-or-join screen. A user who still holds an
+ * empty account sees the upgrade screen once first (`/welcome`). Never an
+ * empty list (`startDestination`, lib/onboarding/onboarding.ts; COR-161).
  *
  * The last project opens at once: no request runs first. This user's lists
  * from the last run are restored before it routes (lib/query/query-cache), so
@@ -24,7 +26,7 @@
  * no history, leaving an account) replaces to `/` so it lands here. With no
  * last project, a failed request falls back to the lists this device kept; with
  * none kept it retries twice, then shows why (lib/projects/start-failure.ts)
- * and three ways forward: Try again, All projects, Sign out. An ended session
+ * and three ways forward: Try again, All workspaces, Sign out. An ended session
  * leads with Sign in again. The screen is never a dead end.
  */
 
@@ -36,7 +38,7 @@ import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
-import { useAuthContext } from '@/contexts';
+import { useAuthContext, useLanguage } from '@/contexts';
 import { useSignOutAndRoute } from '@/hooks/useSignOutAndRoute';
 import { log } from '@/lib/logger';
 import { projectKeys } from '@/lib/projects/hooks';
@@ -176,6 +178,7 @@ export default function StartScreen() {
   const queryClient = useQueryClient();
   const { user, isAuthenticated, mfaRequired, isLoading: authLoading } = useAuthContext();
   const userId = user?.id ?? null;
+  const { t } = useLanguage();
   const [failure, setFailure] = React.useState<StartFailure | null>(null);
   const { signingOut, signOutAndRoute: handleSignOut } = useSignOutAndRoute();
   // Bumped by Try again to re-run the resolve.
@@ -265,7 +268,8 @@ export default function StartScreen() {
           resolution,
           !!useOnboardingStore.getState().upgradeSeenByUser[userId],
           invites,
-          skippedInvites
+          skippedInvites,
+          accounts.length
         );
         if (destination.kind === 'invite') {
           log.log(`🚀 → /invites/${destination.inviteId} (pending invite)`);
@@ -279,8 +283,8 @@ export default function StartScreen() {
           router.replace(`/projects/${destination.projectId}`);
           return;
         }
-        // No project in any account: the upgrade screen and `/new` open on
-        // the account the first project would be created in.
+        // No workspace: the upgrade screen shows the plan of the account the
+        // user already holds (none for a new user: `/new` at once).
         const accountId = onboardingAccountId(
           accounts,
           useCurrentAccountStore.getState().selectedAccountId,
@@ -288,10 +292,10 @@ export default function StartScreen() {
         );
         useCurrentAccountStore.getState().setSelectedAccountId(accountId);
         if (destination.kind === 'welcome') {
-          log.log('🚀 → /welcome (no project, upgrade screen not seen)');
+          log.log('🚀 → /welcome (no workspace, upgrade screen not seen)');
           router.replace('/welcome');
         } else {
-          log.log('🚀 → /new (no project in any account)');
+          log.log('🚀 → /new (no workspace: create or join)');
           router.replace('/new');
         }
       } catch (err) {
@@ -318,7 +322,14 @@ export default function StartScreen() {
     };
   }, [authLoading, isAuthenticated, mfaRequired, userId, attempt, queryClient, router]);
 
-  const copy = failure ? startFailureCopy(failure) : null;
+  const fallback = failure ? startFailureCopy(failure) : null;
+  const copy =
+    failure && fallback
+      ? {
+          title: t(`workspace.startFailure.${failure}Title`, fallback.title),
+          body: t(`workspace.startFailure.${failure}Body`, fallback.body),
+        }
+      : null;
   const sessionEnded = failure === 'session';
 
   return (
@@ -336,12 +347,12 @@ export default function StartScreen() {
             <View className="mt-6 w-full gap-2">
               {sessionEnded ? (
                 <Button size="lg" className="rounded-full" disabled={signingOut} onPress={handleSignOut}>
-                  <Text>Sign in again</Text>
+                  <Text>{t('workspace.startFailure.signInAgain', 'Sign in again')}</Text>
                 </Button>
               ) : (
                 <>
                   <Button size="lg" className="rounded-full" onPress={() => setAttempt((n) => n + 1)}>
-                    <Text>Try again</Text>
+                    <Text>{t('common.retry', 'Try again')}</Text>
                   </Button>
                   <Button
                     size="lg"
@@ -349,7 +360,7 @@ export default function StartScreen() {
                     className="rounded-full"
                     onPress={() => router.replace('/projects')}
                   >
-                    <Text>All projects</Text>
+                    <Text>{t('workspace.allWorkspaces', 'All workspaces')}</Text>
                   </Button>
                   <Button
                     size="lg"
@@ -358,7 +369,7 @@ export default function StartScreen() {
                     disabled={signingOut}
                     onPress={handleSignOut}
                   >
-                    <Text>Sign out</Text>
+                    <Text>{t('auth.signOut', 'Sign out')}</Text>
                   </Button>
                 </>
               )}

@@ -1,5 +1,5 @@
 import { creditAccounts } from '@kortix/db';
-import { and, asc, eq, gt, isNull, lte, ne, or } from 'drizzle-orm';
+import { and, asc, eq, gt, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { ROTATION_BATCH_SIZE } from '../services/rotation-batch';
 import { db } from '../../shared/db';
 
@@ -67,9 +67,23 @@ export async function getSubscriptionInfo(accountId: string) {
   return row ?? null;
 }
 
+/**
+ * `payment_status = 'deleted'` is terminal: the account was closed
+ * (account-deletion.ts). A provider sync passes `unlessDeleted` so a webhook
+ * that arrives after the closure (the closure's own
+ * `customer.subscription.deleted`, a late store renewal) never writes the
+ * account back to life. The check is in the statement, not in a prior read.
+ */
+export interface CreditAccountWriteOptions {
+  unlessDeleted?: boolean;
+}
+
+const notDeleted = () => sql`${creditAccounts.paymentStatus} is distinct from 'deleted'`;
+
 export async function upsertCreditAccount(
   accountId: string,
   data: Partial<typeof creditAccounts.$inferInsert>,
+  options: CreditAccountWriteOptions = {},
 ) {
   const now = new Date().toISOString();
 
@@ -79,17 +93,19 @@ export async function upsertCreditAccount(
     .onConflictDoUpdate({
       target: creditAccounts.accountId,
       set: { ...data, updatedAt: now },
+      ...(options.unlessDeleted ? { setWhere: notDeleted() } : {}),
     });
 }
 
 export async function updateCreditAccount(
   accountId: string,
   data: Partial<typeof creditAccounts.$inferInsert>,
+  options: CreditAccountWriteOptions = {},
 ) {
   await db
     .update(creditAccounts)
     .set({ ...data, updatedAt: new Date().toISOString() })
-    .where(eq(creditAccounts.accountId, accountId));
+    .where(and(eq(creditAccounts.accountId, accountId), options.unlessDeleted ? notDeleted() : undefined));
 }
 
 const rotationColumns = {
@@ -136,6 +152,8 @@ export async function getFreeAccountsDueForRotation(afterAccountId?: string) {
       and(
         afterAccountId ? gt(creditAccounts.accountId, afterAccountId) : undefined,
         eq(creditAccounts.tier, 'free'),
+        // One free grant per person: a further workspace never rotates.
+        eq(creditAccounts.freeCreditsEligible, true),
         or(isNull(creditAccounts.nextCreditGrant), lte(creditAccounts.nextCreditGrant, now)),
       ),
     )

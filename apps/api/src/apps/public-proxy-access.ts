@@ -84,7 +84,7 @@ function appAccessResponse(
   const isPassword = mode === 'password';
   const action = isPassword
     ? `<form method="post" action="/_kortix/access/password"><label for="password">Password</label><input id="password" name="password" type="password" minlength="8" required autocomplete="current-password"><input type="hidden" name="return_to" value="${escapeHtml(returnTo)}"><button type="submit">Open App</button>${invalidPassword ? '<p class="error" role="alert">The password is incorrect.</p>' : ''}</form>`
-    : `<a class="button" href="${escapeHtml(`${config.FRONTEND_URL.replace(/\/$/, '')}/projects/${app.projectId}/apps?open_app=${app.appId}`)}">Continue with Kortix</a>`;
+    : `<a class="button" href="${escapeHtml(`${config.FRONTEND_URL.replace(/\/$/, '')}/workspaces/${app.projectId}/apps?open_app=${app.appId}`)}">Continue with Kortix</a>`;
   const message = isPassword
     ? 'Enter the password configured by the App owner.'
     : 'Sign in with a Kortix account that can access this App.';
@@ -675,7 +675,7 @@ export async function authorizeServiceRequest(
   const userId = resolveAppViewerUserId(request, url, app);
   if (userId && await isAppAdmin(app, userId)) return null;
   return Response.json(
-    { error: 'Only project admins may open this service.', code: 'app_service_admins_only' },
+    { error: 'Only workspace admins may open this service.', code: 'app_service_admins_only' },
     { status: 403, headers: { 'cache-control': 'no-store' } },
   );
 }

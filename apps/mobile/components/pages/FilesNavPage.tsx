@@ -109,7 +109,7 @@ const ext = (name: string) => {
 };
 
 /** Pinned config dirs: always first (web parity). */
-const ELEVATED = new Set(['.kortix', '.opencode']);
+const ELEVATED = new Set(['.kortix']);
 
 type SortBy = 'name' | 'type';
 type SortOrder = 'asc' | 'desc';
@@ -776,7 +776,7 @@ export function FilesNavPage({
                     </Button>
                   ) : null}
                 </View>
-              ) : null
+              ) : undefined
             }
             ListFooterComponent={
               moreEntries && !listLoading && !emptyLabel ? (
@@ -807,7 +807,7 @@ export function FilesNavPage({
                     {`Showing the first ${visible.length} items`}
                   </Text>
                 </View>
-              ) : null
+              ) : undefined
             }
           />
           <TopFade style={scrollFade.topFadeStyle} />
@@ -858,7 +858,7 @@ export function FilesNavPage({
               className="rounded-full"
               onPress={downloadDir}
               disabled={downloadingDir || !ref_}
-              accessibilityLabel={path ? 'Download this folder' : 'Download the project'}>
+              accessibilityLabel={path ? 'Download this folder' : 'Download all files'}>
               <Icon as={DownloadSimpleIcon} size={18} className="text-foreground" />
             </Button>
           </PinnedBar>

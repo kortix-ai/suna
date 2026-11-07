@@ -14,18 +14,20 @@
  * only as `hashSecretKey(token)`.
  */
 import { timingSafeEqual } from 'crypto';
-import { accounts, captureDevices, captureEnrollments, captureEnrollmentTokens } from '@kortix/db';
+import { captureDevices, captureEnrollments, captureEnrollmentTokens } from '@kortix/db';
 import { and, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { lookupEmailsByUserIds } from '../accounts/core/owner-emails';
 import { emailTrustedSql } from '../iam/email-trust';
 import { userIdByEmailRows } from '../iam/membership-read';
 import { hashSecretKey, randomAlphanumeric } from '../shared/crypto';
 import { db } from '../shared/db';
+import { type StatusRule, transitionStatus } from '../shared/status-transition';
 import { DEVICE_TOKEN_PREFIX } from './devices';
 import { accountPrefix, deviceFields } from './format';
 import { ensurePolicyObject } from './policy';
 import { captureEnabled, isAccountMember } from './workspace';
 import { enqueueLink } from './workers';
+import { accountsView } from '../workspaces/rows';
 
 export const ENROLLMENT_TOKEN_PREFIX = 'kortix_enr_';
 /** How long a pending computer waits between two enroll calls. */
@@ -277,11 +279,34 @@ async function machineIsNewToToken(token: EnrollmentToken, machineKey: string, e
   return !row;
 }
 
+/**
+ * The status writes of an enrollment. Each is a compare-and-set
+ * (`shared/status-transition.ts`) on the row the enroll call read earlier:
+ *
+ *   - `pend` never leaves `approved` or `denied`: an admin's decision that
+ *     committed after the read is kept, and the computer's next call sees it.
+ *   - `enroll` never leaves `denied`: a deny that committed after the read
+ *     rolls the device token mint back.
+ *   - `approve` and `deny` are the admin's decisions and apply from any status.
+ *
+ * Every writer locks the enrollment row before the device row, so a deny
+ * and an enroll that race wait on each other instead of deadlocking.
+ */
+const ENROLLMENT_TRANSITIONS = {
+  pend: { from: ['pending', 'enrolled'], to: 'pending' },
+  enroll: { from: ['pending', 'approved', 'enrolled'], to: 'enrolled' },
+  approve: { from: ['pending', 'approved', 'denied', 'enrolled'], to: 'approved' },
+  deny: { from: ['pending', 'approved', 'denied', 'enrolled'], to: 'denied' },
+} as const satisfies Record<string, StatusRule>;
+
+/** An enroll whose row an admin denied after the enroll call read it. */
+class EnrollmentDeniedMeanwhile extends Error {}
+
 async function setPending(row: Enrollment, userId: string | null) {
-  await db
-    .update(captureEnrollments)
-    .set({ status: 'pending', reason: 'approval_required', userId })
-    .where(eq(captureEnrollments.enrollmentId, row.enrollmentId));
+  await transitionStatus(captureEnrollments, captureEnrollments.status, ENROLLMENT_TRANSITIONS.pend, {
+    where: eq(captureEnrollments.enrollmentId, row.enrollmentId),
+    set: { reason: 'approval_required', userId },
+  });
 }
 
 /**
@@ -390,7 +415,58 @@ async function mintDeviceToken(
   const deviceToken = `${DEVICE_TOKEN_PREFIX}${randomAlphanumeric(40)}`;
   const linkNow = Boolean(device && device.userId === null && userId);
   const owner = device ? (device.userId ?? userId) : userId;
-  const deviceId = await db.transaction(async (tx) => {
+  let deviceId: string;
+  try {
+    deviceId = await mintInTransaction(token, row, device, userId, deviceToken, linkNow, owner, fields);
+  } catch (error) {
+    if (!(error instanceof EnrollmentDeniedMeanwhile)) throw error;
+    return { kind: 'denied', tokenId: token.tokenId, accountId: token.accountId, enrollmentId: row.enrollmentId };
+  }
+  if (linkNow && userId) await enqueueLink(token.accountId, deviceId, userId);
+  await ensurePolicyObject(token.accountId);
+  const [[account], emails] = await Promise.all([
+    db.select({ name: accountsView.name }).from(accountsView).where(eq(accountsView.accountId, token.accountId)).limit(1),
+    owner ? lookupEmailsByUserIds([owner]) : Promise.resolve(new Map<string, string | null>()),
+  ]);
+  return {
+    kind: 'enrolled',
+    tokenId: token.tokenId,
+    accountId: token.accountId,
+    enrollmentId: row.enrollmentId,
+    token: deviceToken,
+    prefix: accountPrefix(token.accountId),
+    deviceId,
+    userId: owner,
+    accountName: account?.name ?? '',
+    memberEmail: owner ? (emails.get(owner) ?? null) : null,
+  };
+}
+
+/**
+ * The enrollment claim and the device token write, in one transaction. The
+ * claim goes first: it locks the enrollment row (the order every writer here
+ * keeps) and throws `EnrollmentDeniedMeanwhile` when a deny committed after
+ * the enroll call's read, so no token is minted for a denied computer.
+ */
+async function mintInTransaction(
+  token: EnrollmentToken,
+  row: Enrollment,
+  device: typeof captureDevices.$inferSelect | null,
+  userId: string | null,
+  deviceToken: string,
+  linkNow: boolean,
+  owner: string | null,
+  fields: ReturnType<typeof deviceFields>,
+): Promise<string> {
+  return db.transaction(async (tx) => {
+    const claimed = await transitionStatus(
+      captureEnrollments,
+      captureEnrollments.status,
+      ENROLLMENT_TRANSITIONS.enroll,
+      { where: eq(captureEnrollments.enrollmentId, row.enrollmentId), set: { reason: null, userId: owner } },
+      tx,
+    );
+    if (!claimed.applied) throw new EnrollmentDeniedMeanwhile();
     const set = {
       ...fields,
       deviceInfo: row.deviceInfo,
@@ -411,29 +487,11 @@ async function mintDeviceToken(
           .returning({ deviceId: captureDevices.deviceId });
     await tx
       .update(captureEnrollments)
-      .set({ status: 'enrolled', reason: null, userId: owner, deviceId: saved!.deviceId })
+      .set({ deviceId: saved!.deviceId })
       .where(eq(captureEnrollments.enrollmentId, row.enrollmentId));
     await tx.update(captureEnrollmentTokens).set({ lastUsedAt: sql`now()` }).where(eq(captureEnrollmentTokens.tokenId, token.tokenId));
     return saved!.deviceId;
   });
-  if (linkNow && userId) await enqueueLink(token.accountId, deviceId, userId);
-  await ensurePolicyObject(token.accountId);
-  const [[account], emails] = await Promise.all([
-    db.select({ name: accounts.name }).from(accounts).where(eq(accounts.accountId, token.accountId)).limit(1),
-    owner ? lookupEmailsByUserIds([owner]) : Promise.resolve(new Map<string, string | null>()),
-  ]);
-  return {
-    kind: 'enrolled',
-    tokenId: token.tokenId,
-    accountId: token.accountId,
-    enrollmentId: row.enrollmentId,
-    token: deviceToken,
-    prefix: accountPrefix(token.accountId),
-    deviceId,
-    userId: owner,
-    accountName: account?.name ?? '',
-    memberEmail: owner ? (emails.get(owner) ?? null) : null,
-  };
 }
 
 // ─── Waiting computers (admin) ───────────────────────────────────────────────
@@ -486,18 +544,25 @@ export async function enrollmentInAccount(accountId: string, enrollmentId: strin
 export async function approveEnrollment(row: Enrollment, userId: string | null, by: string): Promise<Enrollment> {
   const device = await existingDevice(row, userId);
   const updated = await db.transaction(async (tx) => {
+    // The enrollment row first: the lock order every writer here keeps.
+    const saved = await transitionStatus(
+      captureEnrollments,
+      captureEnrollments.status,
+      ENROLLMENT_TRANSITIONS.approve,
+      {
+        where: eq(captureEnrollments.enrollmentId, row.enrollmentId),
+        set: { reason: null, userId: userId ?? row.userId, decidedBy: by, decidedAt: sql`now()` },
+      },
+      tx,
+    );
+    if (!saved.applied) throw new Error(`capture enrollment ${row.enrollmentId} is gone`);
     if (device) {
       await tx
         .update(captureDevices)
         .set({ revokedAt: null, revokedBy: null, ...(userId ? { userId } : {}), updatedAt: sql`now()` })
         .where(eq(captureDevices.deviceId, device.deviceId));
     }
-    const [saved] = await tx
-      .update(captureEnrollments)
-      .set({ status: 'approved', reason: null, userId: userId ?? row.userId, decidedBy: by, decidedAt: sql`now()` })
-      .where(eq(captureEnrollments.enrollmentId, row.enrollmentId))
-      .returning();
-    return saved!;
+    return saved.row;
   });
   if (device && userId && device.userId !== userId) await enqueueLink(row.accountId, device.deviceId, userId);
   return updated;
@@ -510,17 +575,26 @@ export async function approveEnrollment(row: Enrollment, userId: string | null, 
  */
 export async function denyEnrollment(row: Enrollment, by: string): Promise<Enrollment> {
   return db.transaction(async (tx) => {
-    if (row.deviceId) {
+    // The enrollment row first, and the device it names NOW: an enroll that
+    // minted a device after the caller's read is revoked too.
+    const denied = await transitionStatus(
+      captureEnrollments,
+      captureEnrollments.status,
+      ENROLLMENT_TRANSITIONS.deny,
+      {
+        where: eq(captureEnrollments.enrollmentId, row.enrollmentId),
+        set: { reason: null, decidedBy: by, decidedAt: sql`now()` },
+      },
+      tx,
+    );
+    if (!denied.applied) throw new Error(`capture enrollment ${row.enrollmentId} is gone`);
+    const deviceId = denied.row.deviceId ?? row.deviceId;
+    if (deviceId) {
       await tx
         .update(captureDevices)
         .set({ revokedAt: sql`coalesce(${captureDevices.revokedAt}, now())`, revokedBy: by, tokenHash: null, updatedAt: sql`now()` })
-        .where(eq(captureDevices.deviceId, row.deviceId));
+        .where(eq(captureDevices.deviceId, deviceId));
     }
-    const [updated] = await tx
-      .update(captureEnrollments)
-      .set({ status: 'denied', reason: null, decidedBy: by, decidedAt: sql`now()` })
-      .where(eq(captureEnrollments.enrollmentId, row.enrollmentId))
-      .returning();
-    return updated!;
+    return denied.row;
   });
 }

@@ -14,6 +14,12 @@ name: Promote to Production
 # on promote to prod"). Dispatching this workflow is the owner's approval for
 # the staging merge. Merging into prod stays a person's call.
 #
+# A run that merged into staging and then failed (build, deploy, /health) is
+# resumable: re-run it, or dispatch again with the same ref. The plan step finds
+# the merged promote/dev-<sha10> PR, and when its merge is still the staging
+# tip it skips the merge and resumes at the build (skipped when the three
+# staging manifests already passed) with the same 8-read /health proof.
+#
 # `ref: staging` (or a SHA on staging's first-parent chain) skips the dev leg:
 # that is the hotfix path, staging -> prod only. `dry_run: true` prints every
 # decision and changes nothing.
@@ -106,6 +112,14 @@ jobs:
             echo "::error::title and notes are required unless dry_run is true."
             exit 1
           fi
+          # The notes become RELEASE_NOTES.md, which deploy-prod publishes as the
+          # public GitHub Release and /changelog. A release PR body is not notes:
+          # it carries the "Merging this PR publishes" footer and bot footers
+          # with tracking links (2026-11-06, learnings ledger).
+          if printf '%s' "$IN_NOTES" | grep -qE 'Merging this PR \*\*publishes|<!-- ?codesmith|blacksmith\.sh'; then
+            echo "::error::notes look like a release PR body (PR footer or bot markup). Pass the release notes only."
+            exit 1
+          fi
           git fetch --no-tags origin dev staging prod
           REF="${INPUT_REF:-dev}"
           SHA="$(git rev-parse --verify --quiet "origin/$REF^{commit}" || git rev-parse --verify "$REF^{commit}")"
@@ -116,12 +130,29 @@ jobs:
             { echo "dev_leg=false"; echo "source_sha=$SHA"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git merge-base --is-ancestor "$SHA" origin/staging; then
-            echo "::error::$SHA is already merged into staging by an earlier promotion. Re-run with ref=staging to release the staging tip."
-            exit 1
-          fi
           SHA10="${SHA:0:10}"
           BRANCH="promote/dev-$SHA10"
+          if git merge-base --is-ancestor "$SHA" origin/staging; then
+            # RESUME. An earlier run merged promote/dev-<sha10> into staging and
+            # then failed in build, deploy or the /health proof. Staging moved,
+            # and no release PR exists. When the staging tip is still that
+            # merge, this run skips the merge and resumes at the build, so
+            # "Re-run all jobs" finishes the promotion with the full staging
+            # proof. Any other case (staging moved on after the merge) is a
+            # staging release: ref=staging.
+            MERGED="$(gh pr list --base staging --head "$BRANCH" --state merged --json mergeCommit --jq '.[0].mergeCommit.oid // empty')"
+            if [ -n "$MERGED" ] && [ "$MERGED" = "$STAGING" ]; then
+              echo "plan: resume: $BRANCH is merged into staging as $MERGED (the staging tip); no merge, resume at build + deploy + 8 /health reads"
+              {
+                echo "dev_leg=true"
+                echo "resume_sha=$MERGED"
+                echo "source_sha=$MERGED"
+              } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::$SHA is already merged into staging, and the staging tip ($STAGING) is not its promotion merge (${MERGED:-none}). Re-run with ref=staging to release the staging tip."
+            exit 1
+          fi
           rc=0
           # GitHub merges the promotion PR with a plain 3-way merge and ignores the
           # `merge=union` that .gitattributes sets on the learnings MEMORY.md. A check
@@ -154,7 +185,7 @@ jobs:
 
       - name: Push the promotion branch, open and merge the PR into staging
         id: merge
-        if: steps.plan.outputs.dev_leg == 'true' && inputs.dry_run != true
+        if: steps.plan.outputs.dev_leg == 'true' && inputs.dry_run != true && steps.plan.outputs.resume_sha == ''
         env:
           SHA: ${{ steps.plan.outputs.sha }}
           SHA10: ${{ steps.plan.outputs.sha10 }}
@@ -214,7 +245,7 @@ jobs:
           { echo "merge_sha=$MERGE_SHA"; echo "pr=$PR"; } >> "$GITHUB_OUTPUT"
 
       - name: Check out the aws-env action
-        if: steps.merge.outputs.merge_sha != ''
+        if: steps.merge.outputs.merge_sha != '' || (steps.plan.outputs.resume_sha != '' && inputs.dry_run != true)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
@@ -222,7 +253,7 @@ jobs:
           sparse-checkout: .github/actions
           persist-credentials: false
       - name: Read the Vercel bypass from AWS Secrets Manager
-        if: steps.merge.outputs.merge_sha != ''
+        if: steps.merge.outputs.merge_sha != '' || (steps.plan.outputs.resume_sha != '' && inputs.dry_run != true)
         uses: ./.aws-env/.github/actions/aws-env
         with:
           keys: |
@@ -230,9 +261,10 @@ jobs:
 
       - name: Build and deploy staging, wait until it serves the merge SHA
         id: deploy
-        if: steps.merge.outputs.merge_sha != ''
+        if: steps.merge.outputs.merge_sha != '' || (steps.plan.outputs.resume_sha != '' && inputs.dry_run != true)
         env:
-          MERGE_SHA: ${{ steps.merge.outputs.merge_sha }}
+          MERGE_SHA: ${{ steps.merge.outputs.merge_sha || steps.plan.outputs.resume_sha }}
+          RESUME_SHA: ${{ steps.plan.outputs.resume_sha }}
         run: |
           set -euo pipefail
           wait_run() { # <run id> <label> <timeout min>
@@ -241,40 +273,73 @@ jobs:
               state="$(gh run view "$id" --json status,conclusion --jq '.status + "/" + (.conclusion // "")')"
               case "$state" in
                 completed/success) echo "$label run $id succeeded."; return 0 ;;
-                completed/*) echo "::error::$label run $id finished $state."; exit 1 ;;
+                completed/*) echo "::error::$label run $id finished $state. Fix the cause, then re-run this Promote run: it resumes after the staging merge."; exit 1 ;;
               esac
-              [ "$(date +%s)" -lt "$deadline" ] || { echo "::error::$label run $id still $state after $3 min."; exit 1; }
+              [ "$(date +%s)" -lt "$deadline" ] || { echo "::error::$label run $id still $state after $3 min. Re-run this Promote run once it ends: it resumes after the staging merge."; exit 1; }
               sleep 30
             done
           }
-          find_run() { # <workflow> <since> [head sha]; $3 is optional, so read it as ${3:-} under set -u
+          find_run() { # <workflow> <since> <sha>: the oldest dispatched run since <since> for <sha>
+            # Build Staging runs on ref `staging`, so its headSha is the merge
+            # SHA. Deploy Staging is dispatched with `--ref dev`, so its headSha
+            # is dev's tip: match the SHA in its run name instead
+            # (`run-name` in deploy-staging.yml). Without a SHA filter another
+            # dispatch in the window could be picked (a person's cherry-pick
+            # deploy, an older pending run).
             local id=""
             for _ in $(seq 1 30); do
-              id="$(gh run list --workflow "$1" --event workflow_dispatch --limit 20 \
-                --json databaseId,headSha,createdAt \
-                --jq "[.[] | select(.createdAt >= \"$2\" and (\"${3:-}\" == \"\" or .headSha == \"${3:-}\"))] | sort_by(.createdAt) | .[0].databaseId // empty")"
+              id="$(gh run list --workflow "$1" --event workflow_dispatch --limit 30 \
+                --json databaseId,headSha,displayTitle,createdAt \
+                --jq "[.[] | select(.createdAt >= \"$2\" and (.headSha == \"$3\" or (.displayTitle | contains(\"$3\"))))] | sort_by(.createdAt) | .[0].databaseId // empty")"
               [ -n "$id" ] && { echo "$id"; return 0; }
               sleep 10
             done
-            echo "::error::No $1 run created since $2." >&2
+            echo "::error::No $1 run for $3 created since $2." >&2
             exit 1
           }
+          # The three manifest publishes on the merge SHA (the same rule as the
+          # release preflight). A resumed run whose build already passed skips it.
+          manifests_green() {
+            local latest
+            latest="$(gh api "repos/$GH_REPO/commits/$MERGE_SHA/check-runs?per_page=100" --paginate --jq '.check_runs[]' \
+              | jq -s 'group_by(.name) | map(max_by(.started_at // ""))')" || return 1
+            for name in "Publish API manifest (staging)" "Publish gateway manifest (staging)" "Publish frontend manifest (staging)"; do
+              jq -e --arg n "$name" 'any(.[]; .name == $n and .conclusion == "success")' <<<"$latest" >/dev/null || return 1
+            done
+          }
+          read_commit() { curl -fsS --max-time 15 "$@" 2>/dev/null | jq -r '.commit // "none"' 2>/dev/null || echo none; }
+          staging_serves() {
+            [ "$(read_commit https://staging-api.kortix.com/v1/health)" = "$MERGE_SHA" ] \
+              && [ "$(read_commit https://gateway-staging.kortix.com/health/live)" = "$MERGE_SHA" ] \
+              && [ "$(read_commit -H "x-vercel-protection-bypass: ${VERCEL_BYPASS}" https://staging.kortix.com/api/health)" = "$MERGE_SHA" ]
+          }
 
-          # A merge made with GITHUB_TOKEN starts no push workflow, so dispatch
-          # the build. Ref `staging` puts its check-runs on the merge SHA, which
-          # the release preflight reads. Its dispatch-deploy job starts Deploy Staging.
           T0="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh workflow run build-staging.yml --ref staging -f sha="$MERGE_SHA"
-          BUILD="$(find_run build-staging.yml "$T0" "$MERGE_SHA")"
-          echo "Build Staging Artifacts: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$BUILD"
-          wait_run "$BUILD" "Build Staging Artifacts" 60
-          DEPLOY="$(find_run deploy-staging.yml "$T0")"
-          echo "Deploy Staging: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$DEPLOY"
-          wait_run "$DEPLOY" "Deploy Staging" 45
+          if [ -n "$RESUME_SHA" ] && manifests_green; then
+            echo "Resume: the staging images for $MERGE_SHA exist; no rebuild."
+            if staging_serves; then
+              echo "Resume: staging already serves $MERGE_SHA; no deploy."
+            else
+              gh workflow run deploy-staging.yml --ref dev -f sha="$MERGE_SHA"
+              DEPLOY="$(find_run deploy-staging.yml "$T0" "$MERGE_SHA")"
+              echo "Deploy Staging: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$DEPLOY"
+              wait_run "$DEPLOY" "Deploy Staging" 45
+            fi
+          else
+            # A merge made with GITHUB_TOKEN starts no push workflow, so dispatch
+            # the build. Ref `staging` puts its check-runs on the merge SHA, which
+            # the release preflight reads. Its dispatch-deploy job starts Deploy Staging.
+            gh workflow run build-staging.yml --ref staging -f sha="$MERGE_SHA"
+            BUILD="$(find_run build-staging.yml "$T0" "$MERGE_SHA")"
+            echo "Build Staging Artifacts: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$BUILD"
+            wait_run "$BUILD" "Build Staging Artifacts" 60
+            DEPLOY="$(find_run deploy-staging.yml "$T0" "$MERGE_SHA")"
+            echo "Deploy Staging: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$DEPLOY"
+            wait_run "$DEPLOY" "Deploy Staging" 45
+          fi
 
           # One health read during a rolling deploy proves nothing: require 8
           # consecutive reads where api, gateway, and web all serve the SHA.
-          read_commit() { curl -fsS --max-time 15 "$@" 2>/dev/null | jq -r '.commit // "none"' 2>/dev/null || echo none; }
           ok=0
           deadline=$(( $(date +%s) + 20 * 60 ))
           while [ "$ok" -lt 8 ]; do
@@ -448,6 +513,18 @@ jobs:
           # v0.13.57's dispatched gate passed on the same SHA and the pull request
           # stayed BLOCKED. Approval starts attempt 2.
           HEAD_SHA="$(git rev-parse HEAD)"
+          # A re-promote force-pushed a new head. The gate run of the older
+          # head still holds the `tests-release-staging` slot, and the new
+          # head's run waits behind it (v0.15.0, 2026-11-06: 30 min). Its
+          # result never counts, so cancel it.
+          for run in $(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/tests-release.yml/runs?event=pull_request&branch=$RELBR&per_page=50" \
+            --jq ".workflow_runs[] | select(.status != \"completed\" and .head_sha != \"$HEAD_SHA\") | .id"); do
+            if gh run cancel "$run" --repo "$GITHUB_REPOSITORY" >/dev/null; then
+              echo "Cancelled gate run $run of a superseded head of $RELBR."
+            else
+              echo "::warning::Cancel the superseded gate run yourself: gh run cancel $run"
+            fi
+          done
           held=""
           for _ in $(seq 1 30); do
             held="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/tests-release.yml/runs?event=pull_request&head_sha=$HEAD_SHA" \

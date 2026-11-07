@@ -1,14 +1,15 @@
 import { describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAssistantMessageEventStream, type AssistantMessageEvent, type Message } from '@earendil-works/pi-ai'
 import runtimeVersions from '../../../../packages/shared/src/runtime-versions.json' with { type: 'json' }
-import { claudeModelFor } from '@/harness/pi/claude/provider'
+import { claudeModelFor, processDied, relayFallbackStep } from '@/harness/pi/claude/provider'
 import { CLAUDE_AGENT_SDK_VERSION, CLAUDE_CODE_INTEGRITY, ensureClaudeExecutable, installedClaudeExecutable } from '@/harness/pi/claude/install'
 import { CLAUDE_GATEWAY_PLACEHOLDER_TOKEN, claudeEnv, claudeLoginKey, ClaudeLoginMissing } from '@/harness/pi/claude/sdk'
 import { ClaudeReply } from '@/harness/pi/claude/stream'
-import { catchUp, checkpoints, collectResults, decide, type SessionRecord } from '@/harness/pi/claude/sync'
+import { catchUp, checkpoints, collectResults, decide, groups, type SessionRecord } from '@/harness/pi/claude/sync'
 
 const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }
 const user = (text: string): Message => ({ role: 'user', content: text, timestamp: 1 })
@@ -150,6 +151,25 @@ describe('Claude Code output as a pi response', () => {
     expect(reply.message.stopReason).toBe('error')
     expect(reply.message.errorMessage).toBe('Your Claude subscription limit is reached (five hour). It resets at 2030-03-17T17:46:40.000Z.')
   })
+
+  test('a limit before any output hands the step to the fallback; a limit after output, or a success, does not', async () => {
+    const limit = { type: 'result', subtype: 'success', is_error: true, result: '', api_error_status: 429, usage: {} } as never
+    const before = events((r) => {
+      r.push({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'kortix_claude_accounts', resetsAt: 1_900_000_000 } } as never)
+      r.push({ type: 'assistant', parent_tool_use_id: null, uuid: 'a1', session_id: 's', error: 'rate_limit', message: { id: 'm1', content: [] } } as never)
+    })
+    const after = events((r) => {
+      r.push(streamEvent({ type: 'message_start', message: { id: 'm1', model: 'claude-haiku-5-5', usage: { input_tokens: 1 } } }))
+      r.push({ type: 'assistant', parent_tool_use_id: null, uuid: 'a2', session_id: 's', error: 'rate_limit', message: { id: 'm2', content: [] } } as never)
+    })
+    const ok = events(() => undefined)
+    await Bun.sleep(0)
+    expect(before.reply.limitedBeforeOutput(limit)).toBe(true)
+    // Nothing reached pi yet: the fallback's stream is the whole step.
+    expect(before.seen).toEqual([])
+    expect(after.reply.limitedBeforeOutput(limit)).toBe(false)
+    expect(ok.reply.limitedBeforeOutput({ type: 'result', subtype: 'success', is_error: false, result: 'ok', usage: {} } as never)).toBe(false)
+  })
 })
 
 describe('the Claude login', () => {
@@ -208,5 +228,69 @@ describe('Claude Code on a box whose image lacks it', () => {
     } finally {
       registry.stop(true)
     }
+  })
+})
+
+describe('a Claude Code process that died', () => {
+  test('reads as a stop the person can continue from, not the raw signal', () => {
+    const killed = processDied(new Error('Claude Code process terminated by signal SIGKILL'))
+    expect(killed?.message).toBe('Claude Code stopped unexpectedly (it was killed, most likely because the sandbox ran out of memory). Your session is intact: send a message to continue.')
+    expect(processDied(new Error('Claude Code process exited with code 1. stderr: boom'))?.message).toBe('Claude Code stopped unexpectedly. Your session is intact: send a message to continue.')
+    expect(processDied(new Error('Request was aborted'))).toBeUndefined()
+  })
+})
+
+
+describe('Claude history sync with screenshots', () => {
+  test('an image hashes as before (stored records keep matching), and once per image part', () => {
+    const data = Buffer.alloc(300_000, 7).toString('base64')
+    const part = { type: 'image' as const, data, mimeType: 'image/png' }
+    const message = { role: 'user' as const, content: [{ type: 'text' as const, text: 'look' }, part], timestamp: 1 }
+    const [group] = groups([message])
+    // The pre-cache hash: sha256 of the canonical JSON of the visible parts, the image as sha256(JSON(data)).
+    const sha = (value: string) => createHash('sha256').update(value).digest('hex')
+    const visible = `[{"text":"look","type":"text"},{"data":${JSON.stringify(sha(JSON.stringify(data)))},"mimeType":"image/png","type":"image"}]`
+    const members = [sha(visible)]
+    expect(group!.hash).toBe(sha(`{"members":${JSON.stringify(members)},"role":"user"}`))
+    const started = performance.now()
+    for (let i = 0; i < 200; i++) groups([message])
+    expect(performance.now() - started).toBeLessThan(200)
+  })
+})
+
+describe('the fallback step after a Claude usage limit', () => {
+  const partial = { role: 'assistant', content: [], api: 'openai-completions', provider: 'kortix', model: 'claude-agent/opus', usage, stopReason: 'stop', timestamp: 1 } as never
+  const source = (events: AssistantMessageEvent[]) => {
+    const stream = createAssistantMessageEventStream()
+    for (const event of events) stream.push(event)
+    stream.end(partial)
+    return stream
+  }
+  const drained = async (stream: ReturnType<typeof createAssistantMessageEventStream>) => {
+    const seen: string[] = []
+    stream.end()
+    for await (const event of stream) seen.push(event.type)
+    return seen
+  }
+
+  test('a fallback that answers is relayed whole', async () => {
+    const out = createAssistantMessageEventStream()
+    const served = await relayFallbackStep(source([
+      { type: 'start', partial },
+      { type: 'text_start', contentIndex: 0, partial },
+      { type: 'done', reason: 'stop', message: partial },
+    ]), out)
+    expect(served).toBe(true)
+    expect(await drained(out)).toEqual(['start', 'text_start', 'done'])
+  })
+
+  test('no fallback (no Routing chain, or every link failed) relays nothing, so the step keeps Claude\'s own limit message', async () => {
+    const out = createAssistantMessageEventStream()
+    const served = await relayFallbackStep(source([
+      { type: 'start', partial },
+      { type: 'error', reason: 'error', error: { ...(partial as object), stopReason: 'error', errorMessage: '429: {"message":"…"}' } as never },
+    ]), out)
+    expect(served).toBe(false)
+    expect(await drained(out)).toEqual([])
   })
 })

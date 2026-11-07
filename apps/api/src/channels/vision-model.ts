@@ -7,8 +7,10 @@ import { accountMayUseManagedModels } from '../billing/services/entitlements';
 /**
  * A chat message that carries an image is unanswerable on a text-only model.
  *
- * OpenCode decides whether to send an image upstream from the capabilities it
- * was given for the model. When they say no image, the agent downloads the
+ * The runtime decides whether to send an image upstream from the capabilities
+ * it was given for the model (pi: the catalog entry's `attachment`,
+ * `gatewayModel` in kortixd's harness/pi/model.ts). When they say no image, the
+ * agent downloads the
  * file, calls `read`, gets "Image read successfully", and still has nothing to
  * look at — then hunts for ImageMagick / tesseract / an OCR API and the turn
  * dies with no answer. Observed live on Teams 2026-09-19 (a dev
@@ -17,7 +19,7 @@ import { accountMayUseManagedModels } from '../billing/services/entitlements';
  * `LLM_GATEWAY_VISION_MODEL` already encodes the platform's answer for this —
  * "route image-bearing DEFAULT-model requests to this model" — but the gateway
  * rule (llm-gateway/routing/resolve-route.ts) can only fire when an image part
- * reaches the gateway, and OpenCode strips it before that, precisely because
+ * reaches the gateway, and the runtime drops it before that, precisely because
  * the model declares it cannot take one. So a channel that KNOWS the inbound
  * message has an image must pick the model itself, up front.
  *
@@ -26,8 +28,8 @@ import { accountMayUseManagedModels } from '../billing/services/entitlements';
  * 1. **`attachment` is not the vision flag.** `glm-5.3-flash` is
  *    `attachment: true` and `input.image: false` — the managed catalog marks
  *    it `vision: true` by hand while its models.dev record carries text-only
- *    modalities, and OpenCode honours the modalities. Routing an image turn to
- *    it produced *"the model I'm running on right now can't process images"*.
+ *    modalities, and OpenCode (the runtime then) honoured the modalities.
+ *    Routing an image turn to it produced *"the model I'm running on right now can't process images"*.
  *    So the predicate is `modalities.input` containing `image`.
  * 2. **A configured target is not necessarily servable.** `gpt-5.6-luna`
  *    answers `requires Kortix's managed provider, which is disabled on this
@@ -73,7 +75,8 @@ function wireModelId(model: string): string {
 /**
  * Can this model actually take an image?
  *
- * `modalities.input` is authoritative because it is what OpenCode honours.
+ * `modalities.input` is authoritative: the hand-set `attachment` flag can be
+ * wrong (finding 1 above).
  * `attachment` is only consulted when no modalities are published at all,
  * where it is the sole signal available — never as an override of them.
  */
@@ -91,11 +94,11 @@ export function capabilityReadsImages(model: CapabilityView | undefined): boolea
  */
 export const NO_VISION_NOTE = [
   '',
-  'IMPORTANT: no image-capable model is available in this project, so you',
+  'IMPORTANT: no image-capable model is available in this Kortix workspace, so you',
   'cannot see the attached image even after downloading it. Do not call `read`',
   'on it and do not look for OCR tools. Tell the user plainly that you cannot',
   'view images here, ask them to paste the text or describe it, and mention',
-  'that a project admin can enable an image-capable model.',
+  'that a workspace admin can enable an image-capable model.',
 ].join('\n');
 
 /** The cheap, synchronous check used on the channel hot path. */
@@ -236,17 +239,17 @@ export async function channelTurnModel(input: {
   const pinServable = currentModel ? await probe(wireModelId(currentModel)) : true;
 
   // An image message ALWAYS carries an explicit model, even when the pin is
-  // already fine. The session's recorded model is not reliably what OpenCode
-  // runs — on dev 2026-09-21 a session whose metadata and `/config` both said
-  // `kortix/codex/gpt-6-astra` answered on `deepseek-v4-pro-0813`, because a
-  // live model change updates the config while the OpenCode session keeps its
-  // own. A per-prompt override is the one lever that is always honoured, so
+  // already fine. The session's recorded model is not reliably what the
+  // runtime runs — on dev 2026-09-21 a session whose metadata and `/config`
+  // both said `kortix/codex/gpt-6-astra` answered on `deepseek-v4-pro-0813`,
+  // because a live model change updated the config while the OpenCode session
+  // kept its own. A per-prompt override is the one lever that is always honoured, so
   // for an image we pin deliberately instead of trusting that state.
   if (hasImage && effectiveReadsImages && pinServable && currentModel) {
     return wireModelId(currentModel);
   }
   // A text message carries its servable pin for the same reason: with no model
-  // on the prompt, OpenCode answers on the model of the session's last prompt.
+  // on the prompt, the runtime answers on the model of the session's last prompt.
   // A Teams channel pinned to DeepSeek answered on `codex/gpt-6-astra` from
   // 2026-09-24 to 2026-10-01, because one earlier prompt had carried it, and
   // failed every turn with "Connect Codex".
@@ -285,9 +288,9 @@ export async function channelTurnModel(input: {
  * `{ providerID, modelID }` for a prompt-level model override.
  *
  * The provider is ALWAYS `kortix`. Every served model — managed, BYOK and
- * `codex/*` alike — is registered under the one synthetic `kortix` OpenCode
- * provider (see `buildKortixProvider` in the sandbox agent server, and the
- * `provider` field note in llm-gateway/models/catalog-models.ts), so the id
+ * `codex/*` alike — is registered under the one provider id `kortix`
+ * (`KORTIX_PROVIDER_ID`, `createPiModels` in kortixd's harness/pi/model.ts, and
+ * the `provider` field note in llm-gateway/models/catalog-models.ts), so the id
  * keeps its own slashes: `codex/gpt-6-astra` is a MODEL on `kortix`, not a
  * model `gpt-6-astra` on a provider `codex`. Splitting on the slash addresses
  * a provider the runtime does not have, and the override is silently dropped —

@@ -31,7 +31,7 @@ function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
     name: null,
     branch_name: null,
     metadata: null,
-    opencode_sessions: [],
+    runtime_sessions: [],
     ...overrides,
   } as unknown as ProjectSession;
 }
@@ -147,11 +147,11 @@ describe('sessionDisplayStatus', () => {
 });
 
 describe('sessionLastActivityAt', () => {
-  test('uses the latest OpenCode conversation activity, not row bookkeeping', () => {
+  test('uses the latest runtime conversation activity, not row bookkeeping', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-08T08:00:09.000Z',
-      opencode_sessions: [runtimeSession('2026-01-03T04:05:06.000Z')],
+      runtime_sessions: [runtimeSession('2026-01-03T04:05:06.000Z')],
     });
     expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-03T04:05:06.000Z'));
   });
@@ -161,7 +161,7 @@ describe('sessionLastActivityAt', () => {
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-01T00:00:00.000Z',
       metadata: { last_activity_at: '2026-01-09T10:00:00.000Z' },
-      opencode_sessions: [],
+      runtime_sessions: [],
     });
     expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-09T10:00:00.000Z'));
   });
@@ -169,11 +169,11 @@ describe('sessionLastActivityAt', () => {
   test('the newer of the prompt stamp and the conversation snapshot wins', () => {
     const staleSnapshot = makeSession({
       metadata: { last_activity_at: '2026-01-09T10:00:00.000Z' },
-      opencode_sessions: [runtimeSession('2026-01-02T00:00:00.000Z')],
+      runtime_sessions: [runtimeSession('2026-01-02T00:00:00.000Z')],
     });
     const stalePrompt = makeSession({
       metadata: { last_activity_at: '2026-01-09T10:00:00.000Z' },
-      opencode_sessions: [runtimeSession('2026-01-09T10:04:00.000Z')],
+      runtime_sessions: [runtimeSession('2026-01-09T10:04:00.000Z')],
     });
     expect(sessionLastActivityAt(staleSnapshot)).toBe(Date.parse('2026-01-09T10:00:00.000Z'));
     expect(sessionLastActivityAt(stalePrompt)).toBe(Date.parse('2026-01-09T10:04:00.000Z'));
@@ -184,14 +184,14 @@ describe('sessionLastActivityAt', () => {
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-01T00:00:00.000Z',
       metadata: { last_activity_at: 'not a date' },
-      opencode_sessions: [runtimeSession('2026-01-03T00:00:00.000Z')],
+      runtime_sessions: [runtimeSession('2026-01-03T00:00:00.000Z')],
     });
     expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-03T00:00:00.000Z'));
   });
 
   test('a snapshot entry with no timestamp does not mask a later one', () => {
     const session = makeSession({
-      opencode_sessions: [
+      runtime_sessions: [
         runtimeSession(null, 'oc-a'),
         runtimeSession('2026-01-05T00:00:00.000Z', 'oc-b'),
       ],
@@ -203,7 +203,7 @@ describe('sessionLastActivityAt', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-08T08:00:09.000Z',
-      opencode_sessions: [],
+      runtime_sessions: [],
     });
     expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-08T08:00:09.000Z'));
   });
@@ -212,7 +212,7 @@ describe('sessionLastActivityAt', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: undefined,
-      opencode_sessions: [],
+      runtime_sessions: [],
     });
     expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-01T00:00:00.000Z'));
   });
@@ -221,7 +221,7 @@ describe('sessionLastActivityAt', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-20T00:00:00.000Z',
-      opencode_sessions: [runtimeSession('2026-01-03T00:00:00.000Z')],
+      runtime_sessions: [runtimeSession('2026-01-03T00:00:00.000Z')],
     });
     expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-03T00:00:00.000Z'));
   });
@@ -591,65 +591,65 @@ function ocNode(
 }
 
 describe('rootRuntimeSession', () => {
-  test('no opencode_sessions: null', () => {
-    expect(rootRuntimeSession(makeSession({ opencode_sessions: [] }))).toBeNull();
+  test('no runtime_sessions: null', () => {
+    expect(rootRuntimeSession(makeSession({ runtime_sessions: [] }))).toBeNull();
   });
 
-  test('a missing opencode_sessions array (older payload): null, no throw', () => {
-    const session = makeSession({ opencode_sessions: undefined as unknown as ProjectSession['opencode_sessions'] });
+  test('a missing runtime_sessions array (older payload): null, no throw', () => {
+    const session = makeSession({ runtime_sessions: undefined as unknown as ProjectSession['runtime_sessions'] });
     expect(rootRuntimeSession(session)).toBeNull();
   });
 
-  test('the pinned opencode_session_id wins over a parentless entry', () => {
+  test('the pinned runtime_session_id wins over a parentless entry', () => {
     const session = makeSession({
-      opencode_session_id: 'oc-root',
-      opencode_sessions: [ocNode('oc-other', null), ocNode('oc-root', null)],
+      runtime_session_id: 'oc-root',
+      runtime_sessions: [ocNode('oc-other', null), ocNode('oc-root', null)],
     } as Partial<ProjectSession>);
     expect(rootRuntimeSession(session)?.id).toBe('oc-root');
   });
 
   test('a pin that is not in the snapshot: null (web parity, no guess)', () => {
     const session = makeSession({
-      opencode_session_id: 'oc-missing',
-      opencode_sessions: [ocNode('oc-root', null)],
+      runtime_session_id: 'oc-missing',
+      runtime_sessions: [ocNode('oc-root', null)],
     } as Partial<ProjectSession>);
     expect(rootRuntimeSession(session)).toBeNull();
   });
 
   test('no pin: the first parentless entry', () => {
     const session = makeSession({
-      opencode_session_id: null,
-      opencode_sessions: [ocNode('oc-child', 'oc-root'), ocNode('oc-root', null)],
+      runtime_session_id: null,
+      runtime_sessions: [ocNode('oc-child', 'oc-root'), ocNode('oc-root', null)],
     } as Partial<ProjectSession>);
     expect(rootRuntimeSession(session)?.id).toBe('oc-root');
   });
 });
 
 describe('directSubsessions', () => {
-  test('no opencode_sessions: none', () => {
+  test('no runtime_sessions: none', () => {
     expect(directSubsessions(makeSession())).toEqual([]);
   });
 
   test('root only: none', () => {
     const session = makeSession({
-      opencode_session_id: 'oc-root',
-      opencode_sessions: [ocNode('oc-root', null)],
+      runtime_session_id: 'oc-root',
+      runtime_sessions: [ocNode('oc-root', null)],
     } as Partial<ProjectSession>);
     expect(directSubsessions(session)).toEqual([]);
   });
 
   test('one child of the root', () => {
     const session = makeSession({
-      opencode_session_id: 'oc-root',
-      opencode_sessions: [ocNode('oc-root', null), ocNode('oc-a', 'oc-root', { title: 'Research' })],
+      runtime_session_id: 'oc-root',
+      runtime_sessions: [ocNode('oc-root', null), ocNode('oc-a', 'oc-root', { title: 'Research' })],
     } as Partial<ProjectSession>);
     expect(directSubsessions(session).map((c) => c.id)).toEqual(['oc-a']);
   });
 
   test('several children: newest updated_at first, ties and missing times break on id', () => {
     const session = makeSession({
-      opencode_session_id: 'oc-root',
-      opencode_sessions: [
+      runtime_session_id: 'oc-root',
+      runtime_sessions: [
         ocNode('oc-root', null),
         ocNode('oc-c', 'oc-root', { updated_at: null }),
         ocNode('oc-old', 'oc-root', { updated_at: 1_000 }),
@@ -671,8 +671,8 @@ describe('directSubsessions', () => {
 
   test('direct children only: a child of a child is not included', () => {
     const session = makeSession({
-      opencode_session_id: 'oc-root',
-      opencode_sessions: [
+      runtime_session_id: 'oc-root',
+      runtime_sessions: [
         ocNode('oc-root', null),
         ocNode('oc-a', 'oc-root'),
         ocNode('oc-a-1', 'oc-a'),
@@ -683,8 +683,8 @@ describe('directSubsessions', () => {
 
   test('an archived child is left out', () => {
     const session = makeSession({
-      opencode_session_id: 'oc-root',
-      opencode_sessions: [
+      runtime_session_id: 'oc-root',
+      runtime_sessions: [
         ocNode('oc-root', null),
         ocNode('oc-a', 'oc-root'),
         ocNode('oc-gone', 'oc-root', { archived_at: 9_000 }),
@@ -693,9 +693,9 @@ describe('directSubsessions', () => {
     expect(directSubsessions(session).map((c) => c.id)).toEqual(['oc-a']);
   });
 
-  test('never mutates opencode_sessions', () => {
+  test('never mutates runtime_sessions', () => {
     const nodes = [ocNode('oc-root', null), ocNode('oc-b', 'oc-root', { updated_at: 1 }), ocNode('oc-a', 'oc-root', { updated_at: 2 })];
-    const session = makeSession({ opencode_session_id: 'oc-root', opencode_sessions: nodes } as Partial<ProjectSession>);
+    const session = makeSession({ runtime_session_id: 'oc-root', runtime_sessions: nodes } as Partial<ProjectSession>);
     directSubsessions(session);
     expect(nodes.map((n) => n.id)).toEqual(['oc-root', 'oc-b', 'oc-a']);
   });
@@ -718,13 +718,13 @@ describe('subsessionTitle', () => {
 describe('projectSessionForRuntimeId', () => {
   const parent = makeSession({
     session_id: 'ps-parent',
-    opencode_session_id: 'oc-root',
-    opencode_sessions: [ocNode('oc-root', null), ocNode('oc-a', 'oc-root'), ocNode('oc-a-1', 'oc-a')],
+    runtime_session_id: 'oc-root',
+    runtime_sessions: [ocNode('oc-root', null), ocNode('oc-a', 'oc-root'), ocNode('oc-a-1', 'oc-a')],
   } as Partial<ProjectSession>);
   const other = makeSession({
     session_id: 'ps-other',
-    opencode_session_id: 'oc-other',
-    opencode_sessions: [ocNode('oc-other', null)],
+    runtime_session_id: 'oc-other',
+    runtime_sessions: [ocNode('oc-other', null)],
   } as Partial<ProjectSession>);
 
   test('null id: null', () => {
@@ -751,8 +751,8 @@ describe('projectSessionForRuntimeId', () => {
   test('a pin match wins over a snapshot match in an earlier row', () => {
     const stale = makeSession({
       session_id: 'ps-stale',
-      opencode_session_id: 'oc-x',
-      opencode_sessions: [ocNode('oc-x', null), ocNode('oc-root', 'oc-x')],
+      runtime_session_id: 'oc-x',
+      runtime_sessions: [ocNode('oc-x', null), ocNode('oc-root', 'oc-x')],
     } as Partial<ProjectSession>);
     expect(projectSessionForRuntimeId([stale, parent], 'oc-root')?.session_id).toBe('ps-parent');
   });

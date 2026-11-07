@@ -3,32 +3,34 @@ import * as P from '../rest/projects-client';
 export function bindCatalog() {
   const projects = {
     list: P.listProjects,
-    listForAccount: P.listProjectsForAccount,
+    listForAccount: P.listWorkspacesForAccount,
     get: P.getProject,
-    detail: P.getProjectDetail,
+    detail: P.getWorkspaceDetail,
     create: P.createProject,
     /** Create a project backed by a brand-new Kortix-managed GitHub repo. */
-    createRepo: P.createProjectRepo,
-    provision: P.provisionProject,
+    createRepo: P.createWorkspaceRepo,
+    provision: P.provisionWorkspace,
+    /** Create a whole workspace (its account and its project) in one call. */
+    createWorkspace: P.createWorkspace,
     update: P.updateProject,
-    archive: P.archiveProject,
-    llmCatalog: P.getProjectLlmCatalog,
-    modelPicker: P.getProjectModelPicker,
-    modelAccess: P.getProjectModelAccess,
-    setModelAccess: P.setProjectModelAccess,
+    archive: P.archiveWorkspace,
+    llmCatalog: P.getWorkspaceLlmCatalog,
+    modelPicker: P.getWorkspaceModelPicker,
+    modelAccess: P.getWorkspaceModelAccess,
+    setModelAccess: P.setWorkspaceModelAccess,
     customLlmProviders: P.listCustomLlmProviders,
     setCustomLlmProvider: P.putCustomLlmProvider,
     deleteCustomLlmProvider: P.deleteCustomLlmProvider,
-    sandboxHealth: P.getProjectSandboxHealth,
-    sandboxTemplates: P.listProjectSandboxTemplates,
-    sessions: P.listProjectSessions,
-    createSession: P.createProjectSession,
+    sandboxHealth: P.getWorkspaceSandboxHealth,
+    sandboxTemplates: P.listWorkspaceSandboxTemplates,
+    sessions: P.listWorkspaceSessions,
+    createSession: P.createWorkspaceSession,
   };
 
   /** GitHub App installation + repository linking — account-scoped, not project-scoped. */
   const github = {
     linkRepository: P.linkRepository,
-    replaceProjectRepository: P.replaceProjectRepository,
+    replaceProjectRepository: P.replaceWorkspaceRepository,
     getInstallation: P.getGitHubInstallation,
     listInstallations: P.listGitHubInstallations,
     listLinkableInstallations: P.listLinkableGitHubInstallations,

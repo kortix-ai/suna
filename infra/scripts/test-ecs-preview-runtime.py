@@ -501,7 +501,7 @@ class PreviewTeardown(unittest.TestCase):
         )
         # The label deploys only (~7 min). Only a dispatch runs --target-full.
         self.assertIn(
-            "PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}",
+            "PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.run_tests && '1' || '0' }}",
             job("deploy"),
         )
 

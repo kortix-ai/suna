@@ -20,15 +20,15 @@ mock.module('@tanstack/react-query', () => ({
 }));
 
 const {
-  useAddProjectMemoryNote,
-  useDeleteProjectMemoryPage,
-  useProjectMemoryHistory,
-  useProjectMemoryLayer,
-  useProjectMemoryPage,
-  useProjectMemoryPages,
-  useProjectMemorySearch,
+  useAddWorkspaceMemoryNote,
+  useDeleteWorkspaceMemoryPage,
+  useWorkspaceMemoryHistory,
+  useWorkspaceMemoryLayer,
+  useWorkspaceMemoryPage,
+  useWorkspaceMemoryPages,
+  useWorkspaceMemorySearch,
   useSessionMemoryUsage,
-  useUpdateProjectMemoryPage,
+  useUpdateWorkspaceMemoryPage,
 } = await import('./use-project-memory');
 const { qk } = await import('./query-keys');
 const { configureKortix } = await import('../core/http/config');
@@ -47,7 +47,7 @@ beforeEach(() => {
   }) as unknown as typeof fetch;
 });
 
-const base = 'http://test.local/projects/P1/memory';
+const base = 'http://test.local/workspaces/P1/memory';
 
 describe('memory query keys', () => {
   test('every memory key sits under the project scope and one memory prefix', () => {
@@ -74,10 +74,10 @@ describe('memory reads', () => {
   test('each read uses its key and route', async () => {
     response = { pages: [] };
     const reads = [
-      [useProjectMemoryLayer('P1', 'company'), qk.project.memoryLayer('P1', 'company'), `GET ${base}/layers/company`],
-      [useProjectMemoryPages('P1', 'S1'), qk.project.memoryPages('P1', 'S1'), `GET ${base}/layers/S1/pages`],
-      [useProjectMemoryPage('P1', 'PG1'), qk.project.memoryPage('P1', 'PG1'), `GET ${base}/pages/PG1`],
-      [useProjectMemoryHistory('P1', 'PG1'), qk.project.memoryHistory('P1', 'PG1'), `GET ${base}/pages/PG1/history`],
+      [useWorkspaceMemoryLayer('P1', 'company'), qk.project.memoryLayer('P1', 'company'), `GET ${base}/layers/company`],
+      [useWorkspaceMemoryPages('P1', 'S1'), qk.project.memoryPages('P1', 'S1'), `GET ${base}/layers/S1/pages`],
+      [useWorkspaceMemoryPage('P1', 'PG1'), qk.project.memoryPage('P1', 'PG1'), `GET ${base}/pages/PG1`],
+      [useWorkspaceMemoryHistory('P1', 'PG1'), qk.project.memoryHistory('P1', 'PG1'), `GET ${base}/pages/PG1/history`],
     ] as const;
     for (const [query, key] of reads) {
       expect((query as any).queryKey).toEqual(key);
@@ -89,8 +89,8 @@ describe('memory reads', () => {
 
   test('a filtered list gets its own slot under the layer pages key, and reads with the filter', async () => {
     response = { pages: [], truncated: false };
-    const live = useProjectMemoryPages('P1', 'S1') as any;
-    const other = useProjectMemoryPages('P1', 'S1', { type: 'other' }) as any;
+    const live = useWorkspaceMemoryPages('P1', 'S1') as any;
+    const other = useWorkspaceMemoryPages('P1', 'S1', { type: 'other' }) as any;
     expect(live.queryKey).toEqual(qk.project.memoryPages('P1', 'S1'));
     expect(other.queryKey).toEqual(qk.project.memoryPages('P1', 'S1', { type: 'other' }));
     expect(other.queryKey).not.toEqual(live.queryKey);
@@ -98,24 +98,24 @@ describe('memory reads', () => {
     const prefix = qk.project.memoryPages('P1', 'S1');
     expect(other.queryKey.slice(0, prefix.length)).toEqual([...prefix]);
     // `enabled` is not a filter: it never changes the key.
-    expect((useProjectMemoryPages('P1', 'S1', { enabled: false }) as any).queryKey).toEqual(live.queryKey);
+    expect((useWorkspaceMemoryPages('P1', 'S1', { enabled: false }) as any).queryKey).toEqual(live.queryKey);
     await other.queryFn();
     expect(calls.map((c) => c.url)).toEqual([`${base}/layers/S1/pages?type=other`]);
   });
 
   test('a read is disabled without its ids or when the caller disables it', () => {
-    expect((useProjectMemoryLayer(null, 'company') as any).enabled).toBe(false);
-    expect((useProjectMemoryPages('P1', null) as any).enabled).toBe(false);
-    expect((useProjectMemoryPage('P1', null) as any).enabled).toBe(false);
-    expect((useProjectMemoryHistory('P1', null) as any).enabled).toBe(false);
-    expect((useProjectMemoryPages('P1', 'S1', { enabled: false }) as any).enabled).toBe(false);
+    expect((useWorkspaceMemoryLayer(null, 'company') as any).enabled).toBe(false);
+    expect((useWorkspaceMemoryPages('P1', null) as any).enabled).toBe(false);
+    expect((useWorkspaceMemoryPage('P1', null) as any).enabled).toBe(false);
+    expect((useWorkspaceMemoryHistory('P1', null) as any).enabled).toBe(false);
+    expect((useWorkspaceMemoryPages('P1', 'S1', { enabled: false }) as any).enabled).toBe(false);
   });
 });
 
 describe('memory search', () => {
   test('searches the trimmed q under the memory prefix, keeping the previous hits while the next q loads', async () => {
     response = { hits: [] };
-    const search = useProjectMemorySearch('P1', { q: '  Priya ', layer: 'company', type: 'people', limit: 5 }) as any;
+    const search = useWorkspaceMemorySearch('P1', { q: '  Priya ', layer: 'company', type: 'people', limit: 5 }) as any;
     expect(search.queryKey).toEqual(qk.project.memorySearch('P1', { q: 'Priya', layer: 'company', type: 'people', limit: 5 }));
     const prefix = qk.project.memory('P1');
     expect(search.queryKey.slice(0, prefix.length)).toEqual([...prefix]);
@@ -129,24 +129,24 @@ describe('memory search', () => {
 
   test('two queries get their own cache slots; trailing spaces share one', () => {
     expect(qk.project.memorySearch('P1', { q: 'Priya' })).not.toEqual(qk.project.memorySearch('P1', { q: 'Pri' }) as never);
-    expect((useProjectMemorySearch('P1', { q: 'Priya ' }) as any).queryKey).toEqual(
-      (useProjectMemorySearch('P1', { q: 'Priya' }) as any).queryKey,
+    expect((useWorkspaceMemorySearch('P1', { q: 'Priya ' }) as any).queryKey).toEqual(
+      (useWorkspaceMemorySearch('P1', { q: 'Priya' }) as any).queryKey,
     );
   });
 
   test('is disabled outside 2–200 characters after trimming, without a project, or when the caller disables it', () => {
-    expect((useProjectMemorySearch('P1', { q: '' }) as any).enabled).toBe(false);
+    expect((useWorkspaceMemorySearch('P1', { q: '' }) as any).enabled).toBe(false);
     // The route answers 400 above 200; an enabled query would re-fire that 400 on the error self-heal interval.
-    expect((useProjectMemorySearch('P1', { q: 'x'.repeat(201) }) as any).enabled).toBe(false);
-    expect((useProjectMemorySearch('P1', { q: ` ${'x'.repeat(200)} ` }) as any).enabled).toBe(true);
-    expect((useProjectMemorySearch('P1', { q: ' P ' }) as any).enabled).toBe(false);
-    expect((useProjectMemorySearch('P1', { q: 'Pr' }) as any).enabled).toBe(true);
-    expect((useProjectMemorySearch(null, { q: 'Priya' }) as any).enabled).toBe(false);
-    expect((useProjectMemorySearch('P1', { q: 'Priya' }, { enabled: false }) as any).enabled).toBe(false);
+    expect((useWorkspaceMemorySearch('P1', { q: 'x'.repeat(201) }) as any).enabled).toBe(false);
+    expect((useWorkspaceMemorySearch('P1', { q: ` ${'x'.repeat(200)} ` }) as any).enabled).toBe(true);
+    expect((useWorkspaceMemorySearch('P1', { q: ' P ' }) as any).enabled).toBe(false);
+    expect((useWorkspaceMemorySearch('P1', { q: 'Pr' }) as any).enabled).toBe(true);
+    expect((useWorkspaceMemorySearch(null, { q: 'Priya' }) as any).enabled).toBe(false);
+    expect((useWorkspaceMemorySearch('P1', { q: 'Priya' }, { enabled: false }) as any).enabled).toBe(false);
   });
 
   test('a memory write refreshes search results: the search key sits under the invalidated prefix', async () => {
-    const note = useAddProjectMemoryNote('P1', 'S1') as any;
+    const note = useAddWorkspaceMemoryNote('P1', 'S1') as any;
     await note.onSuccess();
     const prefix = qk.project.memory('P1');
     expect(invalidated).toContainEqual([...prefix]);
@@ -161,7 +161,7 @@ describe('Used memory', () => {
     expect(usage.queryKey).toEqual(qk.project.sessionMemoryUsage('P1', 'T1'));
     expect(usage.enabled).toBe(true);
     expect(await usage.queryFn()).toEqual({ loaded_at: null, layers: [] });
-    expect(calls).toEqual([{ method: 'GET', url: 'http://test.local/projects/P1/sessions/T1/memory-usage', body: undefined }]);
+    expect(calls).toEqual([{ method: 'GET', url: 'http://test.local/workspaces/P1/sessions/T1/memory-usage', body: undefined }]);
   });
 
   test('never goes stale once the first turn loaded it; before that, the next mount reads it again', () => {
@@ -172,7 +172,7 @@ describe('Used memory', () => {
   });
 
   test('no memory write invalidates it: its key is outside the memory prefix', async () => {
-    const remove = useDeleteProjectMemoryPage('P1') as any;
+    const remove = useDeleteWorkspaceMemoryPage('P1') as any;
     await remove.onSuccess();
     const key = qk.project.sessionMemoryUsage('P1', 'T1');
     for (const prefix of invalidated) expect(key.slice(0, prefix.length)).not.toEqual(prefix as never);
@@ -194,7 +194,7 @@ describe('memory mutations', () => {
   ];
 
   test('a note POSTs to the layer and invalidates memory and the tab counts', async () => {
-    const note = useAddProjectMemoryNote('P1', 'S1') as any;
+    const note = useAddWorkspaceMemoryNote('P1', 'S1') as any;
     await note.mutationFn({ text: 'Priya owns the Northwind launch' });
     expect(calls).toEqual([
       { method: 'POST', url: `${base}/layers/S1/notes`, body: { text: 'Priya owns the Northwind launch' } },
@@ -204,7 +204,7 @@ describe('memory mutations', () => {
   });
 
   test('update PATCHes the page, writes the result into its cache slot and invalidates memory', async () => {
-    const update = useUpdateProjectMemoryPage('P1') as any;
+    const update = useUpdateWorkspaceMemoryPage('P1') as any;
     const saved = { page_id: 'PG1', version_no: 4 };
     response = saved;
     await update.mutationFn({ pageId: 'PG1', input: { base_version: 3, body: 'Runs marketing.' } });
@@ -215,7 +215,7 @@ describe('memory mutations', () => {
   });
 
   test('delete calls its route and invalidates memory, the pages included', async () => {
-    const remove = useDeleteProjectMemoryPage('P1') as any;
+    const remove = useDeleteWorkspaceMemoryPage('P1') as any;
     await remove.mutationFn('PG1');
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([`DELETE ${base}/pages/PG1`]);
     await remove.onSuccess();
@@ -229,9 +229,9 @@ describe('memory mutations', () => {
     // Each caller shows a specific message for 409/413/422. Without a hook-level
     // onError, TanStack also runs the QueryClient's default mutation onError.
     for (const hook of [
-      useAddProjectMemoryNote('P1', 'company'),
-      useUpdateProjectMemoryPage('P1'),
-      useDeleteProjectMemoryPage('P1'),
+      useAddWorkspaceMemoryNote('P1', 'company'),
+      useUpdateWorkspaceMemoryPage('P1'),
+      useDeleteWorkspaceMemoryPage('P1'),
     ] as any[]) {
       expect(typeof hook.onError).toBe('function');
     }

@@ -26,12 +26,12 @@ interface Requirement {
   reason?: () => string | Promise<string>;
 }
 
-export interface EmailProbeResult {
+interface EmailProbeResult {
   available: boolean;
   reason: string;
 }
 
-export type EmailProbe = () => Promise<EmailProbeResult>;
+type EmailProbe = () => Promise<EmailProbeResult>;
 
 export function strictBrowserLane(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.E2E_REQUIRE_ALL_BROWSER === '1';

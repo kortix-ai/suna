@@ -8,11 +8,11 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, ne } from 'drizzle-orm';
-import { iamRoleActions, iamRoles, projects } from '@kortix/db';
+import { iamRoleActions, iamRoles } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { accountCustomRoles, roleActionRows, systemRoleDescriptionRows } from '../../iam/role-read';
-import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { ACCOUNT_ACTIONS, VALID_ACTIONS, assertAuthorized } from '../../iam';
 import { FOLDER_ROLE_KEYS } from '../../iam/assignments';
 import { countRoleBindings } from '../../iam/read-models';
 import { actorOf } from '../../iam/actor';
@@ -24,8 +24,11 @@ import { readJsonObject } from '../../shared/http-body';
 import { listAgentServiceAccounts, ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import { loadConfigWithFilesCached } from '../../projects/lib/project-resources';
 import { ACTION_CATALOG_WIRE, validateActions } from './role-presets';
+import { toWorkspaceAction } from '@kortix/shared/workspace-actions';
 import { mapLimit } from '@kortix/registry';
 import { TimeoutError, withTimeout } from '../../shared/with-timeout';
+import { accountIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 // ─── Serializers (match iam-client.ts wire shapes exactly) ──────────────────
 
@@ -103,8 +106,46 @@ function serializeCustomRole(r: typeof iamRoles.$inferSelect) {
   };
 }
 
+/** `/v1/workspaces/…` (canonical) rather than `/v1/accounts/…` (legacy). */
+function isCanonicalWorkspacePath(path: string): boolean {
+  return path.startsWith('/v1/workspaces/');
+}
+
+/**
+ * The four ladder rows, built from the stored system roles. Each keeps the
+ * wire id and `resource_type` of the stored role a client resolves an
+ * assignment against (`member` = the project floor role an agent is bound to);
+ * `storage_role_ids` names every stored role behind the rung.
+ */
+const LADDER: ReadonlyArray<{ key: 'owner' | 'admin' | 'manager' | 'member'; name: string; storage: string[] }> = [
+  { key: 'owner', name: 'Owner', storage: ['account:owner'] },
+  { key: 'admin', name: 'Admin', storage: ['account:admin'] },
+  { key: 'manager', name: 'Manager', storage: ['project:manager'] },
+  { key: 'member', name: 'Member', storage: ['project:member', 'account:member'] },
+];
+
+function workspaceLadderRoles(system: ReadonlyArray<{ key: string; name: string; description: string | null; scopeType: string }>) {
+  const byStorage = new Map<string, (typeof system)[number]>(system.map((r) => [`${r.scopeType}:${r.key}`, r]));
+  return LADDER.flatMap((rung) => {
+    const primary = byStorage.get(rung.storage[0]!);
+    if (!primary) return [];
+    return [
+      {
+        ...serializeSystemRole(primary),
+        name: rung.name,
+        ladder: true,
+        scope: 'workspace' as const,
+        storage_role_ids: rung.storage.flatMap((id) => {
+          const stored = byStorage.get(id);
+          return stored ? [systemRoleWireId(stored.scopeType, stored.key)] : [];
+        }),
+      },
+    ];
+  });
+}
+
 const Any = z.any();
-const RoleIdParam = z.object({ accountId: z.string(), roleId: z.string() });
+const RoleIdParam = z.object({ workspaceId: z.string(), roleId: z.string() });
 
 // ─── Auto-provisioned agent identities (picker principal source) ───────────
 //
@@ -221,7 +262,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/actions',
+      path: '/{workspaceId}/iam/actions',
       tags: ['iam'],
       summary: 'List the action catalog (for the role permission matrix)',
       ...auth,
@@ -229,7 +270,7 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ actions: z.array(Any) }), 'Action catalog'), ...errors(401, 403) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
       return c.json({ actions: ACTION_CATALOG_WIRE });
     },
@@ -240,7 +281,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/roles',
+      path: '/{workspaceId}/iam/roles',
       tags: ['iam'],
       summary: 'List built-in presets + custom roles',
       ...auth,
@@ -248,7 +289,7 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ roles: z.array(Any) }), 'Roles'), ...errors(401, 403) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
       // Both halves from `kortix.iam_roles`: the seeded system rows (account_id
       // IS NULL) and this account's own. `is_system` is the column, not a
@@ -260,6 +301,20 @@ export function registerIamCustomRolesRoutes(): void {
       // The folder roles exist only as the level of a Files folder grant (the
       // Files access dialog sets them); they are not roles a person picks here.
       const listed = system.filter((r) => !(r.scopeType === 'project' && FOLDER_ROLE_KEYS.has(r.key)));
+      // The canonical spelling shows ONE role ladder (design.md C3, finding
+      // 13): owner > admin > manager > member, then the custom roles. No
+      // second `member` row and no `agent-user` marker. The legacy spelling
+      // (`/v1/accounts/:id/iam/roles`) keeps every stored row for old clients.
+      if (isCanonicalWorkspacePath(c.req.path)) {
+        // Every canonical row carries the same two fields: a custom role is a
+        // workspace role off the ladder. `resource_type` stays the stored scope.
+        return c.json({
+          roles: [
+            ...workspaceLadderRoles(listed),
+            ...custom.map((role) => ({ ...serializeCustomRole(role), ladder: false, scope: 'workspace' as const })),
+          ],
+        });
+      }
       return c.json({
         roles: [...listed.map(serializeSystemRole), ...custom.map(serializeCustomRole)],
       });
@@ -269,7 +324,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/roles',
+      path: '/{workspaceId}/iam/roles',
       tags: ['iam'],
       summary: 'Create a custom role',
       ...auth,
@@ -278,7 +333,7 @@ export function registerIamCustomRolesRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_CREATE);
       const denied = await requireEntitlement(c, accountId, 'rbac');
       if (denied) return denied;
@@ -327,7 +382,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/iam/roles/{roleId}',
+      path: '/{workspaceId}/iam/roles/{roleId}',
       tags: ['iam'],
       summary: 'Rename / describe a custom role',
       ...auth,
@@ -335,7 +390,7 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(Any, 'Updated role'), ...errors(400, 401, 403, 404) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_UPDATE);
       const denied = await requireEntitlement(c, accountId, 'rbac');
@@ -365,7 +420,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/iam/roles/{roleId}',
+      path: '/{workspaceId}/iam/roles/{roleId}',
       tags: ['iam'],
       summary: 'Delete a custom role (cascades its policies)',
       ...auth,
@@ -373,7 +428,7 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ deleted: z.boolean() }), 'Deleted'), ...errors(400, 401, 403, 404) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_DELETE);
       // No entitlement gate: deleting a role is cleanup — a downgraded account
@@ -400,50 +455,54 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/roles/{roleId}/permissions',
+      path: '/{workspaceId}/iam/roles/{roleId}/permissions',
       tags: ['iam'],
       summary: 'Get a role’s action set',
       ...auth,
       request: { params: RoleIdParam },
-      responses: { 200: json(z.object({ role_id: z.string(), key: z.string(), actions: z.array(z.string()) }), 'Actions'), ...errors(401, 403, 404) },
+      responses: { 200: json(z.object({ role_id: z.string(), key: z.string(), actions: z.array(z.string()), workspace_actions: z.array(z.string()) }), 'Actions'), ...errors(401, 403, 404) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
 
       if (await isSystemRoleId(roleId)) {
         // From `role_permissions`, not from the code preset: the seed is the
         // source of truth for what a system role grants, and the engine expands
-        // the same rows.
+        // the same rows. A row the code no longer knows is a retired action
+        // (iam/catalog.ts): never shown, until a contract migration deletes it.
         const system = await systemRoleByWireId(roleId);
         if (!system) return c.json({ error: 'role not found' }, 404);
+        const actions = [...system.actions].filter((action) => VALID_ACTIONS.has(action)).sort();
         return c.json({
           role_id: roleId,
           key: system.key,
-          actions: [...system.actions].sort(),
+          actions,
+          workspace_actions: actions.map(toWorkspaceAction),
         });
       }
 
       const role = await loadCustomRole(accountId, roleId);
       if (!role) return c.json({ error: 'role not found' }, 404);
       const rows = await roleActionRows(roleId);
-      return c.json({ role_id: roleId, key: role.key, actions: rows.map((r) => r.action) });
+      const actions = rows.map((r) => r.action).filter((action) => VALID_ACTIONS.has(action));
+      return c.json({ role_id: roleId, key: role.key, actions, workspace_actions: actions.map(toWorkspaceAction) });
     },
   );
 
   iamRouter.openapi(
     createRoute({
       method: 'put',
-      path: '/{accountId}/iam/roles/{roleId}/permissions',
+      path: '/{workspaceId}/iam/roles/{roleId}/permissions',
       tags: ['iam'],
       summary: 'Replace a custom role’s action set (the capability matrix)',
       ...auth,
       request: { params: RoleIdParam, body: { content: { 'application/json': { schema: Any } } } },
-      responses: { 200: json(z.object({ role_id: z.string(), actions: z.array(z.string()) }), 'Updated'), ...errors(400, 401, 403, 404) },
+      responses: { 200: json(z.object({ role_id: z.string(), actions: z.array(z.string()), workspace_actions: z.array(z.string()) }), 'Updated'), ...errors(400, 401, 403, 404) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_UPDATE);
       const denied = await requireEntitlement(c, accountId, 'rbac');
@@ -473,14 +532,14 @@ export function registerIamCustomRolesRoutes(): void {
         resourceId: roleId,
         after: { action_count: v.actions.length },
       });
-      return c.json({ role_id: roleId, actions: v.actions });
+      return c.json({ role_id: roleId, actions: v.actions, workspace_actions: v.actions.map(toWorkspaceAction) });
     },
   );
 
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/roles/{roleId}/usage',
+      path: '/{workspaceId}/iam/roles/{roleId}/usage',
       tags: ['iam'],
       summary: 'How many policies reference this role',
       ...auth,
@@ -488,7 +547,7 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ role_id: z.string(), policy_count: z.number() }), 'Usage'), ...errors(401, 403) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
       if (await isSystemRoleId(roleId)) return c.json({ role_id: roleId, policy_count: 0 });
@@ -503,7 +562,7 @@ export function registerIamCustomRolesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/agent-identities',
+      path: '/{workspaceId}/iam/agent-identities',
       tags: ['iam'],
       summary: 'List agent service-account identities (policy principal picker)',
       ...auth,
@@ -511,7 +570,7 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ agents: z.array(Any) }), 'Agent identities'), ...errors(401, 403) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_READ);
 
       const byKey = new Map<string, AgentIdentity>();
@@ -528,8 +587,8 @@ export function registerIamCustomRolesRoutes(): void {
 
       const projectRows = await db
         .select()
-        .from(projects)
-        .where(and(eq(projects.accountId, accountId), ne(projects.status, 'archived')))
+        .from(projectsView)
+        .where(and(eq(projectsView.accountId, accountId), ne(projectsView.status, 'archived')))
         .limit(AGENT_IDENTITIES_PROJECT_CAP);
 
       await eagerlyProvisionAgentIdentities(accountId, projectRows, byKey);

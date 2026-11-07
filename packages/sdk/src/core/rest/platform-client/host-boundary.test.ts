@@ -108,6 +108,16 @@ describe('host boundary transport', () => {
     expect(requests[0]?.init?.body).toBe(JSON.stringify({ request_id: 'req-1', approved: true }));
   });
 
+  test('submitOAuthConsent binds the grant to the workspace the person picked', async () => {
+    await boundary.submitOAuthConsent(
+      { requestId: 'req-2', approved: true, workspaceId: '11111111-1111-4111-8111-111111111111' },
+      { backendUrl: 'https://api.example.test/v1', accessToken: 'token-1' },
+    );
+    expect(requests[0]?.init?.body).toBe(
+      JSON.stringify({ request_id: 'req-2', approved: true, workspace_id: '11111111-1111-4111-8111-111111111111' }),
+    );
+  });
+
   test('setup-link and public-share reads stay anonymous', async () => {
     await boundary.getConnectorSetupLink('connect-token', {
       backendUrl: 'https://api.example.test/v1',

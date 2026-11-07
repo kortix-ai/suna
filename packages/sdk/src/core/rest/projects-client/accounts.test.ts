@@ -37,7 +37,7 @@ test('validateToken hits GET /accounts/me and returns { valid: true, identity } 
     },
   };
   const result = await validateToken();
-  expect(last().url).toContain('/accounts/me');
+  expect(last().url).toContain('/me');
   expect(last().method).toBe('GET');
   expect(result.valid).toBe(true);
   expect(result.identity?.user_id).toBe('u1');
@@ -86,7 +86,7 @@ test('listMyAccountInvites hits GET /account-invites and returns the invites arr
     },
   };
   const invites = await listMyAccountInvites();
-  expect(last().url).toMatch(/\/account-invites$/);
+  expect(last().url).toMatch(/\/invites$/);
   expect(last().method).toBe('GET');
   expect(invites).toHaveLength(1);
   expect(invites[0]?.account_name).toBe('Acme');
@@ -149,7 +149,7 @@ test('acceptAccountInviteAndLand accepts with POST /account-invites/:id/accept a
     },
   };
   const result = await acceptAccountInviteAndLand('inv-1');
-  expect(last().url).toMatch(/\/account-invites\/inv-1\/accept$/);
+  expect(last().url).toMatch(/\/invites\/inv-1\/accept$/);
   expect(last().method).toBe('POST');
   expect(result.accepted.account_role).toBe('member');
   expect(result.landing).toEqual({ kind: 'project', projectId: 'p-1', accountId: 'acc-1' });

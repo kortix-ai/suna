@@ -100,3 +100,70 @@ for (const command of ['get-claims', 'get-issues']) {
     }
   }
 }
+
+test('list-valued description/new_text print as the raw list, not joined', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'document-review-'));
+  const common = { section: 'Intro', location: 'p1', original_text: 'T' };
+  const state = {
+    phase: 'complete',
+    claims: {
+      c1: {
+        ...common,
+        claim_id: 'c1',
+        claim_status: 'verified',
+        claim_type: 'verify_public_data',
+        description: ['d1', 2],
+      },
+    },
+    issues: {
+      i1: {
+        ...common,
+        issue_id: 'i1',
+        severity: 'high',
+        issue_type: 'narrative_logic',
+        text_context: 'C',
+        description: ['d1', 2],
+        new_text: ['a', 3],
+      },
+    },
+  };
+  try {
+    writeFileSync(join(cwd, 'document_review_state.json'), JSON.stringify(state));
+    const claims = spawnSync('python3', [script, 'get-claims'], { cwd, encoding: 'utf8' });
+    const issues = spawnSync('python3', [script, 'get-issues'], { cwd, encoding: 'utf8' });
+    expect(claims.status).toBe(0);
+    expect(claims.stdout).toContain("  Description: ['d1', 2]");
+    expect(issues.status).toBe(0);
+    expect(issues.stdout).toContain("  Description: ['d1', 2]");
+    expect(issues.stdout).toContain("  Suggested: ['a', 3]");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('a record missing a required field fails with a KeyError, exit 1', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'document-review-'));
+  const state = {
+    phase: 'complete',
+    claims: {
+      c1: {
+        section: 'Intro',
+        location: 'p1',
+        original_text: 'T',
+        claim_id: 'c1',
+        claim_status: 'verified',
+        claim_type: 'verify_public_data',
+      },
+    },
+    issues: {},
+  };
+  try {
+    writeFileSync(join(cwd, 'document_review_state.json'), JSON.stringify(state));
+    const claims = spawnSync('python3', [script, 'get-claims'], { cwd, encoding: 'utf8' });
+    expect(claims.status).toBe(1);
+    expect(claims.stderr).toContain("KeyError: 'description'");
+    expect(claims.stdout).not.toContain('Description: None');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});

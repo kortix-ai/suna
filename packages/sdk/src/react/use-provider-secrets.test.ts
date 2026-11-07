@@ -9,7 +9,7 @@ mock.module('@tanstack/react-query', () => ({
   useMutation: (options: unknown) => options,
   useQueryClient: () => ({ invalidateQueries: async ({ queryKey }: { queryKey: unknown[] }) => { invalidated.push(queryKey); } }),
 }));
-const { useAccountSecretResources, useSessionProviderSecretPools } = await import('./use-provider-secrets');
+const { useAccountSecretResources, useSessionProviderSecretPools, useSubscriptionUsage } = await import('./use-provider-secrets');
 
 beforeEach(() => {
   invalidated = [];
@@ -32,7 +32,7 @@ test('pool updates and cache invalidation stay bound to the same project and ses
   const sibling = useSessionProviderSecretPools('own-project', 'sibling-session') as any;
   await own.setPool.mutationFn({ providerId: 'anthropic', secretIds: [] });
   await own.setPool.onSuccess();
-  expect(calls).toEqual(['http://provider-secrets.test/projects/own-project/sessions/own-session/provider-secret-pools/anthropic']);
+  expect(calls).toEqual(['http://provider-secrets.test/workspaces/own-project/sessions/own-session/provider-secret-pools/anthropic']);
   expect(invalidated).toContainEqual(own.queryKey);
   expect(invalidated).not.toContainEqual(sibling.queryKey);
 });
@@ -70,4 +70,20 @@ test('resource metadata refreshes when the nearest cooldown expires, then stops 
   setSystemTime(new Date('2026-09-17T07:01:01Z'));
   expect(query.refetchInterval({ state })).toBe(false);
   expect(query.refetchInterval({ state: {} })).toBe(false);
+});
+
+test('subscription usage asks the server for one login, every minute while shown, never without its ids', async () => {
+  expect((useSubscriptionUsage('account', null) as any).enabled).toBe(false);
+  expect((useSubscriptionUsage(null, 'secret') as any).enabled).toBe(false);
+  expect((useSubscriptionUsage('account', 'secret', { enabled: false }) as any).enabled).toBe(false);
+  const calls: Array<[string, string]> = [];
+  globalThis.fetch = mock(async (url: unknown, init: RequestInit = {}) => {
+    calls.push([init.method ?? 'GET', String(url)]);
+    return Response.json({ usage: null });
+  }) as unknown as typeof fetch;
+  const query = useSubscriptionUsage('account', 'secret') as any;
+  expect(query.enabled).toBe(true);
+  expect(query.refetchInterval).toBe(60_000);
+  expect(await query.queryFn()).toEqual({ usage: null });
+  expect(calls).toEqual([['POST', 'http://provider-secrets.test/accounts/account/secret-resources/secret/usage']]);
 });

@@ -84,7 +84,7 @@ describe('sessionRowMatchesSearch', () => {
     ({ sessionId: 'abcdef12-0000', initiatorId: null, metadata, ...extra }) as never;
   test('matches title, runtime title, initiator and id prefix, case-insensitively', () => {
     expect(sessionRowMatchesSearch(row({ custom_name: 'Rent Research' }), 'rent')).toBe(true);
-    expect(sessionRowMatchesSearch(row({ opencode_sessions: [{ title: 'Deploy fix' }] }), 'DEPLOY')).toBe(true);
+    expect(sessionRowMatchesSearch(row({ runtime_sessions: [{ title: 'Deploy fix' }] }), 'DEPLOY')).toBe(true);
     expect(sessionRowMatchesSearch(row({}, { initiatorId: 'software-factory' }), 'factory')).toBe(true);
     expect(sessionRowMatchesSearch(row({}), 'ABCDEF')).toBe(true);
     expect(sessionRowMatchesSearch(row({ name: 'Other' }), 'rent')).toBe(false);

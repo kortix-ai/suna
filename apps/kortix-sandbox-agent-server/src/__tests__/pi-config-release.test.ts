@@ -413,6 +413,34 @@ describe('pi config releases: convergence', () => {
     expect(await readQuarantine(root)).toEqual({})
   })
 
+  test('no await sits between the idle check and the swap: a prompt that lands after the check runs on the new config', async () => {
+    serveRelease(api, release('deploy', 'from release one'))
+    const { releases } = create()
+    await releases.boot()
+    serveRelease(api, release('review', 'from release two'))
+    const state = { idle: true, idleCalls: 0, idleAtSwap: [] as boolean[] }
+    const runtime = {
+      // A prompt is admitted right after the last idle check answers (a microtask later).
+      idle: () => {
+        state.idleCalls += 1
+        if (state.idleCalls === 2) queueMicrotask(() => (state.idle = false))
+        return state.idle
+      },
+      async reconfigure() {
+        state.idleAtSwap.push(state.idle)
+      },
+      async restart() {
+        state.idleAtSwap.push(state.idle)
+      },
+    }
+
+    const result = await releases.converge(runtime)
+
+    expect(result.outcome).toBe('applied')
+    // The swap started while the runtime was still idle: the prompt queues behind it.
+    expect(state.idleAtSwap).toEqual([true])
+  })
+
   test('a runtime that refuses the config keeps the running one; the release is quarantined', async () => {
     const one = release('deploy', 'from release one')
     serveRelease(api, one)

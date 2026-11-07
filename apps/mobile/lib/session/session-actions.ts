@@ -116,9 +116,9 @@ export function changedFilesLabel(n: number): string {
 
 /**
  * The file's patch in the shape `PatchDiffView` parses: it splits on
- * `diff --git a/… b/…` headers. A patch without one (OpenCode builds some
- * with the `diff` library: `Index:` / `===` / `---` / `+++`) gets it, so the
- * hunks are not dropped.
+ * `diff --git a/… b/…` headers. A patch without one (an old OpenCode
+ * transcript holds some built with the `diff` library: `Index:` / `===` /
+ * `---` / `+++`) gets it, so the hunks are not dropped.
  */
 export function patchForFile(file: Pick<ChangedFile, 'path' | 'patch'>): string {
   const patch = file.patch;
@@ -132,12 +132,12 @@ export function patchForFile(file: Pick<ChangedFile, 'path' | 'patch'>): string 
 /** Is the sheet's session the thread on screen? The tab store keys a thread by
  *  its runtime session id; ProjectScreen resolves a row by either id, so this does too. */
 export function isOpenThreadSession(
-  session: { session_id: string; runtime_session_id?: string | null; opencode_session_id: string | null },
+  session: { session_id: string; runtime_session_id?: string | null },
   activeSessionId: string | null,
 ): boolean {
   if (!activeSessionId) return false;
   return (
-    (session.runtime_session_id ?? session.opencode_session_id) === activeSessionId ||
+    session.runtime_session_id === activeSessionId ||
     session.session_id === activeSessionId
   );
 }

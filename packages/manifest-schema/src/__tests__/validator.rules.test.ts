@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveGrantSet, validateManifest } from '../index.ts';
+import { isEveryGrant, normalizePermissionConfig, resolveGrantSet, validateManifest } from '../index.ts';
 
 // Rules that apply to the `agents.<name>` block and the sections it references.
 
@@ -319,12 +319,12 @@ agents:
     expect(valid).toBe(true);
   });
 
-  test('kortix_permissions rejects a non-grantable action, same enum', () => {
+  test('kortix_permissions rejects an unknown action, same enum', () => {
     const { errorPaths } = summarize(`
 default_agent: w
 agents:
   w:
-    kortix_permissions: [billing.read]
+    kortix_permissions: [billing.not_an_action]
 `);
     expect(errorPaths).toContain('agents.w.kortix_permissions[0]');
   });
@@ -543,6 +543,32 @@ describe('resolveGrantSet', () => {
 
   test('an explicit array resolves to its trimmed, filtered entries', () => {
     expect(resolveGrantSet(['github', ' slack ', ''], 'none')).toEqual(['github', 'slack']);
+  });
+});
+
+describe('isEveryGrant: the one test for "every name"', () => {
+  test('"*", `all` in any case, and a list holding "*" are every name', () => {
+    for (const value of ['*', ' * ', 'all', 'ALL', ' All ', ['*'], ['bash', ' * ']]) expect(isEveryGrant(value)).toBe(true);
+  });
+  test('none, a plain list, an exclude map and an omitted grant are not', () => {
+    for (const value of ['none', '', 'allow', ['bash'], [], { exclude: [] }, undefined, null, 1]) expect(isEveryGrant(value)).toBe(false);
+  });
+});
+
+describe('normalizePermissionConfig: "*" and `all` mean allow', () => {
+  test('a whole-permission "*" or all is allow', () => {
+    expect(normalizePermissionConfig('*')).toBe('allow');
+    expect(normalizePermissionConfig('ALL')).toBe('allow');
+    expect(normalizePermissionConfig('ask')).toBe('ask');
+    expect(normalizePermissionConfig(undefined)).toBeUndefined();
+  });
+  test('a rule value and a pattern action "*" or all is allow; everything else is kept', () => {
+    expect(normalizePermissionConfig({ bash: 'all', glob: '*', read: 'deny', edit: { '*': 'all', 'src/*': 'ask' } })).toEqual({
+      bash: 'allow',
+      glob: 'allow',
+      read: 'deny',
+      edit: { '*': 'allow', 'src/*': 'ask' },
+    });
   });
 });
 

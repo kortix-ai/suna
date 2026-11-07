@@ -15,7 +15,9 @@ const mockStripeClient = {
     constructEvent: (_body: string, _sig: string, _secret: string) => ({ id: 'evt_test', type: 'customer.subscription.updated', data: { object: {} } }),
   },
   subscriptions: {
-    retrieve: async () => ({}),
+    // Stripe answers with the subscription as it is now: here, the one the
+    // test's event carries (the handlers re-read it instead of the snapshot).
+    retrieve: async (): Promise<any> => mockStripeClient.webhooks.constructEvent('', '', '').data.object,
     update: async (id: string, params: Record<string, unknown>) => {
       state.stripeUpdateCalls.push({ id, params });
       return { id, ...params };
@@ -81,6 +83,7 @@ mock.module('../shared/resolve-account', () => ({
 }));
 
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: true,
   db: {
     // isWebhookEventProcessed: the event has not been processed yet.

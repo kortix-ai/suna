@@ -10,10 +10,9 @@ type BoundaryModule = {
   TRANSPORT_ALLOWLIST: string[];
   scanSource: (source: string, options?: ScanOptions) => Violation[];
   scanCliBoundary: (root?: string) => FileViolation[];
-  scanTuiBoundary: (root?: string) => FileViolation[];
 };
 
-const { TRANSPORT_ALLOWLIST, scanCliBoundary, scanSource, scanTuiBoundary } = (await import(
+const { TRANSPORT_ALLOWLIST, scanCliBoundary, scanSource } = (await import(
   new URL('../../scripts/sdk-boundary.mjs', import.meta.url).href
 )) as BoundaryModule;
 
@@ -23,7 +22,7 @@ function rules(source: string, options?: ScanOptions): string[] {
 
 describe('scanSource raw-kortix-fetch', () => {
   test('flags a fetch whose template base is interpolated', () => {
-    const source = 'const r = await fetch(`${base}/v1/projects`);';
+    const source = 'const r = await fetch(`${base}/v1/workspaces`);';
 
     expect(rules(source)).toContain('raw-kortix-fetch');
   });
@@ -48,7 +47,7 @@ describe('scanSource raw-kortix-fetch', () => {
 
   test("allows a self-host's own acme-dns API on its one loopback port, and no other loopback port", () => {
     expect(scanSource("await fetch('http://127.0.0.1:13750/register', { method: 'POST' })")).toEqual([]);
-    expect(scanSource("await fetch('http://127.0.0.1:8008/v1/projects')").map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
+    expect(scanSource("await fetch('http://127.0.0.1:8008/v1/workspaces')").map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
     expect(scanSource("await fetch('http://127.0.0.1:137500/x')").map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
   });
 
@@ -59,41 +58,41 @@ describe('scanSource raw-kortix-fetch', () => {
   });
 
   test('is not applied to test files', () => {
-    const source = 'const r = await fetch(`${base}/v1/projects`);';
+    const source = 'const r = await fetch(`${base}/v1/workspaces`);';
 
     expect(scanSource(source, { test: true })).toEqual([]);
   });
 
   test('is not applied to the transport adapter', () => {
-    const source = 'const r = await fetch(`${base}/v1/projects`);';
+    const source = 'const r = await fetch(`${base}/v1/workspaces`);';
 
     expect(scanSource(source, { transport: true })).toEqual([]);
   });
 });
 
-describe('scanSource opencode-rest-path', () => {
+describe('scanSource runtime-rest-path', () => {
   test('flags a prompt_async path', () => {
     const source = 'const path = `/session/${id}/prompt_async`;';
 
-    expect(rules(source)).toContain('opencode-rest-path');
+    expect(rules(source)).toContain('runtime-rest-path');
   });
 
   test('flags a permission reply path', () => {
     const source = 'const path = `/permission/${id}/reply`;';
 
-    expect(rules(source)).toContain('opencode-rest-path');
+    expect(rules(source)).toContain('runtime-rest-path');
   });
 
   test('flags a question reject path', () => {
     const source = 'const path = `/question/${id}/reject`;';
 
-    expect(rules(source)).toContain('opencode-rest-path');
+    expect(rules(source)).toContain('runtime-rest-path');
   });
 
   test('flags a bare session request path', () => {
     const source = "await client.get('/session');";
 
-    expect(rules(source)).toContain('opencode-rest-path');
+    expect(rules(source)).toContain('runtime-rest-path');
   });
 
   test('does not flag an unrelated path segment', () => {
@@ -136,34 +135,6 @@ describe('scanSource runtime-proxy-url', () => {
 });
 
 describe('scanSource import rules', () => {
-  test('flags an OpenCode SDK import', () => {
-    const source = "import { x } from '@opencode-ai/sdk';";
-
-    expect(rules(source)).toContain('opencode-package');
-  });
-
-  test('flags an OpenCode SDK import inside a test file', () => {
-    const source = "import { x } from '@opencode-ai/sdk';";
-
-    expect(rules(source, { test: true })).toEqual(['opencode-package']);
-  });
-
-  test('flags a deprecated OpenCode-named import from @kortix/sdk', () => {
-    expect(rules("import { useOpenCodePtyList } from '@kortix/sdk/react';")).toEqual([
-      'opencode-sdk-name',
-    ]);
-    expect(
-      rules("import {\n  type RuntimeConfig,\n  opencodeKeys as keys,\n} from '@kortix/sdk/react';", {
-        test: true,
-      }),
-    ).toEqual(['opencode-sdk-name']);
-  });
-
-  test('allows the neutral @kortix/sdk names and OpenCode names from other modules', () => {
-    expect(rules("import { useRuntimePtyList, runtimeKeys } from '@kortix/sdk/react';")).toEqual([]);
-    expect(rules("import { opencodeLegacyPath } from './legacy.ts';")).toEqual([]);
-  });
-
   test('flags a deep @kortix/sdk source import', () => {
     const source = "import { y } from '@kortix/sdk/src/core/rest/client';";
 
@@ -205,27 +176,6 @@ describe('TRANSPORT_ALLOWLIST', () => {
   });
 });
 
-describe('scanTuiBoundary', () => {
-  test('apps/tui imports no OpenCode package and no OpenCode-named SDK symbol', () => {
-    expect(scanTuiBoundary()).toEqual([]);
-  });
-
-  test('reports a planted OpenCode-named SDK import and skips transport rules', () => {
-    const planted = mkdtempSync(resolve(tmpdir(), 'kortix-tui-sdk-boundary-'));
-    try {
-      writeFileSync(
-        resolve(planted, 'panel.tsx'),
-        "import { useOpenCodePtyList } from '@kortix/sdk/react';\nawait fetch(base);\n",
-      );
-      expect(scanTuiBoundary(planted).map(({ file, line, rule }) => ({ file, line, rule }))).toEqual([
-        { file: 'apps/tui/src/panel.tsx', line: 1, rule: 'opencode-sdk-name' },
-      ]);
-    } finally {
-      rmSync(planted, { recursive: true, force: true });
-    }
-  });
-});
-
 describe('scanCliBoundary', () => {
   let root: string | null = null;
 
@@ -240,7 +190,7 @@ describe('scanCliBoundary', () => {
       resolve(root, 'planted.ts'),
       [
         'export async function listProjects(base: string) {',
-        '  return fetch(`${base}/v1/projects`);',
+        '  return fetch(`${base}/v1/workspaces`);',
         '}',
         '',
       ].join('\n'),

@@ -12,13 +12,11 @@ import React, { useMemo, useState } from 'react';
 import {
   View,
   Pressable,
-  ScrollView,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import {
-  KeyIcon as Key,
   UserIcon as User,
   LockIcon as Lock,
   UsersIcon as Users,
@@ -26,7 +24,6 @@ import {
   CheckIcon as Check,
   CaretRightIcon as ChevronRight,
   TrashIcon as Trash2,
-  XIcon as X,
   ShieldWarningIcon as ShieldAlert,
   type AppIcon,
 } from '@/lib/icons';
@@ -414,35 +411,6 @@ function PersonalSecretForm({
 }
 
 // ─── Secret detail sheet (status · source · actions) ──────────────────────────
-
-function ActionRow({
-  label,
-  destructive,
-  onPress,
-  isDark,
-  busy,
-}: {
-  label: string;
-  destructive?: boolean;
-  onPress: () => void;
-  isDark: boolean;
-  busy?: boolean;
-}) {
-  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
-  const color = destructive ? (isDark ? THEME.dark.destructive : THEME.light.destructive) : fg;
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={busy}
-      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: border, opacity: busy ? 0.5 : 1 }}
-    >
-      {destructive && <Trash2 size={16} color={color} style={{ marginRight: 10 }} />}
-      <Text style={{ flex: 1, fontSize: 15, fontFamily: 'Roobert-Medium', color }}>{label}</Text>
-      {busy ? <KortixLoader size="small" /> : !destructive && <ChevronRight size={18} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}
-    </Pressable>
-  );
-}
 
 function SecretDetailSheet({
   projectId,

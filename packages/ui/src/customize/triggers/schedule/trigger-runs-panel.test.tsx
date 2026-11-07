@@ -54,7 +54,7 @@ describe('RunRow (C20 D6V-0 + D73-0)', () => {
   test('expanded: meta, Replay (outline), Open session as a link, the payload; no hover Replay', () => {
     const out = render({ initialOpen: true });
     expect(out).toContain('aria-expanded="true"');
-    expect(out).toContain('href="/projects/p1/sessions/ses_example"');
+    expect(out).toContain('href="/workspaces/p1/sessions/ses_example"');
     expect(out).toContain('Open session');
     expect(out).toContain('ses_example');
     expect(out).toContain('&quot;action&quot;: &quot;opened&quot;');

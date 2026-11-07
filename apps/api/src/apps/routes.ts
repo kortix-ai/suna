@@ -42,6 +42,8 @@ import {
 } from './limits';
 import { callerKortixSessionId } from '../middleware/caller-session';
 import { projectsApp } from '../projects/lib/app';
+import { clearAppCrashAlerts, dropRetiredAppTriggers, projectCapabilityAllowed, runtimeTriggersNamingApp } from '../projects/surface';
+import { PROJECT_ACTIONS } from '../iam';
 import { logger } from '../lib/logger';
 import { readAgentsGrantingApp } from './agent-grants';
 import {
@@ -58,12 +60,17 @@ import { commitAppFields, commitAppRemoval, manifestFieldsOf } from './app-manif
 import { probeFrameable } from './external';
 import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
 import { registerAppCapabilityRoutes } from './capability-routes';
+import { registerAppEventLogRoutes } from './event-log-routes';
 import { registerAppFleetRoutes } from './fleet-routes';
 import {
   DEPRECATED_PROVIDER_CODE,
   DEPRECATED_PROVIDER_ERROR,
   isDeprecatedProvider,
 } from '../platform/providers/deprecated';
+import { captureProductEvent } from '../shared/product-analytics';
+import { analyticsSource } from '../middleware/analytics-source';
+import { workspaceIdParam } from '../shared/route-params';
+import { transitionAppRuntime } from './runtime-status';
 
 /** The machine bounds an App shares with a session sandbox. Stated here so the
  *  published OpenAPI schema carries the real ceiling instead of a number the
@@ -295,17 +302,18 @@ async function linkOrRefuse(c: Context<AppEnv>, app: typeof apps.$inferSelect, u
 
 export function registerAppsRoutes(): void {
   registerAppCapabilityRoutes();
+  registerAppEventLogRoutes();
   registerAppFleetRoutes();
   projectsApp.openapi(
     createRoute({
-      method: 'get', path: '/{projectId}/apps', tags: ['apps'], summary: 'List Apps', ...auth,
+      method: 'get', path: '/{workspaceId}/apps', tags: ['apps'], summary: 'List Apps', ...auth,
       description: 'Only the Apps the caller may open under each App\'s access policy (a project manager: every App). ' +
         'An App left out answers 404 on GET, the same as a missing one.',
-      request: { params: z.object({ projectId: z.string().uuid() }) },
+      request: { params: z.object({ workspaceId: z.string().uuid() }) },
       responses: { 200: json(z.object({ apps: z.array(AppObject) }), 'Apps'), ...errors(403, 404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await authorizedProject(c, projectId);
       if (loaded instanceof Response) return loaded;
       const rows = await db.select().from(apps)
@@ -320,12 +328,12 @@ export function registerAppsRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'get', path: '/{projectId}/apps/{appId}/access', tags: ['apps'], summary: 'Get App access policy', ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+      method: 'get', path: '/{workspaceId}/apps/{appId}/access', tags: ['apps'], summary: 'Get App access policy', ...auth,
+      request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }) },
       responses: { 200: json(AppAccessSchema, 'App access policy'), ...errors(403, 404) },
     }),
     async (c: any) => {
-      const { projectId, appId } = c.req.param();
+      const { workspaceId: projectId, appId } = c.req.param();
       const loaded = await authorizedProject(c, projectId, 'write');
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
@@ -335,9 +343,9 @@ export function registerAppsRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'patch', path: '/{projectId}/apps/{appId}/access', tags: ['apps'], summary: 'Update App access policy', ...auth,
+      method: 'patch', path: '/{workspaceId}/apps/{appId}/access', tags: ['apps'], summary: 'Update App access policy', ...auth,
       request: {
-        params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
           mode: z.enum(['private', 'project', 'restricted', 'public', 'password']),
           member_ids: z.array(z.string().uuid()).max(100).optional(),
@@ -349,7 +357,7 @@ export function registerAppsRoutes(): void {
       responses: { 200: json(AppAccessSchema, 'App access policy'), ...errors(400, 403, 404) },
     }),
     async (c: any) => {
-      const { projectId, appId } = c.req.param();
+      const { workspaceId: projectId, appId } = c.req.param();
       const loaded = await authorizedProject(c, projectId, 'write');
       if (loaded instanceof Response) return loaded;
       const current = await visibleApp(projectId, appId, loaded.userId);
@@ -395,8 +403,8 @@ export function registerAppsRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'get', path: '/{projectId}/apps/{appId}/agents', tags: ['apps'], summary: 'List the agents granted this App in kortix.yaml', ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+      method: 'get', path: '/{workspaceId}/apps/{appId}/agents', tags: ['apps'], summary: 'List the agents granted this App in kortix.yaml', ...auth,
+      request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }) },
       responses: {
         200: json(z.object({ agents: z.array(z.object({
           agent_name: z.string(),
@@ -407,7 +415,7 @@ export function registerAppsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const { projectId, appId } = c.req.param();
+      const { workspaceId: projectId, appId } = c.req.param();
       const loaded = await authorizedProject(c, projectId);
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
@@ -432,12 +440,12 @@ export function registerAppsRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/{appId}/access-session', tags: ['apps'], summary: 'Create an App browser access session', ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+      method: 'post', path: '/{workspaceId}/apps/{appId}/access-session', tags: ['apps'], summary: 'Create an App browser access session', ...auth,
+      request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }) },
       responses: { 200: json(z.object({ url: z.string().url(), expires_at: z.string() }), 'App access session'), ...errors(403, 404) },
     }),
     async (c: any) => {
-      const { projectId, appId } = c.req.param();
+      const { workspaceId: projectId, appId } = c.req.param();
       const loaded = await authorizedProject(c, projectId);
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
@@ -473,13 +481,13 @@ export function registerAppsRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps', tags: ['apps'], summary: 'Create an App', ...auth,
+      method: 'post', path: '/{workspaceId}/apps', tags: ['apps'], summary: 'Create an App', ...auth,
       description: 'Account credits pay for App compute: there is no per-App budget. `external_url` (https) creates an ' +
         'external App: Kortix lists and frames that site and never deploys it. It runs no compute and does not count ' +
         'toward the App limit. A site that refuses framing (X-Frame-Options, CSP frame-ancestors) gets ' +
         '`capabilities: []` and a warning: Kortix opens it in a new tab.',
       request: {
-        params: z.object({ projectId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
           slug: z.string().min(1).max(63), name: z.string().min(1).max(200),
           cpu: CpuSchema.optional(),
@@ -494,7 +502,7 @@ export function registerAppsRoutes(): void {
       responses: { 201: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await authorizedProject(c, projectId, 'write');
       if (loaded instanceof Response) return loaded;
       const body = c.req.valid('json');
@@ -573,9 +581,9 @@ export function registerAppsRoutes(): void {
   // Static artifact routes are registered before /apps/{appId}.
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/artifacts', tags: ['apps'], summary: 'Register an App artifact', ...auth,
+      method: 'post', path: '/{workspaceId}/apps/artifacts', tags: ['apps'], summary: 'Register an App artifact', ...auth,
       request: {
-        params: z.object({ projectId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.discriminatedUnion('kind', [
           z.object({ kind: z.literal('archive'), media_type: z.string().optional() }),
           z.object({ kind: z.literal('oci_image'), image: z.string().min(1).max(512) }),
@@ -584,7 +592,7 @@ export function registerAppsRoutes(): void {
       responses: { 201: json(z.object({ artifact: ArtifactObject, upload: z.object({ url: z.string(), max_bytes: z.number() }).nullable() }), 'Artifact'), ...errors(400, 403, 404, 500, 503) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       const body = c.req.valid('json');
@@ -624,15 +632,15 @@ export function registerAppsRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/artifacts/{artifactId}/finalize', tags: ['apps'], summary: 'Finalize an uploaded artifact', ...auth,
+      method: 'post', path: '/{workspaceId}/apps/artifacts/{artifactId}/finalize', tags: ['apps'], summary: 'Finalize an uploaded artifact', ...auth,
       request: {
-        params: z.object({ projectId: z.string().uuid(), artifactId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid(), artifactId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/), size_bytes: z.number().int().positive().max(MAX_ARCHIVE_BYTES) }) } } },
       },
       responses: { 200: json(ArtifactObject, 'Artifact'), ...errors(400, 403, 404, 409) },
     }),
     async (c: any) => {
-      const { projectId, artifactId } = c.req.param();
+      const { workspaceId: projectId, artifactId } = c.req.param();
       const gate = await authorizedProject(c, projectId, 'deploy');
       if (gate instanceof Response) return gate;
       const body = c.req.valid('json');
@@ -649,12 +657,12 @@ export function registerAppsRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'get', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Get an App', ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+      method: 'get', path: '/{workspaceId}/apps/{appId}', tags: ['apps'], summary: 'Get an App', ...auth,
+      request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }) },
       responses: { 200: json(AppObject, 'App'), ...errors(403, 404) },
     }),
     async (c: any) => {
-      const { projectId, appId } = c.req.param();
+      const { workspaceId: projectId, appId } = c.req.param();
       const loaded = await authorizedProject(c, projectId);
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
@@ -664,11 +672,11 @@ export function registerAppsRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'patch', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Update an App', ...auth,
+      method: 'patch', path: '/{workspaceId}/apps/{appId}', tags: ['apps'], summary: 'Update an App', ...auth,
       description:
         '`external_url` moves an external App to another https URL (409 for an App Kortix runs). `display` replaces where Kortix shows the App (`listed`, `preview`: live | none, `parent`: the App whose detail shows it as a tab, `space` and `agent`: where it is grouped); presentation only, never a grant. `uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ',
       request: {
-        params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
           name: z.string().min(1).max(200).optional(), cpu: CpuSchema.optional(),
           memory_gb: MemorySchema.optional(), disk_gb: DiskSchema.optional(),
@@ -682,7 +690,7 @@ export function registerAppsRoutes(): void {
       responses: { 200: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409, 502, 503) },
     }),
     async (c: any) => {
-      const { projectId, appId } = c.req.param();
+      const { workspaceId: projectId, appId } = c.req.param();
       const loaded = await authorizedProject(c, projectId, 'write');
       if (loaded instanceof Response) return loaded;
       const current = await visibleApp(projectId, appId, loaded.userId);
@@ -743,20 +751,22 @@ export function registerAppsRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'delete', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Delete an App', ...auth,
+      method: 'delete', path: '/{workspaceId}/apps/{appId}', tags: ['apps'], summary: 'Delete an App', ...auth,
       description:
         'The App stops serving at once; its machines and images go. An App with volumes needs `project.app.admin`: ' +
-        'each volume keeps a final snapshot for 7 days, then Kortix purges it.',
+        'each volume keeps a final snapshot for 7 days, then Kortix purges it. The project triggers that name the App ' +
+        '(its work triggers, the schedule that calls it) go with it, listed in `triggers_removed`; that needs ' +
+        '`project.trigger.delete` (403 `app_triggers_need_delete` without it). A session trigger on the App stays with its session.',
       request: {
-        params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }),
       },
       responses: {
-        200: json(z.object({ ok: z.boolean(), images: ImageReleaseObject }), 'Deleted'),
+        200: json(z.object({ ok: z.boolean(), images: ImageReleaseObject, triggers_removed: z.array(z.string()) }), 'Deleted'),
         ...errors(400, 403, 404, 409, 502),
       },
     }),
     async (c: any) => {
-      const { projectId, appId } = c.req.param();
+      const { workspaceId: projectId, appId } = c.req.param();
       const loaded = await authorizedProject(c, projectId, 'write');
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
@@ -766,15 +776,28 @@ export function registerAppsRoutes(): void {
         const admin = await authorizedProject(c, projectId, 'admin');
         if (admin instanceof Response) return admin;
       }
-      // kortix.yaml owns the App's block: remove it (and references to it) first,
-      // or the next `kortix apps deploy` would recreate the App from it.
-      const undeclared = await commitAppRemoval(projectId, row.slug);
+      // The triggers that name the App go with it: without the App they fail on
+      // every fire or raise a silence alert nothing can clear. Removing them is
+      // a trigger delete, so it takes the same permission.
+      const mayRemoveTriggers = await projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE);
+      const runtimeTriggers = await runtimeTriggersNamingApp(projectId, row.slug);
+      if (runtimeTriggers.length > 0 && !mayRemoveTriggers) {
+        return c.json({
+          error: `Deleting ${row.slug} also removes the triggers that name it (${runtimeTriggers.join(', ')}); you need permission to delete triggers.`,
+          code: 'app_triggers_need_delete',
+        }, 403);
+      }
+      // kortix.yaml owns the App's block: remove it (and references to it, and
+      // its triggers) first, or the next `kortix apps deploy` would recreate it.
+      const undeclared = await commitAppRemoval(projectId, row.slug, { mayRemoveTriggers });
       if (!undeclared.ok) return c.json({ error: undeclared.error, code: undeclared.code ?? 'manifest_write_failed' }, undeclared.status);
+      const triggersRemoved = [...new Set([...undeclared.removedTriggers, ...runtimeTriggers])].sort();
       // Delete first, tear down second. A deleted App stops routing and leaves
       // the idle reaper at once; if this request dies mid-teardown, project
       // maintenance (`reclaimAppDeploymentImages`) removes what it left behind.
       await db.update(apps).set({ deletedAt: new Date(), desiredState: 'stopped', activeDeploymentId: null, updatedAt: new Date() })
         .where(eq(apps.appId, appId));
+      await dropRetiredAppTriggers(projectId, triggersRemoved);
       const deployments = await db
         .select({
           deploymentId: appDeployments.deploymentId,
@@ -815,13 +838,13 @@ export function registerAppsRoutes(): void {
         deployment.status !== 'deleted' && !IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status));
       const released = await releaseDeploymentImages(finished);
       const images = { released: released.released, pending: released.pending + building.length };
-      return c.json({ ok: true, images });
+      return c.json({ ok: true, images, triggers_removed: triggersRemoved });
     },
   );
 
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/{appId}/deployments', tags: ['apps'], summary: 'Deploy an App', ...auth,
+      method: 'post', path: '/{workspaceId}/apps/{appId}/deployments', tags: ['apps'], summary: 'Deploy an App', ...auth,
       description:
         'Queue a release of an uploaded artifact (`artifact_id` + `source`); answers 202. `config` is the release ' +
         'config (processes, http_service, services, mounts, vm, deploy; the shorthands port, ' +
@@ -829,7 +852,7 @@ export function registerAppsRoutes(): void {
         'process group on the source port, sized like the App. An invalid config answers 400 `app_config_invalid` ' +
         'with `issues: [{path, message}]`; a mount on a provider without volumes answers 400 `app_volumes_unsupported`.',
       request: {
-        params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
           artifact_id: z.string().uuid().optional(),
           source: SourceSchema,
@@ -845,7 +868,7 @@ export function registerAppsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const { projectId, appId } = c.req.param();
+      const { workspaceId: projectId, appId } = c.req.param();
       const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       const app = await visibleApp(projectId, appId, loaded.userId);
@@ -913,18 +936,33 @@ export function registerAppsRoutes(): void {
         return row!;
       });
       triggerAppDeploymentWorker();
+      // Agents deploy most apps: the event counts every deploy, attributed to the
+      // session owner, and `actor_type` says who asked (human, agent, …).
+      captureProductEvent({
+        userId: loaded.userId,
+        accountId: loaded.row.accountId,
+        event: 'app_deployed',
+        dedupeKey: deployment.deploymentId,
+        properties: {
+          project_id: projectId,
+          app_kind: source.kind,
+          hosting_provider: hostingProvider ?? null,
+          actor_type: deployment.actorType ?? null,
+          source: analyticsSource(c),
+        },
+      });
       return c.json(serializeDeployment(deployment), 202);
     },
   );
 
   projectsApp.openapi(
     createRoute({
-      method: 'get', path: '/{projectId}/apps/{appId}/deployments', tags: ['apps'], summary: 'List App deployments', ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+      method: 'get', path: '/{workspaceId}/apps/{appId}/deployments', tags: ['apps'], summary: 'List App deployments', ...auth,
+      request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }) },
       responses: { 200: json(z.object({ deployments: z.array(DeploymentObject) }), 'Deployments'), ...errors(403, 404) },
     }),
     async (c: any) => {
-      const { projectId, appId } = c.req.param();
+      const { workspaceId: projectId, appId } = c.req.param();
       const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       if (!(await visibleApp(projectId, appId, loaded.userId))) {
@@ -939,12 +977,12 @@ export function registerAppsRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'get', path: '/{projectId}/apps/{appId}/deployments/{deploymentId}', tags: ['apps'], summary: 'Get App deployment', ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }) },
+      method: 'get', path: '/{workspaceId}/apps/{appId}/deployments/{deploymentId}', tags: ['apps'], summary: 'Get App deployment', ...auth,
+      request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }) },
       responses: { 200: json(z.object({ deployment: DeploymentObject, events: z.array(z.object({}).passthrough()) }), 'Deployment'), ...errors(403, 404) },
     }),
     async (c: any) => {
-      const { projectId, appId, deploymentId } = c.req.param();
+      const { workspaceId: projectId, appId, deploymentId } = c.req.param();
       const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       if (!(await visibleApp(projectId, appId, loaded.userId))) {
@@ -966,12 +1004,12 @@ export function registerAppsRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'get', path: '/{projectId}/apps/{appId}/deployments/{deploymentId}/logs', tags: ['apps'], summary: 'Get App runtime logs', ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }), query: z.object({ after: z.string().optional(), limit: z.string().optional() }) },
+      method: 'get', path: '/{workspaceId}/apps/{appId}/deployments/{deploymentId}/logs', tags: ['apps'], summary: 'Get App runtime logs', ...auth,
+      request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }), query: z.object({ after: z.string().optional(), limit: z.string().optional() }) },
       responses: { 200: json(z.object({}).passthrough(), 'Logs'), ...errors(403, 404, 409, 503) },
     }),
     async (c: any) => {
-      const { projectId, appId, deploymentId } = c.req.param();
+      const { workspaceId: projectId, appId, deploymentId } = c.req.param();
       const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       if (!(await visibleApp(projectId, appId, loaded.userId))) {
@@ -1016,8 +1054,8 @@ export function registerAppsRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'delete', path: '/{projectId}/apps/{appId}/deployments/{deploymentId}', tags: ['apps'], summary: 'Delete an App deployment', ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }) },
+      method: 'delete', path: '/{workspaceId}/apps/{appId}/deployments/{deploymentId}', tags: ['apps'], summary: 'Delete an App deployment', ...auth,
+      request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid(), deploymentId: z.string().uuid() }) },
       responses: {
         200: json(z.object({
           ok: z.boolean(),
@@ -1028,7 +1066,7 @@ export function registerAppsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const { projectId, appId, deploymentId } = c.req.param();
+      const { workspaceId: projectId, appId, deploymentId } = c.req.param();
       const loaded = await authorizedProject(c, projectId, 'write');
       if (loaded instanceof Response) return loaded;
       if (!(await visibleApp(projectId, appId, loaded.userId))) {
@@ -1108,12 +1146,12 @@ export function registerAppsRoutes(): void {
   for (const action of ['start', 'stop'] as const) {
     projectsApp.openapi(
       createRoute({
-        method: 'post', path: `/{projectId}/apps/{appId}/${action}`, tags: ['apps'], summary: `${action} an App`, ...auth,
-        request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
+        method: 'post', path: `/{workspaceId}/apps/{appId}/${action}`, tags: ['apps'], summary: `${action} an App`, ...auth,
+        request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }) },
         responses: { 200: json(AppObject, 'App'), ...errors(402, 403, 404, 409, 429, 503) },
       }),
       async (c: any) => {
-        const { projectId, appId } = c.req.param();
+        const { workspaceId: projectId, appId } = c.req.param();
         const loaded = await authorizedProject(c, projectId, 'deploy');
         if (loaded instanceof Response) return loaded;
         const app = await visibleApp(projectId, appId, loaded.userId);
@@ -1139,17 +1177,18 @@ export function registerAppsRoutes(): void {
           if (runtime) {
             await new AppHostingProvider().stop(runtime.provider as SandboxProviderName, runtime.externalId);
             const now = new Date();
-            await db.update(appRuntimes).set({
-              status: 'stopped',
+            await transitionAppRuntime('stop', eq(appRuntimes.runtimeId, runtime.runtimeId), {
               stoppedAt: now,
               activityLeaseUntil: null,
               idleDeadlineAt: null,
               wakeLeaseOwner: null,
               wakeLeaseUntil: null,
               updatedAt: now,
-            }).where(eq(appRuntimes.runtimeId, runtime.runtimeId));
+            });
             await pauseComputeSession(runtime.runtimeId, now);
           }
+          // Stopped on purpose: keep-alive no longer checks it, so its crash streaks end here.
+          await clearAppCrashAlerts({ projectId, appSlug: app.slug, running: false }).catch(() => 0);
         } else {
           const loaded = await loadPublicApp(app.routeKey);
           if (!loaded) return c.json({ error: 'Active deployment has no runtime' }, 409);
@@ -1177,16 +1216,16 @@ export function registerAppsRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/{appId}/rollback', tags: ['apps'], summary: 'Roll back an App', ...auth,
+      method: 'post', path: '/{workspaceId}/apps/{appId}/rollback', tags: ['apps'], summary: 'Roll back an App', ...auth,
       description:
         'Roll back to an earlier release: a NEW release (the next version) from that release\'s artifact and ' +
         'config, rolled out on its strategy like any deploy. Volumes keep their data. Answers 202 ' +
         'with the App and the queued release in `deployment`.',
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }), body: { content: { 'application/json': { schema: z.object({ deployment_id: z.string().uuid() }) } } } },
+      request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }), body: { content: { 'application/json': { schema: z.object({ deployment_id: z.string().uuid() }) } } } },
       responses: { 202: json(AppObject, 'App'), ...errors(403, 404, 409) },
     }),
     async (c: any) => {
-      const { projectId, appId } = c.req.param();
+      const { workspaceId: projectId, appId } = c.req.param();
       const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       const app = await visibleApp(projectId, appId, loaded.userId);

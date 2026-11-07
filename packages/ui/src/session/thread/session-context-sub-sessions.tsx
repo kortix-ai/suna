@@ -86,7 +86,12 @@ function WithOneThread({
   children: (metrics: MetricsById) => ReactNode;
 }) {
   const thread = useSessionLogThread(source, id);
-  const metrics = useMemo(() => (thread ? threadMetrics(thread, pricingLookup) : null), [thread, pricingLookup]);
+  // A sub-agent's thread starts with its prompt, so a thread the log names with no message yet
+  // has not been read (or its read failed): not loaded, never a false "0 messages".
+  const metrics = useMemo(
+    () => (thread && thread.messages.length > 0 ? threadMetrics(thread, pricingLookup) : null),
+    [thread, pricingLookup],
+  );
   const next = useMemo(() => ({ ...acc, [id]: metrics }), [acc, id, metrics]);
   return (
     <WithThreadMetrics source={source} ids={rest} pricingLookup={pricingLookup} acc={next}>

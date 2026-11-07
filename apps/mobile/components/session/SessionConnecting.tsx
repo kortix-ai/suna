@@ -12,7 +12,7 @@
  * surfaced via /kortix/health `boot_error`, a terminal /start answer, or the
  * connect loop's own timeout), the failure is a card with the composer's
  * surface, the detail, Restart, and a way back to project home, centred in the
- * page, with no composer (Jay, 2026-10-02: nothing can be sent). Web parity with the dashboard's "OpenCode runtime is not ready"
+ * page, with no composer (Jay, 2026-10-02: nothing can be sent). Web parity with the dashboard's "Session runtime is not ready"
  * screen (apps/web/.../sessions/[sessionId]/page.tsx InlineSessionError).
  *
  * With a SAVED COPY (`thread`: the copy this device kept, then the server's;
@@ -36,7 +36,7 @@
  */
 
 import React from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, View, type ScrollViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import {
   sessionLogTurns,
@@ -382,7 +382,7 @@ function SavedThread({
   restarting?: boolean;
 }) {
   const insets = useSafeAreaInsets();
-  const scrollRef = React.useRef<ScrollView>(null);
+  const scrollRef = React.useRef<ScrollViewInstance>(null);
   const viewerId = participants?.participants.find((person) => person.is_viewer)?.user_id;
   // The floating composer area's height: the newest turn rests above it.
   const [bottomHeight, setBottomHeight] = React.useState(0);
@@ -475,7 +475,7 @@ function ConnectErrorState({
       ) : null}
       <View className="flex-row gap-2">
         <Button variant="secondary" onPress={onCancel} className="flex-1 rounded-full">
-          <Text>Back to project</Text>
+          <Text>Back to workspace</Text>
         </Button>
         {onRestart ? (
           <Button variant="default" onPress={onRestart} disabled={restarting} className="flex-1 rounded-full">

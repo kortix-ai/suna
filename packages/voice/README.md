@@ -9,6 +9,8 @@ The project flag `voice_call` turns it on (Settings → Feature flags). kortixd 
 - **One relay per box**, on `KORTIX_VOICE_PORT` (default `6902`, next to the desktop's `6901`). It starts with the first session.
 - **Each session binds under its Kortix session id.** A call names it: `/stream?session=<id>`. The call's turns are that session's own turns (`src/agents/pi.ts`): no HTTP hop to the agent, and no second transcript.
 - **Meta tools** (`voice_state`, `voice_say`, `voice_set`, `voice_later`, `voice_watch`, `voice_cancel`, `voice_capture`, `voice_look`) let the agent read and act on its own live call (`src/voice-tools.ts`).
+- **Speech tools**, with or without a call: `voice_speak` says text in the agent's call voice into an audio file (mp3 or wav), and `voice_transcribe` turns an audio file into text. With them the agent can send its voice to any API that takes audio, and hear a channel's voice note (`src/speech-api.ts`, the relay's `POST /speech`).
+- **Meetings and web calls.** `voice_join_meet` joins a Google Meet as a guest (`src/meet/join.ts`). It hears everyone through Meet's live captions, with their names, and only the people named in `trusted` may ask the agent to act. `voice_join_call` opens any other web call (`src/meet/call.ts`) in a call browser of the voice's own. The agent joins it with its own browser tool over that browser's CDP port. The voice is the page's microphone and hears the page's remote WebRTC audio. No names come with that audio, so nobody heard may ask the agent to act unless the owner says `trusted: true`. `voice_leave_meet` leaves either one.
 
 With the flag off, nothing here is imported and no port opens.
 

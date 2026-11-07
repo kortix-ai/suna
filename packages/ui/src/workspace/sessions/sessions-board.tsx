@@ -69,7 +69,7 @@ function useMinuteClock(): number {
 }
 
 /**
- * The agent board (`/projects/<id>/sessions?view=board`), Claude Code's agent
+ * The agent board (`/workspaces/<id>/sessions?view=board`), Claude Code's agent
  * view in Kortix's own look: every session of the project, child sessions
  * included, grouped by what it needs (Pinned, Needs input, Working, Ready for
  * review, Completed, Failed · Stopped). One input on top starts a session

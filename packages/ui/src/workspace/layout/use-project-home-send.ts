@@ -36,7 +36,12 @@ export interface UseProjectHomeSendOptions {
    * A channel or DM composer: file each send in this space as a new thread.
    * The page stays: `onOpen(sessionId)` runs instead of the navigation.
    */
-  space?: { spaceId: string; onOpen: (sessionId: string) => void };
+  space?: {
+    spaceId: string;
+    onOpen: (sessionId: string) => void;
+    /** The new thread's id the instant Enter is pressed (the create keeps it): a chat opens its thread from here. */
+    onCreating?: (sessionId: string) => void;
+  };
 }
 
 /**
@@ -140,11 +145,13 @@ export function useProjectHomeSend(projectId: string, { beforeSend, space }: Use
                   viewer,
                   sentAtMs,
                 });
+                space.onCreating?.(id);
               }
             : undefined,
           create: {
             ...buildNewSessionCreateInput(options),
-            ...(space ? { space_id: space.spaceId } : {}),
+            // No space: a regular session, filed in no space under `chat` too.
+            space_id: space ? space.spaceId : null,
             ...(heldAttachments
               ? {}
               : {
@@ -255,8 +262,8 @@ function seedOptimisticThread(
     sandbox_provider: null,
     sandbox_id: null,
     sandbox_url: null,
-    opencode_session_id: null,
-    opencode_sessions: [],
+    runtime_session_id: null,
+    runtime_sessions: [],
     name: null,
     custom_name: null,
     agent_name: agent,

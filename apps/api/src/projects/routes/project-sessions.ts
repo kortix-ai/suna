@@ -42,7 +42,6 @@ import { SESSION_CREATE_ERROR_STATUSES, sendSessionCreateError } from '../lib/se
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
 import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
 import { notifySessionShared } from '../lib/notification-recipients';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { createSession, deleteSession, restoreSession } from '../session-lifecycle';
 import { sessionRestoreUntil } from '../session-log-purge';
 import { readSessionConversationModels } from '../session-log-read';
@@ -75,7 +74,9 @@ import { readSessionsWorking } from '../lib/session-working-read';
 import { HIDDEN_SESSION_BOARD, readSessionBoards } from '../lib/session-board';
 import { teamCreateMetadataError } from '../team-tasks/service';
 import { readSessionReplyCounts } from '../lib/session-reply-counts';
+import { readActiveChildAgents } from '../lib/session-active-child';
 import { turnPublishVerdict } from '../lib/http-session-access';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const NO_USER_STATE = { pinnedAt: null, archivedAt: null };
 
@@ -99,7 +100,10 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+  // A read: a subagent finds the session that spawned it (`kortix sessions log <parent>`).
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c), {
+    spawnAncestorRead: true,
+  });
   if (!visible) return c.json({ error: 'Not found' }, 404);
   // A soft-deleted session is gone for a read-by-id, exactly as it is for the
   // default list. `deleteSession` only stamps `metadata.deletedAt`
@@ -192,12 +196,12 @@ export function registerProjectSessionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions',
+      path: '/{workspaceId}/sessions',
       tags: ['sessions'],
       summary: 'Create a session (start an agent task)',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: SessionCreateInputSchema } } },
         },
       responses: {
@@ -207,7 +211,7 @@ export function registerProjectSessionsRoutes(): void {
       },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const body = await readJsonObject(c);
     const serverManagedMetadataKey = serverManagedSessionMetadataKey(body.metadata);
     if (serverManagedMetadataKey) {
@@ -271,7 +275,7 @@ export function registerProjectSessionsRoutes(): void {
     // any `agent_name` (a create with none already falls back to a default
     // agent), so the gate below authorizes the agent that will actually run.
     let channelSpaceId: string | null = null;
-    if (resolveFeatureFlag(loaded.row.metadata, 'project_channels')) {
+    if (resolveFeatureFlag(loaded.row.metadata, 'chat')) {
       const access = await spaceAccessFor(projectId, loaded.userId, callerKortixSessionId(c));
       const space =
         typeof body.space_id === 'string' && isUuid(body.space_id)
@@ -435,7 +439,7 @@ export function registerProjectSessionsRoutes(): void {
       connector_bindings: 'INVALID_SESSION_CONNECTOR_BINDINGS',
       secrets: 'INVALID_SESSION_SECRETS',
     };
-    const issues: Array<{ path?: Array<string | number>; message?: string }> =
+    const issues: ReadonlyArray<{ path?: ReadonlyArray<PropertyKey>; message?: string }> =
       result.error?.issues ?? [];
     const coded = issues.filter((issue) => codes[String(issue.path?.[0] ?? '')]);
     // Returning nothing would send zod's raw, uncapped result: answer the shared envelope instead.
@@ -455,12 +459,12 @@ export function registerProjectSessionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions',
+      path: '/{workspaceId}/sessions',
       tags: ['sessions'],
       summary: 'List sessions of a project',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           query: z.object({
             scope: z.enum(['visible', 'project']).optional(),
             // The list is a keyset PAGE, not the whole inventory. See
@@ -486,7 +490,7 @@ export function registerProjectSessionsRoutes(): void {
             // restore (its owner or a project manager), inside their window,
             // each with `restore_until`. Combines with no other view.
             deleted: z.literal('only').optional(),
-            // `project_channels` on: only the sessions filed into this space
+            // `chat` on: only the sessions filed into this space
             // that the caller may see (400 unless a UUID). Ignored while the
             // flag is off, whatever its value, as before the flag existed.
             space_id: z.string().optional(),
@@ -512,7 +516,7 @@ export function registerProjectSessionsRoutes(): void {
       },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const query = c.req.valid('query');
     const scope = (query.scope ?? 'visible') as ProjectSessionListScope;
 
@@ -579,7 +583,7 @@ export function registerProjectSessionsRoutes(): void {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
     const personId = personUserId(c, loaded);
 
-    const spaceId = resolveFeatureFlag(loaded.row.metadata, 'project_channels') ? (query.space_id ?? null) : null;
+    const spaceId = resolveFeatureFlag(loaded.row.metadata, 'chat') ? (query.space_id ?? null) : null;
     if (spaceId !== null && !isUuid(spaceId)) return c.json({ error: 'space_id must be a UUID' }, 400);
     const group = resolveFeatureFlag(loaded.row.metadata, 'session_groups') ? (query.group ?? null) : null;
     if (group !== null && group !== 'none' && !isUuid(group)) {
@@ -628,9 +632,11 @@ export function registerProjectSessionsRoutes(): void {
     );
     const accessibleIds = inventory.items.filter((item) => item.canAccess).map((item) => item.row.sessionId);
     // A space list draws "N replies" under each thread; no other list pays for the count.
-    const [working, replyCounts] = await Promise.all([
+    // A space list also says which thread has a hidden worker running (`active_child_agent`).
+    const [working, replyCounts, activeChildren] = await Promise.all([
       readSessionsWorking(accessibleIds),
       spaceId ? readSessionReplyCounts(accessibleIds) : Promise.resolve(null),
+      spaceId ? readActiveChildAgents(accessibleIds) : Promise.resolve(null),
     ]);
     const boards = await readSessionBoards(inventory.items.filter((item) => item.canAccess).map((item) => item.row), working);
     const body = inventory.items.map((item) => {
@@ -658,6 +664,7 @@ export function registerProjectSessionsRoutes(): void {
         trimListMetadata: true,
         conversationModel: conversationModels.get(row.sessionId),
         replyCount: replyCounts?.get(row.sessionId) ?? null,
+        ...(activeChildren ? { activeChildAgent: activeChildren.get(row.sessionId) ?? null } : {}),
       }), working: working.get(row.sessionId), ...(boards.get(row.sessionId) ?? HIDDEN_SESSION_BOARD) };
       if (query.parent !== 'root') return serialized;
       return {
@@ -701,12 +708,12 @@ export function registerProjectSessionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}',
+      path: '/{workspaceId}/sessions/{sessionId}',
       tags: ['sessions'],
       summary: 'Get a session',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), sessionId: z.string() }),
+          params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         },
       responses: {
           200: json(SessionSchema, 'The session'),
@@ -716,19 +723,19 @@ export function registerProjectSessionsRoutes(): void {
     async (c) => {
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-    return sessionReadResponse(c, c.req.param('projectId'), sessionId);
+    return sessionReadResponse(c, workspaceIdParam(c), sessionId);
   },
   );
 
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/sessions/{sessionId}/sharing',
+      path: '/{workspaceId}/sessions/{sessionId}/sharing',
       tags: ['sessions'],
       summary: 'Set who can see a session',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), sessionId: z.string() }),
+          params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               mode: z.enum(['project', 'private', 'members']).openapi({ description: 'project: everyone in the project. private: owner only. members: the listed members and groups.' }),
               ownerId: z.string().optional().openapi({ description: 'For mode private: the owner user id. Defaults to the caller.' }),
@@ -742,7 +749,7 @@ export function registerProjectSessionsRoutes(): void {
       },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -828,7 +835,7 @@ export function registerProjectSessionsRoutes(): void {
         sessionId,
         owner: visible.row.createdBy ?? loaded.userId,
         freeModelsOnly: !(await accountMayUseManagedModels(loaded.row.accountId)),
-        model: typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null,
+        model: typeof metadata.model === 'string' ? metadata.model : null,
         visibility: next.visibility,
         mayPool:
           resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') &&
@@ -877,22 +884,19 @@ export function registerProjectSessionsRoutes(): void {
     }
 
     await setSessionSharing(sessionId, intent);
-    // "Shared with you" for the people this change newly names (KRTX-1742),
-    // only with the project's notification_center flag on. `visible.grants`
-    // and `visible.row.visibility` were read BEFORE the change.
+    // "Shared with you" for the people this change newly names (KRTX-1742).
+    // `visible.grants` and `visible.row.visibility` were read BEFORE the change.
     // Fire-and-forget: it never throws and never delays or fails the share.
-    if (notificationsEnabled(loaded.row.metadata)) {
-      void notifySessionShared({
-        accountId: loaded.row.accountId,
-        projectId,
-        sessionId,
-        sharerId: loaded.userId,
-        creatorId: visible.row.createdBy,
-        priorGrants: visible.grants,
-        priorVisibility: visible.row.visibility,
-        intent,
-      });
-    }
+    void notifySessionShared({
+      accountId: loaded.row.accountId,
+      projectId,
+      sessionId,
+      sharerId: loaded.userId,
+      creatorId: visible.row.createdBy,
+      priorGrants: visible.grants,
+      priorVisibility: visible.row.visibility,
+      intent,
+    });
 
     const fresh = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
       return c.json(
@@ -913,12 +917,12 @@ export function registerProjectSessionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/sessions/{sessionId}',
+      path: '/{workspaceId}/sessions/{sessionId}',
       tags: ['sessions'],
       summary: 'Rename a session or merge metadata into it',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), sessionId: z.string() }),
+          params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               name: z.string().optional().openapi({ description: 'New display name. Empty string or null clears the rename.' }),
               labels: z.array(z.string()).optional().openapi({ description: 'Replaces the session labels. Each is trimmed, 1..64 characters; at most 20; duplicates drop. [] clears them.' }),
@@ -931,7 +935,7 @@ export function registerProjectSessionsRoutes(): void {
       },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -939,20 +943,12 @@ export function registerProjectSessionsRoutes(): void {
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-    const serverManagedFields = ['status', 'sandbox_url', 'sandboxUrl', 'error'];
+    // runtime_session_id: the backend alone maps a Kortix session to its runtime session,
+    // so a stale or forged client value cannot drift it.
+    const serverManagedFields = ['status', 'sandbox_url', 'sandboxUrl', 'error', 'runtime_session_id', 'runtimeSessionId'];
     const attemptedServerField = serverManagedFields.find((field) => hasOwn(body, field));
     if (attemptedServerField) {
       return c.json({ error: `field is server-managed: ${attemptedServerField}` }, 400);
-    }
-
-    // opencode_session_id is SERVER-MANAGED: the backend is the sole authority
-    // for the OpenCode↔Kortix mapping (see ensure-opencode + opencode-mapping.ts).
-    // Clients must never set it, so a stale/forged client value can't drift it.
-      const opencodeManagedField = ['opencode_session_id', 'opencodeSessionId'].find((f) =>
-        hasOwn(body, f),
-      );
-    if (opencodeManagedField) {
-      return c.json({ error: `field is server-managed: ${opencodeManagedField}` }, 400);
     }
 
     const allowedFields = ['name', 'labels', 'metadata'];
@@ -975,7 +971,7 @@ export function registerProjectSessionsRoutes(): void {
     // Letting a client forge either via PATCH lets any project member hide
     // another member's session, block its follow-ups, and trip the reaper.
     // See SSR-7 (weekly pentest run #4).
-    // opencode_model is create-only by contract and changed only via
+    // model is create-only by contract and changed only via
     // PUT /sessions/{id}/model, which validates it against the account. Planting
     // it through metadata skipped that check entirely, so a retired or
     // account-forbidden model could be stored and booted by the next cold provision.
@@ -1013,7 +1009,7 @@ export function registerProjectSessionsRoutes(): void {
 
     // A user-set name is the AUTHORITATIVE display name. It lives in
     // metadata.custom_name — a separate key from metadata.name (the server-side
-    // auto title mirrored from OpenCode during session reads) so a rename is never
+    // auto title mirrored from the runtime during session reads) so a rename is never
     // clobbered by a later sync. Passing name: "" (or null) clears the override
     // and reverts the session to its auto title.
     const hasNameField = hasOwn(body, 'name');
@@ -1070,12 +1066,12 @@ export function registerProjectSessionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/sessions/{sessionId}',
+      path: '/{workspaceId}/sessions/{sessionId}',
       tags: ['sessions'],
       summary: 'Delete a session (restorable until restore_until; then its content and branch are deleted)',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), sessionId: z.string() }),
+          params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         },
       responses: {
           200: json(SessionDeleteResultSchema, 'Session deleted; restorable until restore_until'),
@@ -1083,7 +1079,7 @@ export function registerProjectSessionsRoutes(): void {
       },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -1098,7 +1094,7 @@ export function registerProjectSessionsRoutes(): void {
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageLifecycle) {
         return c.json(
-          { error: 'Only the session owner or a project manager can stop this session' },
+          { error: 'Only the session owner or a workspace manager can stop this session' },
           403,
         );
     }
@@ -1127,12 +1123,12 @@ export function registerProjectSessionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/restore',
+      path: '/{workspaceId}/sessions/{sessionId}/restore',
       tags: ['sessions'],
       summary: 'Restore a deleted session before its restore_until',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), sessionId: z.string() }),
+          params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         },
       responses: {
           200: json(OkSchema, 'Session restored; its next start boots a fresh sandbox from its branch'),
@@ -1140,7 +1136,7 @@ export function registerProjectSessionsRoutes(): void {
       },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -1152,7 +1148,7 @@ export function registerProjectSessionsRoutes(): void {
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageLifecycle) {
         return c.json(
-          { error: 'Only the session owner or a project manager can restore this session' },
+          { error: 'Only the session owner or a workspace manager can restore this session' },
           403,
         );
     }

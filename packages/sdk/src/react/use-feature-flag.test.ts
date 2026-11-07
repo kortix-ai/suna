@@ -22,7 +22,7 @@ mock.module('../core/rest/projects-client', () => ({
     rowCalls.push(projectId);
     return { project_id: projectId };
   },
-  getProjectDetail: async (projectId: string) => {
+  getWorkspaceDetail: async (projectId: string) => {
     detailCalls.push(projectId);
     return { project: { project_id: projectId } };
   },
@@ -220,6 +220,17 @@ describe('useFeatureFlag', () => {
 
     withDetail(undefined);
     expect(useFeatureFlag('p', 'agentmail_email').enabled).toBe(true);
+  });
+
+  test('notification_center graduated: notifications are on for every project', () => {
+    // 2026-11-06. A stored `notification_center: false` from the flag era is inert.
+    withDetail({ notification_center: false });
+    expect(useFeatureFlag('p', 'notification_center').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'notification_center').enabled).toBe(true);
+
+    expect(useFeatureFlag(null, 'notification_center').enabled).toBe(true);
   });
 
   test('config_releases graduated: every session runs the base branch config release', () => {

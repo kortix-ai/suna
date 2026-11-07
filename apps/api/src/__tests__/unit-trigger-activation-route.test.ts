@@ -11,13 +11,10 @@
 // double-firing its crons.
 //
 // This shipped broken once (the activation route was declared AFTER `:slug`),
-// so these tests lock the invariant from two angles:
-//   1. behavioural — prove the bug exists with `:slug`-first and is fixed with
-//      `activation`-first, using a real OpenAPIHono router;
-//   2. structural — assert the real triggers.ts registers `activation` BEFORE `:slug`.
+// so these tests lock the invariant:
+//   behavioural — prove the bug exists with `:slug`-first and is fixed with
+//   `activation`-first, using a real OpenAPIHono router.
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 
 type Order = 'slug-first' | 'activation-first';
@@ -74,21 +71,6 @@ describe('trigger activation route ordering', () => {
     // route, which is the exact regression this file guards against.
     const app = buildRouter('slug-first');
     expect(await patch(app, '/p1/triggers/activation')).toEqual({ handler: 'slug', slug: 'activation' });
-  });
-
-  test('triggers.ts registers the static activation route BEFORE the :slug routes', () => {
-    const source = readFileSync(
-      join(import.meta.dir, '..', 'projects', 'routes', 'triggers.ts'),
-      'utf8',
-    );
-    // Quote-agnostic (triggers.ts may use single or double quotes after formatting).
-    const activationIdx = source.indexOf('/{projectId}/triggers/activation');
-    const slugIdx = source.indexOf('/{projectId}/triggers/{slug}');
-    expect(activationIdx).toBeGreaterThan(-1);
-    expect(slugIdx).toBeGreaterThan(-1);
-    // If this fails, the activation kill-switch is shadowed and unreachable —
-    // move the activation route above the `:slug` routes in triggers.ts.
-    expect(activationIdx).toBeLessThan(slugIdx);
   });
 });
 

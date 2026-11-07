@@ -4,13 +4,16 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { and, eq, sql } from 'drizzle-orm';
-import { accounts, accountSessionActivity } from '@kortix/db';
+import { accountSessionActivity } from '@kortix/db';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, HttpError } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
+import { accountIdParam } from '../../shared/route-params';
+import { accountsView, updateAccountRows, type AccountRowSet } from '../../workspaces/rows';
+import { KEY_DEFAULT_LIFETIME_DAYS, KEY_MAX_LIFETIME_DAYS } from '../../repositories/account-tokens';
 
 // ─── Session policy ───────────────────────────────────────────────────────
 // Per-account ceilings on session age + idle gap. Null on either field
@@ -27,13 +30,25 @@ const SESSION_LIMIT_MINUTES = 10080;
 const PAT_MAX_LIFETIME_DAYS = 365 * 2; // 2 years
 const PAT_MAX_IDLE_DAYS = 365;
 
+/** The key policy on the wire. `default_lifetime_days` and
+ *  `effective_max_lifetime_days` are what a new key gets with this policy
+ *  (`resolveMintExpiry`): 90 and 365 days when the policy sets no maximum. */
+const PatPolicySchema = z.object({
+  max_lifetime_days: z.number().nullable(),
+  require_expiry: z.boolean(),
+  idle_revoke_days: z.number().nullable(),
+  allow_no_expiry: z.boolean().openapi({ description: 'Members may mint keys with no expiry (`expires_at: null`). Off by default.' }),
+  default_lifetime_days: z.number().openapi({ description: 'A new key without `expires_at` expires this many days out.' }),
+  effective_max_lifetime_days: z.number().openapi({ description: 'The longest expiry a new key may have.' }),
+});
+
 export function registerIamPoliciesRoutes(): void {
    // 7 days
 
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/session-policy',
+      path: '/{workspaceId}/iam/session-policy',
       tags: ['iam'],
       summary: 'Get the account session policy',
       ...auth,
@@ -44,16 +59,16 @@ export function registerIamPoliciesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
     const [row] = await db
       .select({
-        maxLifetimeMinutes: accounts.sessionMaxLifetimeMinutes,
-        idleTimeoutMinutes: accounts.sessionIdleTimeoutMinutes,
+        maxLifetimeMinutes: accountsView.sessionMaxLifetimeMinutes,
+        idleTimeoutMinutes: accountsView.sessionIdleTimeoutMinutes,
       })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
+      .from(accountsView)
+      .where(eq(accountsView.accountId, accountId))
       .limit(1);
     if (!row) return c.json({ error: 'account not found' }, 404);
 
@@ -67,7 +82,7 @@ export function registerIamPoliciesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/iam/session-policy',
+      path: '/{workspaceId}/iam/session-policy',
       tags: ['iam'],
       summary: 'Update the account session policy',
       ...auth,
@@ -78,7 +93,7 @@ export function registerIamPoliciesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
     const body = await readJsonObject(c);
@@ -116,22 +131,19 @@ export function registerIamPoliciesRoutes(): void {
 
     const [before] = await db
       .select({
-        maxLifetimeMinutes: accounts.sessionMaxLifetimeMinutes,
-        idleTimeoutMinutes: accounts.sessionIdleTimeoutMinutes,
+        maxLifetimeMinutes: accountsView.sessionMaxLifetimeMinutes,
+        idleTimeoutMinutes: accountsView.sessionIdleTimeoutMinutes,
       })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
+      .from(accountsView)
+      .where(eq(accountsView.accountId, accountId))
       .limit(1);
     if (!before) return c.json({ error: 'account not found' }, 404);
 
-    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    const updates: AccountRowSet = { updatedAt: new Date() };
     if (maxLifetimeMinutes !== undefined) updates.sessionMaxLifetimeMinutes = maxLifetimeMinutes;
     if (idleTimeoutMinutes !== undefined) updates.sessionIdleTimeoutMinutes = idleTimeoutMinutes;
 
-    await db
-      .update(accounts)
-      .set(updates)
-      .where(eq(accounts.accountId, accountId));
+    await updateAccountRows(eq(accountsView.accountId, accountId), updates);
 
     await auditIam(c, {
       accountId,
@@ -164,7 +176,7 @@ export function registerIamPoliciesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/sessions',
+      path: '/{workspaceId}/iam/sessions',
       tags: ['iam'],
       summary: 'List recent account sessions',
       ...auth,
@@ -175,7 +187,7 @@ export function registerIamPoliciesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
 
     const rows = await db
@@ -212,11 +224,11 @@ export function registerIamPoliciesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/sessions/{sessionId}/revoke',
+      path: '/{workspaceId}/iam/sessions/{sessionId}/revoke',
       tags: ['iam'],
       summary: 'Revoke (force-logout) a session',
       ...auth,
-      request: { params: z.object({ accountId: z.string(), sessionId: z.string() }), body: { content: { 'application/json': { schema: z.object({}).partial() } } } },
+      request: { params: z.object({ workspaceId: z.string(), sessionId: z.string() }), body: { content: { 'application/json': { schema: z.object({}).partial() } } } },
       responses: {
         200: json(z.object({ revoked: z.boolean() }), 'Revocation result'),
         ...errors(401, 403, 404),
@@ -224,7 +236,7 @@ export function registerIamPoliciesRoutes(): void {
     }),
     async (c: any) => {
     const actorUserId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const sessionId = c.req.param('sessionId');
     // Gate on member.remove — force-logout is roughly "kick this user off
     // for now"; reuses the same capability admins already grant.
@@ -266,28 +278,29 @@ export function registerIamPoliciesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/pat-policy',
+      path: '/{workspaceId}/iam/pat-policy',
       tags: ['iam'],
       summary: 'Get the account PAT policy',
       ...auth,
       request: { params: AccountIdParam },
       responses: {
-        200: json(z.object({ max_lifetime_days: z.number().nullable(), require_expiry: z.boolean(), idle_revoke_days: z.number().nullable() }), 'PAT policy'),
+        200: json(PatPolicySchema, 'PAT policy'),
         ...errors(401, 403, 404),
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
     const [row] = await db
       .select({
-        maxLifetimeDays: accounts.patMaxLifetimeDays,
-        requireExpiry: accounts.patRequireExpiry,
-        idleRevokeDays: accounts.patIdleRevokeDays,
+        maxLifetimeDays: accountsView.patMaxLifetimeDays,
+        requireExpiry: accountsView.patRequireExpiry,
+        idleRevokeDays: accountsView.patIdleRevokeDays,
+        allowNoExpiry: accountsView.patAllowNoExpiry,
       })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
+      .from(accountsView)
+      .where(eq(accountsView.accountId, accountId))
       .limit(1);
     if (!row) return c.json({ error: 'account not found' }, 404);
 
@@ -295,6 +308,9 @@ export function registerIamPoliciesRoutes(): void {
       max_lifetime_days: row.maxLifetimeDays,
       require_expiry: row.requireExpiry,
       idle_revoke_days: row.idleRevokeDays,
+      allow_no_expiry: row.allowNoExpiry,
+      default_lifetime_days: Math.min(KEY_DEFAULT_LIFETIME_DAYS, row.maxLifetimeDays ?? KEY_MAX_LIFETIME_DAYS),
+      effective_max_lifetime_days: row.maxLifetimeDays ?? KEY_MAX_LIFETIME_DAYS,
     });
     },
   );
@@ -302,18 +318,18 @@ export function registerIamPoliciesRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/iam/pat-policy',
+      path: '/{workspaceId}/iam/pat-policy',
       tags: ['iam'],
       summary: 'Update the account PAT policy',
       ...auth,
-      request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ max_lifetime_days: z.number().nullable(), maxLifetimeDays: z.number().nullable(), idle_revoke_days: z.number().nullable(), idleRevokeDays: z.number().nullable(), require_expiry: z.boolean(), requireExpiry: z.boolean() }).partial() } } } },
+      request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ max_lifetime_days: z.number().nullable(), maxLifetimeDays: z.number().nullable(), idle_revoke_days: z.number().nullable(), idleRevokeDays: z.number().nullable(), require_expiry: z.boolean(), requireExpiry: z.boolean(), allow_no_expiry: z.boolean(), allowNoExpiry: z.boolean() }).partial() } } } },
       responses: {
-        200: json(z.object({ max_lifetime_days: z.number().nullable(), require_expiry: z.boolean(), idle_revoke_days: z.number().nullable() }), 'Updated PAT policy'),
+        200: json(PatPolicySchema, 'Updated PAT policy'),
         ...errors(400, 401, 403, 404),
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
     const body = await readJsonObject(c);
@@ -333,6 +349,7 @@ export function registerIamPoliciesRoutes(): void {
     let maxLifetimeDays: number | null | undefined;
     let idleRevokeDays: number | null | undefined;
     let requireExpiry: boolean | undefined;
+    let allowNoExpiry: boolean | undefined;
     try {
       maxLifetimeDays = parseDays(
         'max_lifetime_days',
@@ -344,6 +361,13 @@ export function registerIamPoliciesRoutes(): void {
         body.idle_revoke_days ?? body.idleRevokeDays,
         PAT_MAX_IDLE_DAYS,
       );
+      const allowRaw = body.allow_no_expiry ?? body.allowNoExpiry;
+      if (allowRaw !== undefined) {
+        if (typeof allowRaw !== 'boolean') {
+          return c.json({ error: 'allow_no_expiry must be a boolean' }, 400);
+        }
+        allowNoExpiry = allowRaw;
+      }
       const reqRaw = body.require_expiry ?? body.requireExpiry;
       if (reqRaw !== undefined) {
         if (typeof reqRaw !== 'boolean') {
@@ -358,24 +382,24 @@ export function registerIamPoliciesRoutes(): void {
 
     const [before] = await db
       .select({
-        maxLifetimeDays: accounts.patMaxLifetimeDays,
-        requireExpiry: accounts.patRequireExpiry,
-        idleRevokeDays: accounts.patIdleRevokeDays,
+        maxLifetimeDays: accountsView.patMaxLifetimeDays,
+        requireExpiry: accountsView.patRequireExpiry,
+        idleRevokeDays: accountsView.patIdleRevokeDays,
+        allowNoExpiry: accountsView.patAllowNoExpiry,
       })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
+      .from(accountsView)
+      .where(eq(accountsView.accountId, accountId))
       .limit(1);
     if (!before) return c.json({ error: 'account not found' }, 404);
 
-    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    const updates: AccountRowSet = { updatedAt: new Date() };
     if (maxLifetimeDays !== undefined) updates.patMaxLifetimeDays = maxLifetimeDays;
     if (idleRevokeDays !== undefined) updates.patIdleRevokeDays = idleRevokeDays;
     if (requireExpiry !== undefined) updates.patRequireExpiry = requireExpiry;
+    if (allowNoExpiry !== undefined) updates.patAllowNoExpiry = allowNoExpiry;
 
-    await db
-      .update(accounts)
-      .set(updates)
-      .where(eq(accounts.accountId, accountId));
+    await updateAccountRows(eq(accountsView.accountId, accountId), updates);
+    const nextMax = maxLifetimeDays !== undefined ? maxLifetimeDays : before.maxLifetimeDays;
 
     await auditIam(c, {
       accountId,
@@ -386,6 +410,7 @@ export function registerIamPoliciesRoutes(): void {
         max_lifetime_days: before.maxLifetimeDays,
         require_expiry: before.requireExpiry,
         idle_revoke_days: before.idleRevokeDays,
+        allow_no_expiry: before.allowNoExpiry,
       },
       after: {
         max_lifetime_days:
@@ -394,6 +419,7 @@ export function registerIamPoliciesRoutes(): void {
           requireExpiry !== undefined ? requireExpiry : before.requireExpiry,
         idle_revoke_days:
           idleRevokeDays !== undefined ? idleRevokeDays : before.idleRevokeDays,
+        allow_no_expiry: allowNoExpiry !== undefined ? allowNoExpiry : before.allowNoExpiry,
       },
     });
 
@@ -404,6 +430,9 @@ export function registerIamPoliciesRoutes(): void {
         requireExpiry !== undefined ? requireExpiry : before.requireExpiry,
       idle_revoke_days:
         idleRevokeDays !== undefined ? idleRevokeDays : before.idleRevokeDays,
+      allow_no_expiry: allowNoExpiry !== undefined ? allowNoExpiry : before.allowNoExpiry,
+      default_lifetime_days: Math.min(KEY_DEFAULT_LIFETIME_DAYS, nextMax ?? KEY_MAX_LIFETIME_DAYS),
+      effective_max_lifetime_days: nextMax ?? KEY_MAX_LIFETIME_DAYS,
     });
     },
   );

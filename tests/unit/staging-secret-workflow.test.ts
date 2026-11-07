@@ -1,13 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readRepoFile, readWorkflow } from '../src/fixtures/repo';
 
 describe('staging secret synchronization', () => {
   it('assumes the staging deploy role before reading or updating the secret bundle', () => {
-    const workflow = readFileSync(
-      resolve(import.meta.dirname, '../../.github/workflows/deploy-staging.yml'),
-      'utf8',
-    );
+    const workflow = readWorkflow('deploy-staging.yml');
     const syncSecretStart = workflow.indexOf('  sync-secret:');
     const deployStart = workflow.indexOf('  deploy-ecs:');
     const syncSecretJob = workflow.slice(syncSecretStart, deployStart);
@@ -19,10 +15,7 @@ describe('staging secret synchronization', () => {
   });
 
   it('grants the deploy role write access only to the staging secret bundle', () => {
-    const policy = readFileSync(
-      resolve(import.meta.dirname, '../../infra/terraform/security-baseline/iam-gha-ecs-deploy.tf'),
-      'utf8',
-    );
+    const policy = readRepoFile('infra/terraform/security-baseline/iam-gha-ecs-deploy.tf');
     const secretsPolicyStart = policy.indexOf(
       'resource "aws_iam_role_policy" "gha_ecs_deploy_secrets"',
     );
@@ -54,10 +47,7 @@ describe('staging secret synchronization', () => {
   });
 
   it('preserves the existing staging bundle and uses dev only for first creation', () => {
-    const workflow = readFileSync(
-      resolve(import.meta.dirname, '../../.github/workflows/deploy-staging.yml'),
-      'utf8',
-    );
+    const workflow = readWorkflow('deploy-staging.yml');
 
     const preserveStart = workflow.indexOf(
       'if aws secretsmanager describe-secret --secret-id kortix-staging-env',
@@ -76,10 +66,7 @@ describe('staging secret synchronization', () => {
   });
 
   it('keeps the existing bundle canonical for the data plane and never writes it from CI', () => {
-    const workflow = readFileSync(
-      resolve(import.meta.dirname, '../../.github/workflows/deploy-staging.yml'),
-      'utf8',
-    );
+    const workflow = readWorkflow('deploy-staging.yml');
     const syncSecretJob = workflow.slice(
       workflow.indexOf('  sync-secret:'),
       workflow.indexOf('  migrate-db:'),
@@ -100,10 +87,7 @@ describe('staging secret synchronization', () => {
   });
 
   it('keeps the staging Composio key and never inherits the dev key on first creation', () => {
-    const workflow = readFileSync(
-      resolve(import.meta.dirname, '../../.github/workflows/deploy-staging.yml'),
-      'utf8',
-    );
+    const workflow = readWorkflow('deploy-staging.yml');
 
     expect(workflow).not.toContain('STAGING_COMPOSIO_API_KEY');
     expect(workflow).toContain('--argjson stagingSecretExists "$staging_secret_exists"');
@@ -111,10 +95,7 @@ describe('staging secret synchronization', () => {
   });
 
   it('caps the staging ECS API database pool below the 60-connection database limit', () => {
-    const workflow = readFileSync(
-      resolve(import.meta.dirname, '../../.github/workflows/deploy-staging.yml'),
-      'utf8',
-    );
+    const workflow = readWorkflow('deploy-staging.yml');
     expect(workflow).toContain('DB_POOL_MAX: "4"');
   });
 });

@@ -18,7 +18,7 @@ import { propagateProjectSecretsToActiveSandboxes } from '../../projects/lib/san
 import { createRoute, z } from '@hono/zod-openapi';
 import { bindableRoleRow } from '../../iam/role-read';
 import { json, errors, auth } from '../../openapi';
-import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { ACCOUNT_ACTIONS, assertAuthorized, toWorkspaceAction, workspaceFactsOf } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import {
   assignRole,
@@ -33,6 +33,7 @@ import { iamRouter, AccountIdParam } from './app';
 import { requireEntitlement } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
+import { accountIdParam } from '../../shared/route-params';
 
 const PRINCIPAL_TYPES = ['user', 'group', 'service_account', 'pending', 'project'] as const;
 const SCOPE_TYPES = ['account', 'project'] as const;
@@ -47,8 +48,13 @@ const AssignmentSchema = z
     role_id: z.string(),
     role_key: z.string(),
     role_is_system: z.boolean(),
+    /** The stored scope (`account` | `project`); kept for old clients. */
     scope_type: z.string(),
     scope_id: z.string().nullable(),
+    /** One scope (design.md C8): `workspace`, or `object` for an object grant inside it. */
+    scope: z.enum(['workspace', 'object']),
+    /** The workspace the assignment reaches; null on a split_pending account's account-scope rows. */
+    workspace_id: z.string().nullable(),
     object_type: z.string().nullable(),
     object_id: z.string().nullable(),
     expires_at: z.string().nullable(),
@@ -61,8 +67,14 @@ const AssignmentSchema = z
 
 const PermissionSchema = z
   .object({
+    /** The stored (legacy) action name; inputs accept both names. */
     action: z.string(),
+    /** The workspace name of the action: the one to show and to write. */
+    workspace_action: z.string(),
+    /** The stored scope (`account` | `project`); kept for old clients. */
     scope_type: z.string(),
+    /** One scope (design.md C8). */
+    scope: z.literal('workspace'),
     resource_type: z.string(),
     delegable: z.boolean(),
     description: z.string(),
@@ -82,7 +94,7 @@ function resyncSecretAudience(row: AssignmentRow): void {
   void propagateProjectSecretsToActiveSandboxes(row.scopeId);
 }
 
-function serialize(row: AssignmentRow) {
+function serialize(row: AssignmentRow, accountWorkspaceId: string | null) {
   return {
     assignment_id: row.assignmentId,
     account_id: row.accountId,
@@ -93,6 +105,10 @@ function serialize(row: AssignmentRow) {
     role_is_system: row.roleIsSystem,
     scope_type: row.scopeType,
     scope_id: row.scopeId,
+    scope: row.objectType ? ('object' as const) : ('workspace' as const),
+    // A project row names its workspace; an account row reaches the account's
+    // one workspace (null while the account is split_pending).
+    workspace_id: row.scopeType === 'project' ? row.scopeId : accountWorkspaceId,
     object_type: row.objectType,
     object_id: row.objectId,
     expires_at: row.expiresAt ? row.expiresAt.toISOString() : null,
@@ -115,7 +131,7 @@ export function registerIamAssignmentsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/assignments',
+      path: '/{workspaceId}/iam/assignments',
       tags: ['iam'],
       summary: 'List role assignments',
       ...auth,
@@ -138,7 +154,7 @@ export function registerIamAssignmentsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_READ);
 
       const principalType = oneOf(PRINCIPAL_TYPES, c.req.query('principal_type'));
@@ -177,7 +193,8 @@ export function registerIamAssignmentsRoutes(): void {
         roleId: roleIdFilter || undefined,
         liveOnly: c.req.query('include_expired') !== 'true',
       });
-      return c.json({ assignments: rows.map(serialize) });
+      const { soleProjectId } = await workspaceFactsOf(accountId);
+      return c.json({ assignments: rows.map((row) => serialize(row, soleProjectId)) });
     },
   );
 
@@ -186,7 +203,7 @@ export function registerIamAssignmentsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/assignments',
+      path: '/{workspaceId}/iam/assignments',
       tags: ['iam'],
       summary: 'Grant a role to a principal, at a scope, optionally on one object',
       ...auth,
@@ -200,7 +217,7 @@ export function registerIamAssignmentsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const body = await readJsonObject(c);
 
       const principalType = oneOf(PRINCIPAL_TYPES, body.principal_type ?? body.principalType);
@@ -218,7 +235,7 @@ export function registerIamAssignmentsRoutes(): void {
       }
       const rawScopeId = body.scope_id ?? body.scopeId ?? null;
       if (rawScopeId != null && typeof rawScopeId !== 'string') {
-        return c.json({ error: 'scope_id must be a project id string or null' }, 400);
+        return c.json({ error: 'scope_id must be a workspace id string or null' }, 400);
       }
       const scopeId: string | null = rawScopeId;
 
@@ -234,7 +251,7 @@ export function registerIamAssignmentsRoutes(): void {
         return c.json({ error: 'principal_id must be a UUID' }, 400);
       }
       if (scopeId !== null && !isUuid(scopeId)) {
-        return c.json({ error: 'scope_id must be a project UUID or null' }, 400);
+        return c.json({ error: 'scope_id must be a workspace UUID or null' }, 400);
       }
       if (typeof roleId === 'string' && !isUuid(roleId)) {
         return c.json({ error: 'role_id must be a UUID — use role_key for a built-in role' }, 400);
@@ -287,7 +304,7 @@ export function registerIamAssignmentsRoutes(): void {
         exclusive: principalType === 'user' && scopeType === 'project' && !objectType,
       });
       resyncSecretAudience(row);
-      return c.json(serialize(row), 201);
+      return c.json(serialize(row, (await workspaceFactsOf(accountId)).soleProjectId), 201);
     },
   );
 
@@ -296,12 +313,12 @@ export function registerIamAssignmentsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/iam/assignments/{assignmentId}',
+      path: '/{workspaceId}/iam/assignments/{assignmentId}',
       tags: ['iam'],
       summary: 'Revoke one assignment',
       ...auth,
       request: {
-        params: z.object({ accountId: z.string(), assignmentId: z.string() }),
+        params: z.object({ workspaceId: z.string(), assignmentId: z.string() }),
       },
       responses: {
         200: json(z.object({ revoked: z.boolean(), assignment: AssignmentSchema }), 'Revoked'),
@@ -309,14 +326,14 @@ export function registerIamAssignmentsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const assignmentId = c.req.param('assignmentId');
       if (!isUuid(assignmentId)) return c.json({ error: 'assignment not found' }, 404);
       // The last-owner guard lives in revokeAssignment, not here — it is the only
       // place that sees every revoke path (route, SCIM deprovision, expiry).
       const row = await revokeAssignment(await actorOf(c, accountId), accountId, assignmentId);
       resyncSecretAudience(row);
-      return c.json({ revoked: true, assignment: serialize(row) });
+      return c.json({ revoked: true, assignment: serialize(row, (await workspaceFactsOf(accountId)).soleProjectId) });
     },
   );
 
@@ -329,7 +346,7 @@ export function registerIamAssignmentsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/permissions',
+      path: '/{workspaceId}/iam/permissions',
       tags: ['iam'],
       summary: 'The permission catalog (action, scope, delegability, implications)',
       ...auth,
@@ -343,7 +360,7 @@ export function registerIamAssignmentsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
       const scopeType = oneOf(SCOPE_TYPES, c.req.query('scope_type'));
       const catalog = await loadPermissionCatalog();
@@ -354,7 +371,9 @@ export function registerIamAssignmentsRoutes(): void {
         .sort((a, b) => a.action.localeCompare(b.action))
         .map((p) => ({
           action: p.action,
+          workspace_action: toWorkspaceAction(p.action),
           scope_type: p.scopeType,
+          scope: 'workspace' as const,
           resource_type: p.resourceType,
           delegable: p.delegable,
           description: p.description,

@@ -2,14 +2,16 @@
 // there, what is shared, the last lines, work in flight, what is pending, the cost), speaks in it, changes its own
 // name, voice, look, style or mode, sets reminders and watches, captures the screen, camera or voice, and looks at
 // what is shared. Each tool is a thin client of the relay's HTTP contract (GET/POST {VOICE_RELAY_URL}/call), so the
-// same set serves pi and omp (pi/extension.ts) and any MCP client: OpenCode, Claude Code, Kortix agents (src/mcp.ts).
+// same set serves pi and omp (pi/extension.ts) and any MCP client, Kortix agents included (src/mcp.ts).
+// Two need no call (POST /speech, src/speech-api.ts): its voice as an audio file, and an audio file's words, so the agent
+// sends its voice to any API that takes audio and hears a voice message from any of them.
 import { readFile } from 'node:fs/promises'
 
 export type Json = Record<string, unknown>
 export type Schema = { type: 'object'; properties: Record<string, Json>; required?: string[]; additionalProperties?: boolean }
 /** Where the relay is, its token, and the call's session (none: the relay's only live call). */
 export type Relay = { url: string; token?: string; session?: string }
-export type MetaRequest = { method: 'GET' } | { method: 'POST'; body: Json }
+export type MetaRequest = { method: 'GET' } | { method: 'POST'; body: Json; path?: '/speech' } // path: /call unless named
 export type MetaTool = {
   name: string
   label: string
@@ -57,8 +59,17 @@ export const META_TOOLS: MetaTool[] = [
     description:
       'Change who you are in the live call, from the next sentence on: name, voice (an id or a description), look (an image URL or an emoji), style (how to speak), mode (normal: answer everyone; listen: keep quiet and keep the transcript until told to speak; named: answer only when addressed by name). Give only what changes.',
     snippet: 'Change your name, voice, look, speaking style or mode in the live voice call.',
-    parameters: object({ name: str('New name.'), voice: str('Voice id or a description of the voice.'), look: str('Image URL or emoji.'), style: str('How to speak.'), mode: str('normal | listen | named') }),
-    request: (a) => ({ method: 'POST', body: { set: given({ name: a.name, voice: a.voice, look: a.look, style: a.style, mode: a.mode }) } }),
+    parameters: object({
+      name: str('New name.'),
+      voice: str('Voice id or a description of the voice.'),
+      look: str('Image URL or emoji.'),
+      style: str('How to speak.'),
+      rate: { type: 'number', description: 'How fast to speak: 1 normal, 0.85 slower, 1.2 faster.' },
+      mode: str('normal | listen | named'),
+      back: str('With mode listen or named: back to normal after this long ("10m", "30s"), by itself.'),
+      say: str('With back: what to say when back.'),
+    }),
+    request: (a) => ({ method: 'POST', body: { set: given({ name: a.name, voice: a.voice, look: a.look, style: a.style, rate: a.rate, mode: a.mode, back: a.back, say: a.say }) } }),
   },
   {
     name: 'voice_later',
@@ -105,6 +116,28 @@ export const META_TOOLS: MetaTool[] = [
     parameters: object({ question: str('What to look for or answer from what is shared.') }, ['question']),
     request: (a) => ({ method: 'POST', body: { look: a.question } }),
   },
+  {
+    name: 'voice_speak',
+    label: 'Voice: speak into a file',
+    description:
+      'Say text in your own voice into an audio file, with or without a live call: a voice message or a spoken reply to send through any tool or API that takes audio (an upload, a message attachment, a phone line that plays a file). The voice is the one you have in your call (another for this file: `voice`, an id or a description). `format`: mp3 (default in Kortix) or wav. Up to 20000 characters. Returns the file path.',
+    snippet: 'Say text in your own voice into an audio file (mp3 or wav) to send anywhere.',
+    parameters: object(
+      { text: str('What to say, as spoken words: no markdown, lists or URLs.'), voice: str('Another voice for this file: an id or a description ("deep calm male"). Default: your call voice.'), format: str('mp3 | wav', { enum: ['mp3', 'wav'] }) },
+      ['text'],
+    ),
+    request: (a) => ({ method: 'POST', path: '/speech', body: { speak: given({ text: a.text, voice: a.voice, format: a.format }) } }),
+  },
+  {
+    name: 'voice_transcribe',
+    readOnly: true,
+    label: 'Voice: transcribe a file',
+    description:
+      'Transcribe an audio or video file into text with the speech-to-text of your calls: a voice message, a recording, a call capture (mp3, ogg, oga, opus, m4a, wav, webm, flac, mp4; up to 25 MB). `language`: its two-letter code when you know it; detected otherwise.',
+    snippet: 'Transcribe an audio file (a voice message, a recording) into text.',
+    parameters: object({ file: str('The audio file\'s path.'), language: str('Its ISO 639-1 code, e.g. "en" or "sr" (optional).') }, ['file']),
+    request: (a) => ({ method: 'POST', path: '/speech', body: { transcribe: given({ file: a.file, language: a.language }) } }),
+  },
 ]
 
 /** The relay from the environment: VOICE_RELAY_URL (default http://127.0.0.1:7860), VOICE_TOKEN, VOICE_SESSION. */
@@ -118,7 +151,7 @@ export const relayFromEnv = (session?: string): Relay => ({
 export async function callRelay(relay: Relay, tool: MetaTool, args: Json = {}, signal?: AbortSignal): Promise<MetaResult> {
   const req = tool.request(args ?? {})
   const sid = typeof args?.session === 'string' && args.session ? args.session : relay.session
-  const url = `${relay.url}/call${req.method === 'GET' && sid ? `?session=${encodeURIComponent(sid)}` : ''}`
+  const url = `${relay.url}${(req.method === 'POST' && req.path) || '/call'}${req.method === 'GET' && sid ? `?session=${encodeURIComponent(sid)}` : ''}`
   const headers: Record<string, string> = { ...(relay.token && { authorization: `Bearer ${relay.token}` }), ...(req.method === 'POST' && { 'content-type': 'application/json' }) }
   const body = req.method === 'POST' ? JSON.stringify({ ...(sid && { session: sid }), ...req.body }) : undefined
   let res: Response

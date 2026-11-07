@@ -8,6 +8,7 @@ import {
 } from '@kortix/db';
 import { and, eq, inArray, isNull, like, lt, ne, or, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { revokeConnections } from '../../connectors/connection-status';
 import { decryptChannelSecret, deleteProjectSecrets, encryptChannelSecret } from '../install-store';
 
 /**
@@ -219,15 +220,15 @@ export async function reserveEmailInbox(input: {
 }): Promise<void> {
   await db
     .insert(chatInstalls)
-    .values({ platform: 'email', workspaceId: input.inboxId, projectId: input.projectId })
+    .values({ platform: 'email', platformTeamId: input.inboxId, projectId: input.projectId })
     .onConflictDoNothing({
-      target: [chatInstalls.platform, chatInstalls.workspaceId, chatInstalls.projectId],
+      target: [chatInstalls.platform, chatInstalls.platformTeamId, chatInstalls.projectId],
     });
   await db
     .insert(chatChannelBindings)
     .values({
       platform: 'email',
-      workspaceId: input.inboxId,
+      platformTeamId: input.inboxId,
       channelId: input.inboxId,
       projectId: input.projectId,
       channelName: input.email,
@@ -237,7 +238,7 @@ export async function reserveEmailInbox(input: {
     .onConflictDoUpdate({
       target: [
         chatChannelBindings.platform,
-        chatChannelBindings.workspaceId,
+        chatChannelBindings.platformTeamId,
         chatChannelBindings.channelId,
       ],
       set: { agentName: input.agentName, channelName: input.email },
@@ -252,7 +253,7 @@ export async function releaseEmailInbox(projectId: string, inboxId: string): Pro
       and(
         eq(chatChannelBindings.platform, 'email'),
         eq(chatChannelBindings.projectId, projectId),
-        eq(chatChannelBindings.workspaceId, inboxId),
+        eq(chatChannelBindings.platformTeamId, inboxId),
       ),
     );
   await db
@@ -261,7 +262,7 @@ export async function releaseEmailInbox(projectId: string, inboxId: string): Pro
       and(
         eq(chatInstalls.platform, 'email'),
         eq(chatInstalls.projectId, projectId),
-        eq(chatInstalls.workspaceId, inboxId),
+        eq(chatInstalls.platformTeamId, inboxId),
       ),
     );
 }
@@ -394,7 +395,7 @@ export async function updateEmailInboxAccount(
         and(
           eq(chatChannelBindings.platform, 'email'),
           eq(chatChannelBindings.projectId, account.projectId),
-          eq(chatChannelBindings.workspaceId, account.inboxId),
+          eq(chatChannelBindings.platformTeamId, account.inboxId),
         ),
       );
   }
@@ -409,16 +410,14 @@ export async function updateEmailInboxAccount(
  */
 export async function revokeEmailInboxAccount(account: EmailInboxAccount): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx
-      .update(connectorConnections)
-      .set({
-        status: 'revoked',
-        isDefault: false,
-        label: `${account.label} (removed ${account.connectionId.slice(0, 8)})`.slice(0, 200),
-        metadata: sql`${connectorConnections.metadata} || '{"revokedReason":"inbox removed"}'::jsonb`,
-        updatedAt: new Date(),
-      })
-      .where(eq(connectorConnections.connectionId, account.connectionId));
+    await revokeConnections(
+      eq(connectorConnections.connectionId, account.connectionId),
+      {
+        set: { isDefault: false, label: `${account.label} (removed ${account.connectionId.slice(0, 8)})`.slice(0, 200) },
+        metadata: { revokedReason: 'inbox removed' },
+      },
+      tx,
+    );
     await tx
       .delete(connectionCredentials)
       .where(eq(connectionCredentials.connectionId, account.connectionId));
@@ -541,20 +540,17 @@ export async function purgeLegacyEmailState(projectId: string): Promise<number> 
   const connectorId = await emailConnectorId(projectId);
   let revoked = 0;
   if (connectorId) {
-    const stale = await db
-      .update(connectorConnections)
-      .set({ status: 'revoked', isDefault: false, updatedAt: new Date() })
-      .where(
-        and(
-          eq(connectorConnections.connectorId, connectorId),
-          eq(connectorConnections.status, 'active'),
-          or(
-            eq(connectorConnections.ownerType, 'external'),
-            sql`not (${connectorConnections.metadata} ? 'inbox_id')`,
-          ),
+    const stale = await revokeConnections(
+      and(
+        eq(connectorConnections.connectorId, connectorId),
+        eq(connectorConnections.status, 'active'),
+        or(
+          eq(connectorConnections.ownerType, 'external'),
+          sql`not (${connectorConnections.metadata} ? 'inbox_id')`,
         ),
-      )
-      .returning({ connectionId: connectorConnections.connectionId });
+      ),
+      { set: { isDefault: false } },
+    );
     revoked = stale.length;
     await db
       .update(connectorConnections)
@@ -572,7 +568,7 @@ export async function purgeLegacyEmailState(projectId: string): Promise<number> 
   // An add claims the inbox before its account row exists (and may sync in
   // between), so a claim younger than ORPHAN_GRACE_MS is never an orphan yet.
   const claims = await db
-    .select({ workspaceId: chatInstalls.workspaceId })
+    .select({ workspaceId: chatInstalls.platformTeamId })
     .from(chatInstalls)
     .where(
       and(
@@ -589,7 +585,7 @@ export async function purgeLegacyEmailState(projectId: string): Promise<number> 
         and(
           eq(chatChannelBindings.platform, 'email'),
           eq(chatChannelBindings.projectId, projectId),
-          inArray(chatChannelBindings.workspaceId, orphans),
+          inArray(chatChannelBindings.platformTeamId, orphans),
         ),
       );
     await db
@@ -598,7 +594,7 @@ export async function purgeLegacyEmailState(projectId: string): Promise<number> 
         and(
           eq(chatInstalls.platform, 'email'),
           eq(chatInstalls.projectId, projectId),
-          inArray(chatInstalls.workspaceId, orphans),
+          inArray(chatInstalls.platformTeamId, orphans),
         ),
       );
   }

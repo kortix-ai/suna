@@ -54,7 +54,7 @@ export async function triggersDryRun(
   let resp: TriggerDryRunResponse;
   try {
     resp = await ctx.client.post<TriggerDryRunResponse>(
-      `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}/fire`,
+      `/workspaces/${ctx.projectId}/triggers/${encodeURIComponent(slug)}/fire`,
       { dry_run: true, ...(payload ? { payload } : {}) },
     );
   } catch (err) {
@@ -121,7 +121,7 @@ export async function triggersRuns(
   let resp: TriggerRunList;
   try {
     resp = await ctx.client.get<TriggerRunList>(
-      `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}/runs${query({
+      `/workspaces/${ctx.projectId}/triggers/${encodeURIComponent(slug)}/runs${query({
         limit,
         status: f.status,
         cursor: f.cursor,
@@ -187,7 +187,7 @@ export async function triggersReplay(
   let resp: TriggerFireResponse;
   try {
     resp = await ctx.client.post<TriggerFireResponse>(
-      `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}/replay`,
+      `/workspaces/${ctx.projectId}/triggers/${encodeURIComponent(slug)}/runs/${encodeURIComponent(runId)}/replay`,
       confirmUnverified ? { confirm_unverified: true } : {},
     );
   } catch (err) {

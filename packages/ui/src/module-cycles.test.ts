@@ -107,13 +107,20 @@ const KNOWN_UPWARD: string[] = [
   'customize/sections/view/review-center-connected.tsx -> workspace/review/map.ts',
   'customize/sections/view/review-center-connected.tsx -> workspace/review/review-actions.ts',
   'customize/sections/view/review-center-connected.tsx -> workspace/review/review-center.tsx',
+  'customize/sections/view/review-center-connected.tsx -> workspace/review/review-reducer.ts',
   'customize/settings/tabs/general-tab.tsx -> workspace/projects/modal/project-icon-field.tsx',
+  // Workspace settings › General shows the split notice and the Leave action
+  // (Workspaces R1); both are published `@kortix/ui/workspace/settings/*` paths.
+  'customize/settings/tabs/general-tab.tsx -> workspace/settings/split-notice-banner.tsx',
+  'customize/settings/tabs/general-tab.tsx -> workspace/settings/use-leave-workspace.tsx',
   'customize/settings/tabs/snapshots-tab.tsx -> workspace/sidebar/footer/sandbox-alert-state.ts',
   'customize/settings/tabs/snapshots-tab.tsx -> workspace/sidebar/footer/sandbox-health.ts',
   'customize/triggers/schedule-view.tsx -> workspace/projects/onboarding/app-logo.tsx',
   'customize/triggers/schedule/event-apps-strip.tsx -> workspace/projects/onboarding/app-logo.tsx',
   'customize/triggers/schedule/use-event-app-connect.ts -> workspace/projects/onboarding/connect-app.ts',
   'customize/triggers/schedule/when-event.tsx -> workspace/projects/onboarding/app-logo.tsx',
+  // The workspace settings route resolves the admin sections it opens.
+  'internal/account-hub/workspace-settings-route.ts -> customize/project-settings/project-admin-sections.ts',
   'internal/auth/auth-consent.tsx -> markdown/copy-button.tsx',
   'internal/hooks/connectors/use-add-account.ts -> access/access/access-dialog-share.tsx',
   'internal/hooks/connectors/use-add-account.ts -> customize/connectors/install/install.ts',

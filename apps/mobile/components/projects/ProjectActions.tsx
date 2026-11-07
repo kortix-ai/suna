@@ -1,7 +1,7 @@
 /**
- * ProjectActions — the ⋯ menu on a Projects page row (`/projects`).
+ * ProjectActions — the ⋯ menu on a Workspaces page row (`/projects`).
  *
- * A bottom sheet lists the actions: Open project, and Archive project for a
+ * A bottom sheet lists the actions: Open workspace, and Archive workspace for a
  * viewer who holds `project.write` and `project.delete` (KRTX-1720): Archive
  * calls `DELETE /projects/:id`, which loads the project for write and then
  * asserts `project.delete` (not implied by `project.write`). One `useCans`
@@ -19,13 +19,13 @@ import { useCans } from '@kortix/sdk/react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArchiveIcon as Archive, FolderOpenIcon as FolderOpen } from '@/lib/icons';
 
-import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { Avatar } from '@/components/kortix/avatar';
 import { Sheet, useCloseThen, type SheetRef } from '@/components/kortix/sheet';
 import { PendingConfirmDialog } from '@/components/kortix/pending-confirm-dialog';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { useToast } from '@/components/kortix/toast-provider';
+import { useLanguage } from '@/contexts';
 import { haptics } from '@/lib/haptics';
 import { useArchiveProject } from '@/lib/projects/hooks';
 import type { KortixProject } from '@/lib/projects/projects-client';
@@ -47,6 +47,7 @@ export function ProjectActions({
   const sheetRef = React.useRef<SheetRef>(null);
   const insets = useSafeAreaInsets();
   const toast = useToast();
+  const { t } = useLanguage();
   const archive = useArchiveProject();
 
   // Set before closing the sheet; taken once when the close animation ends.
@@ -89,13 +90,13 @@ export function ProjectActions({
     try {
       await archive.mutateAsync(confirmProject.project_id);
       haptics.success();
-      toast.success('Project archived');
+      toast.success(t('workspace.archived', 'Workspace archived'));
       setConfirmProject(null);
     } catch {
       haptics.warning();
       setArchiveFailed(true);
     }
-  }, [archive, confirmProject, toast]);
+  }, [archive, confirmProject, toast, t]);
 
   // `account_id` lets the probe run on the first render, without a project read.
   const cans = useCans({ projectId: project?.project_id, accountId: project?.account_id }, ARCHIVE_ACTIONS);
@@ -115,11 +116,11 @@ export function ProjectActions({
               </Text>
             </View>
             <SettingsGroup>
-              <SettingsRow icon={FolderOpen} label="Open project" onPress={handleOpen} />
+              <SettingsRow icon={FolderOpen} label={t('workspace.open', 'Open workspace')} onPress={handleOpen} />
               {canArchive ? (
                 <SettingsRow
                   icon={Archive}
-                  label="Archive project"
+                  label={t('workspace.archive', 'Archive workspace')}
                   destructive
                   right={null}
                   onPress={handleArchive}
@@ -136,14 +137,14 @@ export function ProjectActions({
           if (!open) setConfirmProject(null);
         }}
         pending={archive.isPending}
-        title="Archive project"
+        title={t('workspace.archive', 'Archive workspace')}
         description={
           archiveFailed
-            ? 'Unable to archive. Check your connection and try again.'
-            : `Archive “${confirmProject?.name ?? ''}”?`
+            ? t('workspace.archiveFailed', 'Unable to archive. Check your connection and try again.')
+            : t('workspace.archiveConfirm', { defaultValue: 'Archive “{{workspace}}”?', workspace: confirmProject?.name ?? '' })
         }
         descriptionError={archiveFailed}
-        confirmLabel={archive.isPending ? 'Archiving…' : 'Archive project'}
+        confirmLabel={archive.isPending ? t('workspace.archiving', 'Archiving…') : t('workspace.archive', 'Archive workspace')}
         confirmVariant="destructive"
         onConfirm={confirmArchive}
       />

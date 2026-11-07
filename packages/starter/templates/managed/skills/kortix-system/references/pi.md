@@ -24,8 +24,8 @@ its config from `kortix.yaml` and the files it names.
 | `show` | Shows a file, an image, a URL or content to the user. | `show` |
 
 - The three web tools (`web_search`, `image_search`, `scrape_webpage`) bill
-  the project. No key is needed in the sandbox.
-- Project tools from `tools:` run like the Kortix tools (`kortix/tools.md`).
+  the workspace. No key is needed in the sandbox.
+- Workspace tools from `tools:` run like the Kortix tools (`kortix/tools.md`).
 - `agents.<name>.codemode`: `on` (default), `only` (the model sees only
   `codemode`), `off`. A script cannot call `agent` or `question`.
 - Not on pi: `webfetch`, `websearch`, `todowrite`, `lsp`, `apply_patch`,
@@ -51,7 +51,8 @@ permission:
 ```
 
 - A rule is `allow`, `ask` or `deny`, or a map of glob pattern to one of
-  them. The most specific (longest) matching pattern wins, in any key order.
+  them. `"*"` and `all` as a rule also mean `allow`. The most specific
+  (longest) matching pattern wins, in any key order.
 - `bash` patterns match each command of the line. pi splits on `;`, `&`,
   `|` and newlines and reads `$(…)` and backtick bodies. The strictest
   answer wins.
@@ -110,7 +111,7 @@ Arguments: `description`, `prompt`, `subagent_type` (a declared agent) or
 
 An extension adds tools, hooks or commands. pi runs packages from
 https://pi.dev/packages unmodified. A tool that takes arguments and returns
-text needs no extension: write a project tool (`kortix/tools.md`).
+text needs no extension: write a workspace tool (`kortix/tools.md`).
 
 ```yaml
 extensions:
@@ -120,8 +121,8 @@ extensions:
     pi: { source: "npm:pi-mcp-adapter@2.36.0", extensions: ["extensions/*.ts"], skills: [] }
 agents:
   kortix:
-    tools: all
-    extensions: [word-count, web-access]          # all | none | names; omitted = none
+    tools: "*"
+    extensions: [word-count, web-access]          # "*" | none | names; omitted = none
 ```
 
 ```ts

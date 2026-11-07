@@ -6,7 +6,7 @@
  * the SDK. Memory is read-only here: the TUI lists, searches and reads pages;
  * people and agents write them.
  *
- * The web gates the page on the project's `project_channels` flag
+ * The web gates the page on the project's `chat` flag
  * (`apps/web/.../projects/[id]/memory/page.tsx`); this screen reads the same
  * flag through `useFeatureFlag`. Every memory route also answers 403
  * `feature_disabled` while Files (`drives`) are off — that status reaches the
@@ -129,7 +129,7 @@ export function pageDetail(page: ProjectMemoryPage): MemoryPageDetail {
 
 /** The web route for this screen. The page id is not a route: the list opens. */
 export function memoryWebUrl(webBaseUrl: string, projectId: string): string {
-  return `${webBaseUrl.replace(/\/+$/, '')}/projects/${projectId}/memory`;
+  return `${webBaseUrl.replace(/\/+$/, '')}/workspaces/${projectId}/memory`;
 }
 
 export function MemoryScreen({
@@ -160,7 +160,7 @@ export function MemoryScreen({
     return () => clearTimeout(timer);
   }, [query]);
 
-  const flag = useFeatureFlag(projectId, 'project_channels');
+  const flag = useFeatureFlag(projectId, 'chat');
   const enabled = flag.enabled;
   const searchActive = debounced.length >= MIN_QUERY && query.trim().length >= MIN_QUERY;
 
@@ -203,13 +203,13 @@ export function MemoryScreen({
   }, [searchActive, searchQuery.refetch, pagesQuery.refetch, onToast]);
 
   if (!projectId) {
-    return <text fg={theme.faint}>No project selected.</text>;
+    return <text fg={theme.faint}>No workspace open. Type /workspaces to pick one.</text>;
   }
   if (flag.isLoading) return <Spinner label="checking Memory" />;
   if (!enabled) {
     return (
       <text fg={theme.faint}>
-        Memory is off: the project's Channels feature (project_channels) is not enabled.
+        Memory is off: the workspace's Chat feature (chat) is not enabled.
       </text>
     );
   }

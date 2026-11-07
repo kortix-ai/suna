@@ -1,6 +1,7 @@
 // Projects — project CRUD, detail, feature flags, onboarding.
 
 import type { CatalogModel } from '@kortix/llm-catalog';
+import { readProvisionStream } from './provision-stream';
 import type { ManifestIssue } from './change-request-recovery';
 import type { ManifestSpace } from './manifest-spaces';
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
@@ -88,6 +89,7 @@ export type FeatureFlagKey =
   | 'agent_principal'
   | 'us_region'
   | 'event_triggers'
+  /** @deprecated Graduated 2026-11-06 — notifications (the inbox, push, session watch, alerts, per-kind notification settings) are on for every project. The API sends `true` for every project, so `useFeatureFlag(id, 'notification_center')` reports `enabled: true`. Removed in the next major. */
   | 'notification_center'
   /** @deprecated Graduated 2026-11-02 — every project has a Drive. The API sends `true` wherever the platform stores a Drive (Platinum). Removed in the next major. */
   | 'volumes'
@@ -99,16 +101,23 @@ export type FeatureFlagKey =
   | 'ephemeral_sandboxes'
   /** Not a flag since P8.2 (2026-10-22): the session log is every session's saved history, and the API sends `true` for every project. Absent from {@link FEATURE_FLAG_KEYS}. */
   | 'session_log'
+  /** @deprecated Graduated 2026-11-05 — every box restores the conversation from the session log when its own copy is missing or behind. The API sends `true` for every project. Removed in the next major. */
   | 'session_log_restore'
   /** @deprecated Graduated — the Kortix connectors catalog is the only connectors path. Removed in the next major. */
   | 'connectors_v2'
+  /** Chat: a Slack-style chat with Kortix. Every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and spaces are shared with people. Experimental, off by default. */
+  | 'chat'
+  /** @deprecated Withdrawn — merged into `chat` (2026-11). The API sends it equal to `chat` and writes `chat` for it; it is not in the catalog. Read `chat`. Removed in the next major. */
   | 'project_channels'
+  /** @deprecated Withdrawn — Rooms were removed (2026-11). The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'agent_rooms'
   /** Shared Drives: an admin makes a Drive and adds agents to it. Off by default: people have only My files. */
   | 'shared_drives'
   | 'goals'
   | 'workspace_volume'
+  /** @deprecated Graduated 2026-11-06 — every project has Artifacts wherever the platform stores Files (Platinum). The API sends `true` there, so `useFeatureFlag(id, 'artifacts')` reads Artifacts availability. Removed in the next major. */
   | 'artifacts'
+  /** @deprecated Withdrawn 2026-11-06 — artifact comments, live presence, co-editing and the activity feed were removed. The API sends `false`. Removed in the next major. */
   | 'artifact_comments'
   /** The email channel: a Resend inbox that starts and continues sessions. Experimental, off by default. */
   | 'email_channel'
@@ -120,10 +129,16 @@ export type FeatureFlagKey =
   | 'agent_teams'
   /** Voice calls: talk with the session's agent from the session page, with screen share. Off by default. */
   | 'voice_call'
+  /** Chat input: one composer control for the agent and every session override (model, effort, secrets, provider keys, sandbox). Experimental, off by default. */
+  | 'chat_input'
+  /** Talk-only threads: with `chat` on, a new space thread's agent only talks and hands the work to one hidden My Kortix session. Experimental, off by default. */
+  | 'chat_front'
+  /** Proactive spaces: with `chat` on, a space's watcher reads what happens in the space and posts, starts a thread or asks only when it matters. Experimental, off by default. */
+  | 'spaces_proactive'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
-/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `pi_harness`, `genui`, `meta_agent`) sends a constant `true`, or (`volumes`, `drives`) sends whether the platform stores a Drive. */
+/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `session_log_restore`, `pi_harness`, `genui`, `meta_agent`, `notification_center`) sends a constant `true`, or (`volumes`, `drives`, `artifacts`) sends whether the platform stores a Drive, or (`artifact_comments`) sends a constant `false`. */
 type GraduatedFeatureFlagKey =
   | 'agent_tunnel'
   | 'teams'
@@ -131,6 +146,8 @@ type GraduatedFeatureFlagKey =
   | 'session_transcript_history'
   | 'agent_principal'
   | 'human_messaging'
+  | 'project_channels'
+  | 'agent_rooms'
   | 'pi_worker'
   | 'config_releases'
   | 'apps'
@@ -138,6 +155,7 @@ type GraduatedFeatureFlagKey =
   | 'stateless_sessions'
   | 'ephemeral_sandboxes'
   | 'session_log'
+  | 'session_log_restore'
   | 'pi_harness'
   | 'genui'
   | 'agentmail_email'
@@ -147,7 +165,10 @@ type GraduatedFeatureFlagKey =
   | 'meta_agent'
   | 'warm_sessions'
   | 'volumes'
-  | 'drives';
+  | 'drives'
+  | 'notification_center'
+  | 'artifacts'
+  | 'artifact_comments';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -163,20 +184,18 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'pooled_provider_secrets',
   'us_region',
   'event_triggers',
-  'notification_center',
-  'session_log_restore',
-  'project_channels',
-  'agent_rooms',
+  'chat',
   'shared_drives',
   'goals',
   'workspace_volume',
-  'artifacts',
-  'artifact_comments',
   'email_channel',
   'session_groups',
   'chrome',
   'agent_teams',
   'voice_call',
+  'chat_input',
+  'chat_front',
+  'spaces_proactive',
 ] as const;
 
 /**
@@ -199,8 +218,7 @@ export interface FeatureFlagView {
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
   /**
-   * True for an internal-only flag (`session_log`, `session_log_restore`,
-   * `workspace_volume`). The
+   * True for an internal-only flag (`workspace_volume`). The
    * catalog lists one only while it is on, so agents and people can see it.
    * Only a Kortix platform operator can change it: `PATCH /features` answers
    * `403` with `feature_operator_only`. Absent on servers older than this field.
@@ -223,14 +241,26 @@ export type ExperimentalFeatureKey = FeatureFlagKey;
 export type ExperimentalFeatureView = FeatureFlagView;
 
 /** A project's named-glyph icon. `name` is a Phosphor identifier from the
- *  server's fixed catalogue; `color` is one of eight palette names. */
+ *  server's fixed catalogue; `color` is one of eight palette names.
+ *
+ * @deprecated Use `WorkspaceGlyph`. Kept permanently.
+ */
 export interface ProjectGlyph {
   name: string;
   color: string;
 }
 
+/** The workspace name of {@link ProjectGlyph}: the same type. */
+export type WorkspaceGlyph = ProjectGlyph;
+
+/** @deprecated Use `KortixWorkspace`. Kept permanently. */
 export interface KortixProject {
   project_id: string;
+  /**
+   * The workspace id: the same value as `project_id`. Sent by servers that
+   * know workspaces; read `project_id` to support older ones.
+   */
+  workspace_id?: string;
   account_id: string;
   name: string;
   repo_url: string;
@@ -281,23 +311,33 @@ export interface KortixProject {
   dashboard_url?: string;
 }
 
+/** The workspace name of {@link KortixProject}: the same type. */
+export type KortixWorkspace = KortixProject;
+
+/** @deprecated Use `WorkspaceConfigSummary`. Kept permanently. */
 export interface ProjectConfigSummary {
   is_kortix_repo: boolean;
   signals: Record<string, boolean>;
   manifest_raw: string | null;
   /** kortix.yaml problems for this project. Absent from an API released before the one-schema manifest. */
   manifest_health?: ProjectManifestHealth;
-  /** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
-  open_code_raw: string | null;
-  /** Provider-neutral project default. The SDK derives this from legacy servers. */
+  /** @deprecated The API no longer sends it (an older API sends `null`). Removed in the next major. */
+  open_code_raw?: string | null;
+  /** The project's default agent (`kortix.yaml` `default_agent`), or null. */
   default_agent?: string | null;
-  /** @deprecated Use `default_agent`. */
-  open_code_default_agent: string | null;
+  /** @deprecated The API no longer sends it; read `default_agent`. Removed in the next major. */
+  open_code_default_agent?: string | null;
   /** Which built-in agents the project runs (`builtin_agents` in kortix.yaml;
    *  `true` = on, absent = off). `my_kortix` is My Kortix, the agent named `mykortix`.
    *  Absent from an older API. */
   builtin_agents?: { my_kortix: boolean };
-  agent_discovery: 'opencode' | 'declarative';
+  /**
+   * Where `agents` comes from. The API sends `declarative` (the agents
+   * `kortix.yaml` declares) for every project; a response filtered by the
+   * caller's `project.agent.read` access sends `null`.
+   * `opencode` is `@deprecated`: no API sends it. It stays in the union until the next major.
+   */
+  agent_discovery: 'declarative' | 'opencode';
   agents: Array<{
     name: string;
     path: string;
@@ -308,7 +348,8 @@ export interface ProjectConfigSummary {
     /** The agent's `model:` frontmatter (`provider/model`); absent on older
      *  servers, null when it follows the project default. */
     model?: string | null;
-    /** The server sends `kortix.yaml`. `kortix.toml` is never sent; it stays in the union until the next major. */
+    /** The server sends `kortix.yaml`. `opencode` and `kortix.toml` are never sent; they stay
+     *  in the union until the next major. */
     source?: 'opencode' | 'kortix.yaml' | 'kortix.toml';
     enabled?: boolean;
     /** True for a platform-owned agent (SUNA — the coordinator) that the API
@@ -322,8 +363,8 @@ export interface ProjectConfigSummary {
      *  null/absent is Project-wide (see `groupBySpace`). */
     space?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
-     *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
-     *  OpenCode-discovered agents (not governed by `agents:`). */
+     *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent when
+     *  `agents:` does not govern the agent. */
     scope?: {
       env: string[] | 'all';
       connectors: string[] | 'all';
@@ -345,11 +386,16 @@ export interface ProjectConfigSummary {
   spaces?: ManifestSpace[];
 }
 
+/** The workspace name of {@link ProjectConfigSummary}: the same type. */
+export type WorkspaceConfigSummary = ProjectConfigSummary;
+
 /**
  * What the server found in the project's `kortix.yaml`. `ok`: no issues.
  * `issues`: one or more; a running project still applies the valid rest, and
  * an agent or trigger with an error is off. `missing`: no manifest, built-in
  * agents only. `issues` lists errors first, at most 50.
+ *
+ * @deprecated Use `WorkspaceManifestHealth`. Kept permanently.
  */
 export interface ProjectManifestHealth {
   /** Repository path of the manifest. null when none was read. */
@@ -360,13 +406,30 @@ export interface ProjectManifestHealth {
   issues: ManifestIssue[];
 }
 
+/** The workspace name of {@link ProjectManifestHealth}: the same type. */
+export type WorkspaceManifestHealth = ProjectManifestHealth;
+
+/** @deprecated Use `WorkspaceDetail`. Kept permanently. */
 export interface ProjectDetail {
   project: KortixProject;
   git_connection?: ProjectGitConnection | null;
   config: ProjectConfigSummary;
+  /**
+   * @deprecated Use `listProjectFiles(projectId, { path })`. The number of
+   * repository files for a caller with `project.file.read`, else `0`. Removed
+   * in the next major.
+   */
   file_count: number;
+  /**
+   * @deprecated Use `listProjectFiles(projectId, { path })` for the files of
+   * one folder. This list holds only the first 300 paths of the repository,
+   * so on a large repository it misses files. Removed in the next major.
+   */
   files: ProjectFileEntry[];
 }
+
+/** The workspace name of {@link ProjectDetail}: the same type. */
+export type WorkspaceDetail = ProjectDetail;
 
 /**
  * A single model as served by the project LLM catalog endpoint. Mirrors the
@@ -388,7 +451,7 @@ export interface GatewayCatalogModel {
   /**
    * The REAL upstream provider serving this model ('anthropic', 'openai',
    * 'amazon-bedrock', ...). Every gateway model is registered under the one
-   * synthetic `kortix` opencode provider, so this is the ONLY reliable way to
+   * synthetic `kortix` runtime provider, so this is the ONLY reliable way to
    * group/label a model by who actually serves it — Bedrock ids are
    * dot-namespaced (`us.anthropic.claude-opus-4-8`), so the legacy
    * split-on-slash heuristic cannot recover it.
@@ -438,6 +501,7 @@ export interface ClaudeSubscriptionPickerGroup {
   }>;
 }
 
+/** @deprecated Use `WorkspaceLlmCatalogResponse`. Kept permanently. */
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
   /** Absent from an API without Claude subscription models. */
@@ -476,6 +540,10 @@ export interface ProjectLlmCatalogResponse {
   defaultModel?: string;
 }
 
+/** The workspace name of {@link ProjectLlmCatalogResponse}: the same type. */
+export type WorkspaceLlmCatalogResponse = ProjectLlmCatalogResponse;
+
+/** @deprecated Use `WorkspaceInput`. Kept permanently. */
 export interface ProjectInput {
   account_id?: string;
   name?: string;
@@ -508,6 +576,10 @@ export interface ProjectInput {
   icon_glyph?: ProjectGlyph | null;
 }
 
+/** The workspace name of {@link ProjectInput}: the same type. */
+export type WorkspaceInput = ProjectInput;
+
+/** @deprecated Use `CreateWorkspaceRepoInput`. Kept permanently. */
 export interface CreateProjectRepoInput {
   account_id?: string;
   /**
@@ -537,6 +609,10 @@ export interface CreateProjectRepoInput {
   icon_glyph?: ProjectGlyph;
 }
 
+/** The workspace name of {@link CreateProjectRepoInput}: the same type. */
+export type CreateWorkspaceRepoInput = CreateProjectRepoInput;
+
+/** @deprecated Use `ProvisionWorkspaceInput`. Kept permanently. */
 export interface ProvisionProjectInput {
   account_id?: string;
   name: string;
@@ -583,6 +659,9 @@ export interface ProvisionProjectInput {
   idempotency_key?: string;
 }
 
+/** The workspace name of {@link ProvisionProjectInput}: the same type. */
+export type ProvisionWorkspaceInput = ProvisionProjectInput;
+
 export interface RepoCollaboratorInvite {
   username: string;
   permission: string;
@@ -591,17 +670,26 @@ export interface RepoCollaboratorInvite {
   alreadyCollaborator: boolean;
 }
 
+/**
+ * @deprecated Use `listWorkspaces`: every workspace of the caller, across accounts. This lists one account's projects. Kept permanently.
+ */
 export async function listProjects() {
   return unwrap(await backendApi.get<KortixProject[]>('/projects'));
 }
 
-export async function listProjectsForAccount(accountId?: string) {
+export async function listWorkspacesForAccount(accountId?: string) {
   const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
   return unwrap(await backendApi.get<KortixProject[]>(`/projects${query}`));
 }
 
+/** @deprecated Use `listWorkspacesForAccount`. Kept permanently. */
+export const listProjectsForAccount = listWorkspacesForAccount;
+
+/**
+ * @deprecated Use `getWorkspace` (the same record plus the role, the state and the settings block). Kept permanently.
+ */
 export async function getProject(projectId: string, options?: ApiClientOptions) {
-  return unwrap(await backendApi.get<KortixProject>(`/projects/${projectId}`, options));
+  return unwrap(await backendApi.get<KortixProject>(`/workspaces/${projectId}`, options));
 }
 
 /**
@@ -614,7 +702,7 @@ export async function inviteRepoCollaborator(
   permission: 'read' | 'write' = 'write',
 ) {
   return unwrap(
-    await backendApi.post<RepoCollaboratorInvite>(`/projects/${projectId}/git/collaborators`, {
+    await backendApi.post<RepoCollaboratorInvite>(`/workspaces/${projectId}/git/collaborators`, {
       github_username: githubUsername,
       permission,
     }),
@@ -636,18 +724,22 @@ export interface ManifestValidationResult {
  * gate exercise. Always resolves (never throws on an invalid manifest) — the
  * verdict is in the body.
  */
-export async function validateProjectManifest(
+export async function validateWorkspaceManifest(
   projectId: string,
   raw: string,
 ): Promise<ManifestValidationResult> {
   return unwrap(
-    await backendApi.post<ManifestValidationResult>(`/projects/${projectId}/manifest/validate`, {
+    await backendApi.post<ManifestValidationResult>(`/workspaces/${projectId}/manifest/validate`, {
       raw,
     }),
     'Failed to validate manifest',
   );
 }
 
+/** @deprecated Use `validateWorkspaceManifest`. Kept permanently. */
+export const validateProjectManifest = validateWorkspaceManifest;
+
+/** @deprecated Use `WorkspaceGitToken`. Kept permanently. */
 export interface ProjectGitToken {
   push_token: string;
   /** Provider-selected HTTP Basic username (`x-access-token` for GitHub, `t` for Code Storage). */
@@ -656,20 +748,26 @@ export interface ProjectGitToken {
   repo_url: string | null;
 }
 
+/** The workspace name of {@link ProjectGitToken}: the same type. */
+export type WorkspaceGitToken = ProjectGitToken;
+
 /**
  * Mint a fresh scoped git push token for a *managed* project (so the CLI can
  * `kortix ship` without persisting credentials in git config). Throws (409)
  * for BYO projects — they push with the user's own git remote auth.
  */
-export async function getProjectGitToken(projectId: string): Promise<ProjectGitToken> {
+export async function getWorkspaceGitToken(projectId: string): Promise<ProjectGitToken> {
   return unwrap(
-    await backendApi.post<ProjectGitToken>(`/projects/${projectId}/git-token`, {}),
+    await backendApi.post<ProjectGitToken>(`/workspaces/${projectId}/git-token`, {}),
     'Failed to mint git token',
   );
 }
 
+/** @deprecated Use `getWorkspaceGitToken`. Kept permanently. */
+export const getProjectGitToken = getWorkspaceGitToken;
+
 /** True when this project's repo is a Kortix-managed GitHub repo (invitable). */
-export function isManagedGithubProject(project: {
+export function isManagedGithubWorkspace(project: {
   metadata?: Record<string, unknown> | null;
 }): boolean {
   const git = (project.metadata as { git?: { provider?: string; managed?: boolean } } | undefined)
@@ -677,9 +775,12 @@ export function isManagedGithubProject(project: {
   return git?.provider === 'github' && git?.managed === true;
 }
 
-export async function getProjectDetail(projectId: string, options?: ApiClientOptions) {
+/** @deprecated Use `isManagedGithubWorkspace`. Kept permanently. */
+export const isManagedGithubProject = isManagedGithubWorkspace;
+
+export async function getWorkspaceDetail(projectId: string, options?: ApiClientOptions) {
   const detail = unwrap(
-    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, {
+    await backendApi.get<ProjectDetail>(`/workspaces/${projectId}/detail`, {
       showErrors: false,
       ...options,
     }),
@@ -688,33 +789,42 @@ export async function getProjectDetail(projectId: string, options?: ApiClientOpt
     ...detail,
     config: {
       ...detail.config,
-      default_agent: detail.config.default_agent ?? detail.config.open_code_default_agent ?? null,
+      default_agent: detail.config.default_agent ?? null,
     },
   };
 }
 
-export async function getProjectLlmCatalog(projectId: string, options?: ApiClientOptions) {
+/** @deprecated Use `getWorkspaceDetail`. Kept permanently. */
+export const getProjectDetail = getWorkspaceDetail;
+
+export async function getWorkspaceLlmCatalog(projectId: string, options?: ApiClientOptions) {
   return unwrap(
-    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/llm-catalog`, {
+    await backendApi.get<ProjectLlmCatalogResponse>(`/workspaces/${projectId}/llm-catalog`, {
       showErrors: false,
       ...options,
     }),
   );
 }
 
+/** @deprecated Use `getWorkspaceLlmCatalog`. Kept permanently. */
+export const getProjectLlmCatalog = getWorkspaceLlmCatalog;
+
 /**
  * Load the compact, connection-aware catalog intended for interactive model
  * selectors. Unlike `getProjectLlmCatalog`, this does not transfer the complete
- * runtime models.dev projection used to configure OpenCode sandboxes.
+ * runtime models.dev projection used to configure sandboxes.
  */
-export async function getProjectModelPicker(projectId: string, options?: ApiClientOptions) {
+export async function getWorkspaceModelPicker(projectId: string, options?: ApiClientOptions) {
   return unwrap(
-    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/model-picker`, {
+    await backendApi.get<ProjectLlmCatalogResponse>(`/workspaces/${projectId}/model-picker`, {
       showErrors: false,
       ...options,
     }),
   );
 }
+
+/** @deprecated Use `getWorkspaceModelPicker`. Kept permanently. */
+export const getProjectModelPicker = getWorkspaceModelPicker;
 
 /**
  * One MODEL row from the live catalog — the route serves the full
@@ -722,10 +832,19 @@ export async function getProjectModelPicker(projectId: string, options?: ApiClie
  * (runtimeModelCatalog.snapshot()), so the wire type IS that shared type:
  * a hand-rolled twin here is exactly the drift the catalog package exists to
  * prevent.
+ *
+ * @deprecated Use `WorkspaceLlmCatalogProviderModel`. Kept permanently.
  */
 export type ProjectLlmCatalogProviderModel = CatalogModel;
 
-/** One provider row from the live, server-refreshed models.dev catalog. */
+/** The workspace name of {@link ProjectLlmCatalogProviderModel}: the same type. */
+export type WorkspaceLlmCatalogProviderModel = ProjectLlmCatalogProviderModel;
+
+/**
+ * One provider row from the live, server-refreshed models.dev catalog.
+ *
+ * @deprecated Use `WorkspaceLlmCatalogProvider`. Kept permanently.
+ */
 export interface ProjectLlmCatalogProvider {
   id: string;
   name: string;
@@ -736,6 +855,10 @@ export interface ProjectLlmCatalogProvider {
   models: Array<ProjectLlmCatalogProviderModel>;
 }
 
+/** The workspace name of {@link ProjectLlmCatalogProvider}: the same type. */
+export type WorkspaceLlmCatalogProvider = ProjectLlmCatalogProvider;
+
+/** @deprecated Use `WorkspaceLlmCatalogProvidersResponse`. Kept permanently. */
 export interface ProjectLlmCatalogProvidersResponse {
   source: string;
   fetched_at: string;
@@ -744,21 +867,30 @@ export interface ProjectLlmCatalogProvidersResponse {
   providers: ProjectLlmCatalogProvider[];
 }
 
+/** The workspace name of {@link ProjectLlmCatalogProvidersResponse}: the same type. */
+export type WorkspaceLlmCatalogProvidersResponse = ProjectLlmCatalogProvidersResponse;
+
 /**
  * The PROVIDER-level rows of the live runtime catalog — id/name/env/doc per
  * provider, the shape the connect modal (apps/web/src/lib/llm-providers.ts)
  * needs. See the route's doc comment (apps/api/src/projects/routes/models.ts,
  * `/llm-catalog/providers`).
  */
-export async function getProjectLlmCatalogProviders(projectId: string, options?: ApiClientOptions) {
+export async function getWorkspaceLlmCatalogProviders(projectId: string, options?: ApiClientOptions) {
   return unwrap(
     await backendApi.get<ProjectLlmCatalogProvidersResponse>(
-      `/projects/${projectId}/llm-catalog/providers`,
+      `/workspaces/${projectId}/llm-catalog/providers`,
       { showErrors: false, ...options },
     ),
   );
 }
 
+/** @deprecated Use `getWorkspaceLlmCatalogProviders`. Kept permanently. */
+export const getProjectLlmCatalogProviders = getWorkspaceLlmCatalogProviders;
+
+/**
+ * @deprecated Use `linkRepository` (`POST /v1/workspaces/link-repository`) to import a repository, or `createWorkspace` for a new workspace. Kept permanently.
+ */
 export async function createProject(input: ProjectInput) {
   return unwrap(await backendApi.post<KortixProject>('/projects', input));
 }
@@ -769,18 +901,21 @@ export async function createProject(input: ProjectInput) {
  * different explanations of one failure — prod showed GitHub's raw 403 plus
  * "Our team has been notified" over an inline message that said something else.
  */
-export async function createProjectRepo(input: CreateProjectRepoInput) {
+export async function createWorkspaceRepo(input: CreateProjectRepoInput) {
   return unwrap(
-    await backendApi.post<KortixProject>('/projects/create-repo', input, { showErrors: false }),
+    await backendApi.post<KortixProject>('/workspaces/create-repo', input, { showErrors: false }),
   );
 }
+
+/** @deprecated Use `createWorkspaceRepo`. Kept permanently. */
+export const createProjectRepo = createWorkspaceRepo;
 
 /**
  * Create a project backed by a managed Kortix git repo — the
  * default. No GitHub account or repo-name uniqueness needed; the starter is
  * seeded server-side so the project boots immediately.
  */
-export async function provisionProject(
+export async function provisionWorkspace(
   input: ProvisionProjectInput,
   options: ApiClientOptions = {},
 ) {
@@ -798,6 +933,9 @@ export async function provisionProject(
     ),
   );
 }
+
+/** @deprecated Use `provisionWorkspace`. Kept permanently. */
+export const provisionProject = provisionWorkspace;
 
 /**
  * The phases `POST /projects/provision-stream` reports, in the order it
@@ -847,55 +985,10 @@ export type ProvisionStreamEvent =
   | { type: 'error'; error: string; code?: string; status?: number };
 
 /**
- * Parse ONE SSE frame — the text between two `\n\n` boundaries — into a
- * `ProvisionStreamEvent`, or `null` if the frame carries no `data:` line.
- *
- * Line-by-line, not `frame.startsWith('data: ')` against the whole frame:
- * SSE permits `: comment` lines and an `event:` line ahead of `data:`, and
- * the wire contract here is data-only (no `event:` line) ONLY as an
- * implementation choice the server documents, not a protocol guarantee a
- * client should hard-fail without. A parser that rejects any frame that
- * isn't EXACTLY `data: <json>` breaks the moment a spec-legal frame shows up
- * that it wasn't exactly expecting. Per the SSE spec, multiple `data:` lines
- * in one frame are joined with `\n` before parsing.
- */
-/** How much of an unparseable frame's payload to surface in the thrown error.
- *  Bounded hard: a frame can be arbitrarily large, and — in the wrong build,
- *  on the wrong route — could in principle carry something sensitive (a push
- *  token). Never include more than this, and never log the payload anywhere. */
-const FRAME_PARSE_ERROR_EXCERPT_LENGTH = 200;
-
-function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
-  const dataLines = frame
-    .split('\n')
-    .filter((line) => line.startsWith('data:'))
-    .map((line) => line.slice(5).replace(/^ /, ''));
-  if (dataLines.length === 0) return null;
-
-  const payload = dataLines.join('\n');
-  try {
-    return JSON.parse(payload) as ProvisionStreamEvent;
-  } catch (cause) {
-    const excerpt =
-      payload.length > FRAME_PARSE_ERROR_EXCERPT_LENGTH
-        ? `${payload.slice(0, FRAME_PARSE_ERROR_EXCERPT_LENGTH)}…`
-        : payload;
-    // Named + attributed: a bare `SyntaxError: JSON Parse error: Expected
-    // '}'` gives someone debugging a proxy that mangled one frame in
-    // production nothing to go on — no mention of provisionProjectStream, no
-    // mention that this came from an SSE frame, no sight of what the frame
-    // actually contained.
-    throw new Error(`provisionProjectStream: received an unparseable SSE frame (${excerpt})`, {
-      cause,
-    });
-  }
-}
-
-/**
  * Create a managed-repo project, reporting which phase the server is in as
  * it happens.
  *
- * Same create as {@link provisionProject} — the server runs ONE shared
+ * Same create as {@link provisionWorkspace} — the server runs ONE shared
  * implementation (`runProvision` in `apps/api/src/projects/provision-core.ts`)
  * behind both `/projects/provision` and `/projects/provision-stream`. Use
  * this when a UI needs to show progress; use `provisionProject` for a plain
@@ -936,7 +1029,7 @@ function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
  * on RN must use `provisionProject` instead (single request/response, no
  * progress reporting).
  */
-export async function provisionProjectStream(
+export async function provisionWorkspaceStream(
   input: ProvisionProjectInput,
   onEvent: (event: ProvisionStreamEvent) => void,
   options: ApiClientOptions = {},
@@ -962,87 +1055,44 @@ export async function provisionProjectStream(
     });
   }
 
-  const reader = response.body?.getReader();
-  if (!reader) {
-    throw new Error('Provision stream is unavailable on this runtime (no response body)');
-  }
-
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let settled: KortixProject | null = null;
-
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let boundary = buffer.indexOf('\n\n');
-      while (boundary !== -1) {
-        const frame = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        boundary = buffer.indexOf('\n\n');
-
-        const event = parseProvisionStreamFrame(frame);
-        if (!event) continue;
-        onEvent(event);
-        // Same `ApiError` shape as the pre-stream-denial branch above, so a
-        // host classifying create failures gets identical `.status`/`.code`
-        // whichever branch fired.
-        if (event.type === 'error') {
-          throw new ApiError(event.error, { status: event.status, code: event.code });
-        }
-        if (event.type === 'done') settled = event.project;
-      }
-    }
-  } finally {
-    reader.cancel().catch(() => {});
-  }
-
-  // A stream that closes without a terminal event is a failure, not a
-  // success. Resolving here would hand the caller an undefined project id
-  // and route a user to `/projects/undefined`.
-  //
-  // `ApiError` with a stable code, not a bare `Error`: the close means the
-  // create's result is UNKNOWN — the route's handler outlives a lost reader
-  // and may still commit or roll back — so a host cannot tell this apart
-  // from a real failure without sniffing the message. The code is what lets
-  // the host (`apps/web`'s `runProvisionAttempt`) replay the SAME
-  // idempotency key over the plain route and recover the true outcome
-  // (KRTX-1754) instead of reporting jargon. The message is unchanged for
-  // every existing reader.
-  if (!settled) {
-    throw new ApiError('Provision stream ended without a result', {
-      code: PROVISION_STREAM_UNTERMINATED_CODE,
-    });
-  }
-  return settled;
+  return (await readProvisionStream(response, onEvent)).project;
 }
 
+/** @deprecated Use `provisionWorkspaceStream`. Kept permanently. */
+export const provisionProjectStream = provisionWorkspaceStream;
+
+/** @deprecated Use `WorkspaceQuota`. Kept permanently. */
 export interface ProjectQuota {
-  /** True when the account cannot create another project right now. */
+  /** True when the account cannot create its project: it already holds one. */
   capped: boolean;
-  /** The active-project cap. `Number.MAX_SAFE_INTEGER` when the plan does not cap. */
+  /** 1: a workspace holds one project. An older API sent the plan's project cap. */
   limit: number;
-  /** Active projects in the account; null when the plan does not cap (no count ran). */
+  /** Active projects in the account (2+ only on a legacy account the split has not reached). */
   count: number | null;
-  /** The denial message a create would answer with; null when not capped. */
+  /** The create gate's message when capped; null otherwise. */
   message: string | null;
 }
 
+/** The workspace name of {@link ProjectQuota}: the same type. */
+export type WorkspaceQuota = ProjectQuota;
+
 /**
- * The account's project-cap state — `GET /projects/quota`. Lets a create UI
- * pre-check whether `provisionProject` would be denied by the plan cap
- * BEFORE the user fills the form and hits the 403, so the page can show the
- * cap reason up front and keep the submit disabled. Omit `accountId` to
- * resolve the same default account the create itself targets (the server's
- * `resolveProjectAccount` default); pass the account when the UI has already
- * resolved one.
+ * Whether an account may create its project — `GET /v1/projects/quota`, from
+ * the create gate's own rule, so a create form can keep its submit disabled
+ * up front. To make another workspace use `createWorkspace`. Omit `accountId`
+ * to resolve the same default account the create itself targets.
+ *
+ * An older API answered the plan's project cap and a create past it with the
+ * now-deprecated 403 `project_limit_reached`; current APIs answer 409
+ * `workspace_has_project` (`isWorkspaceHasProjectError`).
  */
-export async function getProjectQuota(options?: { accountId?: string }): Promise<ProjectQuota> {
+export async function getWorkspaceQuota(options?: { accountId?: string }): Promise<ProjectQuota> {
   const query = options?.accountId ? `?account_id=${encodeURIComponent(options.accountId)}` : '';
   return unwrap(await backendApi.get<ProjectQuota>(`/projects/quota${query}`));
 }
+
+/** @deprecated Use `getWorkspaceQuota`. Kept permanently. */
+export const getProjectQuota = getWorkspaceQuota;
 
 export interface ManagedGitStatus {
   configured: boolean;
@@ -1061,7 +1111,7 @@ export interface ManagedGitStatus {
 export async function getManagedGitStatus(): Promise<ManagedGitStatus> {
   try {
     return unwrap(
-      await backendApi.get<ManagedGitStatus>('/projects/managed-git/status', {
+      await backendApi.get<ManagedGitStatus>('/workspaces/managed-git/status', {
         showErrors: false,
       }),
     );
@@ -1077,9 +1127,11 @@ export async function getManagedGitStatus(): Promise<ManagedGitStatus> {
  * `icon` is the one member where present-and-null differs from absent: pass
  * `null` to REMOVE the project's emoji, omit the key to leave it as it is.
  * Everything else ignores an empty value.
+ *
+ * @deprecated Use `updateWorkspace(workspaceId, input)`. Kept permanently.
  */
 export async function updateProject(projectId: string, input: Partial<ProjectInput>) {
-  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}`, input));
+  return unwrap(await backendApi.patch<KortixProject>(`/workspaces/${projectId}`, input));
 }
 
 /**
@@ -1094,7 +1146,7 @@ export async function updateFeatureFlag(
   enabled: boolean | null,
 ) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/features`, {
+    await backendApi.patch<KortixProject>(`/workspaces/${projectId}/features`, {
       feature,
       enabled,
     }),
@@ -1114,7 +1166,7 @@ export async function updateExperimentalFeature(
   enabled: boolean | null,
 ) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/experimental`, {
+    await backendApi.patch<KortixProject>(`/workspaces/${projectId}/experimental`, {
       feature,
       enabled,
     }),
@@ -1124,7 +1176,7 @@ export async function updateExperimentalFeature(
 /**
  * The durable provider-migration transition the API returns on the PATCH prepare
  * branch (a switch to a different, non-default enabled provider — e.g.
- * Daytona→Platinum) and that {@link getProjectSandboxProviderTransition} polls.
+ * Daytona→Platinum) and that {@link getWorkspaceSandboxProviderTransition} polls.
  * Distinguished from a plain project by `kind:'preparation'`. The switch does NOT
  * flip the active provider synchronously; the target image is built + verified
  * first, then activated, and the client polls until a terminal `status`.
@@ -1153,17 +1205,22 @@ export interface PreparationView {
 }
 
 /**
- * The result of {@link updateProjectSandboxProvider}: EITHER the updated project
+ * The result of {@link updateWorkspaceSandboxProvider}: EITHER the updated project
  * (a safe/immediate switch — null clear, the platform default, or the
  * already-active provider) tagged `kind:'project'`, OR a {@link PreparationView}
  * (the prepare branch) tagged `kind:'preparation'`. Both arrive under HTTP 200 —
  * branch on `kind`, never shape-sniff. A `kind:'preparation'` result must NOT be
  * written into the project cache; poll
- * {@link getProjectSandboxProviderTransition} until it settles.
+ * {@link getWorkspaceSandboxProviderTransition} until it settles.
+ *
+ * @deprecated Use `UpdateWorkspaceSandboxProviderResult`. Kept permanently.
  */
 export type UpdateProjectSandboxProviderResult =
   | ({ kind: 'project' } & KortixProject)
   | PreparationView;
+
+/** The workspace name of {@link UpdateProjectSandboxProviderResult}: the same type. */
+export type UpdateWorkspaceSandboxProviderResult = UpdateProjectSandboxProviderResult;
 
 /** Set or clear the per-project sandbox-provider pin (Customize → Settings).
  *  Pass `null` to clear (follow the platform default/distribution). The value must
@@ -1171,18 +1228,21 @@ export type UpdateProjectSandboxProviderResult =
  *
  *  Returns a tagged union (see {@link UpdateProjectSandboxProviderResult}): a
  *  `kind:'project'` immediate result, or a `kind:'preparation'` transition the
- *  caller polls via {@link getProjectSandboxProviderTransition}. */
-export async function updateProjectSandboxProvider(
+ *  caller polls via {@link getWorkspaceSandboxProviderTransition}. */
+export async function updateWorkspaceSandboxProvider(
   projectId: string,
   provider: SandboxProviderName | null,
 ): Promise<UpdateProjectSandboxProviderResult> {
   return unwrap(
     await backendApi.patch<UpdateProjectSandboxProviderResult>(
-      `/projects/${projectId}/sandbox-provider`,
+      `/workspaces/${projectId}/sandbox-provider`,
       { provider },
     ),
   );
 }
+
+/** @deprecated Use `updateWorkspaceSandboxProvider`. Kept permanently. */
+export const updateProjectSandboxProvider = updateWorkspaceSandboxProvider;
 
 /** Set or clear the per-project default reasoning effort (Settings → General).
  *  Pass `null` to clear (automatic). The value must be an effort label the
@@ -1193,7 +1253,7 @@ export async function setDefaultReasoningEffort(
   effort: string | null,
 ): Promise<KortixProject> {
   return unwrap(
-    await backendApi.put<KortixProject>(`/projects/${projectId}/default-reasoning-effort`, {
+    await backendApi.put<KortixProject>(`/workspaces/${projectId}/default-reasoning-effort`, {
       effort,
     }),
   );
@@ -1224,20 +1284,23 @@ export interface SandboxProviderTransitionState {
 }
 
 /** Poll the durable per-project sandbox-provider migration. After
- *  {@link updateProjectSandboxProvider} returns a `kind:'preparation'` result,
+ *  {@link updateWorkspaceSandboxProvider} returns a `kind:'preparation'` result,
  *  poll this until `latest` reaches a terminal status (activated / failed /
  *  superseded / cancelled) — or `latest` is null (no live transition). */
-export async function getProjectSandboxProviderTransition(
+export async function getWorkspaceSandboxProviderTransition(
   projectId: string,
   options?: ApiClientOptions,
 ) {
   return unwrap(
     await backendApi.get<SandboxProviderTransitionState>(
-      `/projects/${projectId}/sandbox-provider/transition`,
+      `/workspaces/${projectId}/sandbox-provider/transition`,
       { showErrors: false, ...options },
     ),
   );
 }
+
+/** @deprecated Use `getWorkspaceSandboxProviderTransition`. Kept permanently. */
+export const getProjectSandboxProviderTransition = getWorkspaceSandboxProviderTransition;
 
 /**
  * @deprecated The per-template warm pool was removed from the API. Always
@@ -1250,11 +1313,14 @@ export async function updateTemplateWarmPool(
   throw retiredEndpointError('updateTemplateWarmPool');
 }
 
-export async function setProjectOnboardingComplete(projectId: string, completed: boolean) {
+export async function setWorkspaceOnboardingComplete(projectId: string, completed: boolean) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, { completed }),
+    await backendApi.patch<KortixProject>(`/workspaces/${projectId}/onboarding`, { completed }),
   );
 }
+
+/** @deprecated Use `setWorkspaceOnboardingComplete`. Kept permanently. */
+export const setProjectOnboardingComplete = setWorkspaceOnboardingComplete;
 
 /** Use case the account picked during guided project onboarding. */
 export type OnboardingUseCase =
@@ -1285,21 +1351,27 @@ export interface OnboardingProfile {
 /**
  * Persist guided-onboarding answers into `projects.metadata.onboarding`.
  *
- * Deliberately separate from {@link setProjectOnboardingComplete}: completion is
+ * Deliberately separate from {@link setWorkspaceOnboardingComplete}: completion is
  * a lifecycle flag at the top level of `metadata`, the profile is a nested
  * object, and the two are written by different steps at different times. Sending
  * `completed` from a survey save would end onboarding the moment the user
  * answered the first question.
  */
-export async function setProjectOnboardingProfile(projectId: string, profile: OnboardingProfile) {
+export async function setWorkspaceOnboardingProfile(projectId: string, profile: OnboardingProfile) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, { profile }),
+    await backendApi.patch<KortixProject>(`/workspaces/${projectId}/onboarding`, { profile }),
   );
 }
 
-export async function archiveProject(projectId: string) {
-  return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`));
+/** @deprecated Use `setWorkspaceOnboardingProfile`. Kept permanently. */
+export const setProjectOnboardingProfile = setWorkspaceOnboardingProfile;
+
+export async function archiveWorkspace(projectId: string) {
+  return unwrap(await backendApi.delete<{ ok: boolean }>(`/workspaces/${projectId}`));
 }
+
+/** @deprecated Use `archiveWorkspace`. Kept permanently. */
+export const archiveProject = archiveWorkspace;
 
 /**
  * Move the project — and everything it owns (sessions, drives, git
@@ -1312,14 +1384,17 @@ export async function archiveProject(projectId: string) {
  * account's project-cap body when the move would exceed its plan. The usage
  * ledger stays with the source account: spend stays where it was consumed.
  */
-export async function transferProject(projectId: string, accountId: string) {
+export async function transferWorkspace(projectId: string, accountId: string) {
   return unwrap(
     await backendApi.post<{ ok: boolean; project_id: string; account_id: string }>(
-      `/projects/${projectId}/transfer`,
+      `/workspaces/${projectId}/transfer`,
       { account_id: accountId },
     ),
   );
 }
+
+/** @deprecated Use `transferWorkspace`. Kept permanently. */
+export const transferProject = transferWorkspace;
 
 // ── Server-side explicit-token variants ──────────────────────────────────────
 // Next.js server actions / route handlers (post-signup first-project
@@ -1327,10 +1402,10 @@ export async function transferProject(projectId: string, accountId: string) {
 // they must not rely on the SDK's process-wide `configureKortix()` seam.
 
 /**
- * Server-side / explicit-token variant of {@link listProjectsForAccount}.
+ * Server-side / explicit-token variant of {@link listWorkspacesForAccount}.
  * Returns `null` on any failure.
  */
-export async function fetchProjectsForAccountWithToken(
+export async function fetchWorkspacesForAccountWithToken(
   opts: ServerTokenOptions,
   accountId: string,
 ): Promise<KortixProject[] | null> {
@@ -1340,17 +1415,26 @@ export async function fetchProjectsForAccountWithToken(
   );
 }
 
+/** @deprecated Use `fetchWorkspacesForAccountWithToken`. Kept permanently. */
+export const fetchProjectsForAccountWithToken = fetchWorkspacesForAccountWithToken;
+
+/** @deprecated Use `ProvisionWorkspaceWithTokenResult`. Kept permanently. */
 export type ProvisionProjectWithTokenResult =
   | { ok: true; project: KortixProject }
+  /** `limitReached`: the account already holds its project (409 `workspace_has_project`; 403 `project_limit_reached` on an older API). */
   | { ok: false; limitReached: boolean };
 
+/** The workspace name of {@link ProvisionProjectWithTokenResult}: the same type. */
+export type ProvisionWorkspaceWithTokenResult = ProvisionProjectWithTokenResult;
+
 /**
- * Server-side / explicit-token variant of {@link provisionProject}. Mirrors
- * the original bootstrap behavior: a 403 with `code: 'project_limit_reached'`
- * is reported distinctly so the caller can fall back to re-listing existing
- * projects instead of treating it as a hard failure.
+ * Server-side / explicit-token variant of {@link provisionWorkspace}. An
+ * account that already holds its project (409 `workspace_has_project`, or the
+ * deprecated 403 `project_limit_reached` of an older API) is reported as
+ * `limitReached` so the caller can re-list the existing project instead of
+ * treating it as a hard failure.
  */
-export async function provisionProjectWithToken(
+export async function provisionWorkspaceWithToken(
   opts: ServerTokenOptions,
   input: ProvisionProjectInput,
 ): Promise<ProvisionProjectWithTokenResult> {
@@ -1374,12 +1458,18 @@ export async function provisionProjectWithToken(
       if (!project?.project_id) return { ok: false, limitReached: false };
       return { ok: true, project };
     }
-    if (res.status === 403) {
+    if (res.status === 403 || res.status === 409) {
       const body = (await res.json().catch(() => null)) as { code?: string } | null;
-      return { ok: false, limitReached: body?.code === 'project_limit_reached' };
+      // 409 `workspace_has_project`: the account already holds its project.
+      // 403 `project_limit_reached`: the same answer from an API before the
+      // workspace rule (deprecated code; current APIs never send it).
+      return { ok: false, limitReached: body?.code === 'workspace_has_project' || body?.code === 'project_limit_reached' };
     }
     return { ok: false, limitReached: false };
   } catch {
     return { ok: false, limitReached: false };
   }
 }
+
+/** @deprecated Use `provisionWorkspaceWithToken`. Kept permanently. */
+export const provisionProjectWithToken = provisionWorkspaceWithToken;

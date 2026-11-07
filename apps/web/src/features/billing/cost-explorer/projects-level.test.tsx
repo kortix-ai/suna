@@ -592,6 +592,20 @@ describe('isProjectRowClickable', () => {
     };
     expect(isProjectRowClickable(row)).toBe(false);
   });
+
+  test('a project that moved to another workspace is not clickable: it is no longer this workspace\'s', () => {
+    const row: ProjectTableRow = {
+      project_id: 'p-moved',
+      project_name: 'Moved to another workspace',
+      session_count: 3,
+      llm_cost: 4,
+      compute_cost: 1,
+      total_cost: 5,
+      last_activity_at: null,
+      moved: true,
+    };
+    expect(isProjectRowClickable(row)).toBe(false);
+  });
 });
 
 // ── Pure function: hasRecentSpendSignal ─────────────────────────────────────
@@ -744,7 +758,7 @@ describe('ProjectsLevelContent', () => {
 
   test('shows a loading skeleton, never a spinner icon, while projects have not loaded', () => {
     const html = renderContent({ isProjectsLoading: true });
-    expect(html).toContain('aria-label="Loading projects"');
+    expect(html).toContain('aria-label="Loading workspaces"');
     expect(html).not.toContain('animate-spin');
     expect(html).not.toContain('No spend');
   });
@@ -768,7 +782,7 @@ describe('ProjectsLevelContent', () => {
   // claim about spend that was never read.
   test('renders the loading state, not a "no spend" claim, when no page has been read and nothing is in flight', () => {
     const html = renderContent({ page: undefined, isProjectsLoading: false, projectsError: null });
-    expect(html).toContain('aria-label="Loading projects"');
+    expect(html).toContain('aria-label="Loading workspaces"');
     expect(html).not.toContain('No spend recorded yet');
     expect(html).not.toContain('No spend in this range');
   });
@@ -910,7 +924,7 @@ describe('ProjectsLevelContent', () => {
     );
 
     const headers = collectElementsByType(tree, CostSortHeader);
-    expect(headers.map((header) => header.props.label)).toEqual(['Project', 'Total (credits)']);
+    expect(headers.map((header) => header.props.label)).toEqual(['Workspace', 'Total (credits)']);
 
     (headers[0]!.props.onSort as () => void)();
     (headers[1]!.props.onSort as () => void)();
@@ -919,7 +933,7 @@ describe('ProjectsLevelContent', () => {
 
   test('renders the column headers in order: Project, Sessions, LLM, Compute, Total', () => {
     const html = renderContent({ page: twoProjectPage });
-    const projectIndex = html.indexOf('>Project<');
+    const projectIndex = html.indexOf('>Workspace<');
     const sessionsIndex = html.indexOf('>Sessions<');
     const llmIndex = html.indexOf('>LLM<');
     const computeIndex = html.indexOf('>Compute<');
@@ -1105,7 +1119,7 @@ describe('ProjectsLevelContent', () => {
     const html = renderContent({
       page: { ...twoProjectPage, total: 30, offset: 0, next_offset: 25 },
     });
-    expect(html).toContain('Showing 1-2 of 30 projects');
+    expect(html).toContain('Showing 1-2 of 30 workspaces');
     const previousMatch = html.match(/<button[^>]*>Previous<\/button>/);
     const nextMatch = html.match(/<button[^>]*>Next<\/button>/);
     expect(previousMatch).not.toBeNull();
@@ -1120,7 +1134,7 @@ describe('ProjectsLevelContent', () => {
     const html = renderContent({
       page: { ...twoProjectPage, total: 27, offset: 25, next_offset: null },
     });
-    expect(html).toContain('Showing 26-27 of 27 projects');
+    expect(html).toContain('Showing 26-27 of 27 workspaces');
     const previousMatch = html.match(/<button[^>]*>Previous<\/button>/);
     const nextMatch = html.match(/<button[^>]*>Next<\/button>/);
     expect(previousMatch![0]).not.toContain('disabled=""');

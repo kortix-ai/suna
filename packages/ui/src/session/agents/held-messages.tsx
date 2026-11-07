@@ -1,12 +1,11 @@
 'use client';
 
 import { Button } from '../../primitives/button';
-import { SessionDotMatrix } from '../../primitives/dot-matrix/session-dot-matrix';
 import { errorToast } from '../../primitives/toast';
 import { useTranslations } from '../../i18n';
-import { ChatCircleDotsIcon } from '@phosphor-icons/react';
+import { AgentFace, AgentStatus } from './agent-surface';
 import { peerHandleLabel } from '@kortix/shared';
-import type { PeerMessage } from '@kortix/sdk';
+import { heldMessages, type PeerMessage } from '@kortix/sdk';
 import { usePeerMessages } from '@kortix/sdk/react';
 
 /**
@@ -17,14 +16,6 @@ import { usePeerMessages } from '@kortix/sdk/react';
  * nobody decides expires after 5 minutes on the server.
  */
 
-/** The preview line: the sender's summary, else the message's first line. */
-export function heldPreview(message: Pick<PeerMessage, 'summary' | 'message'>): string {
-  const summary = message.summary?.trim();
-  if (summary) return summary;
-  const first = message.message.trim().split('\n')[0] ?? '';
-  return first.length > 200 ? `${first.slice(0, 200)}…` : first;
-}
-
 export interface HeldMessageCardProps {
   message: PeerMessage;
   pending: 'approve' | 'deny' | null;
@@ -34,27 +25,42 @@ export interface HeldMessageCardProps {
 
 export function HeldMessageCard({ message, pending, onApprove, onDeny }: HeldMessageCardProps) {
   const t = useTranslations('multiAgent.held');
-  const kind = message.type === 'shutdown_request' ? 'titleShutdown' : 'title';
+  const handle = message.from_handle;
+  const name = peerHandleLabel(handle).replace(/^@/, '');
+  const shutdown = message.type === 'shutdown_request';
+  // A decision, so a card: who, what it would deliver, and the two answers. The rest of the
+  // agent surfaces are rows; this one waits on the person.
   return (
     <div
       data-held-message={message.id}
-      className="bg-popover flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-xs"
+      data-testid="held-message-card"
+      className="border-border bg-background flex min-w-0 gap-1.5 rounded-lg border p-3 text-sm"
     >
-      <ChatCircleDotsIcon aria-hidden className="text-muted-foreground mt-0.5 size-4 shrink-0" />
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="text-foreground text-sm font-medium">{t(kind, { from: peerHandleLabel(message.from_handle) })}</p>
-        <p className="text-foreground line-clamp-2 wrap-break-word">{heldPreview(message)}</p>
-        <p className="text-muted-foreground">{t('waiting')}</p>
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        <Button type="button" size="xs" variant="outline-ghost" disabled={pending !== null} onClick={onDeny}>
-          {pending === 'deny' ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
-          {t('deny')}
-        </Button>
-        <Button type="button" size="xs" disabled={pending !== null} onClick={onApprove}>
-          {pending === 'approve' ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
-          {t('approve')}
-        </Button>
+      <span className="flex h-5 shrink-0 items-center">
+        <AgentFace handle={handle} />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+          <span className="text-foreground max-w-40 min-w-0 truncate font-medium" title={name}>
+            {name}
+          </span>
+          <span className="text-muted-foreground min-w-0 flex-1">{shutdown ? t('asksStop') : t('wantsToSend')}</span>
+          <AgentStatus status="needs-you" label={t('needsApproval')} />
+        </div>
+        {/* The whole message: a person approves only what they can read. */}
+        {message.summary?.trim() && <p className="text-muted-foreground">{message.summary.trim()}</p>}
+        <p data-slot="held-message-body" className="text-foreground max-h-60 overflow-y-auto whitespace-pre-wrap wrap-anywhere">
+          {message.message.trim()}
+        </p>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">{t('expires')}</span>
+          <Button type="button" size="xs" variant="secondary" disabled={pending !== null} aria-busy={pending === 'deny'} onClick={onDeny}>
+            {t('deny')}
+          </Button>
+          <Button type="button" size="xs" disabled={pending !== null} aria-busy={pending === 'approve'} onClick={onApprove}>
+            {t('approve')}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -92,13 +98,6 @@ export function HeldMessageList({
       ))}
     </div>
   );
-}
-
-/** The messages that wait for the person, oldest first (the order they arrived). */
-export function heldMessages(messages: readonly PeerMessage[] | undefined): PeerMessage[] {
-  return (messages ?? [])
-    .filter((message) => message.status === 'held')
-    .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
 }
 
 /** A session's held messages, read on their own (for a host without the agent strip). */

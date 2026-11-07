@@ -5,7 +5,7 @@ import { parseDocument } from 'yaml';
 import { dirname, resolve } from 'node:path';
 import type { App, AppDeployment, CreateAppInput, UpdateAppInput } from '@kortix/sdk';
 
-import { splitHelp } from '../command-argv.ts';
+import { splitHelp, toWorkspaceAlias } from '../command-argv.ts';
 import {
   emitJson,
   fail,
@@ -15,6 +15,7 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { accessCommand, accessLinkCommand } from './apps-access.ts';
+import { eventsCommand } from './apps-events.ts';
 import { addAppBlocks } from './apps-launch-yaml.ts';
 import { authEnvCommand, execCommand, labelsCommand, machinesCommand, releasesCommand, scaleCommand, volumesCommand } from './apps-fleet.ts';
 import { connectCommand, deployOrder, deployableBlocks, linkCommand, tokenCommand, usesList } from './apps-capabilities.ts';
@@ -71,8 +72,12 @@ Subcommands:
   launch --template <name>          Add a ready-made App to kortix.yaml and deploy it.
                                     Templates: convex (a self-hosted
                                     Convex backend: data on a volume, the client and
-                                    HTTP-action services, an admins-only dashboard).
-    --name <slug>                   Default: the template's default (convex: backend).
+                                    HTTP-action services, an admins-only dashboard);
+                                    watcher (a 24/7 watcher: Kortix calls its check
+                                    on a schedule; it posts App events only on a
+                                    change; edit apps/<slug>/watch.js).
+    --name <slug>                   Default: the template's default (convex: backend,
+                                    watcher: watcher).
     --no-deploy                     Write kortix.yaml only.
   deploy [path]                     Deploy a directory or .tar.gz archive. With no
                                     path and a kortix.yaml of several apps,
@@ -97,7 +102,7 @@ Subcommands:
     --readiness-path <path>         Default: /.
     --spa | --no-spa                Static/bundle history fallback.
     --provider <name>               platinum (default).
-    --access <mode>                 private (default), project, restricted, public, or password.
+    --access <mode>                 private (default), workspace, restricted, public, or password.
     --password <value>              Required for new password-protected Apps.
     --members <ids>                 Comma-separated member ids for restricted access.
     --groups <ids>                  Comma-separated group ids for restricted access.
@@ -110,7 +115,7 @@ Subcommands:
     --no-wait                       Return after the deployment is queued.
     --wait-seconds <seconds>        Default: 1200.
   set <id|slug>                     Change an existing App. Only the flags you
-                                    pass are sent. Needs project write access.
+                                    pass are sent. Needs workspace write access.
                                     A machine change applies to the next
                                     deployment. A run-mode change applies within
                                     5 minutes.
@@ -133,6 +138,16 @@ Subcommands:
   show <id|slug>                    Show an App: capabilities, links and
                                     deployments. --json.
   logs <id|slug> [deployment-id]    Read runtime logs. --after N --limit N.
+  events <id|slug>                  The App's events (30 days) and what came of each:
+                                    fired → session, skipped → why, unmatched → no
+                                    trigger listens. --status <s> --trigger <slug>
+                                    --id <event-id> --limit N --cursor <c> --json.
+  events emit <id|slug> <name>      Send a test event on the real path (id test-…).
+                                    --data <json|@file> --id <id> --trigger <slug>
+                                    (only that trigger) --wait[=<s>]: wait for the
+                                    outcome; exit 0 only when a trigger fired.
+  events credentials <id|slug>      KORTIX_APP_EVENTS_URL and KORTIX_APP_TOKEN, for code
+                                    that runs outside the App. Workspace admins.
   start <id|slug>                   Permit requests and start the App.
   stop <id|slug>                    Suspend now. The next authorized request wakes it.
   rollback <id|slug> <id|vN>        Roll back: a NEW release from that release's artifact
@@ -184,12 +199,13 @@ Subcommands:
   token <id|slug>                   Print a 15-minute Kortix sign-in token for the
                                     App, naming you. --json adds expires_at.
   delete <id|slug>                  Delete the App, its runtimes, and every deployment
-                                    image it built. --yes.
+                                    image it built, with the triggers that name it (its
+                                    work triggers and the schedule that calls it). --yes.
     --deployment <id|vN>            Delete only this deployment and its image. The live
                                     deployment cannot be deleted: roll back first.
 
 Global options:
-  --project <id>     Operate on this project id.
+  --workspace <id>   Operate on this workspace id.
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -248,7 +264,7 @@ function takeCommon(rest: string[]) {
   return {
     json,
     options: {
-      projectArg: takeFlagValue(rest, ['--project']),
+      projectArg: takeFlagValue(rest, ['--project', '--workspace']),
       hostArg: takeFlagValue(rest, ['--host']),
     },
   };
@@ -288,6 +304,8 @@ export async function runApps(argv: string[]): Promise<number> {
       case 'show':
       case 'get':
         return await showCommand(rest, common.options, common.json);
+      case 'events':
+        return await eventsCommand(rest, common.options, common.json);
       case 'logs':
         return await logsCommand(rest, common.options, common.json);
       case 'start':
@@ -570,9 +588,9 @@ async function ensureTemplateSecret(ctx: Ctx, secret: AppTemplateSecret, json: b
     const app = await resolveApp(ctx.apps, secret.app);
     const result = await ctx.apps.exec(app.app_id, { command: secret.command });
     const value = result.stdout.split('\n').map((line) => line.trim()).filter(Boolean).pop();
-    if (result.exit_code !== 0 || !value) return `could not create the project secret ${secret.name}: \`${secret.command.join(' ')}\` on ${secret.app} exited ${result.exit_code}`;
+    if (result.exit_code !== 0 || !value) return `could not create the workspace secret ${secret.name}: \`${secret.command.join(' ')}\` on ${secret.app} exited ${result.exit_code}`;
     await ctx.secrets.upsert({ name: secret.name, value });
-    if (!json) process.stdout.write(`  ${status.ok(`wrote the project secret ${secret.name}`)}\n`);
+    if (!json) process.stdout.write(`  ${status.ok(`wrote the workspace secret ${secret.name}`)}\n`);
     return null;
   });
 }
@@ -720,9 +738,9 @@ async function showCommand(
           : 'not deployed';
     process.stdout.write(`\n  ${C.bold}${app.name}${C.reset}\n  ${C.dim}${hosting}${C.reset}\n${appLines(app)}`);
     if (!app.external_url && app.access_mode !== 'public') {
-      process.stdout.write(`  ${C.dim}${pad('access', 14)}${C.reset}${app.access_mode}\n`);
+      process.stdout.write(`  ${C.dim}${pad('access', 14)}${C.reset}${toWorkspaceAlias(app.access_mode)}\n`);
       process.stdout.write(
-        `  Open in a browser: kortix apps access-link ${app.app_id} --project ${ctx.projectId}${options.hostArg ? ` --host ${options.hostArg}` : ''}\n`,
+        `  Open in a browser: kortix apps access-link ${app.app_id} --workspace ${ctx.projectId}${options.hostArg ? ` --host ${options.hostArg}` : ''}\n`,
       );
     }
     for (const deployment of result.deployments) {
@@ -874,10 +892,14 @@ async function deleteCommand(
     app_id: app.app_id,
     slug: app.slug,
     images: deleted.images ?? { released: 0, pending: 0 },
+    triggers_removed: deleted.triggers_removed ?? [],
   };
   if (json) emitJson(result);
   else {
     process.stdout.write(`\n  ${status.ok(`deleted ${result.slug}`)}\n`);
+    if (result.triggers_removed.length > 0) {
+      process.stdout.write(`${C.dim}  removed its triggers: ${result.triggers_removed.join(', ')}${C.reset}\n`);
+    }
     process.stdout.write(imageLines(result.images.released, result.images.pending));
     process.stdout.write('\n');
   }

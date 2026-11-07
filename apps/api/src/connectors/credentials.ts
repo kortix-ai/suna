@@ -18,6 +18,7 @@ import type { OAuth2ClientCredentials } from '@kortix/api-contract';
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { decryptNamedProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
+import { completeConnection, connectConnection } from './connection-status';
 import { isUniqueViolation } from '../shared/postgres-errors';
 import {
   acquireOAuth2ClientCredentialsToken,
@@ -498,6 +499,16 @@ export async function upsertConnectionCredential(input: {
   value: string;
   kind?: 'secret' | 'connection' | 'oauth2_client_credentials' | 'oauth2_delegated';
   createdBy?: string | null;
+  /**
+   * When the flow that produced this credential started (an OAuth sign-in).
+   * By default the write is an in-flight completion (an OAuth callback, a
+   * device poll, a hosted-connect finalize): a revoke that landed after
+   * `startedAt`, or any revoke when `startedAt` is unset, wins
+   * (`ConnectionRevokedError`, nothing is stored).
+   */
+  startedAt?: Date;
+  /** A person sets this credential at request time (a pasted secret): it (re)connects a revoked account. */
+  connectNow?: boolean;
 }): Promise<void> {
   const [connection] = await db
     .select({ connectionId: connectorConnections.connectionId })
@@ -512,28 +523,37 @@ export async function upsertConnectionCredential(input: {
     .limit(1);
   if (!connection) throw new Error('Connection not found');
   const valueEnc = encryptProjectSecret(input.projectId, input.value);
-  await db.insert(connectionCredentials).values({
-    connectorId: input.connectorId,
-    connectionId: input.connectionId,
-    userId: null,
-    kind: input.kind ?? 'secret',
-    valueEnc,
-    createdBy: input.createdBy ?? null,
-  }).onConflictDoUpdate({
-    // One atomic write — the partial index is the arbiter, so its predicate must be named.
-    target: connectionCredentials.connectionId,
-    targetWhere: sql`${connectionCredentials.connectionId} is not null`,
-    set: { valueEnc, kind: input.kind ?? 'secret', updatedAt: new Date() },
+  await db.transaction(async (tx) => {
+    // The status first: it locks the row, so a revoke cannot land between the
+    // check and the credential write. A new credential is no longer the one
+    // the upstream rejected, and the account is no longer revoked.
+    const metadata = sql`${connectorConnections.metadata} - 'credential_rejected_at' - 'revokedAt'`;
+    const live = input.connectNow
+      ? (await connectConnection(input.connectionId, { metadata }, tx)) !== null
+      : await completeConnection(input.connectionId, input.startedAt ?? null, { metadata }, tx);
+    if (!live) throw new ConnectionRevokedError(input.connectionId);
+    await tx.insert(connectionCredentials).values({
+      connectorId: input.connectorId,
+      connectionId: input.connectionId,
+      userId: null,
+      kind: input.kind ?? 'secret',
+      valueEnc,
+      createdBy: input.createdBy ?? null,
+    }).onConflictDoUpdate({
+      // One atomic write — the partial index is the arbiter, so its predicate must be named.
+      target: connectionCredentials.connectionId,
+      targetWhere: sql`${connectionCredentials.connectionId} is not null`,
+      set: { valueEnc, kind: input.kind ?? 'secret', updatedAt: new Date() },
+    });
   });
-  await db
-    .update(connectorConnections)
-    .set({
-      status: 'active',
-      // A new credential is no longer the one the upstream rejected.
-      metadata: sql`${connectorConnections.metadata} - 'credential_rejected_at'`,
-      updatedAt: new Date(),
-    })
-    .where(eq(connectorConnections.connectionId, input.connectionId));
+}
+
+/** An in-flight completion lost to a revoke that landed after its flow started. */
+export class ConnectionRevokedError extends Error {
+  constructor(connectionId: string) {
+    super(`connection ${connectionId} was revoked while its authorization was in flight`);
+    this.name = 'ConnectionRevokedError';
+  }
 }
 
 export async function upsertConnectionOAuth2Credential(
@@ -543,6 +563,8 @@ export async function upsertConnectionOAuth2Credential(
     connectionId: string;
     oauth2: OAuth2ClientCredentials;
     createdBy?: string | null;
+    /** A person saves it at request time (see `upsertConnectionCredential`). */
+    connectNow?: boolean;
   },
   runtime: OAuth2CredentialRuntime = {},
 ): Promise<void> {
@@ -556,6 +578,7 @@ export async function upsertConnectionOAuth2Credential(
     value: createStoredOAuth2Credential(input.oauth2, token),
     kind: 'oauth2_client_credentials',
     createdBy: input.createdBy,
+    connectNow: input.connectNow,
   });
 }
 

@@ -73,13 +73,13 @@ const RUNTIME: { icon: Icon; title: string; description: string }[] = [
   },
   {
     icon: PlugsConnectedIcon,
-    title: 'OpenCode REST',
+    title: 'Runtime REST',
     description: 'One transport for every session, proxied through the compatibility layer.',
   },
 ];
 
 const SURFACES: { icon: Icon; title: string; description: string }[] = [
-  { icon: FolderIcon, title: 'Projects', description: 'Provision, share, and archive.' },
+  { icon: FolderIcon, title: 'Workspaces', description: 'Provision, share, and archive.' },
   { icon: LightningIcon, title: 'Triggers', description: 'Schedules, webhooks, and events.' },
   { icon: KeyIcon, title: 'Secrets', description: 'Encrypted at rest, injected at boot.' },
   { icon: UsersIcon, title: 'Members', description: 'Roles, invites, and IAM policies.' },

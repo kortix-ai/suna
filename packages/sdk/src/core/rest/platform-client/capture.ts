@@ -178,6 +178,8 @@ export type CaptureHealthReason =
   | 'paused'
   | 'sync_error'
   | 'backlog'
+  /** The machine service tried the newest release and it did not install; `diagnostics.update.last_result.detail` says why. */
+  | 'update_failed'
   | 'behind_version';
 
 /**
@@ -237,6 +239,89 @@ export interface CaptureDevice {
   health: CaptureDeviceHealth;
   /** The enrollment token the device enrolled with (an IT rollout); null when a person signed it in. */
   enrollment_token_id?: string | null;
+  created_at: string;
+  /** Everything support needs about this computer in one typed object. Absent from an API older than this field. */
+  diagnostics?: CaptureDeviceDiagnostics;
+}
+
+/** `current`, `behind` (a newer release exists), `updating`, `failed` (the newest release did not install), `disabled` (IT turned updates off). */
+export type CaptureUpdateStatus = 'current' | 'behind' | 'updating' | 'failed' | 'disabled' | 'unknown';
+
+/** The self-update state of one computer, from its machine service. */
+export interface CaptureDeviceUpdate {
+  status: CaptureUpdateStatus;
+  installed: string | null;
+  channel: string | null;
+  /** The newest version the last good manifest named. */
+  latest: string | null;
+  last_check_at: string | null;
+  /** What the last check did, in the app's words. */
+  last_check: string | null;
+  updating_to: string | null;
+  /** The last install: `updated`, `rolled_back`, `failed` or `install_failed`, and why it failed. */
+  last_result: { at: string | null; from: string | null; to: string | null; outcome: string; detail: string | null } | null;
+  /** Versions that failed here; each is tried again at `retry_at`. A newer release is always tried. */
+  skipped: { version: string; failed_at: string | null; retry_at: string | null }[];
+}
+
+/** What the computer is made of. Every field is null when the app did not report it. */
+export interface CaptureDeviceMachine {
+  cpu: string | null;
+  /** Logical cores. */
+  cpu_cores: number | null;
+  memory_bytes: number | null;
+  /** Free space on the volume of the local library. */
+  disk_free_bytes: number | null;
+  disk_total_bytes: number | null;
+  gpus: string[];
+  booted_at: string | null;
+  timezone: string | null;
+  utc_offset: string | null;
+  locale: string | null;
+}
+
+/**
+ * One computer's diagnostics, from its last `device.json` and `status.json`.
+ * Every field the app did not send is null, so an older app version still
+ * answers every key.
+ */
+export interface CaptureDeviceDiagnostics {
+  /** `name`: `Windows 11 Pro 24H2`, `macOS 26.0`; `build`: `26200.9448`. */
+  os: { family: string | null; name: string | null; version: string | null; build: string | null; arch: string | null };
+  /** Null when the computer masks it (encryption or local PII masking on). */
+  hostname: string | null;
+  computer_name: string | null;
+  member_email: string | null;
+  app_version: string | null;
+  /** Null on a computer without the machine service. */
+  update: CaptureDeviceUpdate | null;
+  recording: {
+    state: string | null;
+    reason: string | null;
+    /** While `reason` is `error`: the recorder's last capture error (app 0.14.20 and later). */
+    last_error: string | null;
+    missing_permissions: string[];
+    last_frame_at: string | null;
+    paused_until: string | null;
+    awake_since: string | null;
+    interval_ms: number | null;
+    max_height: number | null;
+    audio_enabled: boolean | null;
+    actions_recording: boolean | null;
+    displays: number;
+  };
+  sync: { state: string | null; pending: number | null; error_class: string | null; last_upload_at: string | null };
+  /** The account policy in force on the computer, or null when it has none. */
+  policy: { source: string | null; updated_at: string | null; fetched_at: string | null } | null;
+  /** Null from an app version before the machine report. */
+  machine: CaptureDeviceMachine | null;
+  encrypted: boolean;
+  /** Enrolled by IT with an enrollment token. */
+  managed: boolean;
+  /** When the computer last wrote device.json, and status.json. */
+  described_at: string | null;
+  reported_at: string | null;
+  last_credentials_at: string | null;
   created_at: string;
 }
 

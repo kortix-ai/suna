@@ -562,6 +562,10 @@
                 "type": "string",
                 "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
               },
+              "expect_event_within": {
+                "type": "string",
+                "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+              },
               "max_runs_per_hour": {
                 "type": "integer",
                 "minimum": 1
@@ -922,6 +926,27 @@
                   "properties": {
                     "type": {
                       "enum": [
+                        "cron",
+                        "webhook",
+                        "event"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "expect_event_within": false
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "enum": [
                         "webhook",
                         "event",
                         "app"
@@ -1108,6 +1133,11 @@
                 "type": "string",
                 "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
                 "description": "Schedules only, `60s` or more. A missed fire later than this does not run."
+              },
+              "expect_event_within": {
+                "type": "string",
+                "pattern": "^([1-9][0-9]*)(s|m|h|d)$",
+                "description": "App events only, `5m` or more. No event for this long tells the trigger's watchers once; the next event clears it."
               },
               "overlap": {
                 "type": "string",
@@ -2851,7 +2881,7 @@
         "object",
         "null"
       ],
-      "description": "Spaces: channels with a room (always the first tab) and configured tabs. Agents join one with `agents.<name>.space`.",
+      "description": "Spaces: channels with configured tabs. Agents join one with `agents.<name>.space`.",
       "propertyNames": {
         "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
       },
@@ -2883,7 +2913,7 @@
           },
           "tabs": {
             "type": "array",
-            "description": "The tabs after the room, in order. Absent: the default set.",
+            "description": "The tabs, in order. Absent: the default set.",
             "items": {
               "type": "object",
               "required": [
@@ -2950,7 +2980,9 @@
                         "type": "string"
                       },
                       "room": {
-                        "type": "string"
+                        "type": "string",
+                        "deprecated": true,
+                        "description": "Retired with Rooms (2026-11); ignored."
                       },
                       "path": {
                         "type": "string"
@@ -3124,10 +3156,18 @@
             "oneOf": [
               {
                 "type": "string",
-                "enum": [
-                  "ask",
-                  "allow",
-                  "deny"
+                "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                "anyOf": [
+                  {
+                    "enum": [
+                      "ask",
+                      "allow",
+                      "deny"
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                  }
                 ]
               },
               {
@@ -3135,42 +3175,82 @@
                 "properties": {
                   "todowrite": {
                     "type": "string",
-                    "enum": [
-                      "ask",
-                      "allow",
-                      "deny"
+                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "ask",
+                          "allow",
+                          "deny"
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                      }
                     ]
                   },
                   "question": {
                     "type": "string",
-                    "enum": [
-                      "ask",
-                      "allow",
-                      "deny"
+                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "ask",
+                          "allow",
+                          "deny"
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                      }
                     ]
                   },
                   "webfetch": {
                     "type": "string",
-                    "enum": [
-                      "ask",
-                      "allow",
-                      "deny"
+                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "ask",
+                          "allow",
+                          "deny"
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                      }
                     ]
                   },
                   "websearch": {
                     "type": "string",
-                    "enum": [
-                      "ask",
-                      "allow",
-                      "deny"
+                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "ask",
+                          "allow",
+                          "deny"
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                      }
                     ]
                   },
                   "doom_loop": {
                     "type": "string",
-                    "enum": [
-                      "ask",
-                      "allow",
-                      "deny"
+                    "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "ask",
+                          "allow",
+                          "deny"
+                        ]
+                      },
+                      {
+                        "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                      }
                     ]
                   },
                   "skill": false,
@@ -3180,20 +3260,36 @@
                   "oneOf": [
                     {
                       "type": "string",
-                      "enum": [
-                        "ask",
-                        "allow",
-                        "deny"
+                      "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "ask",
+                            "allow",
+                            "deny"
+                          ]
+                        },
+                        {
+                          "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                        }
                       ]
                     },
                     {
                       "type": "object",
                       "additionalProperties": {
                         "type": "string",
-                        "enum": [
-                          "ask",
-                          "allow",
-                          "deny"
+                        "description": "`allow`, `ask` or `deny`. `\"*\"` and `all` also mean `allow`.",
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "ask",
+                              "allow",
+                              "deny"
+                            ]
+                          },
+                          {
+                            "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                          }
                         ]
                       }
                     }
@@ -3202,7 +3298,7 @@
               }
             ],
             "default": "allow",
-            "description": "Which tool calls run, ask a person, or never run. `skill` and `task` belong to `skills` and `subagents`."
+            "description": "Which tool calls run, ask a person, or never run: `allow`, `ask` or `deny` (`\"*\"` and `all` also mean `allow`). `skill` and `task` belong to `skills` and `subagents`."
           },
           "prompt": {
             "type": "string",
@@ -3239,14 +3335,22 @@
             "description": "What happens when the session's context fills. `record`: the agent continues at once in a fresh context and searches the session's full record, word for word, when it needs a detail; nothing is summarized. `summary`: a model call writes a summary of the conversation and the agent continues from it."
           },
           "tools": {
-            "default": "all",
-            "description": "The tools the agent may call: built-in tools, Kortix tools and registered tools. A list allows only those. `{ exclude: [bash] }` allows every tool but those.",
+            "default": "*",
+            "description": "The tools the agent may call: built-in tools, Kortix tools and registered tools. `\"*\"` (quoted; `all` is its alias) is every tool, `none` is none. A list allows only those. `{ exclude: [bash] }` allows every tool but those.",
             "oneOf": [
               {
                 "type": "string",
-                "enum": [
-                  "all",
-                  "none"
+                "anyOf": [
+                  {
+                    "enum": [
+                      "*",
+                      "all",
+                      "none"
+                    ]
+                  },
+                  {
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL])\\s*$(?![\\s\\S])"
+                  }
                 ]
               },
               {
@@ -3275,10 +3379,10 @@
             ]
           },
           "skills": {
-            "description": "Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. \"all\", \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
+            "description": "Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. \"*\" (every name; alias `all`), \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
             "oneOf": [
               {
-                "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
+                "description": "\"*\" (every name; `all` is its alias), \"none\", or a list of names. A list that holds \"*\" is every name.",
                 "oneOf": [
                   {
                     "type": "array",
@@ -3292,14 +3396,14 @@
                     "anyOf": [
                       {
                         "enum": [
-                          "all",
                           "*",
+                          "all",
                           "none",
                           ""
                         ]
                       },
                       {
-                        "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                       },
                       {
                         "pattern": "^\\s*$(?![\\s\\S])"
@@ -3341,14 +3445,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3373,14 +3477,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3391,10 +3495,10 @@
             "default": "none"
           },
           "extensions": {
-            "description": "Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. \"all\", \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
+            "description": "Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. \"*\" (every name; alias `all`), \"none\" (default), a list of names, or `{ exclude: [names] }` for every name but those.",
             "oneOf": [
               {
-                "description": "An allowlist of names, or the \"all\" / \"none\" sentinel. \"*\" (alone or in the list) means \"all\".",
+                "description": "\"*\" (every name; `all` is its alias), \"none\", or a list of names. A list that holds \"*\" is every name.",
                 "oneOf": [
                   {
                     "type": "array",
@@ -3408,14 +3512,14 @@
                     "anyOf": [
                       {
                         "enum": [
-                          "all",
                           "*",
+                          "all",
                           "none",
                           ""
                         ]
                       },
                       {
-                        "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                        "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                       },
                       {
                         "pattern": "^\\s*$(?![\\s\\S])"
@@ -3457,14 +3561,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3505,14 +3609,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3537,14 +3641,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3564,7 +3668,6 @@
                   "enum": [
                     "project.read",
                     "project.write",
-                    "project.delete",
                     "project.session.read",
                     "project.session.start",
                     "project.session.stop",
@@ -3580,7 +3683,6 @@
                     "project.gateway.spend.read",
                     "project.usage.read",
                     "project.gateway.budget.set",
-                    "project.gateway.keys.manage",
                     "project.agent.read",
                     "project.agent.write",
                     "project.skill.read",
@@ -3610,18 +3712,136 @@
                     "project.review.read",
                     "project.review.submit",
                     "project.review.act",
-                    "project.room.read",
-                    "project.room.write",
                     "project.artifact.read",
-                    "project.artifact.comment",
                     "project.artifact.write",
                     "project.artifact.manage",
                     "project.artifact.public",
-                    "project.credentials.issue",
+                    "account.read",
+                    "account.write",
+                    "billing.read",
+                    "audit.read",
+                    "member.read",
+                    "member.invite",
+                    "member.update",
+                    "member.remove",
+                    "member.super_admin.grant",
+                    "group.read",
+                    "group.create",
+                    "group.update",
+                    "group.delete",
+                    "group.members.manage",
+                    "policy.read",
+                    "policy.create",
+                    "policy.delete",
+                    "role.read",
+                    "role.create",
+                    "role.update",
+                    "role.delete",
+                    "token.read",
+                    "token.revoke",
+                    "token.personal.revoke",
+                    "project.create",
+                    "capture.read_all",
+                    "capture.manage",
+                    "workspace.read",
+                    "workspace.write",
+                    "workspace.session.read",
+                    "workspace.session.start",
+                    "workspace.session.stop",
+                    "workspace.session.bindings.write",
+                    "workspace.members.read",
+                    "workspace.members.manage",
+                    "workspace.trigger.read",
+                    "workspace.trigger.create",
+                    "workspace.trigger.update",
+                    "workspace.trigger.delete",
+                    "workspace.trigger.fire",
+                    "workspace.gateway.logs.read",
+                    "workspace.gateway.spend.read",
+                    "workspace.usage.read",
+                    "workspace.gateway.budget.set",
+                    "workspace.agent.read",
+                    "workspace.agent.write",
+                    "workspace.skill.read",
+                    "workspace.skill.write",
+                    "workspace.command.read",
+                    "workspace.command.write",
+                    "workspace.file.read",
+                    "workspace.file.write",
+                    "workspace.settings.write",
+                    "workspace.sandbox.write",
+                    "workspace.model.read",
+                    "workspace.model.write",
+                    "workspace.gitops.read",
+                    "workspace.gitops.push",
+                    "workspace.gitops.merge",
+                    "workspace.gitops.ref.any",
+                    "workspace.gitops.ref.delete",
+                    "workspace.secret.read",
+                    "workspace.secret.write",
+                    "workspace.connector.read",
+                    "workspace.connector.connections.manage",
+                    "workspace.connector.write",
+                    "workspace.app.read",
+                    "workspace.app.write",
+                    "workspace.app.deploy",
+                    "workspace.app.admin",
+                    "workspace.review.read",
+                    "workspace.review.submit",
+                    "workspace.review.act",
+                    "workspace.artifact.read",
+                    "workspace.artifact.write",
+                    "workspace.artifact.manage",
+                    "workspace.artifact.public",
+                    "workspace.account.read",
+                    "workspace.account.write",
+                    "workspace.billing.read",
+                    "workspace.audit.read",
+                    "workspace.member.read",
+                    "workspace.member.invite",
+                    "workspace.member.update",
+                    "workspace.member.remove",
+                    "workspace.member.super_admin.grant",
+                    "workspace.group.read",
+                    "workspace.group.create",
+                    "workspace.group.update",
+                    "workspace.group.delete",
+                    "workspace.group.members.manage",
+                    "workspace.policy.read",
+                    "workspace.policy.create",
+                    "workspace.policy.delete",
+                    "workspace.role.read",
+                    "workspace.role.create",
+                    "workspace.role.update",
+                    "workspace.role.delete",
+                    "workspace.token.read",
+                    "workspace.token.revoke",
+                    "workspace.token.personal.revoke",
+                    "workspace.create",
+                    "workspace.capture.read_all",
+                    "workspace.capture.manage",
                     "project.cr.open",
                     "project.cr.merge",
                     "project.customize.read",
                     "project.customize.write",
+                    "project.room.read",
+                    "project.room.write",
+                    "project.artifact.comment",
+                    "workspace.artifact.comment",
+                    "token.create",
+                    "workspace.token.create",
+                    "token.personal.create",
+                    "workspace.token.personal.create",
+                    "project.credentials.issue",
+                    "workspace.credentials.issue",
+                    "project.gateway.keys.manage",
+                    "workspace.gateway.keys.manage",
+                    "billing.write",
+                    "workspace.billing.write",
+                    "account.delete",
+                    "workspace.account.delete",
+                    "project.delete",
+                    "workspace.delete",
                     "*"
                   ]
                 }
@@ -3631,14 +3851,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3726,14 +3946,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"
@@ -3753,7 +3973,6 @@
                   "enum": [
                     "project.read",
                     "project.write",
-                    "project.delete",
                     "project.session.read",
                     "project.session.start",
                     "project.session.stop",
@@ -3769,7 +3988,6 @@
                     "project.gateway.spend.read",
                     "project.usage.read",
                     "project.gateway.budget.set",
-                    "project.gateway.keys.manage",
                     "project.agent.read",
                     "project.agent.write",
                     "project.skill.read",
@@ -3799,18 +4017,136 @@
                     "project.review.read",
                     "project.review.submit",
                     "project.review.act",
-                    "project.room.read",
-                    "project.room.write",
                     "project.artifact.read",
-                    "project.artifact.comment",
                     "project.artifact.write",
                     "project.artifact.manage",
                     "project.artifact.public",
-                    "project.credentials.issue",
+                    "account.read",
+                    "account.write",
+                    "billing.read",
+                    "audit.read",
+                    "member.read",
+                    "member.invite",
+                    "member.update",
+                    "member.remove",
+                    "member.super_admin.grant",
+                    "group.read",
+                    "group.create",
+                    "group.update",
+                    "group.delete",
+                    "group.members.manage",
+                    "policy.read",
+                    "policy.create",
+                    "policy.delete",
+                    "role.read",
+                    "role.create",
+                    "role.update",
+                    "role.delete",
+                    "token.read",
+                    "token.revoke",
+                    "token.personal.revoke",
+                    "project.create",
+                    "capture.read_all",
+                    "capture.manage",
+                    "workspace.read",
+                    "workspace.write",
+                    "workspace.session.read",
+                    "workspace.session.start",
+                    "workspace.session.stop",
+                    "workspace.session.bindings.write",
+                    "workspace.members.read",
+                    "workspace.members.manage",
+                    "workspace.trigger.read",
+                    "workspace.trigger.create",
+                    "workspace.trigger.update",
+                    "workspace.trigger.delete",
+                    "workspace.trigger.fire",
+                    "workspace.gateway.logs.read",
+                    "workspace.gateway.spend.read",
+                    "workspace.usage.read",
+                    "workspace.gateway.budget.set",
+                    "workspace.agent.read",
+                    "workspace.agent.write",
+                    "workspace.skill.read",
+                    "workspace.skill.write",
+                    "workspace.command.read",
+                    "workspace.command.write",
+                    "workspace.file.read",
+                    "workspace.file.write",
+                    "workspace.settings.write",
+                    "workspace.sandbox.write",
+                    "workspace.model.read",
+                    "workspace.model.write",
+                    "workspace.gitops.read",
+                    "workspace.gitops.push",
+                    "workspace.gitops.merge",
+                    "workspace.gitops.ref.any",
+                    "workspace.gitops.ref.delete",
+                    "workspace.secret.read",
+                    "workspace.secret.write",
+                    "workspace.connector.read",
+                    "workspace.connector.connections.manage",
+                    "workspace.connector.write",
+                    "workspace.app.read",
+                    "workspace.app.write",
+                    "workspace.app.deploy",
+                    "workspace.app.admin",
+                    "workspace.review.read",
+                    "workspace.review.submit",
+                    "workspace.review.act",
+                    "workspace.artifact.read",
+                    "workspace.artifact.write",
+                    "workspace.artifact.manage",
+                    "workspace.artifact.public",
+                    "workspace.account.read",
+                    "workspace.account.write",
+                    "workspace.billing.read",
+                    "workspace.audit.read",
+                    "workspace.member.read",
+                    "workspace.member.invite",
+                    "workspace.member.update",
+                    "workspace.member.remove",
+                    "workspace.member.super_admin.grant",
+                    "workspace.group.read",
+                    "workspace.group.create",
+                    "workspace.group.update",
+                    "workspace.group.delete",
+                    "workspace.group.members.manage",
+                    "workspace.policy.read",
+                    "workspace.policy.create",
+                    "workspace.policy.delete",
+                    "workspace.role.read",
+                    "workspace.role.create",
+                    "workspace.role.update",
+                    "workspace.role.delete",
+                    "workspace.token.read",
+                    "workspace.token.revoke",
+                    "workspace.token.personal.revoke",
+                    "workspace.create",
+                    "workspace.capture.read_all",
+                    "workspace.capture.manage",
                     "project.cr.open",
                     "project.cr.merge",
                     "project.customize.read",
                     "project.customize.write",
+                    "project.room.read",
+                    "project.room.write",
+                    "project.artifact.comment",
+                    "workspace.artifact.comment",
+                    "token.create",
+                    "workspace.token.create",
+                    "token.personal.create",
+                    "workspace.token.personal.create",
+                    "project.credentials.issue",
+                    "workspace.credentials.issue",
+                    "project.gateway.keys.manage",
+                    "workspace.gateway.keys.manage",
+                    "billing.write",
+                    "workspace.billing.write",
+                    "account.delete",
+                    "workspace.account.delete",
+                    "project.delete",
+                    "workspace.delete",
                     "*"
                   ]
                 }
@@ -3820,14 +4156,14 @@
                 "anyOf": [
                   {
                     "enum": [
-                      "all",
                       "*",
+                      "all",
                       "none",
                       ""
                     ]
                   },
                   {
-                    "pattern": "^\\s*(?:[aA][lL][lL]|\\*|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
+                    "pattern": "^\\s*(?:\\*|[aA][lL][lL]|[nN][oO][nN][eE])\\s*$(?![\\s\\S])"
                   },
                   {
                     "pattern": "^\\s*$(?![\\s\\S])"

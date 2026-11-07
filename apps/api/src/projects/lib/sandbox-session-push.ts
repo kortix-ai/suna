@@ -55,17 +55,18 @@ function nonActiveSandboxSkip(
  * when health did not answer.
  *
  * Such a box receives compiled governance inside its config release. A separate
- * `KORTIX_COMPILED_AGENT_CONFIG` push through `/kortix/env` would restart
- * OpenCode on governance that does not match the release it runs — and the box
- * drops it anyway (`releaseGovernanceActive`, the daemon's OpenCode adapter).
+ * `KORTIX_COMPILED_AGENT_CONFIG` push through `/kortix/env` would reconfigure
+ * the runtime on governance that does not match the release it runs — and the
+ * box drops it anyway (pi's `applyRuntimeEnv` ignores it while the release owns
+ * governance).
  *
  * This reads the box's STATE (`config.release_id`), not the binary's
  * `config.release.v1` capability. The capability is compiled in and is present
  * on every current daemon, so gating on it withheld the push from every box
  * that runs NO release — one that reverted to its workspace config, or a
  * release chain that stepped down to the image default. Those boxes are
- * exactly the pre-release case the push exists for. `releaseGovernanceActive`
- * is the same `running.release_id !== null` the daemon applies on its own side.
+ * exactly the pre-release case the push exists for. pi's `governanceOwned()`
+ * is the same `release_id !== null` check on the daemon's own side.
  */
 export async function daemonHasConfigReleases(
   baseUrl: string,
@@ -118,15 +119,15 @@ async function daemonListsCapability(
  * once at provision and handed down as `KORTIX_COMPILED_AGENT_CONFIG`, so a
  * session merged past days ago keeps running the agents it booted with. Pulling
  * the branch inside the sandbox does not help (the compiled bytes never came
- * from the working tree) and neither did restarting opencode (the daemon's env
- * was unchanged, so a respawn rebuilt the same config).
+ * from the working tree) and neither did restarting the runtime (the daemon's
+ * env was unchanged, so a respawn rebuilt the same config).
  *
  * Recompiles from `baseRef` — the ref the SESSION runs on, which is not always
  * the project default.
  *
- * Costs an opencode restart, because opencode reads its config only at spawn.
- * Callers that are already restarting the box pay nothing extra; a caller doing
- * this mid-session is interrupting a turn and must say so.
+ * pi applies it in place: a running turn keeps its config and the next turn
+ * runs the new one. An old OpenCode box restarts its runtime for it, which ends
+ * a running turn; a caller doing this mid-session must say so.
  */
 export async function pushSessionAgentConfigToSandbox(input: {
   projectId: string;
@@ -140,8 +141,8 @@ export async function pushSessionAgentConfigToSandbox(input: {
 }): Promise<{
   applied: boolean;
   reason?: string;
-  opencodeReload?: 'disposed' | 'restarted' | 'kept-old' | null;
-  opencodeTurnEnded?: boolean | null;
+  runtimeReload?: 'disposed' | 'restarted' | 'kept-old' | null;
+  runtimeTurnEnded?: boolean | null;
 }> {
   try {
     input.onPhase?.('compiling-config');
@@ -221,7 +222,7 @@ export async function pushSessionAgentConfigToSandbox(input: {
       };
     }
     // The push itself is an HTTP body, with no exec limit. The daemon then
-    // keeps the value in the env that OpenCode, git and every PTY inherit. A
+    // keeps the value in the env that the runtime, git and every PTY inherit. A
     // daemon that predates the gzip form would store an oversized config raw,
     // and every exec on the box after that would fail with E2BIG. Such a box
     // keeps the config it booted with.
@@ -243,22 +244,23 @@ export async function pushSessionAgentConfigToSandbox(input: {
       providerHeaders: headers,
       serviceKey,
       snapshot,
-      opencodeEnv: {
+      runtimeEnv: {
         KORTIX_COMPILED_AGENT_CONFIG: compiled,
         // Pushed with the config so the box's reported etag never lags what it
         // is actually running.
         KORTIX_COMPILED_AGENT_CONFIG_ETAG: agentConfigEtag(compiled) ?? '',
       },
-      // Restarts opencode so it rebuilds its config against the new agents.
+      // Makes the runtime apply the new agents: pi in place, an old OpenCode
+      // box by a restart.
       refreshModels: true,
     });
-    // `applied` means WE pushed it. Whether opencode actually took it is
-    // `opencodeReload` — a declined swap leaves the old config running, and
+    // `applied` means WE pushed it. Whether the runtime actually took it is
+    // `runtimeReload` — a declined swap leaves the old config running, and
     // reporting a bare `applied: true` for that is the lie this field prevents.
     return {
       applied: true,
-      opencodeReload: pushed.opencodeReload,
-      opencodeTurnEnded: pushed.opencodeTurnEnded,
+      runtimeReload: pushed.runtimeReload,
+      runtimeTurnEnded: pushed.runtimeTurnEnded,
     };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
@@ -270,9 +272,10 @@ export async function pushSessionAgentConfigToSandbox(input: {
 /**
  * Re-point ONE live session at a different model.
  *
- * opencode reads `KORTIX_OPENCODE_MODEL` when it builds its config at spawn, so
- * the value must reach the daemon AND opencode must restart for it to take
- * effect. `refreshModels: true` is what triggers that restart.
+ * The runtime reads `KORTIX_MODEL` from its env, so the value must reach the
+ * daemon AND the runtime must apply it. `refreshModels: true` is what triggers
+ * that: pi reconfigures in place for the next turn, an old OpenCode box
+ * restarts its runtime.
  *
  * Best-effort by design: the row is already updated by the caller, so a sandbox
  * that is down or unreachable simply picks the new model up on its next boot.
@@ -314,9 +317,8 @@ export async function pushSessionModelToSandbox(input: {
       providerHeaders: headers,
       serviceKey,
       snapshot,
-      // `KORTIX_MODEL` for a W3 daemon; its pre-W3 name for an older one.
-      opencodeEnv: { KORTIX_MODEL: input.model, KORTIX_OPENCODE_MODEL: input.model },
-      // Restarts opencode so it rebuilds its config against the new model.
+      runtimeEnv: { KORTIX_MODEL: input.model },
+      // Makes the runtime apply the new model (pi: in place, next turn).
       refreshModels: true,
     });
     return { applied: true };
@@ -329,7 +331,7 @@ export async function pushSessionModelToSandbox(input: {
 
 /**
  * Re-resolve this session's secrets snapshot and deliver it to the RUNNING
- * sandbox, restarting opencode so its process env picks up the new set.
+ * sandbox, and make the runtime apply the new set.
  *
  * `PUT /sessions/{id}/scope` re-scopes a live session's secrets allowlist. The
  * row was persisted, but for a long time nothing pushed the new snapshot to the
@@ -341,22 +343,19 @@ export async function pushSessionModelToSandbox(input: {
  *   - it only fires when the prompt routes through `POST :8000
  *     /session/{id}/{prompt_async|message}` — a prompt sent any other way
  *     (straight to :4096, the lifecycle queue) slips past it;
- *   - even when it DID fire, the daemon's env route took the ~51ms dispose
- *     fast path for a pure secret change, and a dispose re-reads the opencode
- *     CONFIG file only — it does not re-run `mergeProjectEnv`, so opencode's
- *     process env stayed on the OLD (0/47) snapshot while `agent-env.sh` got
- *     the new one (so freshly-started shells saw 47/47). The box reported a
- *     stale OpenCode PID until something else forced a respawn.
+ *   - even when it DID fire, the OpenCode daemon's env route took the ~51ms
+ *     dispose fast path for a pure secret change, and a dispose re-read the
+ *     OpenCode CONFIG file only, so the OpenCode process env stayed on the OLD
+ *     (0/47) snapshot while `agent-env.sh` got the new one (so freshly-started
+ *     shells saw 47/47).
  *
  * Pushing here — the same pattern the `/model` PUT already uses — fixes both
  * halves: the snapshot is re-derived from the freshly-committed allowlist and
- * POSTed to the daemon, and `refreshModels: true` restarts opencode so
- * `spawnChild` re-runs `mergeProjectEnv` + `withoutDeniedProviderEnv`. The
- * LLM-gateway provider strip is re-stamped alongside (it lives in the same
- * `opencodeEnv`/`llmGatewayDenyEnv` channel), so the 42/47-vs-47/47 split
- * between the opencode process and tool shells is preserved, and revocation
- * keeps working (`knownNames` is still tracked in the daemon store, so a
- * dropped secret is actively cleared on the respawn).
+ * POSTed to the daemon. The daemon reconciles its own process env and the
+ * agent env file from it (`reconcileProjectEnv`), and `refreshModels: true`
+ * makes pi reconfigure in place for the next turn. The LLM-gateway env is
+ * re-stamped alongside, and revocation keeps working (`knownNames` is still
+ * tracked in the daemon store, so a dropped secret is actively cleared).
  *
  * Best-effort by design, mirroring `pushSessionModelToSandbox`: the row is
  * already committed, so a sandbox that is down or unreachable simply picks the
@@ -401,10 +400,9 @@ export async function pushSessionScopeToSandbox(input: {
       providerHeaders: headers,
       serviceKey,
       snapshot,
-      // Restarts opencode so spawnChild re-runs mergeProjectEnv + the gateway
-      // strip. A dispose cannot refresh the child's process env (project
-      // secrets shape it at spawn, not via the config file), so the respawn is
-      // the load-bearing part — see the daemon-side gate in routes/env.ts.
+      // Makes the runtime apply the new set: pi reconfigures in place. An old
+      // OpenCode box respawns its child, because project secrets shape that
+      // child's env only at spawn.
       refreshModels: true,
       llmGatewayBaseUrl: resolveLlmGatewayBaseUrl(appConfig.KORTIX_URL),
     });

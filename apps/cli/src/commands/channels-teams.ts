@@ -1,5 +1,6 @@
 import { emitJson, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
+import { settingsWhere } from '../settings-path.ts';
 
 export interface TeamsInstallation {
   tenantId: string | null;
@@ -43,7 +44,7 @@ export async function teamsStatus(
   if (!ctx) return 1;
   try {
     const install = await ctx.client.get<TeamsInstallation | null>(
-      `/projects/${ctx.projectId}/channels/teams/installation`,
+      `/workspaces/${ctx.projectId}/channels/teams/installation`,
     );
     if (json) {
       emitJson({ connected: Boolean(install), installation: install ?? null });
@@ -110,14 +111,14 @@ export async function teamsConnect(
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
   try {
-    const mode = await ctx.client.get<TeamsMode>(`/projects/${ctx.projectId}/channels/teams/mode`);
+    const mode = await ctx.client.get<TeamsMode>(`/workspaces/${ctx.projectId}/channels/teams/mode`);
     // Only an older server (before the `teams` flag graduated) answers
     // `enabled: false`. Worded like that server's feature-flag gate. It is a
     // failure, so it goes to stderr like every other CLI error — stdout stays
     // reserved for the command's own output.
     if (!mode.enabled) {
       process.stderr.write(
-        `${status.err('Microsoft Teams is not enabled for this project. Enable it in Settings → Feature flags.')}\n`,
+        `${status.err(`Microsoft Teams is not enabled for this workspace. Enable it in ${settingsWhere('feature-flags')}.`)}\n`,
       );
       return 1;
     }
@@ -157,7 +158,7 @@ export async function teamsManifest(ctxOpts: {
   // the one-click flow is not available.
   try {
     const manifest = await ctx.client.get<Record<string, unknown>>(
-      `/projects/${ctx.projectId}/channels/teams/manifest`,
+      `/workspaces/${ctx.projectId}/channels/teams/manifest`,
     );
     process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
     return 0;
@@ -177,12 +178,12 @@ export async function teamsDisconnect(ctxOpts: {
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
   try {
-    await ctx.client.delete(`/projects/${ctx.projectId}/channels/teams/installation`);
+    await ctx.client.delete(`/workspaces/${ctx.projectId}/channels/teams/installation`);
   } catch (err) {
     return surfaceApiError(err);
   }
   process.stdout.write(
-    `${status.ok('Disconnected')} ${C.dim}— the Teams install is removed from this project.${C.reset}\n`,
+    `${status.ok('Disconnected')} ${C.dim}— the Teams install is removed from this workspace.${C.reset}\n`,
   );
   return 0;
 }

@@ -1,90 +1,85 @@
 /**
- * `task` — a sub-agent dispatch as a disclosure row. Port of apps/web
- * `tool/tools/task-tool.tsx`.
+ * `task` / `agent` — a sub-agent call as one agent row. Port of apps/web
+ * `tool/tools/task-tool.tsx`:
  *
- * - trigger: `Kanban` · "Agent · <subagent_type>" · subtitle = the sub-agent's
- *   LAST step while it runs, else the description; badge "N steps" once settled;
- * - body: the sub-agent's steps (`SubAgentActivity`), only when there are steps
- *   (an empty disclosure is a caret onto nothing);
- * - "View" on the trigger's right edge opens the child session. Web opens
- *   `SubSessionModal`; mobile has no sub-session modal, so it opens the child
- *   session in the app (`useToolNavigation().openSession` → the tab store);
- * - a child session whose steps are not in memory makes the whole row a button
- *   onto that session, so the row never looks openable and does nothing.
+ *   [face] Researcher  Read the market report             ◠ Working
+ *          │ the brief · why it did not finish · Open ↗
+ *
+ * The state is the child session's (fallback: the call's), as a glyph and a muted word.
  */
 
-import { useCallback, useMemo } from 'react';
-import { Pressable } from 'react-native';
+import { useContext, useMemo } from 'react';
 import { getChildSessionId } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
-import { KanbanIcon } from '@/lib/icons';
-import { disclosureKey } from '@/lib/session/disclosure-store';
-import { taskRowModel } from '@/lib/session/tools/agents-task';
-import { webSpace } from '@/lib/session/user-message';
-import { BasicTool, partInput, partStatus, useToolNavigation } from '../shared/infrastructure';
+import { useProjectSession } from '@/lib/projects/hooks';
+import { agentDisplayName } from '@/lib/session/composer-config';
+import { useSessionStatus } from '@/lib/session/session-store';
+import { AGENT_CALL_GLYPH, AGENT_CALL_LABEL, agentCallState, agentSessionDisplay, taskRowModel } from '@/lib/session/tools/agents-task';
+import { AgentFailure, AgentRow, AgentRowBody, OpenAgentAction } from '../shared/message-row';
+import { ConnectorHandoffContext } from '../shared/connector-handoff-context';
+import { partError, partInput, partMetadata, partStatus, useToolNavigation } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_TYPE, useTurnPalette } from '../shared/styles';
-import { useToolRowVariant } from '../shared/surface';
 import type { ToolProps } from '../shared/types';
-import { SubAgentActivity, SubAgentStatusBanner, useChildSession } from './sub-agent';
+import { SubAgentStatusBanner, useChildSession } from './sub-agent';
 
-const ACTION_HIT_SLOP = { top: webSpace(3), bottom: webSpace(3), left: webSpace(2), right: webSpace(2) };
-
-/**
- * Web `FullViewAction`: visible label "View", accessible name "Open full view"
- * (contains the visible text, WCAG 2.5.3), `text-muted-foreground/60`, always
- * visible (no hover on touch). A text action on the trigger, like the row's
- * tappable subtitle, so it does not add a button box to a 24pt row.
- */
-function FullViewAction({ onOpen }: { onOpen: () => void }) {
+export function TaskTool({ call }: ToolProps) {
   const palette = useTurnPalette();
-  const { chain } = useToolRowVariant();
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel="Open full view" onPress={onOpen} hitSlop={ACTION_HIT_SLOP}>
-      <Text variant="muted" style={[chain ? TURN_TYPE.rowSm : TURN_TYPE.sm, { color: palette.muted60 }]}>
-        View
-      </Text>
-    </Pressable>
-  );
-}
-
-export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(call);
   const status = partStatus(call);
+  const errorText = partError(call);
   const childSessionId = useMemo(() => getChildSessionId(call), [call]);
   const { childThread, childCalls } = useChildSession(childSessionId);
   const { enabled: navigationEnabled, openSession } = useToolNavigation();
+  const handoff = useContext(ConnectorHandoffContext);
+  const childRow = useProjectSession(handoff?.projectId ?? null, childSessionId ?? null).data;
+  const childLive = useSessionStatus(childSessionId);
 
   const model = useMemo(
     () => taskRowModel({ status, input, childSessionId, childCalls }),
     [status, input, childSessionId, childCalls],
   );
+  const lastReply = childThread?.messages.findLast((message) => message.role === 'assistant');
+  const state = agentCallState({
+    status,
+    hasError: !!errorText,
+    background: partMetadata(call).background === true,
+    childDisplay: childRow ? agentSessionDisplay(childRow) : null,
+    childLiveType: childLive?.type ?? null,
+    childReplied: !!lastReply && lastReply.completed_at !== null,
+  });
+  const agentName = agentDisplayName(model.subagentType);
+  const handle = typeof input.name === 'string' && input.name ? input.name : null;
+  const title = handle ?? agentName;
+  const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : '';
+  const canOpen = navigationEnabled && !!childSessionId;
+  const hasBody = (!!prompt && prompt !== model.description) || !!errorText || canOpen;
 
-  const openFullView = useCallback(() => {
-    if (childSessionId) openSession(childSessionId);
-  }, [childSessionId, openSession]);
-
-  // Inside a sub-agent list navigation is off (web `disableNavigation`), so an
-  // action that cannot navigate is not drawn.
-  const canOpen = navigationEnabled && model.showFullViewAction;
-
+  // One agent row (web `TaskTool`): face · who · what it was asked · state. Open, the brief,
+  // why it did not finish, and Open for the agent's own session.
   return (
     <>
-      <BasicTool
-        disclosureId={disclosureKey('tool', call.id)}
-        icon={KanbanIcon}
-        trigger={{ title: model.title, subtitle: model.subtitle }}
-        defaultOpen={defaultOpen}
-        forceOpen={forceOpen}
-        locked={locked}
-        badge={model.badge}
-        triggerAction={canOpen ? <FullViewAction onOpen={openFullView} /> : undefined}
-        onClick={canOpen && model.rowOpensSession ? openFullView : undefined}
-      >
-        {model.hasInlineSteps ? (
-          <SubAgentActivity childSessionId={childSessionId} calls={childCalls} />
-        ) : undefined}
-      </BasicTool>
+      <AgentRow
+        testID="agent-call-row"
+        handle={handle ?? model.subagentType}
+        title={title}
+        subtitle={model.description || null}
+        state={AGENT_CALL_LABEL[state]}
+        glyph={AGENT_CALL_GLYPH[state]}
+        body={
+          hasBody ? (
+            <AgentRowBody>
+              {prompt && prompt !== model.description ? (
+                <Text numberOfLines={4} style={[TURN_TYPE.sm, { color: palette.mutedForeground }]}>
+                  {prompt}
+                </Text>
+              ) : null}
+              {errorText ? <AgentFailure sentence="The agent stopped before it finished." raw={errorText} toolName={call.name} /> : null}
+              {canOpen ? <OpenAgentAction label={`Open ${title}`} onPress={() => openSession(childSessionId!)} /> : null}
+            </AgentRowBody>
+          ) : undefined
+        }
+      />
       <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
     </>
   );

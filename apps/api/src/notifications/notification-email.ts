@@ -27,8 +27,6 @@ export const KIND_LABELS: Record<NotificationKindName, string> = {
   automation_recovered: 'Trigger recovered',
   capture_device_down: 'Computer not recording',
   capture_device_recovered: 'Computer recording again',
-  message: 'New message',
-  artifact_comment: 'Artifact comment',
 };
 
 /** The settings pane that holds the per-kind Push and Email switches. */
@@ -36,10 +34,15 @@ const SETTINGS_PATH = '/settings/sessions';
 const SETTINGS_LINK_LABEL = 'Settings → Notifications';
 const SETTINGS_LEAD = 'Change which notifications get email in';
 
-/** An app path as a link that works from a mail client. */
+/**
+ * An app path as a link that works from a mail client. A notification row
+ * keeps the `/projects/…` path that shipped mobile apps parse (push-payload.ts);
+ * the email names the canonical web page, `/workspaces/…`.
+ */
 export function absoluteAppUrl(path: string): string {
   const base = (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
-  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  const rooted = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${rooted.replace(/^\/projects(?=[/?#]|$)/, '/workspaces')}`;
 }
 
 function message(parts: {
@@ -172,7 +175,7 @@ export function renderNotificationDigestEmail(input: { items: readonly Notificat
         ...(moreLine ? [moreLine] : []),
       ],
     },
-    cta: { url: absoluteAppUrl('/projects'), label: 'Open Kortix' },
+    cta: { url: absoluteAppUrl('/workspaces'), label: 'Open Kortix' },
     note: 'You get this email for unread questions, failed sessions and shares.',
   });
 }

@@ -1,5 +1,6 @@
 import { KORTIX_WORDMARK } from '@kortix/shared/wordmark';
 
+import { boxBottom as drawBottom, boxLine as drawLine, boxTop as drawTop } from './box.ts';
 import { C, pad } from './style';
 
 const TAGLINE = 'The open-source CompanyOS';
@@ -8,7 +9,7 @@ export function printBanner(): void {
   const lines: string[] = ['', ''];
   for (const row of KORTIX_WORDMARK) lines.push(`   ${C.cyan}${row}${C.reset}`);
   lines.push('');
-  lines.push(`   ${C.white}${TAGLINE}${C.reset}   ${C.faded}·  configure your Kortix project${C.reset}`);
+  lines.push(`   ${C.white}${TAGLINE}${C.reset}   ${C.faded}·  configure your Kortix workspace${C.reset}`);
   lines.push('');
   process.stdout.write(lines.join('\n') + '\n');
 }
@@ -16,20 +17,9 @@ export function printBanner(): void {
 /** Width of the inner content area inside the get-started box. */
 const BOX_WIDTH = 70;
 
-function boxLine(content: string): string {
-  return `${C.faded}║${C.reset} ${pad(content, BOX_WIDTH)} ${C.faded}║${C.reset}`;
-}
-
-function boxTop(title: string): string {
-  const inner = ` ${title} `;
-  const fill = '═'.repeat(Math.max(0, BOX_WIDTH + 2 - inner.length));
-  const half = Math.floor(fill.length / 2);
-  return `${C.faded}╔${'═'.repeat(half)}${C.reset}${C.bold}${inner}${C.reset}${C.faded}${'═'.repeat(fill.length - half)}╗${C.reset}`;
-}
-
-function boxBottom(): string {
-  return `${C.faded}╚${'═'.repeat(BOX_WIDTH + 2)}╝${C.reset}`;
-}
+const boxLine = (content: string): string => drawLine(content, BOX_WIDTH, C.faded);
+const boxTop = (title: string): string => drawTop(title, BOX_WIDTH, C.faded);
+const boxBottom = (): string => drawBottom(BOX_WIDTH, C.faded);
 
 /** Nested inset card for the "ask <agent>" panel. Spans the full
  * content area of the outer box so the right edges align. */
@@ -80,7 +70,7 @@ export function printGetStarted({ prompt }: GetStartedInput): void {
   lines.push(
     boxLine(`${C.dim}Paste this prompt into your ${C.reset}${C.bold}coding agent of choice${C.reset}`),
   );
-  lines.push(boxLine(`${C.dim}to configure your Kortix project:${C.reset}`));
+  lines.push(boxLine(`${C.dim}to configure your Kortix workspace:${C.reset}`));
   lines.push(boxLine(''));
 
   const innerInsetWidth = BOX_WIDTH - 4;

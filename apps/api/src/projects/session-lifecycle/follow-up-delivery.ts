@@ -26,6 +26,7 @@ export type FollowUpOutcome = 'delivered' | 'queued' | 'failed' | 'no-session';
 
 export async function deliverThroughQueue(
   command: ContinueSessionCommand & { idempotencyKey: string },
+  options: { wait?: boolean } = {},
 ): Promise<FollowUpOutcome> {
   const [session] = await db
     .select({
@@ -54,10 +55,17 @@ export async function deliverThroughQueue(
     idempotencyKey: command.idempotencyKey,
     ...(command.parts ? { parts: command.parts } : {}),
     ...(command.overrides ? { overrides: command.overrides } : {}),
-    ...(command.opencodeEnv ? { opencodeEnv: command.opencodeEnv } : {}),
     directFollowUp: true,
   });
-  await drainSessionLifecycleQueue({ idempotencyKey: command.idempotencyKey, burst: false, coalesce: false });
+  // `wait: false`: the row is durable now, so the caller answers at once and
+  // the drain (which may wake a parked box) runs on without it. A Review
+  // decision must not wait for a box to start.
+  const drained = drainSessionLifecycleQueue({ idempotencyKey: command.idempotencyKey, burst: false, coalesce: false });
+  if (options.wait === false) {
+    void drained.catch(() => {});
+    return 'queued';
+  }
+  await drained;
 
   const [after] = await db
     .select({ status: sessionLifecycleCommands.status, lastError: sessionLifecycleCommands.lastError })

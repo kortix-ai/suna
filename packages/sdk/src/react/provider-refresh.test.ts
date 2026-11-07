@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 
-import { providerConnectedInSecrets, refreshProjectProviderState } from './provider-refresh';
+import { providerConnectedInSecrets, refreshWorkspaceProviderState } from './provider-refresh';
 import { qk } from './query-keys';
 
 describe('providerConnectedInSecrets', () => {
@@ -54,7 +54,7 @@ describe('refreshProjectProviderState — key wiring', () => {
       removeQueries: () => {},
     } as unknown as QueryClient;
 
-    refreshProjectProviderState(queryClient, 'proj_1');
+    refreshWorkspaceProviderState(queryClient, 'proj_1');
 
     const secretsKey = qk.project.secrets('proj_1');
     expect(invalidated).toContainEqual({ queryKey: secretsKey });
@@ -70,7 +70,7 @@ describe('refreshProjectProviderState — key wiring', () => {
 // models do not come from `['project-providers', id, 'gateway']`'s own fetcher
 // — that fetcher is a PROJECTION. The bytes come from `/model-picker`, cached
 // one key away under `qk.project.modelPicker(id)` and read through
-// `queryClient.fetchQuery` (see use-opencode-sessions/providers.ts, which
+// `queryClient.fetchQuery` (see use-runtime-sessions/providers.ts, which
 // routes through the shared entry so a session open makes ONE request instead
 // of two). `fetchQuery` honours staleTime, and `modelPicker` is the `config`
 // tier — 60s. So re-running the projection inside that window re-read the
@@ -82,7 +82,7 @@ describe('refreshProjectProviderState — the gateway catalog behind the picker'
   const PROJECT_ID = 'proj_1';
 
   /**
-   * The real shape from `use-opencode-sessions/providers.ts`: the gateway
+   * The real shape from `use-runtime-sessions/providers.ts`: the gateway
    * provider entry is `staleTime: Infinity`, and its queryFn reads the catalog
    * through the SHARED `qk.project.modelPicker` entry at the `config` tier.
    */
@@ -114,7 +114,7 @@ describe('refreshProjectProviderState — the gateway catalog behind the picker'
     const { queryClient, catalogKey } = gatewayPickerHarness();
     queryClient.setQueryData(catalogKey, { models: {} });
 
-    refreshProjectProviderState(queryClient, PROJECT_ID);
+    refreshWorkspaceProviderState(queryClient, PROJECT_ID);
 
     // `fetchQuery` goes to the network only for a query that is stale OR
     // invalidated. Inside the 60s config window, invalidated is the only one
@@ -133,7 +133,7 @@ describe('refreshProjectProviderState — the gateway catalog behind the picker'
     await harness.queryClient.refetchQueries({ queryKey: harness.providersKey, type: 'all' });
     expect(harness.count()).toBe(1);
 
-    refreshProjectProviderState(harness.queryClient, PROJECT_ID);
+    refreshWorkspaceProviderState(harness.queryClient, PROJECT_ID);
     await harness.queryClient.refetchQueries({ queryKey: harness.providersKey, type: 'all' });
 
     expect(harness.count()).toBe(2);
@@ -184,7 +184,7 @@ describe('refreshProjectProviderState — follow-up passes do not discard in-fli
     const unsubscribe = observer.subscribe(() => {});
 
     // The write just succeeded; the immediate pass starts a post-write read.
-    refreshProjectProviderState(queryClient, PROJECT_ID);
+    refreshWorkspaceProviderState(queryClient, PROJECT_ID);
     const postWriteRead = pending.length - 1;
     expect(postWriteRead).toBeGreaterThanOrEqual(0);
 
@@ -216,7 +216,7 @@ describe('refreshProjectProviderState — follow-up passes do not discard in-fli
     void queryClient.refetchQueries({ queryKey: key });
     const preWriteRead = pending.length - 1;
 
-    refreshProjectProviderState(queryClient, PROJECT_ID);
+    refreshWorkspaceProviderState(queryClient, PROJECT_ID);
     const postWriteRead = pending.length - 1;
     expect(postWriteRead).toBeGreaterThan(preWriteRead);
 
@@ -251,7 +251,7 @@ describe('refreshProjectProviderState — hosts without window', () => {
     }) as unknown as typeof setTimeout;
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-    refreshProjectProviderState(queryClient, 'proj_1');
+    refreshWorkspaceProviderState(queryClient, 'proj_1');
 
     expect(delays).toEqual([500, 1500, 3000, 6000]);
   });
@@ -265,7 +265,7 @@ describe('refreshProjectProviderState — hosts without window', () => {
     }) as unknown as typeof setTimeout;
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-    refreshProjectProviderState(queryClient, 'proj_1', { expectProviderId: 'anthropic' });
+    refreshWorkspaceProviderState(queryClient, 'proj_1', { expectProviderId: 'anthropic' });
 
     expect(delays).toEqual([2500]);
   });

@@ -451,7 +451,7 @@ export function Composer({
           width={pickerWidth}
           onClose={closePicker}
           onUnavailable={(model) =>
-            onToast?.(`${model.modelName} is turned off for this project.`, 'error')
+            onToast?.(`${model.modelName} is turned off for this workspace.`, 'error')
           }
           onPick={(key) => {
             selection.setModel(key);

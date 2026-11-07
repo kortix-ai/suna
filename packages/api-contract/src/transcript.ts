@@ -3,15 +3,13 @@
  *
  * A message is `{ info, parts }`. The session runtime streams it as
  * `{ type, properties }` events, stores it, and serves it back from
- * `/kortix/runtime/messages`. pi emits these types directly. The OpenCode
- * adapter passes OpenCode's frames through, because v1 keeps OpenCode 1.18's
- * field names: an OpenCode value assigns to these types, and a type test
- * (`apps/api/src/__tests__/unit-transcript-contract-drift.test.ts`) fails when
- * an OpenCode upgrade stops that.
+ * `/kortix/runtime/messages`. pi emits these types directly. v1 keeps
+ * OpenCode 1.18's field names, so a message an OpenCode box stored before
+ * 2026-10-30 reads as these types too.
  *
  * `@kortix/sdk` is published and cannot import this private package. It keeps
  * a copy of these types in `packages/sdk/src/core/runtime/transcript-types.ts`;
- * the same drift test holds the two copies equal.
+ * `transcript-types.test.ts` there holds the two copies equal below this header.
  *
  * Types only: kortixd bundles this file into the guest binary.
  */
@@ -492,6 +490,13 @@ export type KortixSessionEvent =
       properties: { sessionID: string; requestID: string; answers: RuntimeQuestionAnswer[] };
     }
   | { type: 'question.rejected'; properties: { sessionID: string; requestID: string } }
+  /**
+   * Nobody answered live, so the call stopped waiting and the turn went on. The
+   * request stays open server-side (Review, "Needs you"); its answer arrives
+   * as a new message. A client drops its live card and shows the stored ask.
+   */
+  | { type: 'question.parked'; properties: { sessionID: string; requestID: string } }
+  | { type: 'permission.parked'; properties: { sessionID: string; requestID: string } }
   | { type: 'todo.updated'; properties: { sessionID: string; todos: KortixTodo[] } };
 
 export type KortixSessionEventType = KortixSessionEvent['type'];

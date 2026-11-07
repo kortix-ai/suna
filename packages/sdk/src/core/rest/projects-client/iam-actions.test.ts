@@ -7,6 +7,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { PROJECT_ACTIONS as API_PROJECT_ACTIONS } from '../../../../../../apps/api/src/iam/actions';
+import { WORKSPACE_ACTION_BY_LEGACY as SHARED_WORKSPACE_ACTION_BY_LEGACY } from '../../../../../shared/src/workspace-actions';
 import * as root from '../../../index';
 import {
   PROJECT_ACTIONS,
@@ -14,19 +15,21 @@ import {
   TRIGGER_CONTROL_ACTIONS,
   changeRequestControlsFrom,
   reviewVerdictAllowed,
+  toLegacyAction,
+  toWorkspaceAction,
   triggerControlsFrom,
+  WORKSPACE_ACTION_BY_LEGACY,
 } from './iam-actions';
 import type { ReviewItem } from './review-items';
 
 const allow = (allowed: boolean) => ({ allowed });
 
 describe('PROJECT_ACTIONS', () => {
-  test('exposes the artifact comment permission', () => {
-    expect(PROJECT_ACTIONS).toHaveProperty('PROJECT_ARTIFACT_COMMENT', 'project.artifact.comment');
-  });
-
-  test('is the API catalog, key for key and leaf for leaf', () => {
-    expect(PROJECT_ACTIONS).toEqual(API_PROJECT_ACTIONS);
+  test('is the API catalog, key for key and leaf for leaf, plus the deprecated Rooms leaves', () => {
+    // Rooms were removed (2026-11): the SDK keeps its two leaves, deprecated, until the next major.
+    const { PROJECT_ROOM_READ, PROJECT_ROOM_WRITE, ...live } = PROJECT_ACTIONS;
+    expect([PROJECT_ROOM_READ, PROJECT_ROOM_WRITE]).toEqual(['project.room.read', 'project.room.write']);
+    expect(live).toEqual(API_PROJECT_ACTIONS);
   });
 
   test('the root entry exports the catalog, the trigger controls and the review controls', () => {
@@ -245,5 +248,39 @@ describe('reviewVerdictAllowed', () => {
   test('an unresolved probe allows nothing on a change or a native item (fail closed)', () => {
     expect(reviewVerdictAllowed(CHANGE, 'approve', {})).toBe(false);
     expect(reviewVerdictAllowed(OUTPUT, 'dismiss', {})).toBe(false);
+  });
+});
+
+// Workspaces (one scope): every IAM action has one workspace.* name. The API
+// accepts both names forever and answers with both. `@kortix/sdk` is published
+// and cannot import the private `@kortix/shared`, so it carries its own copy of
+// the one alias map; this test holds the copy equal to the source.
+describe('workspace action names', () => {
+  test('the alias map is byte-identical to @kortix/shared/workspace-actions', () => {
+    expect(WORKSPACE_ACTION_BY_LEGACY).toEqual(SHARED_WORKSPACE_ACTION_BY_LEGACY);
+  });
+
+  test('every project leaf has a workspace name, and the two convert both ways', () => {
+    const { PROJECT_ROOM_READ: _r, PROJECT_ROOM_WRITE: _w, ...live } = PROJECT_ACTIONS;
+    for (const legacy of Object.values(live)) {
+      const workspace = toWorkspaceAction(legacy);
+      expect(workspace.startsWith('workspace.')).toBe(true);
+      expect(toLegacyAction(workspace)).toBe(legacy);
+    }
+    expect(toWorkspaceAction('project.session.start')).toBe('workspace.session.start');
+    expect(toWorkspaceAction('billing.read')).toBe('workspace.billing.read');
+    expect(toLegacyAction('workspace.read')).toBe('project.read');
+  });
+
+  test('an unknown or retired name passes through unchanged', () => {
+    expect(toWorkspaceAction('project.room.read')).toBe('project.room.read');
+    expect(toLegacyAction('workspace.nope')).toBe('workspace.nope');
+    expect(toLegacyAction('constructor')).toBe('constructor');
+  });
+
+  test('the root entry exports the workspace names', () => {
+    expect(root.WORKSPACE_ACTION_BY_LEGACY).toBe(WORKSPACE_ACTION_BY_LEGACY);
+    expect(root.toWorkspaceAction).toBe(toWorkspaceAction);
+    expect(root.toLegacyAction).toBe(toLegacyAction);
   });
 });

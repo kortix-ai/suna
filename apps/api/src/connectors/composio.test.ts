@@ -1,4 +1,5 @@
 import { expect, setSystemTime, test } from 'bun:test';
+import { BadRequestError } from '@composio/client';
 import type { HTTPException } from 'hono/http-exception';
 import type { ComposioCatalogClient } from './composio-catalog-search';
 import {
@@ -634,6 +635,29 @@ test('executeComposio rethrows any other Composio failure', async () => {
   ).rejects.toThrow('500 Internal');
 });
 
+test('executeComposio turns an HTML error page from Composio\'s edge into a short upstream 502', async () => {
+  const resumed = session({
+    id: 'persisted-session',
+    toolkit: { slug: 'linear', name: 'Linear', isNoAuth: true },
+    execute: async () => {
+      throw Object.assign(
+        new Error('502 <!DOCTYPE html>\n<!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]--><title>Bad gateway</title>'),
+        { status: 502 },
+      );
+    },
+  });
+  const result = await executeComposio({
+    projectId: 'project-1', connectorSlug: 'linear', connectionId: 'connection-1',
+    sessionId: 'persisted-session', toolkit: 'linear', toolSlug: 'LINEAR_RUN_QUERY_OR_MUTATION',
+    args: {}, connectedAccountId: null, runtime: fakeRuntime({ resumed }),
+  });
+  expect(result).toEqual({
+    ok: false,
+    status: 502,
+    data: 'composio_upstream_unavailable: Composio answered 502 with an HTML error page',
+  });
+});
+
 test('executeComposio supports no-auth direct tools without an account id', async () => {
   const resumed = session({
     id: 'persisted-session',
@@ -769,6 +793,43 @@ test('composioCatalogPage uses a discovery-only identity and session.toolkits pa
       options: { cursor: 'cursor-1', limit: 20 },
     },
   ]);
+});
+
+test('composioCatalogPage restarts at the first page when the provider cannot decode the cursor', async () => {
+  const cursors: Array<string | undefined> = [];
+  const created = session();
+  created.toolkits = async (options) => {
+    cursors.push(options?.cursor);
+    if (options?.cursor) {
+      throw BadRequestError.generate(
+        400,
+        { error: { message: 'Pagination Error: Failed to decode cursor', code: 10400, status: 400 } },
+        undefined,
+        new Headers(),
+      );
+    }
+    return { items: [{ slug: 'first', name: 'First', isNoAuth: true }], cursor: 'next', totalPages: 2 };
+  };
+
+  const result = await composioCatalogPage({
+    projectId: 'project-1',
+    cursor: 'not-base64!',
+    runtime: fakeRuntime({ created }),
+  });
+
+  expect(cursors).toEqual(['not-base64!', undefined]);
+  expect(result).toMatchObject({ items: [{ slug: 'first' }], cursor: 'next' });
+});
+
+test('composioCatalogPage still throws a provider 400 that is not a cursor error', async () => {
+  const created = session();
+  created.toolkits = async () => {
+    throw BadRequestError.generate(400, { error: { code: 10401 } }, undefined, new Headers());
+  };
+
+  await expect(
+    composioCatalogPage({ projectId: 'project-1', cursor: 'c', runtime: fakeRuntime({ created }) }),
+  ).rejects.toBeInstanceOf(BadRequestError);
 });
 
 // Every search answers from the full catalogue snapshot, whatever its length,
@@ -1277,7 +1338,7 @@ function routerNeedingTwitterConfig(calls: Array<Record<string, unknown>>, creat
 }
 
 function authConfigClient(
-  items: Array<{ id: string; status: 'ENABLED' | 'DISABLED'; is_composio_managed?: boolean; toolkit: { slug: string }; created_at?: string }>,
+  items: Array<{ id: string; status: 'ENABLED' | 'DISABLED'; is_composio_managed?: boolean; auth_scheme?: string; toolkit: { slug: string }; created_at?: string }>,
   calls: Array<Record<string, unknown>>,
   catalog: Array<Record<string, unknown>> = [],
 ): ComposioCatalogClient {
@@ -1368,6 +1429,137 @@ test('composioCatalogTools maps an invalid toolkit refusal to 422', async () => 
     }),
   ).rejects.toMatchObject({ status: 422, message: expect.stringContaining('anthropic') });
   expect(calls.some((call) => call.type === 'auth-config-list')).toBe(false);
+});
+
+const OWN_YOUTUBE_APP = {
+  id: 'ac_own_youtube',
+  status: 'ENABLED' as const,
+  is_composio_managed: false,
+  auth_scheme: 'OAUTH2',
+  toolkit: { slug: 'youtube' },
+  created_at: '2026-11-04T10:00:00Z',
+};
+
+test('composioConnectUrl signs a new account in with the operator’s own OAuth app over Composio’s managed one', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const result = await composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'youtube',
+    app: 'youtube',
+    connectionId: 'connection-yt',
+    stableUserId: 'kortix-connection:connection-yt',
+    runtime: fakeRuntime({ created: session({ toolkit: { slug: 'youtube', name: 'YouTube', isNoAuth: false } }), calls }),
+    catalogClient: authConfigClient([OWN_YOUTUBE_APP], calls),
+  });
+  expect(result).toMatchObject({ connectUrl: 'https://composio.test/connect', connected: false });
+  expect(calls.map((call) => call.type).slice(0, 2)).toEqual(['auth-config-list', 'create']);
+  expect(calls[0]).toMatchObject({ query: { toolkit_slug: 'youtube', is_composio_managed: false } });
+  expect(calls[1]).toMatchObject({
+    userId: 'kortix-connection:connection-yt',
+    config: { toolkits: ['youtube'], authConfigs: { youtube: 'ac_own_youtube' } },
+  });
+});
+
+test('composioConnectUrl keeps Composio’s managed app when the operator holds only an API-key config', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  await composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'youtube',
+    app: 'youtube',
+    connectionId: 'connection-yt-key',
+    stableUserId: 'kortix-connection:connection-yt-key',
+    runtime: fakeRuntime({ created: session({ toolkit: { slug: 'youtube', name: 'YouTube', isNoAuth: false } }), calls }),
+    catalogClient: authConfigClient([{ ...OWN_YOUTUBE_APP, id: 'ac_key', auth_scheme: 'API_KEY' }], calls),
+  });
+  const create = calls.find((call) => call.type === 'create') as { config: Record<string, unknown> };
+  expect(create.config.toolkits).toEqual(['youtube']);
+  expect(create.config.authConfigs).toBeUndefined();
+});
+
+test('composioConnectUrl connects with the managed app when the own-app lookup fails', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const failing: ComposioCatalogClient = {
+    toolkits: { async list() { return { items: [] }; } },
+    authConfigs: {
+      async list() {
+        calls.push({ type: 'auth-config-list' });
+        throw new Error('503 Service Unavailable');
+      },
+    },
+  };
+  const result = await composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'youtube',
+    app: 'youtube',
+    connectionId: 'connection-yt-down',
+    stableUserId: 'kortix-connection:connection-yt-down',
+    runtime: fakeRuntime({ created: session({ toolkit: { slug: 'youtube', name: 'YouTube', isNoAuth: false } }), calls }),
+    catalogClient: failing,
+  });
+  expect(result.connectUrl).toBe('https://composio.test/connect');
+  const create = calls.find((call) => call.type === 'create') as { config: Record<string, unknown> };
+  expect(create.config.authConfigs).toBeUndefined();
+});
+
+test('composioConnectUrl connects without the own app when Composio refuses it at session create', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const created = session({ toolkit: { slug: 'youtube', name: 'YouTube', isNoAuth: false } });
+  const runtime: ComposioRuntime = {
+    sessions: {
+      async create(userId, config) {
+        calls.push({ type: 'create', userId, config });
+        if ((config as { authConfigs?: Record<string, string> } | undefined)?.authConfigs?.youtube) {
+          throw new Error('404 {"error":{"message":"Auth config ac_own_youtube not found"}}');
+        }
+        return created;
+      },
+      async use(sessionId) {
+        calls.push({ type: 'use', sessionId });
+        return created;
+      },
+    },
+  };
+  const result = await composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'youtube',
+    app: 'youtube',
+    connectionId: 'connection-yt-gone',
+    stableUserId: 'kortix-connection:connection-yt-gone',
+    runtime,
+    catalogClient: authConfigClient([OWN_YOUTUBE_APP], calls),
+  });
+  expect(result.connectUrl).toBe('https://composio.test/connect');
+  const creates = calls.filter((call) => call.type === 'create') as Array<{ config: Record<string, unknown> }>;
+  expect(creates).toHaveLength(2);
+  expect(creates[0]!.config.authConfigs).toEqual({ youtube: 'ac_own_youtube' });
+  expect(creates[1]!.config.authConfigs).toBeUndefined();
+});
+
+test('executeComposio on a stored session never looks up the own app: an account keeps the app it signed in with', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const resumed = session({
+    id: 'trs_managed',
+    toolkit: {
+      slug: 'youtube',
+      name: 'YouTube',
+      isNoAuth: false,
+      connection: { isActive: true, connectedAccount: { id: 'ca_managed', status: 'ACTIVE' } },
+    } as ToolkitItem,
+  });
+  const result = await executeComposio({
+    projectId: 'project-1',
+    connectorSlug: 'youtube',
+    connectionId: 'connection-yt-old',
+    sessionId: 'trs_managed',
+    toolkit: 'youtube',
+    toolSlug: 'YOUTUBE_LIST_CHANNELS',
+    args: {},
+    connectedAccountId: 'ca_managed',
+    runtime: fakeRuntime({ resumed, calls }),
+    catalogClient: authConfigClient([OWN_YOUTUBE_APP], calls),
+  });
+  expect(result.ok).toBe(true);
+  expect(calls.map((call) => call.type)).toEqual(['use']);
 });
 
 test('composioConnectUrl authorizes X through the operator’s auth config', async () => {

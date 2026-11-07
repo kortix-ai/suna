@@ -11,12 +11,10 @@ import {
   WORKSPACE_SWITCHER_ITEM_ID,
   buildRootSuggestions,
 } from '@/features/workspace/command-palette';
-import { workspaceAccountLabel } from '@kortix/ui/workspace/sidebar/workspace-grouping';
 import {
   ROOT_WORKSPACE_RESULT_LIMIT,
   buildWorkspacePaletteRows,
   filterWorkspacePaletteRows,
-  groupWorkspacePaletteRows,
   recentWorkspaceRows,
   rootWorkspaceResults,
   workspacePageResults,
@@ -62,8 +60,8 @@ function workspace(
 }
 
 const ACCOUNTS = [
-  { account_id: 'acct-personal', name: "Jay's Account" },
-  { account_id: 'acct-acme', name: 'Acme' },
+  { account_id: 'acct-personal', name: "Jay's Account", account_role: 'owner' },
+  { account_id: 'acct-acme', name: 'Acme', account_role: 'member' },
 ];
 
 const SITE = workspace('Site', 'acct-personal', { last_opened_at: '2026-08-20T00:00:00.000Z' });
@@ -84,123 +82,52 @@ function rowsWithActive(activeWorkspaceId: string | null) {
 const names = (rows: { workspace: KortixProject }[]) => rows.map((r) => r.workspace.name);
 const ids = (rows: { workspace: KortixProject }[]) => rows.map((r) => r.workspace.project_id);
 
-describe('buildWorkspacePaletteRows', () => {
+describe('buildWorkspacePaletteRows — one flat list, the sidebar order', () => {
   test('lists workspaces from EVERY account, not just the active one', () => {
-    // Defect 1. The palette fetched `listProjectsForAccount(activeAccountId)`,
-    // one account. A workspace in a second account was reachable with the
-    // trackpad (the sidebar fans out over all accounts) and unreachable from
-    // the keyboard.
-    const rows = rowsWithActive(SITE.project_id);
-
-    expect(ids(rows).sort()).toEqual(ALL.map((w) => w.project_id).sort());
-    expect(new Set(rows.map((r) => r.accountId))).toEqual(new Set(['acct-personal', 'acct-acme']));
+    expect(ids(rowsWithActive(null)).sort()).toEqual(ALL.map((p) => p.project_id).sort());
   });
 
-  test('sorts the active account first, then by most recently opened', () => {
-    // The sidebar's order, because it is literally the sidebar's function.
-    // Active workspace is in acct-personal, so that account leads; inside it
-    // Notes (Aug 25) beats Site (Aug 20).
+  test('sorts by most recently opened across accounts, with no account grouping', () => {
     expect(names(rowsWithActive(SITE.project_id))).toEqual(['Notes', 'Site', 'Site', 'Billing']);
-  });
-
-  test('falls back to alphabetical account order when no workspace is open', () => {
-    // Acme < Jay's Account. Nothing is active, so there is no account to
-    // promote and the tie-break is the account name.
     expect(rowsWithActive(null).map((r) => r.accountId)).toEqual([
-      'acct-acme',
-      'acct-acme',
       'acct-personal',
       'acct-personal',
+      'acct-acme',
+      'acct-acme',
     ]);
   });
 
   test('marks exactly one row active, and only when that workspace is open', () => {
-    const rows = rowsWithActive(ACME_SITE.project_id);
-    expect(rows.filter((r) => r.isActive).map((r) => r.workspace.project_id)).toEqual([
+    expect(rowsWithActive(ACME_SITE.project_id).filter((r) => r.isActive).map((r) => r.workspace.project_id)).toEqual([
       ACME_SITE.project_id,
     ]);
     expect(rowsWithActive(null).some((r) => r.isActive)).toBe(false);
   });
 
-  test('carries the display account label, not the raw account name', () => {
-    // The row shows "Jay", so the row must SEARCH "Jay" too — see the
-    // search-text tests below.
-    const personal = rowsWithActive(null).filter((r) => r.accountId === 'acct-personal');
-    expect(personal.map((r) => r.accountName)).toEqual(['Jay', 'Jay']);
-  });
-
   test('keeps a workspace whose account is missing from the roster', () => {
-    // An orphan (a shared workspace in an account the user is not a member of)
-    // must still be switchable — `groupWorkspacesByAccount` guarantees this and
-    // the palette must not undo it by flattening.
-    const orphan = workspace('Shared', 'acct-unknown');
-    const rows = buildWorkspacePaletteRows({
-      accounts: ACCOUNTS,
-      workspaces: [...ALL, orphan],
-      activeWorkspaceId: null,
-    });
-    expect(ids(rows)).toContain(orphan.project_id);
-    expect(rows.find((r) => r.workspace === orphan)?.accountName).toBe('Account');
-  });
-});
-
-describe('workspaceAccountLabel', () => {
-  test('drops the personal-account suffix, straight or curly apostrophe', () => {
-    expect(workspaceAccountLabel("Jay's Account")).toBe('Jay');
-    expect(workspaceAccountLabel('Jay’s Account')).toBe('Jay');
-  });
-
-  test('leaves an ordinary account name alone', () => {
-    expect(workspaceAccountLabel('Acme')).toBe('Acme');
-    expect(workspaceAccountLabel('Account Managers')).toBe('Account Managers');
-  });
-
-  test('never returns an empty label', () => {
-    expect(workspaceAccountLabel('')).toBe('Account');
-    expect(workspaceAccountLabel('   ')).toBe('Account');
-    expect(workspaceAccountLabel(null)).toBe('Account');
-    expect(workspaceAccountLabel(undefined)).toBe('Account');
-    // Would strip to nothing — falls back to the trimmed original.
-    expect(workspaceAccountLabel("'s Account")).toBe("'s Account");
+    const orphan = workspace('Shared', 'acct-elsewhere');
+    const rows = buildWorkspacePaletteRows({ accounts: ACCOUNTS, workspaces: [orphan], activeWorkspaceId: null });
+    expect(names(rows)).toEqual(['Shared']);
   });
 });
 
 describe('search text and cmdk value', () => {
-  const row = rowsWithActive(null).find((r) => r.workspace === ACME_SITE)!;
+  const rows = rowsWithActive(null);
 
-  test('search text is exactly what the row displays', () => {
-    expect(workspacePaletteSearchText(row)).toBe('Site Acme');
+  test('search text is exactly what the row displays: the workspace name', () => {
+    expect(rows.map(workspacePaletteSearchText)).toEqual(names(rows));
   });
 
   test('the workspace id is in the cmdk value but NOT in the search text', () => {
-    // The id is the only thing that separates two same-named workspaces, so
-    // cmdk needs it for identity. Putting it in the haystack would repeat the
-    // `nav-*`/`proj-*` defect: matching on a string no user has ever seen.
-    expect(workspacePaletteValue(row)).toContain(ACME_SITE.project_id);
-    expect(workspacePaletteSearchText(row)).not.toContain(ACME_SITE.project_id);
+    const row = rows[0]!;
+    expect(workspacePaletteValue(row)).toContain(row.workspace.project_id);
+    expect(workspacePaletteSearchText(row)).not.toContain(row.workspace.project_id);
   });
 
-  test('two same-named workspaces in different accounts get different values', () => {
-    // cmdk 0.2.1 marks every row sharing a `value` as aria-selected and fires
-    // the first on Enter. "Site" exists in both accounts here.
-    const values = rowsWithActive(null).map(workspacePaletteValue);
-    expect(new Set(values).size).toBe(values.length);
-  });
-
-  test('every row the palette can render at once has a unique value', () => {
-    // Same guarantee as above but over the whole rendered set, including the
-    // pathological case the account label cannot separate: identical names in
-    // the SAME account.
-    const twins = [
-      workspace('Website', 'acct-acme', { project_id: 'p-twin-a' }),
-      workspace('Website', 'acct-acme', { project_id: 'p-twin-b' }),
-    ];
-    const values = buildWorkspacePaletteRows({
-      accounts: ACCOUNTS,
-      workspaces: [...ALL, ...twins],
-      activeWorkspaceId: null,
-    }).map(workspacePaletteValue);
-    expect(new Set(values).size).toBe(values.length);
+  test('two same-named workspaces get different values', () => {
+    const sites = rows.filter((r) => r.workspace.name === 'Site');
+    expect(sites).toHaveLength(2);
+    expect(workspacePaletteValue(sites[0]!)).not.toBe(workspacePaletteValue(sites[1]!));
   });
 });
 
@@ -208,150 +135,45 @@ describe('filterWorkspacePaletteRows', () => {
   const rows = rowsWithActive(null);
 
   test('an empty query returns everything', () => {
-    expect(filterWorkspacePaletteRows(rows, '')).toHaveLength(ALL.length);
-    expect(filterWorkspacePaletteRows(rows, '   ')).toHaveLength(ALL.length);
+    expect(filterWorkspacePaletteRows(rows, '   ')).toEqual(rows);
   });
 
-  test('matches the workspace name, case-insensitively', () => {
-    expect(names(filterWorkspacePaletteRows(rows, 'not'))).toEqual(['Notes']);
-    expect(names(filterWorkspacePaletteRows(rows, 'NOTES'))).toEqual(['Notes']);
+  test('matches the workspace name, case-insensitively, every word required', () => {
+    expect(names(filterWorkspacePaletteRows(rows, 'SITE'))).toEqual(['Site', 'Site']);
+    expect(filterWorkspacePaletteRows(rows, 'site notes')).toEqual([]);
   });
 
-  test('matches the account label, so an account name lists its workspaces', () => {
-    expect(names(filterWorkspacePaletteRows(rows, 'acme')).sort()).toEqual(['Billing', 'Site']);
-  });
-
-  test('matches on the STRIPPED account label, which is what the row shows', () => {
-    // "jay", not "jay's account" — searching for what is on screen must work.
-    expect(names(filterWorkspacePaletteRows(rows, 'jay')).sort()).toEqual(['Notes', 'Site']);
-  });
-
-  test('every word must match, and order does not matter', () => {
-    expect(ids(filterWorkspacePaletteRows(rows, 'acme site'))).toEqual([ACME_SITE.project_id]);
-    expect(ids(filterWorkspacePaletteRows(rows, 'site acme'))).toEqual([ACME_SITE.project_id]);
-    expect(filterWorkspacePaletteRows(rows, 'acme notes')).toHaveLength(0);
-  });
-
-  test('a query that matches nothing returns nothing rather than everything', () => {
-    expect(filterWorkspacePaletteRows(rows, 'zzzz')).toHaveLength(0);
+  test('does not match an account name: the account is not a separate thing', () => {
+    expect(filterWorkspacePaletteRows(rows, 'acme')).toEqual([]);
   });
 });
 
 describe('rootWorkspaceResults', () => {
-  test('answers a query while the user is INSIDE a workspace', () => {
-    // Defect 2, and the whole point of the change. The old code was
-    // `if (!hasQuery || projectId) return []` — workspaces were suppressed
-    // whenever a workspace was open, which is where the palette always is.
+  test('answers a query while the user is INSIDE a workspace, the open one included', () => {
     const rows = rowsWithActive(SITE.project_id);
-    expect(names(rootWorkspaceResults(rows, 'notes'))).toEqual(['Notes']);
-  });
-
-  test('finds the open workspace alongside same-named workspaces in other accounts', () => {
-    const rows = rowsWithActive(SITE.project_id);
-    expect(ids(rootWorkspaceResults(rows, 'site'))).toEqual([
-      SITE.project_id,
-      ACME_SITE.project_id,
-    ]);
-  });
-
-  test('finds a newly created workspace by its exact name while it is open', () => {
-    const created = workspace('dogfood-palette-search', 'acct-personal');
-    const rows = buildWorkspacePaletteRows({
-      accounts: ACCOUNTS,
-      workspaces: [...ALL, created],
-      activeWorkspaceId: created.project_id,
-    });
-    expect(ids(rootWorkspaceResults(rows, created.name))).toEqual([created.project_id]);
-    expect(ids(rootWorkspaceResults(rows, `  ${created.name.toUpperCase()}  `))).toEqual([
-      created.project_id,
-    ]);
+    expect(ids(rootWorkspaceResults(rows, 'site'))).toContain(SITE.project_id);
   });
 
   test('returns nothing for an empty query', () => {
-    // No query at root means recents, a different list under a different
-    // heading.
     expect(rootWorkspaceResults(rowsWithActive(null), '')).toEqual([]);
-    expect(rootWorkspaceResults(rowsWithActive(null), '  ')).toEqual([]);
   });
 
   test('caps at ROOT_WORKSPACE_RESULT_LIMIT so it cannot crowd out other groups', () => {
-    const many = Array.from({ length: 12 }, (_, i) =>
-      workspace(`Site ${i}`, 'acct-acme', { project_id: `p-many-${i}` }),
-    );
-    const rows = buildWorkspacePaletteRows({
-      accounts: ACCOUNTS,
-      workspaces: many,
-      activeWorkspaceId: null,
-    });
-    expect(rootWorkspaceResults(rows, 'site')).toHaveLength(ROOT_WORKSPACE_RESULT_LIMIT);
+    const many = Array.from({ length: 12 }, (_, i) => workspace(`Proj ${i}`, 'acct-acme'));
+    const rows = buildWorkspacePaletteRows({ accounts: ACCOUNTS, workspaces: many, activeWorkspaceId: null });
+    expect(rootWorkspaceResults(rows, 'proj')).toHaveLength(ROOT_WORKSPACE_RESULT_LIMIT);
   });
 });
 
-describe('workspacePageResults', () => {
-  test('KEEPS the active workspace — the page is a directory, not a jump list', () => {
-    const rows = rowsWithActive(SITE.project_id);
-    expect(ids(workspacePageResults(rows, ''))).toContain(SITE.project_id);
+describe('workspacePageResults and recentWorkspaceRows', () => {
+  test('the page KEEPS the active workspace and lists everything for an empty query', () => {
+    const rows = rowsWithActive(NOTES.project_id);
+    expect(workspacePageResults(rows, '')).toEqual(rows);
+    expect(workspacePageResults(rows, 'notes')[0]?.isActive).toBe(true);
   });
 
-  test('an empty query lists every workspace, in build order', () => {
-    const rows = rowsWithActive(SITE.project_id);
-    expect(names(workspacePageResults(rows, ''))).toEqual(names(rows));
-  });
-
-  test('caps at its own, larger limit', () => {
-    const many = Array.from({ length: 60 }, (_, i) =>
-      workspace(`W${i}`, 'acct-acme', { project_id: `p-cap-${i}` }),
-    );
-    const rows = buildWorkspacePaletteRows({
-      accounts: ACCOUNTS,
-      workspaces: many,
-      activeWorkspaceId: null,
-    });
-    expect(workspacePageResults(rows, '')).toHaveLength(50);
-  });
-});
-
-describe('groupWorkspacePaletteRows', () => {
-  test('regroups by account without reordering', () => {
-    const rows = rowsWithActive(SITE.project_id);
-    const groups = groupWorkspacePaletteRows(rows);
-
-    expect(groups.map((g) => g.accountId)).toEqual(['acct-personal', 'acct-acme']);
-    expect(groups.flatMap((g) => names(g.rows))).toEqual(names(rows));
-  });
-
-  test('a group appears once, at the position of its first row', () => {
-    // Insertion-ordered Map, not a sort. Interleaved input must not produce
-    // the same account twice.
-    const groups = groupWorkspacePaletteRows([
-      ...rowsWithActive(null)
-        .filter((r) => r.accountId === 'acct-acme')
-        .slice(0, 1),
-      ...rowsWithActive(null)
-        .filter((r) => r.accountId === 'acct-personal')
-        .slice(0, 1),
-      ...rowsWithActive(null)
-        .filter((r) => r.accountId === 'acct-acme')
-        .slice(1, 2),
-    ]);
-    expect(groups.map((g) => g.accountId)).toEqual(['acct-acme', 'acct-personal']);
-    expect(groups[0].rows).toHaveLength(2);
-  });
-
-  test('carries the display label onto the group heading', () => {
-    const groups = groupWorkspacePaletteRows(rowsWithActive(SITE.project_id));
-    expect(groups.map((g) => g.accountName)).toEqual(['Jay', 'Acme']);
-  });
-
-  test('an empty list produces no groups, not one empty group', () => {
-    expect(groupWorkspacePaletteRows([])).toEqual([]);
-  });
-});
-
-describe('recentWorkspaceRows', () => {
-  test('takes the head of the build order and caps it', () => {
-    const rows = rowsWithActive(null);
-    expect(recentWorkspaceRows(rows, 2)).toEqual(rows.slice(0, 2));
+  test('recents take the head of the build order and cap it', () => {
+    expect(recentWorkspaceRows(rowsWithActive(null), 2)).toHaveLength(2);
   });
 });
 
@@ -394,8 +216,8 @@ describe('buildRootSuggestions — the no-query root page', () => {
     expect(result).toHaveLength(ROOT_SUGGESTION_LIMIT);
     expect(result.slice(0, leading.length)).toEqual(leading);
     expect(result[0]).toBe(WORKSPACE_SWITCHER_ITEM_ID);
-    // The rare actions registry order used to put near the top are no longer there.
-    expect(result).not.toContain('compact-session');
+    // Registry order put Compact Session second; the everyday moves above now
+    // lead it, and rarer actions such as Restart Config fall past the cap.
     expect(result).not.toContain('restart-config');
   });
 
@@ -449,6 +271,11 @@ describe('command-palette.tsx wires the switcher to these functions', () => {
   test('the workspace list is fanned out over every account with useQueries', () => {
     expect(source.includes('useQueries')).toBe(true);
     expect(source.includes('buildWorkspacePaletteRows')).toBe(true);
+  });
+
+  test('the Switch workspace page has no account headings and no account switcher page', () => {
+    expect(source.includes('groupWorkspacePaletteRows')).toBe(false);
+    expect(source.includes("page === 'accounts'")).toBe(false);
   });
 
   test('selecting a workspace narrates the switch and re-points the account store', () => {

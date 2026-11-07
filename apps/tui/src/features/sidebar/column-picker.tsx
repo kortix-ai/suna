@@ -29,9 +29,19 @@ export interface ColumnPickerProps {
   /** Enter on a row. The picker does not close itself — the caller decides. */
   onPick: (item: ListItem) => void;
   onClose: () => void;
+  /** What the list says when it has no rows at all. Default: "No match." */
+  emptyText?: string;
 }
 
-export function ColumnPicker({ title, items, width, height, onPick, onClose }: ColumnPickerProps) {
+export function ColumnPicker({
+  title,
+  items,
+  width,
+  height,
+  onPick,
+  onClose,
+  emptyText,
+}: ColumnPickerProps) {
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(items[0]?.id ?? null);
   const filtered = useMemo(() => filterItems(items, query), [items, query]);
@@ -70,7 +80,7 @@ export function ColumnPicker({ title, items, width, height, onPick, onClose }: C
         onOpen={onPick}
         maxRows={Math.max(height - 4, 1)}
         width={width}
-        emptyText="No match."
+        emptyText={items.length === 0 && emptyText ? emptyText : 'No match.'}
       />
       <text fg={theme.faint}>Enter pick · Esc close</text>
     </box>

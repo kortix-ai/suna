@@ -65,7 +65,7 @@ async function setAuthority(
   turns: Array<{
     token: string;
     state: 'delivering' | 'active';
-    opencodeSessionId?: string | null;
+    runtimeSessionId?: string | null;
     messageId?: string | null;
     startedAtMs?: number;
   }>,
@@ -76,7 +76,7 @@ async function setAuthority(
       {
         token: turn.token,
         state: turn.state,
-        opencodeSessionId: turn.opencodeSessionId ?? null,
+        runtimeSessionId: turn.runtimeSessionId ?? null,
         messageId: turn.messageId ?? null,
         ...(turn.startedAtMs === undefined ? {} : { startedAtMs: turn.startedAtMs }),
       },
@@ -97,7 +97,7 @@ async function insertTurn(row: {
   token: string;
   state: 'delivering' | 'active' | 'ended';
   messageId?: string | null;
-  opencodeSessionId?: string | null;
+  runtimeSessionId?: string | null;
   startedAt: string;
   acceptedAt?: string | null;
   endReason?: string | null;
@@ -106,9 +106,9 @@ async function insertTurn(row: {
   await realDbModule.db.execute(sql`
     INSERT INTO kortix.session_turns
       (turn_token, session_id, sandbox_id, project_id, account_id,
-       opencode_session_id, message_id, state, end_reason, started_at, accepted_at, ended_at)
+       runtime_session_id, message_id, state, end_reason, started_at, accepted_at, ended_at)
     VALUES (${row.token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
-            ${ACCOUNT_ID}::uuid, ${row.opencodeSessionId ?? null}, ${row.messageId ?? null},
+            ${ACCOUNT_ID}::uuid, ${row.runtimeSessionId ?? null}, ${row.messageId ?? null},
             ${row.state}, ${row.endReason ?? null},
             ${row.startedAt}::timestamptz,
             ${row.acceptedAt ?? null}::timestamptz,
@@ -183,7 +183,6 @@ describe('GET .../turn against real Postgres', () => {
         state: 'delivering',
         message_id: 'msg_boot',
         runtime_session_id: null,
-        opencode_session_id: null,
         started_at: '2026-08-17T00:00:00.000Z',
         accepted_at: null,
       },
@@ -197,7 +196,7 @@ describe('GET .../turn against real Postgres', () => {
       {
         token: t('live'),
         state: 'active',
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_1',
         startedAtMs: Date.parse('2026-08-17T00:00:00.000Z'),
       },
@@ -205,7 +204,7 @@ describe('GET .../turn against real Postgres', () => {
     await insertTurn({
       token: t('live'),
       state: 'active',
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_1',
       startedAt: '2026-08-17T00:00:00.500Z',
       acceptedAt: '2026-08-17T00:00:01.000Z',
@@ -217,7 +216,6 @@ describe('GET .../turn against real Postgres', () => {
       state: 'active',
       message_id: 'msg_1',
       runtime_session_id: 'ses_root',
-      opencode_session_id: 'ses_root',
       started_at: '2026-08-17T00:00:00.000Z',
       accepted_at: '2026-08-17T00:00:01.000Z',
     });

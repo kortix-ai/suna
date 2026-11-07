@@ -69,18 +69,16 @@ describe('broadcastTurnComplete / onTurnComplete', () => {
     expect(local).toEqual([]);
   });
 
-  test('another tab receives the completion, with the publishing tab notification_center answer', () => {
-    const received: { sessionId: string; projectId?: string | null; notificationCenter?: boolean }[] = [];
-    onTurnComplete((m) =>
-      received.push({ sessionId: m.sessionId, projectId: m.projectId, notificationCenter: m.notificationCenter }),
-    );
+  test('another tab receives the completion with its project', () => {
+    const received: { sessionId: string; projectId?: string | null }[] = [];
+    onTurnComplete((m) => received.push({ sessionId: m.sessionId, projectId: m.projectId }));
     // The module caches one channel per tab; dropping the cache makes the next
     // publish mint a fresh instance — standing in for the other tab.
     resetTurnBroadcastForTests();
 
-    broadcastTurnComplete({ sessionId: 'sess1', projectId: 'proj1', notificationCenter: true });
+    broadcastTurnComplete({ sessionId: 'sess1', projectId: 'proj1' });
 
-    expect(received).toEqual([{ sessionId: 'sess1', projectId: 'proj1', notificationCenter: true }]);
+    expect(received).toEqual([{ sessionId: 'sess1', projectId: 'proj1' }]);
   });
 
   test('unsubscribing stops delivery', () => {

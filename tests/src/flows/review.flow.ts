@@ -29,15 +29,15 @@ flow(
     domain: 'review',
     tags: ['smoke'],
     routes: [
-      'PATCH /v1/projects/:projectId/features',
-      'GET /v1/projects/:projectId/review/items',
+      'PATCH /v1/workspaces/:projectId/features',
+      'GET /v1/workspaces/:projectId/review/items',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step('Review Center is not a feature flag: toggling review_center → 400 unknown flag', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).patch(
-        '/v1/projects/:projectId/features',
+        '/v1/workspaces/:projectId/features',
         { feature: 'review_center', enabled: false },
         { params: { projectId: p.id } },
       );
@@ -46,18 +46,18 @@ flow(
     await ctx.step('OWNER lists review items with no flag override → 200 with envelope', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/review/items', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/review/items', { params: { projectId: p.id } });
       r.status(200).body().exists('$.review_items');
     });
     await ctx.step('invalid segment → 400', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/review/items', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/review/items', {
         params: { projectId: p.id },
         query: { segment: 'soon' },
       });
       r.status(400);
     });
     await ctx.step('invalid kind → 400', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/review/items', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/review/items', {
         params: { projectId: p.id },
         query: { kind: 'wizard' },
       });
@@ -71,7 +71,7 @@ flow(
   {
     domain: 'review',
     routes: [
-      'GET /v1/projects/:projectId/review/items/:reviewItemId',
+      'GET /v1/workspaces/:projectId/review/items/:reviewItemId',
     ],
   },
   async (ctx) => {
@@ -79,7 +79,7 @@ flow(
     await ctx.step('unknown reviewItemId → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/review/items/:reviewItemId', {
+        .get('/v1/workspaces/:projectId/review/items/:reviewItemId', {
           params: { projectId: p.id, reviewItemId: RANDOM_UUID },
         });
       r.status(404);
@@ -92,7 +92,7 @@ flow(
   {
     domain: 'review',
     routes: [
-      'POST /v1/projects/:projectId/review/items',
+      'POST /v1/workspaces/:projectId/review/items',
     ],
   },
   async (ctx) => {
@@ -101,7 +101,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/review/items',
+          '/v1/workspaces/:projectId/review/items',
           { kind: 'output' },
           { params: { projectId: p.id } },
         );
@@ -111,7 +111,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/review/items',
+          '/v1/workspaces/:projectId/review/items',
           { kind: 'change', title: ctx.fixtures.name('rv') },
           { params: { projectId: p.id } },
         );
@@ -121,7 +121,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/review/items',
+          '/v1/workspaces/:projectId/review/items',
           { kind: 'output', title: ctx.fixtures.name('rv'), risk: 'nuclear' },
           { params: { projectId: p.id } },
         );
@@ -135,7 +135,7 @@ flow(
   {
     domain: 'review',
     routes: [
-      'POST /v1/projects/:projectId/review/items/:reviewItemId/act',
+      'POST /v1/workspaces/:projectId/review/items/:reviewItemId/act',
     ],
   },
   async (ctx) => {
@@ -144,7 +144,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/review/items/:reviewItemId/act',
+          '/v1/workspaces/:projectId/review/items/:reviewItemId/act',
           { verdict: 'merge' },
           { params: { projectId: p.id, reviewItemId: RANDOM_UUID } },
         );
@@ -154,7 +154,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/review/items/:reviewItemId/act',
+          '/v1/workspaces/:projectId/review/items/:reviewItemId/act',
           { verdict: 'approve' },
           { params: { projectId: p.id, reviewItemId: RANDOM_UUID } },
         );
@@ -168,8 +168,8 @@ flow(
   {
     domain: 'review',
     routes: [
-      'POST /v1/projects/:projectId/review/items',
-      'POST /v1/projects/:projectId/review/bulk',
+      'POST /v1/workspaces/:projectId/review/items',
+      'POST /v1/workspaces/:projectId/review/bulk',
     ],
   },
   async (ctx) => {
@@ -178,7 +178,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/review/bulk',
+          '/v1/workspaces/:projectId/review/bulk',
           { verdict: 'approve' },
           { params: { projectId: p.id } },
         );
@@ -188,7 +188,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/review/bulk',
+          '/v1/workspaces/:projectId/review/bulk',
           { ids: [RANDOM_UUID], verdict: 'merge' },
           { params: { projectId: p.id } },
         );
@@ -198,7 +198,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/review/bulk',
+          '/v1/workspaces/:projectId/review/bulk',
           { ids: Array.from({ length: 51 }, () => RANDOM_UUID), verdict: 'approve' },
           { params: { projectId: p.id } },
         );
@@ -212,7 +212,7 @@ flow(
     let nativeId = '';
     await ctx.step('OWNER submits one native item', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/review/items',
+        '/v1/workspaces/:projectId/review/items',
         { kind: 'output', title: ctx.fixtures.name('rv5') },
         { params: { projectId: fresh.id } },
       );
@@ -222,7 +222,7 @@ flow(
     await ctx.step('bulk approve over native, cr: and call: ids → one result per id, in request order', async () => {
       const ids = [nativeId, `cr:${RANDOM_UUID}`, `call:${RANDOM_UUID}`, 'call:not-a-uuid'];
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/review/bulk',
+        '/v1/workspaces/:projectId/review/bulk',
         { ids, verdict: 'approve' },
         { params: { projectId: fresh.id } },
       );
@@ -238,7 +238,7 @@ flow(
     });
     await ctx.step('dismiss on a call: id → not_bulk_actionable (calls take approve or reject only)', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/review/bulk',
+        '/v1/workspaces/:projectId/review/bulk',
         { ids: [`call:${RANDOM_UUID}`], verdict: 'dismiss' },
         { params: { projectId: fresh.id } },
       );
@@ -252,19 +252,19 @@ flow(
 
 flow(
   'RV-6',
-  { domain: 'review', routes: ['GET /v1/projects/:projectId/review/items'] },
+  { domain: 'review', routes: ['GET /v1/workspaces/:projectId/review/items'] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step('NONMEMBER cannot list → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/review/items', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/review/items', { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step('ANON cannot list → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/review/items', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/review/items', { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -276,10 +276,10 @@ flow(
   {
     domain: 'review',
     routes: [
-      'GET /v1/projects/:projectId/review/summary',
-      'POST /v1/projects/:projectId/review/items',
-      'POST /v1/projects/:projectId/review/items/:reviewItemId/act',
-      'GET /v1/projects/:projectId/review/items',
+      'GET /v1/workspaces/:projectId/review/summary',
+      'POST /v1/workspaces/:projectId/review/items',
+      'POST /v1/workspaces/:projectId/review/items/:reviewItemId/act',
+      'GET /v1/workspaces/:projectId/review/items',
     ],
   },
   async (ctx) => {
@@ -287,7 +287,7 @@ flow(
     const summary = async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/review/summary', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/review/summary', { params: { projectId: p.id } });
       r.status(200);
       return { body: r.json<{ needs_you_total: number; needs_you_by_session: Record<string, number> }>(), bytes: r.text().length };
     };
@@ -299,7 +299,7 @@ flow(
     await ctx.step('OWNER submits 3 items → 201 each', async () => {
       for (const kind of ['output', 'decision', 'batch']) {
         const r = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/projects/:projectId/review/items',
+          '/v1/workspaces/:projectId/review/items',
           { kind, title: ctx.fixtures.name(`rv7-${kind}`) },
           { params: { projectId: p.id } },
         );
@@ -315,14 +315,14 @@ flow(
     });
     await ctx.step('approving one → needs_you_total 2, equal to the needs_you segment of the list', async () => {
       const act = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/review/items/:reviewItemId/act',
+        '/v1/workspaces/:projectId/review/items/:reviewItemId/act',
         { verdict: 'approve' },
         { params: { projectId: p.id, reviewItemId: ids[0] } },
       );
       act.status(200).body().has('$.status', 'approved');
       const { body } = await summary();
       check('needs_you_total', body.needs_you_total === 2, 2, body.needs_you_total);
-      const list = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/review/items', {
+      const list = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/review/items', {
         params: { projectId: p.id },
         query: { segment: 'needs_you' },
       });
@@ -333,11 +333,11 @@ flow(
     await ctx.step('NONMEMBER → 403/404; ANON → 401', async () => {
       const outsider = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/review/summary', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/review/summary', { params: { projectId: p.id } });
       outsider.status([403, 404]);
       const anon = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/review/summary', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/review/summary', { params: { projectId: p.id } });
       anon.status(401);
     });
   },
@@ -349,10 +349,10 @@ flow(
   {
     domain: 'review',
     routes: [
-      'POST /v1/projects/:projectId/review/items',
-      'POST /v1/projects/:projectId/review/bulk',
-      'GET /v1/projects/:projectId/review/items',
-      'GET /v1/projects/:projectId/review/items/:reviewItemId',
+      'POST /v1/workspaces/:projectId/review/items',
+      'POST /v1/workspaces/:projectId/review/bulk',
+      'GET /v1/workspaces/:projectId/review/items',
+      'GET /v1/workspaces/:projectId/review/items/:reviewItemId',
     ],
   },
   async (ctx) => {
@@ -361,7 +361,7 @@ flow(
     await ctx.step('OWNER submits 5 items and dismisses 2 → 3 Needs you, 2 Done', async () => {
       for (let i = 0; i < 5; i += 1) {
         const r = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/projects/:projectId/review/items',
+          '/v1/workspaces/:projectId/review/items',
           { kind: 'output', title: ctx.fixtures.name(`rv8-${i}`) },
           { params: { projectId: p.id } },
         );
@@ -369,7 +369,7 @@ flow(
         ids.push(r.json<{ review_item_id: string }>().review_item_id);
       }
       const bulk = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/review/bulk',
+        '/v1/workspaces/:projectId/review/bulk',
         { ids: ids.slice(0, 2), verdict: 'dismiss' },
         { params: { projectId: p.id } },
       );
@@ -379,7 +379,7 @@ flow(
       const seen: ReviewRow[] = [];
       let cursor: string | null = null;
       for (let page = 0; page < 10; page += 1) {
-        const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/review/items', {
+        const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/review/items', {
           params: { projectId: p.id },
           query: cursor ? { limit: '2', cursor } : { limit: '2' },
         });
@@ -398,7 +398,7 @@ flow(
       check('Needs you before Done', order === expected, expected, order);
     });
     await ctx.step('segment=done → the 2 dismissed items, next_cursor null', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/review/items', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/review/items', {
         params: { projectId: p.id },
         query: { segment: 'done' },
       });
@@ -408,7 +408,7 @@ flow(
     });
     await ctx.step('limit above the 200 ceiling → 400; 200 → 200; 0, a word and a forged cursor → 400', async () => {
       const get = (query: Record<string, string>) =>
-        ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/review/items', { params: { projectId: p.id }, query });
+        ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/review/items', { params: { projectId: p.id }, query });
       (await get({ limit: '201' })).status(400);
       (await get({ limit: '200' })).status(200);
       (await get({ limit: '0' })).status(400);
@@ -417,11 +417,11 @@ flow(
       (await get({ session_id: 'not-a-uuid' })).status(400);
     });
     await ctx.step('a native item reads by id, off any page → 200; a cr: id with no change request → 404', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/review/items/:reviewItemId', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/review/items/:reviewItemId', {
         params: { projectId: p.id, reviewItemId: ids[0] },
       });
       r.status(200).body().has('$.review_item.review_item_id', ids[0]);
-      const missing = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/review/items/:reviewItemId', {
+      const missing = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/review/items/:reviewItemId', {
         params: { projectId: p.id, reviewItemId: `cr:${RANDOM_UUID}` },
       });
       missing.status(404);

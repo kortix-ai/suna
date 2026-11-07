@@ -33,7 +33,8 @@ describe('kortix_permissions', () => {
   });
 
   test('an ungrantable action drops out; the agent keeps the rest of its grant', () => {
-    const loaded = extractAgents(manifest('    kortix_permissions: [billing.read, project.read]\n'));
+    // Every workspace action is grantable (design.md C8); a name that is no action is not.
+    const loaded = extractAgents(manifest('    kortix_permissions: [workspace.teleport, project.read]\n'));
     expect(loaded.errors).toEqual([]);
     expect(grantFromLoadedAgents('w', loaded)?.permissions).toEqual(['project.read']);
   });

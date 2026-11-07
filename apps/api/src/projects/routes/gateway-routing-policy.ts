@@ -29,6 +29,7 @@ import { invalidateAccountModelDefaults } from '../../llm-gateway/resolution/def
 import { parseProjectRoutingPolicyInput } from '../../llm-gateway/routing/project-policy';
 import { resolveGatewayRoute } from '../../llm-gateway/routing';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { workspaceIdParam } from '../../shared/route-params';
 
 type RoutingContext = { projectId: string; accountId: string; userId: string };
 
@@ -111,15 +112,15 @@ export function registerGatewayRoutingPolicyRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/gateway/routing-policy',
+      path: '/{workspaceId}/gateway/routing-policy',
       tags: ['gateway'],
       summary: 'Get the project model routing policy',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: routingPolicyResponses,
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const canWrite = await projectCapabilityAllowed(
@@ -145,18 +146,18 @@ export function registerGatewayRoutingPolicyRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/gateway/routing-policy',
+      path: '/{workspaceId}/gateway/routing-policy',
       tags: ['gateway'],
       summary: 'Set the project model routing policy',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: z.any() } } },
       },
       responses: routingPolicyResponses,
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -239,15 +240,15 @@ export function registerGatewayRoutingPolicyRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/gateway/routing-policy',
+      path: '/{workspaceId}/gateway/routing-policy',
       tags: ['gateway'],
       summary: 'Remove the project model routing policy',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: routingPolicyResponses,
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -275,12 +276,12 @@ export function registerGatewayRoutingPolicyRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/gateway/routing-policy/preview',
+      path: '/{workspaceId}/gateway/routing-policy/preview',
       tags: ['gateway'],
       summary: 'Preview a model routing policy',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: {
           content: {
             'application/json': {
@@ -295,7 +296,7 @@ export function registerGatewayRoutingPolicyRoutes(): void {
       responses: routingPolicyResponses,
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const body = await c.req.json();

@@ -89,7 +89,6 @@ describe('flagshipRefForEnvVar (auto-seed mapping)', () => {
 
   test('non-provider credentials (codex/opencode auth) map to null → skipped', () => {
     expect(flagshipRefForEnvVar('CODEX_AUTH_JSON')).toBeNull();
-    expect(flagshipRefForEnvVar('OPENCODE_AUTH_JSON')).toBeNull();
     expect(flagshipRefForEnvVar('SOME_RANDOM_SECRET')).toBeNull();
   });
 });

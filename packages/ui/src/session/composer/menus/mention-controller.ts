@@ -12,6 +12,7 @@ import type { MenuRow } from './menu-items';
 import { MenuNavState } from './menu-nav-state';
 import { menuNavigation } from './menu-navigation';
 import { mountSuggestionMenu } from './mount';
+import type { SpaceMentionSource } from './space-mentions';
 
 export const MENTION_PLUGIN_KEY = new PluginKey('mentionSuggestion');
 
@@ -19,6 +20,8 @@ export interface CreateMentionSuggestionOptions {
   getAgents: () => Agent[];
   getSessions: () => Session[];
   getCurrentSessionId: () => string | undefined;
+  /** Inside a space: People and Agents only (`space-mentions.ts`). Null elsewhere. */
+  getSpaceMentions?: () => SpaceMentionSource | null;
   /**
    * Fires ONLY on the false<->true boundary of "does at least one row exist
    * right now" — NOT "is a trigger match active". See `MenuNavState`'s own
@@ -50,6 +53,17 @@ export interface CreateMentionSuggestionOptions {
  * `props.command` for a keyboard-driven selection, and the actual
  * delete-range-then-insert-mention side effect.
  */
+/** The match did not come from typing: the editor has no focus (a draft set into it). */
+function restoredWithoutFocus(props: { editor: { view?: { hasFocus?: () => boolean } } }): boolean {
+  try {
+    const view = props.editor.view;
+    return !!view?.hasFocus && !view.hasFocus();
+  } catch {
+    // The editor's view is not mounted yet: nothing typed it either.
+    return true;
+  }
+}
+
 export function createMentionSuggestion(
   opts: CreateMentionSuggestionOptions,
 ): Omit<SuggestionOptions<never, MenuRow>, 'editor'> {
@@ -90,29 +104,52 @@ export function createMentionSuggestion(
     renderer?.updateProps({ selectedIndex: nav.getSelectedIndex() });
   };
 
+  // Bumped on every start and exit: a deferred mount whose menu already
+  // closed (or reopened) does nothing.
+  let generation = 0;
+  // The newest props of the open menu: a deferred mount draws what the editor shows now.
+  let latestProps: Parameters<MenuController<MenuRow>['onStart']>[0] | null = null;
+
+  const mount = (props: Parameters<MenuController<MenuRow>['onStart']>[0]) => {
+    renderer = new ReactRenderer(MentionMenuHost, {
+      editor: props.editor,
+      props: {
+        query: props.query,
+        agents: opts.getAgents(),
+        sessions: opts.getSessions(),
+        currentSessionId: opts.getCurrentSessionId(),
+        spaceMentions: opts.getSpaceMentions?.() ?? null,
+        // Fixed for the lifetime of this open menu — see
+        // `MentionMenuHostProps.now`'s own doc comment.
+        now: Date.now(),
+        selectedIndex: nav.getSelectedIndex(),
+        onSelect,
+        onHover,
+        onRowsChange: handleRowsChange,
+      } satisfies MentionMenuHostProps,
+    });
+    unmount = mountSuggestionMenu(props, renderer.element);
+  };
+
   const controller: MenuController<MenuRow> = {
     onStart(props) {
       nav.open(props.query);
       latestCommand = props.command;
-      renderer = new ReactRenderer(MentionMenuHost, {
-        editor: props.editor,
-        props: {
-          query: props.query,
-          agents: opts.getAgents(),
-          sessions: opts.getSessions(),
-          currentSessionId: opts.getCurrentSessionId(),
-          // Fixed for the lifetime of this open menu — see
-          // `MentionMenuHostProps.now`'s own doc comment.
-          now: Date.now(),
-          selectedIndex: nav.getSelectedIndex(),
-          onSelect,
-          onHover,
-          onRowsChange: handleRowsChange,
-        } satisfies MentionMenuHostProps,
+      const started = ++generation;
+      latestProps = props;
+      // Typed (the editor has focus): mounted now, as always. Not typed — a
+      // restored draft that ends in `@word`, set into the editor from a React
+      // effect — mounted one microtask later: `ReactRenderer` renders with
+      // `flushSync`, and React refuses a flush inside its own lifecycle (a
+      // console error). Keys in between act on `nav`, already open.
+      if (!restoredWithoutFocus(props)) return mount(props);
+      queueMicrotask(() => {
+        if (started !== generation || !latestProps) return;
+        mount(latestProps);
       });
-      unmount = mountSuggestionMenu(props, renderer.element);
     },
     onUpdate(props) {
+      latestProps = props;
       // Reset-on-query-change happens here; `handleRowsChange` above only
       // ever clamps. See `MenuNavState.setQuery`'s doc comment for why the
       // two must stay separate.
@@ -123,6 +160,7 @@ export function createMentionSuggestion(
         agents: opts.getAgents(),
         sessions: opts.getSessions(),
         currentSessionId: opts.getCurrentSessionId(),
+        spaceMentions: opts.getSpaceMentions?.() ?? null,
         selectedIndex: nav.getSelectedIndex(),
         onSelect,
         onHover,
@@ -133,6 +171,8 @@ export function createMentionSuggestion(
       () => renderer?.updateProps({ selectedIndex: nav.getSelectedIndex() }),
       (row) => latestCommand?.(row),
       () => {
+        generation += 1;
+        latestProps = null;
         unmount?.();
         renderer?.destroy();
         renderer = null;
@@ -146,6 +186,7 @@ export function createMentionSuggestion(
     ...baseSuggestion('@', MENTION_PLUGIN_KEY, controller),
     command: ({ editor, range, props: row }) => {
       editor.chain().focus().deleteRange(range).run();
+      // An agent from outside the space only gets named: the composer asks to add it after the send.
       insertMention(editor, { kind: row.kind, label: row.label, value: row.value });
     },
   };

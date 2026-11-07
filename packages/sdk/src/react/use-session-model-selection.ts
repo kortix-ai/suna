@@ -4,12 +4,12 @@ import {
   useRuntimeLocal,
   type RuntimeLocal,
   type UseRuntimeLocalOptions,
-} from './use-opencode-local';
+} from './use-runtime-local';
 import {
   useModelDefaults,
   type UseModelDefaults,
 } from './use-model-defaults';
-import { useKortixRouteProjectId } from './route-project';
+import { useKortixRouteWorkspaceId } from './route-project';
 
 export interface SessionModelSelection extends RuntimeLocal {
   model: RuntimeLocal['model'] & {
@@ -26,7 +26,7 @@ export interface SessionModelSelection extends RuntimeLocal {
 export function useSessionModelSelection(
   options: UseRuntimeLocalOptions,
 ): SessionModelSelection {
-  const projectId = useKortixRouteProjectId();
+  const projectId = useKortixRouteWorkspaceId();
   const defaults = useModelDefaults(projectId);
   const base = useRuntimeLocal({
     ...options,

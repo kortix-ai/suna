@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import pg from 'pg';
+import { RUNNER_TRANSACTION_MODE } from './migration-target';
 
 /** Shared by the migration-upgrade integration tests: build a database at an old migration, then roll it forward. */
 export const migrationsDir = join(import.meta.dir, '..', 'migrations');
@@ -68,7 +69,10 @@ export function migrationOptions(url: string, directory: string) {
     migrationsSchema: 'kortix_migrations',
     createMigrationsSchema: true,
     checkOrder: true,
-    singleTransaction: true,
+    // The production runner's mode (one transaction per file): a
+    // `.concurrent.ts` migration that queries in `up()` cannot run inside a
+    // batch transaction, and production never runs one.
+    ...RUNNER_TRANSACTION_MODE,
     verbose: false,
     logger: {
       log: () => {},

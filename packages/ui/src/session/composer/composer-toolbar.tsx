@@ -95,6 +95,8 @@ export interface ComposerToolbarProps {
   rewind?: { pending?: boolean; disabled?: boolean; onRestore: () => void };
   /** Rendered FIRST in the left cluster, before the model selector. */
   leading?: React.ReactNode;
+  /** The `chat_input` control holds model and effort: this toolbar draws neither. */
+  pickersInChatInput?: boolean;
 
   isSending: boolean;
   isBusy: boolean;
@@ -141,6 +143,7 @@ export function ComposerToolbar({
   toolbarSlot,
   rewind,
   leading,
+  pickersInChatInput = false,
   isSending,
   isBusy,
   onStop,
@@ -163,7 +166,8 @@ export function ComposerToolbar({
 }: ComposerToolbarProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { modelPickerEnabled } = useUiHostConfig();
-  const showModel = modelPickerEnabled && (models.length > 0 || modelRequired) && !!onModelChange;
+  const showModel =
+    !pickersInChatInput && modelPickerEnabled && (models.length > 0 || modelRequired) && !!onModelChange;
 
   return (
     <div className="kortix-composer-toolbar flex items-center justify-between gap-1 overflow-visible">
@@ -186,7 +190,7 @@ export function ComposerToolbar({
           />
         )}
 
-        {modelPickerEnabled && <ReasoningEffortSelector
+        {modelPickerEnabled && !pickersInChatInput && <ReasoningEffortSelector
           variants={variants}
           selectedVariant={selectedVariant}
           onVariantChange={onVariantChange}

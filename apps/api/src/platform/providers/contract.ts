@@ -74,7 +74,7 @@ export interface CreateSandboxOpts {
    * for backward compatibility with every existing caller.
    *
    * `monitor` is the per-project monitor box: the SAME image and the SAME agent port as a session, running the
-   * daemon in monitor mode instead of opencode. It differs from a session only
+   * daemon in monitor mode instead of the session runtime. It differs from a session only
    * in lifecycle (`autoStopInterval: 0` → persistent) and in having no
    * `session_sandboxes` row.
    */

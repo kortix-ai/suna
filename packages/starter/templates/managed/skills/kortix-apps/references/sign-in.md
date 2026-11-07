@@ -2,7 +2,7 @@
 
 Every App can trust Kortix as its identity provider. You build no login
 screen, no user table and no invite flow: the people who use an App are the
-project's Kortix members, with their real names, Kortix groups and role.
+workspace's Kortix members, with their real names, Kortix groups and role.
 
 `@kortix/sdk` mints, verifies and enforces that identity. The same functions
 work in the browser, a Node or Bun server, a Worker and a Convex function.
@@ -13,15 +13,15 @@ npm i @kortix/sdk          # in every App that mints or checks a token
 
 ## The token
 
-- **Issuer:** one per project, `https://<api host>/v1/projects/<project_id>`.
+- **Issuer:** one per workspace, `https://<api host>/v1/projects/<project_id>`.
   `<issuer>/.well-known/openid-configuration` names `<issuer>/jwks.json`, the
-  project's public ES256 key set. Both routes are public.
+  workspace's public ES256 key set. Both routes are public.
 - **Audience:** the id of the App the token is for. A token for one App is
   useless on another.
 - **Lifetime:** 15 minutes. Clients fetch a new one before it expires.
 - **Claims:** `sub` (Kortix user id), `email`, `name`, `picture`, `groups`
-  (Kortix group names in the account), `group_ids`, `role` (account role:
-  `owner`, `admin` or `member`), `account_id`, `project_id`. An agent's token
+  (Kortix group names in the workspace), `group_ids`, `role` (the workspace
+  role: `owner`, `admin` or `member`), `account_id`, `project_id`. An agent's token
   has `kind: "agent"`, `sub` = its service account id, no groups and no role.
 
 Every App response carries the three values a verifier needs:
@@ -53,7 +53,7 @@ backend serve each App's readers only that App's data.
 
 ## A Convex backend App: accept the token
 
-Convex reads three deployment variables: `KORTIX_AUTH_ISSUER` (the project
+Convex reads three deployment variables: `KORTIX_AUTH_ISSUER` (the workspace
 issuer), `KORTIX_AUTH_AUDIENCE` (the App id) and `KORTIX_AUTH_JWKS` (the key
 set, inline as a `data:` URL: Convex fetches nothing). Set them once per
 backend App:
@@ -122,7 +122,7 @@ export const revenue = query({
   },
 });
 
-// Only account owners and admins.
+// Only workspace owners and admins.
 export const removeCompany = mutation({
   args: { id: v.id("companies") },
   handler: async (ctx, { id }) => {
@@ -222,8 +222,8 @@ const member = await verifyKortixToken(bearer, {
 requireKortixMember(member, { groups: ["Finance"] });
 ```
 
-Kortix injects `KORTIX_AUTH_ISSUER` (the project issuer), `KORTIX_AUTH_AUDIENCE`
-(the App's own id) and `KORTIX_AUTH_JWKS` (the project key set, as a `data:`
+Kortix injects `KORTIX_AUTH_ISSUER` (the workspace issuer), `KORTIX_AUTH_AUDIENCE`
+(the App's own id) and `KORTIX_AUTH_JWKS` (the workspace key set, as a `data:`
 URI) into every server App's runtime. `verifyKortixToken(bearer)` with no
 options reads them. Do not set `KORTIX_AUTH_*` in the App's `env`: the
 `KORTIX_` prefix is reserved and `kortix validate` rejects it. A server App
@@ -255,7 +255,7 @@ Call the route the App calls, from the App's origin, and read the code:
 
 ## People who are not Kortix members
 
-Kortix sign-in stays the sign-in for the project's own people. When an App
+Kortix sign-in stays the sign-in for the workspace's own people. When an App
 also serves customers or the public, add **Convex Auth** (password, magic
 link, OTP or OAuth) as a second provider in the same backend App. Members
 keep Kortix sign-in; customers get their own accounts in the App; the issuer

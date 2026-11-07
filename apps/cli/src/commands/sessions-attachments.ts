@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { findSessionAttachments, type SessionAttachmentReference } from '@kortix/sdk';
+import { findSessionAttachments, type Kortix, type SessionAttachmentReference } from '@kortix/sdk';
 
+import type { Auth } from '../api/auth.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import {
   emitJson,
@@ -30,7 +31,7 @@ session is stopped: neither the list nor the bytes need its sandbox.
   --out <dir>                  Where downloads are written (default: .).
                                Created if missing. Nothing is overwritten.
   --json                       Emit structured JSON for scripting.
-  --project <id>               Operate on this project id (default: linked).
+  --workspace <id>             Operate on this workspace id (default: linked).
   --host <name>                Operate against a non-default Kortix host.
   -h, --help                   Show this help.
 
@@ -56,22 +57,57 @@ export function safeDownloadPath(dir: string, name: string | null, attachmentId:
   return candidate;
 }
 
-/**
- * `kortix sessions attachments` — list and download a session's stored files.
- *
- * The saved transcript is the index: capture records a `kortix-attachment://`
- * reference for every upload and for every file an agent showed, and
- * `findSessionAttachments` (SDK) reads them back. The bytes come from the
- * platform's private store. Neither step touches the sandbox, which is the
- * point — a stopped session's files used to be reachable only by waking it.
- */
-export async function runSessionsAttachments(argv: string[]): Promise<number> {
-  const rest = [...argv];
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(`${ATTACHMENTS_HELP}\n`);
-    return 0;
-  }
+interface DownloadedAttachment {
+  attachment_id: string;
+  path: string;
+  bytes: number;
+}
 
+/** Write each wanted file into `outDir` (created if missing): the rows, or the exit code of the first read that failed. */
+async function downloadAttachments(
+  handle: ReturnType<Kortix['session']>,
+  auth: Auth,
+  wanted: SessionAttachmentReference[],
+  outDir: string | undefined,
+): Promise<DownloadedAttachment[] | number> {
+  const dir = path.resolve(outDir ?? '.');
+  mkdirSync(dir, { recursive: true });
+  const downloaded: DownloadedAttachment[] = [];
+  for (const attachment of wanted) {
+    let bytes: Uint8Array;
+    try {
+      const blob = await withKortixScope(auth, () => handle.attachments.read(attachment.attachment_id));
+      bytes = new Uint8Array(await blob.arrayBuffer());
+    } catch (err) {
+      return surfaceApiError(err);
+    }
+    const target = safeDownloadPath(dir, attachment.filename, attachment.attachment_id);
+    writeFileSync(target, bytes, { flag: 'wx' });
+    downloaded.push({ attachment_id: attachment.attachment_id, path: target, bytes: bytes.byteLength });
+  }
+  return downloaded;
+}
+
+function renderAttachmentTable(attachments: SessionAttachmentReference[], sessionId: string): void {
+  const idW = 36;
+  const nameW = Math.min(40, Math.max(8, ...attachments.map((a) => (a.filename ?? '').length)));
+  process.stdout.write(
+    `\n${C.dim}${pad('ATTACHMENT', idW)}  ${pad('NAME', nameW)}  FROM${C.reset}\n`,
+  );
+  for (const a of attachments) {
+    const who = a.role === 'assistant' ? 'shown by agent' : a.role;
+    process.stdout.write(
+      `${pad(a.attachment_id, idW)}  ${pad(a.filename ?? '—', nameW)}  ${C.faded}${who}${C.reset}\n`,
+    );
+  }
+  process.stdout.write(
+    `\n${C.dim}Download with \`kortix sessions attachments ${sessionId} --download <id>\` ` +
+      `or \`--all\`.${C.reset}\n\n`,
+  );
+}
+
+/** The flags and the one session id, or the usage-error exit code. */
+function parseAttachmentsArgs(rest: string[]) {
   let projectArg: string | undefined;
   let hostArg: string | undefined;
   let downloadId: string | undefined;
@@ -79,7 +115,7 @@ export async function runSessionsAttachments(argv: string[]): Promise<number> {
   let all = false;
   let json = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
     downloadId = takeFlagValue(rest, ['--download']);
     outDir = takeFlagValue(rest, ['--out', '-o']);
@@ -96,6 +132,62 @@ export async function runSessionsAttachments(argv: string[]): Promise<number> {
   if (downloadId && all) return fail('Pass --download <id> or --all, not both.');
   const sessionId = positional[0]!;
   const opts: CtxOpts = { projectArg, hostArg };
+  return { opts, sessionId, downloadId, outDir, all, json };
+}
+
+function printAttachments(
+  sessionId: string,
+  source: 'log' | 'none',
+  attachments: SessionAttachmentReference[],
+  downloaded: DownloadedAttachment[],
+  json: boolean,
+): number {
+  if (json) {
+    emitJson({
+      session_id: sessionId,
+      source,
+      attachments,
+      ...(downloaded.length > 0 ? { downloaded } : {}),
+    });
+    return 0;
+  }
+
+  if (downloaded.length > 0) {
+    for (const d of downloaded) {
+      process.stdout.write(`${status.ok(`${d.path}`)} ${C.faded}(${d.bytes} bytes)${C.reset}\n`);
+    }
+    return 0;
+  }
+
+  if (attachments.length === 0) {
+    process.stdout.write(
+      `${C.dim}No stored files in session ${sessionId}'s saved transcript.${C.reset}\n`,
+    );
+    return 0;
+  }
+  renderAttachmentTable(attachments, sessionId);
+  return 0;
+}
+
+/**
+ * `kortix sessions attachments` — list and download a session's stored files.
+ *
+ * The saved transcript is the index: capture records a `kortix-attachment://`
+ * reference for every upload and for every file an agent showed, and
+ * `findSessionAttachments` (SDK) reads them back. The bytes come from the
+ * platform's private store. Neither step touches the sandbox, which is the
+ * point — a stopped session's files used to be reachable only by waking it.
+ */
+export async function runSessionsAttachments(argv: string[]): Promise<number> {
+  const rest = [...argv];
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(`${ATTACHMENTS_HELP}\n`);
+    return 0;
+  }
+
+  const args = parseAttachmentsArgs(rest);
+  if (typeof args === 'number') return args;
+  const { opts, sessionId, downloadId, outDir, all, json } = args;
 
   const found = await locateSessionAnywhere(
     sessionId,
@@ -129,61 +221,8 @@ export async function runSessionsAttachments(argv: string[]): Promise<number> {
     return 1;
   }
 
-  const downloaded: Array<{ attachment_id: string; path: string; bytes: number }> = [];
-  if (wanted.length > 0) {
-    const dir = path.resolve(outDir ?? '.');
-    mkdirSync(dir, { recursive: true });
-    for (const attachment of wanted) {
-      let bytes: Uint8Array;
-      try {
-        const blob = await withKortixScope(auth, () => handle.attachments.read(attachment.attachment_id));
-        bytes = new Uint8Array(await blob.arrayBuffer());
-      } catch (err) {
-        return surfaceApiError(err);
-      }
-      const target = safeDownloadPath(dir, attachment.filename, attachment.attachment_id);
-      writeFileSync(target, bytes, { flag: 'wx' });
-      downloaded.push({ attachment_id: attachment.attachment_id, path: target, bytes: bytes.byteLength });
-    }
-  }
+  const downloaded = wanted.length > 0 ? await downloadAttachments(handle, auth, wanted, outDir) : [];
+  if (typeof downloaded === 'number') return downloaded;
 
-  if (json) {
-    emitJson({
-      session_id: session.session_id,
-      source,
-      attachments,
-      ...(wanted.length > 0 ? { downloaded } : {}),
-    });
-    return 0;
-  }
-
-  if (downloaded.length > 0) {
-    for (const d of downloaded) {
-      process.stdout.write(`${status.ok(`${d.path}`)} ${C.faded}(${d.bytes} bytes)${C.reset}\n`);
-    }
-    return 0;
-  }
-
-  if (attachments.length === 0) {
-    process.stdout.write(
-      `${C.dim}No stored files in session ${session.session_id}'s saved transcript.${C.reset}\n`,
-    );
-    return 0;
-  }
-  const idW = 36;
-  const nameW = Math.min(40, Math.max(8, ...attachments.map((a) => (a.filename ?? '').length)));
-  process.stdout.write(
-    `\n${C.dim}${pad('ATTACHMENT', idW)}  ${pad('NAME', nameW)}  FROM${C.reset}\n`,
-  );
-  for (const a of attachments) {
-    const who = a.role === 'assistant' ? 'shown by agent' : a.role;
-    process.stdout.write(
-      `${pad(a.attachment_id, idW)}  ${pad(a.filename ?? '—', nameW)}  ${C.faded}${who}${C.reset}\n`,
-    );
-  }
-  process.stdout.write(
-    `\n${C.dim}Download with \`kortix sessions attachments ${session.session_id} --download <id>\` ` +
-      `or \`--all\`.${C.reset}\n\n`,
-  );
-  return 0;
+  return printAttachments(session.session_id, source, attachments, downloaded, json);
 }

@@ -6,6 +6,8 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { verifyProviderConnection } from '../../llm-gateway/provider-verify';
 import { assertGatewayBudget, GatewayBudgetExceededError } from '../../llm-gateway/hooks';
+import { capturePersonEvent } from './product-events';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerGatewayProvidersRoutes(): void {
   // GAP C1 — "Connected" (a secret row exists) is not the same claim as "the
@@ -19,18 +21,18 @@ export function registerGatewayProvidersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/gateway/providers/{providerId}/verify',
+      path: '/{workspaceId}/gateway/providers/{providerId}/verify',
       tags: ['gateway'],
       summary: 'Verify a project LLM provider credential',
       ...auth,
-      request: { params: z.object({ projectId: z.string(), providerId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), providerId: z.string() }) },
       responses: {
         200: json(z.any(), 'Provider credential verification result'),
         ...errors(403, 404),
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const providerId = c.req.param('providerId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -63,6 +65,7 @@ export function registerGatewayProvidersRoutes(): void {
         });
       }
       const result = await verifyProviderConnection(principal, providerId);
+      capturePersonEvent(c, loaded, projectId, 'provider_verified', { provider: providerId, state: result.status });
       return c.json({ ...result, checked_at: new Date().toISOString() });
     },
   );

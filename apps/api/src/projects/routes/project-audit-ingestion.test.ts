@@ -7,11 +7,11 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { auditEvents, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { runWithContext } from '../../lib/request-context';
 import { attachInboundAuditScope, currentInboundAuditScope } from '../../shared/audit-scope';
-import { MAX_BATCH_SIZE } from '../../shared/opencode-audit-ingestion';
+import { MAX_BATCH_SIZE } from '../../shared/runtime-audit-ingestion';
 import {
   SESSION_EVENT_RATE_LIMITED_ACTION,
   __resetAuditRateGuardForTest,
-} from '../../shared/opencode-audit-rate-guard';
+} from '../../shared/runtime-audit-rate-guard';
 
 const ORIGINAL_ENV = {
   ALLOWED_SANDBOX_PROVIDERS: process.env.ALLOWED_SANDBOX_PROVIDERS,
@@ -50,7 +50,7 @@ let insertCostMs = 0;
 
 const sandboxScope = {
   sessionId: SESSION_ID,
-  opencodeSessionId: 'ses_server_owned',
+  runtimeSessionId: 'ses_server_owned',
   agentName: 'trusted-agent',
   createdBy: HUMAN_ID,
 };
@@ -64,6 +64,7 @@ function rowsFor(table: unknown): unknown[] {
 }
 
 mock.module('../../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: () => true,
   db: {
     select: () => ({
@@ -129,7 +130,7 @@ function hostileEvent() {
     source_revision: 'd7600000-0000-4000-a000-000000000001',
     type: 'tool.execute.after',
     occurred_at: '2026-08-08T12:00:00.000Z',
-    opencode_session_id: 'ses_forged',
+    runtime_session_id: 'ses_forged',
     agent_id: 'forged-agent',
     agent_name: 'forged-agent',
     initiator_actor_type: 'service_account',
@@ -342,7 +343,7 @@ describe('per-session ingest ceiling', () => {
       outcome: 'denied',
     });
     expect(
-      insertedValues.filter((value) => value.action === 'opencode.message.part.delta'),
+      insertedValues.filter((value) => value.action === 'agent.message.part.delta'),
     ).toHaveLength(CEILING);
   });
 
@@ -359,7 +360,7 @@ describe('per-session ingest ceiling', () => {
     expect(status).toBe(200);
     expect(body.suppressed).toBe(0);
     expect(insertedValues).toHaveLength(1);
-    expect(insertedValues[0]).toMatchObject({ action: 'opencode.session.idle' });
+    expect(insertedValues[0]).toMatchObject({ action: 'agent.session.idle' });
   });
 });
 

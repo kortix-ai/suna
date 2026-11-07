@@ -1,7 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT, readRepoFile } from '../src/fixtures/repo';
 
 // apps/web is a consumer of @kortix/ui: it imports `@kortix/ui/<entry>` (or a deep
 // `@kortix/ui/<module>/<path>`) where it uses a component. A web file whose only content
@@ -11,7 +10,6 @@ import { describe, expect, it } from 'vitest';
 // Allowed: `apps/web/src/ui/{index,types}.ts`, the session-type surface CLAUDE.md names
 // (`@/ui`). A file that re-exports @kortix/sdk only is not a @kortix/ui shim.
 
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const ALLOWED = new Set(['apps/web/src/ui/index.ts', 'apps/web/src/ui/types.ts']);
 
 // One `import`/`export … from '@kortix/…'` statement, with or without a semicolon.
@@ -21,7 +19,7 @@ const FROM_KORTIX = /\b(?:export|import)\s+(?:type\s+)?(?:([\w$*{},\s]+?)\s+from
  * True when `source` only re-exports or imports `@kortix/*` (one of them @kortix/ui),
  * plus at most a re-export of names it imported (`import X from …; export default X`).
  */
-export function isUiShim(source: string): boolean {
+function isUiShim(source: string): boolean {
   let code = source
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '')
@@ -78,7 +76,7 @@ describe('apps/web has no @kortix/ui shims', () => {
     expect(files.length).toBeGreaterThan(1000);
     const shims = files.filter((file) => {
       try {
-        return isUiShim(readFileSync(join(REPO_ROOT, file), 'utf8'));
+        return isUiShim(readRepoFile(file));
       } catch {
         return false; // deleted in the working tree, not yet in the index
       }

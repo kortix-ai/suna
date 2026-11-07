@@ -26,9 +26,9 @@ kortix tui              # first run: "Install now? [Y/n]" — experimental
 kortix t                # same thing, short
 kortixt                 # one word — installed beside `kortix`; bind it to a key
 
-# A cloud engineering desk in one keystroke: a fresh session in one project,
-# the project's agent (or --agent <name>), the sandbox shell open and focused.
-kortixt --project <project-id> --new --terminal
+# A cloud engineering desk in one keystroke: a fresh session in one workspace,
+# the workspace's agent (or --agent <name>), the sandbox shell open and focused.
+kortixt --project <workspace-id> --new --terminal
 ```
 
 `kortix tui` is a **launcher**, not the app. The `kortix` binary does not carry
@@ -62,7 +62,7 @@ Resolution order, highest first:
 | Flag | Effect |
 | --- | --- |
 | `--host <name>` | Open this configured host. Reaches the child as `KORTIX_TUI_HOST`, which outranks a stale `KORTIX_TOKEN`. |
-| `--project <id>` | Reaches the child as `KORTIX_PROJECT_ID`. |
+| `--project <id>` | The workspace to open (its id is the `project_id`). Reaches the child as both `KORTIX_WORKSPACE_ID` and `KORTIX_PROJECT_ID`. |
 | `--session <id>` | Reaches the child as `KORTIX_SESSION_ID`. |
 | `--sidebar` / `--no-sidebar` | Show or hide the sidebar for this run (`KORTIX_TUI_SIDEBAR=1` / `0`). Without either, the saved `/sidebar` choice. |
 | `--install` | Install and exit. No prompt — the form for a script or CI. |
@@ -129,7 +129,8 @@ except `KORTIX_TOKEN`, which the CLI reads too (see Troubleshooting).
 | `KORTIX_API_KEY` | Bearer token. With it, the CLI config is not read at all. |
 | `KORTIX_TOKEN` | Same as `KORTIX_API_KEY` (the name the CLI uses inside a sandbox). |
 | `KORTIX_API_URL` | Backend origin, with or without `/v1`. Defaults to `https://api.kortix.com`. |
-| `KORTIX_PROJECT_ID` | The project whose sessions are listed. Defaults to the host's default project, else the first project. |
+| `KORTIX_WORKSPACE_ID` | The workspace whose sessions are listed. Defaults to `KORTIX_PROJECT_ID`, else the host's default workspace, else the first workspace in the host's account, else the first workspace in any account. Read first, as in the CLI and kortixd. |
+| `KORTIX_PROJECT_ID` | The older name of `KORTIX_WORKSPACE_ID` (the platform injects it in a session box), read when `KORTIX_WORKSPACE_ID` is unset. |
 | `KORTIX_SESSION_ID` | Open this session at boot. |
 | `KORTIX_CONFIG_FILE` | Read hosts from this file instead of `~/.config/kortix/config.json`. |
 | `KORTIX_TUI_THEME` | `dark` or `light`. Otherwise `COLORFGBG` decides, defaulting to dark. |
@@ -141,28 +142,27 @@ except `KORTIX_TOKEN`, which the CLI reads too (see Troubleshooting).
 
 Every screen opens from the input with its slash command, and from the
 sidebar row of the same name. `Esc` returns to the session. A screen whose
-project flag is off is listed dimmed in the `/` menu with the reason, and it
+workspace flag is off is listed dimmed in the `/` menu with the reason, and it
 is left out of the sidebar.
 
 | Command | Screen | Needs |
 | --- | --- | --- |
-| (none) | The session: the transcript, the prompts, the input. With no session open, the KORTIX splash and the input; the first prompt creates the session. | a project |
+| (none) | The session: the transcript, the prompts, the input. With no session open, the KORTIX splash and the input; the first prompt creates the session. | a workspace |
 | `/files` | The session sandbox's workspace tree and viewer. Drive mounts under `/drives` read through Drive. | a session |
 | `/drive` | Drive: My files, Shared with me, Team folders, All files (managers), This session. New folder, move, delete, upload, conflicts. | flag `drives` |
-| `/repo` | The project repository: branches, folders, a file viewer, commit history. | a project |
-| `/artifacts` | Docs and pages the agents published: read, rename, pin, stop sharing. | flag `artifacts` |
-| `/inbox` | Notifications, newest first: open, mark read, mark all read. | `notification_center`, or `artifacts` + `artifact_comments` |
-| `/approvals` | Approvals, outputs and decisions waiting on a person: approve, reject, ask for changes, answer. | a project |
+| `/repo` | The workspace repository: branches, folders, a file viewer, commit history. | a workspace |
+| `/artifacts` | Docs and pages the agents published: read, rename, pin, stop sharing. | a Drive (Platinum) |
+| `/inbox` | Notifications, newest first: open, mark read, mark all read. | a workspace |
+| `/approvals` | Approvals, outputs and decisions waiting on a person: approve, reject, ask for changes, answer. | a workspace |
 | `/goals` | Goals and their progress: start one, answer its question, stop it. | flag `goals` |
-| `/memory` | Company memory pages: read and search. | flag `project_channels` |
-| `/spaces` | Channels and DMs and their threads; a thread opens as the session. | flag `project_channels` |
-| `/rooms` | Rooms where agents and people talk (read-only). | flag `agent_rooms` |
+| `/memory` | Company memory pages: read and search. | flag `chat` |
+| `/spaces` | Channels and DMs and their threads; a thread opens as the session. | flag `chat` |
 | `/loops` | This session's loops: prompts on a schedule. New, pause, run now, delete. | a session, flag `reminders` |
 | `/audit` | This session's audit events and the approvals waiting. History needs the Enterprise audit entitlement. | a session |
-| `/review` | Open change requests and their diffs. | a project |
-| `/apps` | The project's deployed apps, their status and URLs. | — |
+| `/review` | Open change requests and their diffs. | a workspace |
+| `/apps` | The workspace's deployed apps, their status and URLs. | — |
 | `/customize` | Agents · Skills · Secrets · Triggers · Connectors. | — |
-| `/account` | Members, invites, roles, and the billing readout. | an account |
+| `/members` | Workspace members, invites, roles, and the billing readout. `/account` still opens it. | a workspace |
 | `/help` | Every command and binding, generated from the command table and the keymap. | — |
 | `/ports` | Sandbox ports noticed in the transcript/terminal, and every local forward. See [Ports](#ports). | a session |
 | `/links` | Every URL in the transcript or on the terminal screen, wrapped ones rejoined. See [Links](#links). | a session |
@@ -186,8 +186,8 @@ TUI shows it three ways:
 | `Ctrl+Y` | Copy its link, or its path. |
 | `Ctrl+O` | Open an artifact in `/artifacts`, on its details. |
 
-The list joins what the thread shows with the project's artifacts this
-session published (flag `artifacts`). One artifact shown twice is one row.
+The list joins what the thread shows with the workspace's artifacts this
+session published. One artifact shown twice is one row.
 `/artifacts <id>` and `/files <path>` open those screens on one artifact or
 one file.
 
@@ -304,9 +304,9 @@ Every region around the chat is a module, off until you turn it on:
 | Module | Command | Sides | What it shows |
 | --- | --- | --- | --- |
 | Header | `/header` | — | The session title, and its state while it is not ready. On by default. |
-| Tray | `/tray` | — | One row under the input: host · project, then what the session showed you (`▣ 2 outputs · Q3 report`), its agents, model · agent · context used. On by default. |
+| Tray | `/tray` | — | One row under the input: host · workspace, then what the session showed you (`▣ 2 outputs · Q3 report`), its agents, model · agent · context used. On by default. |
 | Terminal title | `/title` | — | The terminal window's title follows the open session. On by default. |
-| Sidebar | `/sidebar`, `Alt+B` | left, right | Projects, every screen, the session list. Rows are clickable. |
+| Sidebar | `/sidebar`, `Alt+B` | left, right | The workspace, every screen, the session list. Rows are clickable. |
 | Session tabs (experimental) | `/tabs` | top, bottom | The sessions opened in this run. Click a tab, or `Alt+[` / `Alt+]` (`Ctrl+PageUp/PageDown`); `/close` closes. |
 | Info panel (experimental) | `/info`, `Alt+I` | right, left | Title, state, context tokens and % used, model, session, forwarded ports. |
 
@@ -321,7 +321,7 @@ The sidebar is optional and starts hidden. `/sidebar` or `Alt+B` toggles it
 and saves the choice in `tui.json` (beside `config.json`), so the next run
 opens the same way. `kortix tui --sidebar` / `--no-sidebar`
 (`KORTIX_TUI_SIDEBAR=1` / `0`) override it for one run. Without the sidebar,
-`/sessions` (`Ctrl+P`) and `/projects` do everything it does.
+`/sessions` (`Ctrl+P`) and `/workspaces` do everything it does.
 
 ## Commands and keys
 
@@ -351,7 +351,7 @@ is `/feedback`.
 | Command | Also | Action |
 | --- | --- | --- |
 | `/new [prompt]` | `/clear` `Ctrl+n` | Session: Start a new session. A prompt after the name is its first message. |
-| `/sessions [filter]` | `/resume` `/continue` `/switch` `Ctrl+p` | Session: Pick a session of this project and open it. |
+| `/sessions [filter]` | `/resume` `/continue` `/switch` `Ctrl+p` | Session: Pick a session of this workspace and open it. |
 | `/agents` | `/subagents` `/team` | Session: Agents this session started: watch one, open it, stop it. |
 | `/workflows` | `/runs` | Session: This session's workflow runs: progress, pause, stop, restart an agent. |
 | `/tasks` |  | Session: The team's shared task list: status, owner, blockers. |
@@ -364,15 +364,14 @@ is `/feedback`.
 | `/fork [prompt]` |  | Session: Copy this conversation into a new session and open it. |
 | `/pin` |  | Session: Pin or unpin this session at the top of the list. |
 | `/archive` |  | Session: Archive this session, or bring it back. |
-| `/share <team\|private>` |  | Session: Let the whole project open this session, or only you. |
+| `/share <team\|private>` |  | Session: Let the whole workspace open this session, or only you. |
 | `/reload` |  | Session: Reload kortix.yaml, agents and skills into this session. |
 | `/copy` |  | Session: Copy the last reply to the clipboard. |
 | `/link` | `/id` | Session: Copy the session web link. |
 | `/shown` | `Alt+o` | Session: What this session showed you: open, reference or copy an artifact, page or file. |
 | `/export [file]` |  | Session: Save the conversation as Markdown in the current folder. |
 | `/delete` |  | Session: Delete this session. Asks first. |
-| `/projects [filter]` | `/project` | Switch: Pick another project. |
-| `/accounts [filter]` | `/org` | Switch: Pick another account. |
+| `/workspaces [filter]` | `/workspace` `/projects` `/project` `/accounts` `/org` | Switch: Pick another workspace. |
 | `/hosts` | `/host` `/login` `Alt+h / Ctrl+h` | Switch: Switch host or log in to another one. |
 | `/logout` |  | Switch: Remove this host's token, then show the login screen. |
 | `/model` | `/models` `Alt+m` | Model and agent: Pick the model. |
@@ -389,15 +388,14 @@ is `/feedback`.
 | `/ports` | `Alt+p` | Panels: Forward sandbox ports to this machine. |
 | `/links` | `Alt+l` | Panels: Open a URL from the transcript or the terminal. |
 | `/files [path]` | `Alt+f` | Screens: Browse this session's files. |
-| `/drive` | `/volumes` | Screens: Project files on Drive: yours, shared, team folders. |
-| `/repo` | `/git` `/code` | Screens: Browse the project's repository: files, branches, history. |
+| `/drive` | `/volumes` | Screens: Workspace files on Drive: yours, shared, team folders. |
+| `/repo` | `/git` `/code` | Screens: Browse the workspace's repository: files, branches, history. |
 | `/artifacts [id]` | `/docs` | Screens: Docs and pages the agents published. |
 | `/inbox` | `/notifications` | Screens: Notifications: what needs you, newest first. |
 | `/approvals` | `/permissions` `/decisions` `/outputs` | Screens: Approvals, outputs and decisions waiting on a person. |
 | `/goals` |  | Screens: Outcomes the agents work toward, and their progress. |
 | `/memory` | `/knowledge` | Screens: Read and search company memory pages. |
 | `/spaces` | `/channels` `/dm` | Screens: Channels and DMs, and the threads in them. |
-| `/rooms` |  | Screens: Rooms where agents and people talk. |
 | `/loops` | `/reminders` `/schedule` | Screens: This session's loops: prompts that run on a schedule. |
 | `/audit` | `/activity` | Screens: What happened in this session, and approvals waiting. |
 | `/review` | `/changes` `/pr-comments` `Alt+r` | Screens: Review change requests. |
@@ -406,14 +404,14 @@ is `/feedback`.
 | `/providers [provider]` | `/provider` | Screens: Connect model providers: ChatGPT, Claude, API keys, and who can use them. |
 | `/connectors [app]` | `/connector` `/integrations` | Screens: Connect apps and tools: browse the catalogue, add accounts, sign in, and share them. |
 | `/connect [provider or app]` |  | Screens: Connect a model provider or a connector. |
-| `/account` | `/members` `/billing` `/usage` `Alt+u` | Screens: Members, invites, roles, credits. |
-| `/status` | `/doctor` `/whoami` | App: Host, account, project, session, runtime and version. |
+| `/members` | `/account` `/billing` `/usage` `Alt+u` | Screens: Workspace members, invites, roles, credits. |
+| `/status` | `/doctor` `/whoami` | App: Host, workspace, session, runtime and version. |
 | `/feedback` | `/bug` | App: Report a bug or an idea on GitHub. |
 | `/life` |  | App: Play Conway's Game of Life from the Kortix symbol. Clicking the symbol does too. |
 | `/help` | `/keys` `/?` `?` | App: Show every command and key. |
 | `/quit` | `/exit` `/q` `Ctrl+c / Ctrl+q` | App: Leave the TUI. |
 
-_62 commands._
+_60 commands._
 
 ### Anywhere
 
@@ -436,7 +434,7 @@ _62 commands._
 | `Alt+r` | Open the review screen. |
 | `Alt+a` | Open the apps screen. |
 | `Alt+c` | Open the customize screen. |
-| `Alt+u` | Open the account screen: members, invites, billing. |
+| `Alt+u` | Open the workspace members screen: members, invites, billing. |
 | `Alt+h / Ctrl+h` | Switch host. Ctrl+H needs the kitty keyboard protocol: the byte it sends is Backspace. |
 | `Esc` | Close the overlay, leave the screen, or move focus back to the composer. |
 
@@ -468,7 +466,7 @@ _62 commands._
 | `/` | Filter the session list. Esc clears it. |
 | `r` | Rename the selected session. |
 | `d` | Delete the selected session (asks first). |
-| `n` | Create a session in this project. |
+| `n` | Create a session in this workspace. |
 | `y / Enter` | Confirm the delete. |
 | `n` | Decline the delete. |
 | `Esc` | Cancel the input, the confirm, or the filter. |
@@ -523,7 +521,7 @@ _62 commands._
 | `h / ←` | Collapse the directory, or jump to its parent. |
 | `l / →` | Expand the directory. |
 | `/` | Filter the loaded rows by name. Esc clears it. |
-| `.` | Show or hide dot-prefixed entries (.kortix and .opencode always show). |
+| `.` | Show or hide dot-prefixed entries (.kortix always shows). |
 | `r` | Re-read every open directory from the sandbox. |
 | `y` | Copy the selected row's path to the clipboard. |
 | `J / PgDn` | Scroll the viewer down. |
@@ -673,7 +671,7 @@ _62 commands._
 | `PgDn / Space` | Scroll a page down. |
 | `PgUp` | Scroll a page up. |
 | `Enter` | Read the selected page. |
-| `/` | Search all pages the project lets you read. |
+| `/` | Search all pages the workspace lets you read. |
 | `t` | Cycle the page-type filter. |
 | `o` | Open Memory in the browser. |
 | `r` | Reload the page list. |
@@ -692,22 +690,6 @@ _62 commands._
 | `o` | Open the space in the browser. |
 | `r` | Reload the list. |
 | `Esc` | Leave the threads, or leave the screen. |
-
-### Rooms
-
-| Keys | Action |
-| --- | --- |
-| `j / ↓` | Move down. In a conversation: scroll down. |
-| `k / ↑` | Move up. In a conversation: scroll up. |
-| `g` | Go to the first row, or the oldest message. |
-| `G` | Go to the last row, or the newest message. |
-| `PgDn / Space` | Scroll a page down. |
-| `PgUp` | Scroll a page up. |
-| `Enter` | Read the conversation, or open the member as a session. |
-| `m` | List the members of the open conversation. |
-| `o` | Open the conversation in the browser. |
-| `r` | Reload the list or the messages. |
-| `Esc` | Close the members, close the conversation, or leave the screen. |
 
 ### Loops
 
@@ -825,7 +807,7 @@ _62 commands._
 | `m` | Change who can use the selected account. |
 | `x` | Rotate the selected key. |
 | `d` | Remove or disconnect (asks first). |
-| `e` | Turn the provider on or off for this project. |
+| `e` | Turn the provider on or off for this workspace. |
 | `o` | Open the sign-in link in the browser. |
 | `c` | Copy the sign-in code, or the link. |
 | `y` | Confirm. |
@@ -851,7 +833,7 @@ _62 commands._
 | `u` | Use the selected account by default. |
 | `x` | Set the credential of the selected account. |
 | `d` | Disconnect the selected account (asks first). |
-| `Shift+d / D` | Remove the connector from the project (asks first). |
+| `Shift+d / D` | Remove the connector from the workspace (asks first). |
 | `i` | Copy the selected account’s connection ID. |
 | `w` | Open the connector in the web app. |
 | `o` | Open the sign-in link in the browser. |
@@ -871,7 +853,7 @@ _62 commands._
 | `1` | Open model providers. |
 | `2` | Open connectors. |
 
-### Account
+### Workspace members
 
 | Keys | Action |
 | --- | --- |
@@ -940,7 +922,7 @@ _62 commands._
 | `PgUp` | Page up. |
 | `Enter` | Open the row. |
 
-_380 bindings._
+_369 bindings._
 
 ## Tests
 
@@ -980,7 +962,7 @@ settle before its text can be read back.
 
 ### Live proof
 
-`scripts/live-app.tsx` mounts the whole app against a real API, a real project
+`scripts/live-app.tsx` mounts the whole app against a real API, a real workspace
 and a real cloud sandbox, and exits non-zero unless every route answers:
 
 ```bash
@@ -992,8 +974,8 @@ KORTIX_PROJECT_ID="$PID" KORTIX_SESSION_ID="$SID" \
 
 It asserts, in order: the sidebar lists real sessions grouped by day; the
 session reaches `ready` on the real runtime; a typed prompt streams a reply
-back; `Ctrl+P` opens the switcher and its filter finds the project rows; `?`
-opens the help overlay; `Alt+F` routes to files; `Alt+R` lists the project's
+back; `Ctrl+P` opens the switcher and its filter finds the workspace rows; `?`
+opens the help overlay; `Alt+F` routes to files; `Alt+R` lists the workspace's
 change requests and `Enter` opens a real diff; `Alt+A` lists its Apps; `Alt+C`
 walks all five Customize tabs by their number keys; `Alt+U` opens Members;
 `Alt+H` asks the host to switch; and `Ctrl+N` creates a REAL session that the
@@ -1004,7 +986,7 @@ It is not part of `bun test`: it needs credentials. It DOES provision one real
 sandbox (the `Ctrl+N` step) and deletes it again in the same run. Point it at a
 warm session and it finishes in about two minutes.
 
-`LIVE_SKIP_STREAM=1` drops the three runtime steps for a project whose sessions
+`LIVE_SKIP_STREAM=1` drops the three runtime steps for a workspace whose sessions
 are all stopped — mounting `useSession` on one would boot a cold sandbox this
 run has no use for. The skip is printed, never silent, and `KORTIX_SESSION_ID`
 becomes optional:
@@ -1040,7 +1022,7 @@ os.close(slave)
 - **`@path` attachments are not sent.** The SDK's attachment surface is
   browser-`File` shaped, so a path in a prompt is plain text.
 - **The draft has no model or agent picker.** `/model`, `/effort` and `/agent`
-  read the open session's hook, so a new session starts on the project's
+  read the open session's hook, so a new session starts on the workspace's
   defaults; pick another model after its first prompt.
 - **Capabilities load a moment after a session opens.** Until
   `/kortix/health` answers, every command is offered; a command the runtime
@@ -1083,9 +1065,9 @@ boot and drops to the login screen with this line; the fix is
 - **A session sits on `provisioning` for minutes.** A cold sandbox boot is
   minutes, not seconds. The header prints the live `/start` stage; the terminal
   panel and the files screen wait for `ready` rather than failing.
-- **A session lists no project commands.** The TUI reads the session runtime's
+- **A session lists no workspace commands.** The TUI reads the session runtime's
   `/kortix/health` capabilities once the runtime is up. A runtime without
-  `session.commands` lists no project commands in the `/` palette.
+  `session.commands` lists no workspace commands in the `/` palette.
 - **The terminal is left in a broken state.** Every exit path calls
   `renderer.destroy()`. If a crash ever
   escapes it, `reset` restores the shell; report the stack trace, because that

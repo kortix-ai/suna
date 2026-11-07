@@ -110,7 +110,7 @@ beforeEach(() => {
   leaseUpdates = [];
   sessionsMarkedRead = [];
   extensions = [];
-  projectMetadata = { experimental: { notification_center: true } };
+  projectMetadata = {};
   awake = { deadlineAt: DEADLINE_AT, capAt: CAP_AT };
 });
 
@@ -151,14 +151,13 @@ describe('PUT .../presence', () => {
     expect(sessionsMarkedRead).toEqual([{ userId: USER_ID, sessionId: SESSION_ID }]);
   });
 
-  test('with the notification_center flag off, an active tab holds its lease and marks nothing read', async () => {
-    for (const metadata of [{}, { experimental: { notification_center: false } }]) {
-      projectMetadata = metadata;
-      expect((await put({ tab_id: TAB_ID, active: true })).status).toBe(200);
-    }
-    expect(leaseWrites).toBe(2);
-    expect(extensions).toHaveLength(2);
-    expect(sessionsMarkedRead).toEqual([]);
+  // The flag graduated on 2026-11-06: a stored override changes nothing.
+  test('a stored notification_center: false override is inert: an active tab still marks the session read', async () => {
+    projectMetadata = { experimental: { notification_center: false } };
+    expect((await put({ tab_id: TAB_ID, active: true })).status).toBe(200);
+    expect(leaseWrites).toBe(1);
+    expect(extensions).toHaveLength(1);
+    expect(sessionsMarkedRead).toEqual([{ userId: USER_ID, sessionId: SESSION_ID }]);
   });
 
   // KRTX-1729: the composer says how long the computer stays on.

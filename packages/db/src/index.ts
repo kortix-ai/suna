@@ -32,6 +32,12 @@ export {
   accountRoleEnum,
   accountsRelations,
   accountGithubInstallationsRelations,
+  // Workspaces (one account + its one active project)
+  workspaces,
+  workspaceNameBackups,
+  personDeletionRequests,
+  workspaceSplitRuns,
+  workspaceSplitEmails,
   auditEvents,
   auditEventsAll,
   auditArchiveChunks,
@@ -92,6 +98,10 @@ export {
   projectSpaces,
   projectSpaceLinks,
   projectSpaceMembers,
+  projectSpaceWatchers,
+  projectSpaceEvents,
+  projectGoals,
+  projectGoalEvents,
   projectSpaceKindEnum,
   projectSpaceVisibilityEnum,
   // Memory ("Used memory" records)
@@ -145,6 +155,7 @@ export {
   creditLedger,
   creditUsage,
   accountDeletionRequests,
+  freeCreditClaims,
   retentionErasures,
   creditPurchases,
   // Mobile push notification device tokens
@@ -180,6 +191,10 @@ export {
   artifactCommentScreenshotObjects,
   artifactCommentWriteLimits,
   artifactEvents,
+  artifactDocState,
+  artifactDocUpdates,
+  artifactDocRoots,
+  artifactDocClients,
   driveCommitAuthors,
   sessionSandboxIdentities,
   claudeSubscriptionLogins,
@@ -206,6 +221,7 @@ export {
   appSiteBlobs,
   appDeploymentEvents,
   sessionPendingQuestions,
+  sessionPendingPermissions,
   yoloMemberTokens,
   stripeWebhookEventsProcessed,
   // Tunnel
@@ -319,7 +335,7 @@ export {
   captureDevices,
   captureEnrollmentTokens,
   captureEnrollments,
-  captureWorkspaces,
+  captureTenants,
   timelineChunks,
   timelineFrames,
   timelineActions,
@@ -331,11 +347,15 @@ export {
   connectorPoliciesRelations,
   connectorProjectPoliciesRelations,
   connectorProjectSettingsRelations,
+  selfHostSignupPolicy,
+  creditCodes,
+  creditCodeRedemptions,
 } from './schema/kortix';
-export type { AgentGrant, StoredAgentGrant, ArtifactCommentMention } from './schema/kortix';
+export type { AgentGrant, StoredAgentGrant, StoredKeyScopes, ArtifactCommentMention } from './schema/kortix';
 export { readStoredAgentGrant } from './schema/kortix';
 export type { AccountBrandingRecord, DriveVolumeMoveRecord } from './schema/kortix';
 export type { MemoryThreadLoadLayer } from './schema/kortix';
+export type { ProjectGoalCriterion, ProjectGoalSessionRef, ProjectGoalVerification } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 
 export type {

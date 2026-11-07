@@ -401,7 +401,7 @@ function OverviewSettings({
   config: ProjectConfigSummary;
   block: AgentConfigBlock;
   editor?: AgentDraft;
-  /** The Space row: only with spaces on (`project_channels`, Work in progress). */
+  /** The Space row: only with spaces on (`chat`, Work in progress). */
   showSpace: boolean;
   sourcePath: string;
 }) {

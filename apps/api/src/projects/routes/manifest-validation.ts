@@ -4,6 +4,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { readJsonObject } from '../../shared/http-body';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerManifestValidationRoutes(): void {
   // ─── Manifest validation ──────────────────────────────────────────────────
@@ -21,12 +22,12 @@ export function registerManifestValidationRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/manifest/validate',
+      path: '/{workspaceId}/manifest/validate',
       tags: ['projects'],
       summary: 'Validate a project kortix.yaml manifest',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               raw: z.string().openapi({ description: 'Manifest text (kortix.yaml) to validate.' }),
             }) } } },
@@ -37,7 +38,7 @@ export function registerManifestValidationRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 

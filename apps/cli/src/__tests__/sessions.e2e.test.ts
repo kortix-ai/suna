@@ -126,7 +126,7 @@ describe('sessions new CLI flow', () => {
       fetch: async (req) => {
         const url = new URL(req.url);
         apiRequests.push(`${req.method} ${url.pathname}`);
-        if (req.method === 'GET' && url.pathname === `/v1/projects/${PROJECT_ID}`) {
+        if (req.method === 'GET' && url.pathname === `/v1/workspaces/${PROJECT_ID}`) {
           return Response.json({
             project_id: PROJECT_ID,
             account_id: ACCOUNT_ID,
@@ -141,7 +141,7 @@ describe('sessions new CLI flow', () => {
             updated_at: '2026-01-01T00:00:00.000Z',
           });
         }
-        if (req.method === 'POST' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
+        if (req.method === 'POST' && url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions`) {
           sessionCreateBody = await req.json() as Record<string, unknown>;
           const sessionId = (sessionCreateBody.session_id as string | undefined)
             ?? '00000000-0000-4000-a000-000000000333';
@@ -154,7 +154,7 @@ describe('sessions new CLI flow', () => {
             sandbox_provider: 'daytona',
             sandbox_id: `sandbox-${sessionId}`,
             sandbox_url: null,
-            opencode_session_id: null,
+            runtime_session_id: null,
             name: null,
             agent_name: 'default',
             status: 'provisioning',
@@ -170,17 +170,17 @@ describe('sessions new CLI flow', () => {
         }
         if (
           req.method === "GET" &&
-          new RegExp(`^/v1/projects/${PROJECT_ID}/sessions/[^/]+$`).test(url.pathname)
+          new RegExp(`^/v1/workspaces/${PROJECT_ID}/sessions/[^/]+$`).test(url.pathname)
         ) {
           return Response.json({
             session_id: "00000000-0000-4000-a000-000000000333",
             status: readinessStage === "ready" ? "running" : readinessStage,
           });
         }
-        if (req.method === 'GET' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
+        if (req.method === 'GET' && url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions`) {
           return Response.json(sessionList);
         }
-        const logMatch = url.pathname.match(new RegExp(`^/v1/projects/${PROJECT_ID}/sessions/([^/]+)/log$`));
+        const logMatch = url.pathname.match(new RegExp(`^/v1/workspaces/${PROJECT_ID}/sessions/([^/]+)/log$`));
         if (req.method === 'GET' && logMatch) {
           logRequests.push(url);
           const common = {
@@ -436,12 +436,12 @@ describe('sessions new CLI flow', () => {
         sandbox_provider: 'daytona',
         sandbox_id: runningId,
         sandbox_url: `http://127.0.0.1/v1/p/external-${runningId}/8000`,
-        opencode_session_id: 'ses_test',
+        runtime_session_id: 'ses_test',
         name: 'Digest target',
         agent_name: 'harness-reflector',
         status: 'running',
         error: null,
-        metadata: { opencode_sessions: [{ title: 'Digest target' }] },
+        runtime_sessions: [{ title: 'Digest target' }],
         created_at: '2026-06-20T00:00:00.000Z',
         updated_at: '2026-06-20T00:05:00.000Z',
       },
@@ -454,7 +454,7 @@ describe('sessions new CLI flow', () => {
         sandbox_provider: 'daytona',
         sandbox_id: stoppedId,
         sandbox_url: null,
-        opencode_session_id: null,
+        runtime_session_id: null,
         name: 'Stopped target',
         agent_name: 'default',
         status: 'stopped',
@@ -472,8 +472,8 @@ describe('sessions new CLI flow', () => {
     expect(code).toBe(0);
     expect(logRequests).toHaveLength(2);
     expect(logRequests.map((url) => url.pathname)).toEqual(expect.arrayContaining([
-      `/v1/projects/${PROJECT_ID}/sessions/${runningId}/log`,
-      `/v1/projects/${PROJECT_ID}/sessions/${stoppedId}/log`,
+      `/v1/workspaces/${PROJECT_ID}/sessions/${runningId}/log`,
+      `/v1/workspaces/${PROJECT_ID}/sessions/${stoppedId}/log`,
     ]));
     for (const request of logRequests) expect(request.searchParams.get('limit')).toBe('5');
     expect(apiRequests.filter((request) => request.includes('/transcript'))).toEqual([]);
@@ -489,13 +489,9 @@ describe('sessions new CLI flow', () => {
       }>;
     };
     expect(parsed.sessions).toHaveLength(2);
-    // The API here predates W4 (only opencode_* names); the digest still
-    // serves the neutral keys, with the pre-W4 ones beside them.
     expect((parsed.sessions[0] as unknown as { session: unknown }).session).toMatchObject({
       runtime_session_id: 'ses_test',
       runtime_titles: ['Digest target'],
-      opencode_session_id: 'ses_test',
-      opencode_titles: ['Digest target'],
     });
     for (const session of parsed.sessions) {
       expect(session.transcript).toMatchObject({ available: true, source: 'log', complete: true });

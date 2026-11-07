@@ -31,7 +31,7 @@ afterEach(() => {
 describe('resolveSessionInsertFailure', () => {
   test('a raw postgres.js message is logged server-side but never returned to the client', () => {
     const raw = Object.assign(new Error(`Failed query: ${SQL_LEAK}\n${PARAM_LEAK}`), {
-      code: '42P01',
+      code: '22P02',
     });
 
     const mapped = resolveSessionInsertFailure(raw);
@@ -55,7 +55,7 @@ describe('resolveSessionInsertFailure', () => {
     const logged = errorSpy.mock.calls[0] as unknown[];
     expect(logged[0]).toBe('[projects] session insert failed');
     expect(logged[1]).toMatchObject({
-      pgCode: '42P01',
+      pgCode: '22P02',
       message: expect.stringContaining(SQL_LEAK),
     });
     expect(JSON.stringify(logged[1])).not.toContain('private-customer-file.docx');
@@ -79,6 +79,51 @@ describe('resolveSessionInsertFailure', () => {
     });
     expect(JSON.stringify(mapped.body)).not.toContain('insert into');
   });
+
+  test('a unique violation that Drizzle wraps (the code on `cause`) still maps to the typed 409', () => {
+    // Drizzle throws `Failed query: …` and keeps the postgres.js error on `cause`.
+    const raw = Object.assign(new Error('Failed query: insert into "kortix"."project_sessions" …'), {
+      cause: Object.assign(new Error('duplicate key value violates unique constraint "project_sessions_pkey"'), {
+        code: '23505',
+        constraint: 'project_sessions_pkey',
+        detail: 'Key (session_id)=(private-session-value) already exists.',
+      }),
+    });
+
+    const mapped = resolveSessionInsertFailure(raw);
+
+    expect(mapped.status).toBe(409);
+    expect(mapped.body).toEqual({ error: 'A session with this id already exists', code: 'session_already_exists' });
+    expect(errorSpy.mock.calls[0]?.[1]).toMatchObject({ pgCode: '23505', constraint: 'project_sessions_pkey', detail: null });
+    // DETAIL carries row values: it never reaches the log.
+    expect(JSON.stringify(errorSpy.mock.calls[0])).not.toContain('private-session-value');
+  });
+
+  // KRTX-4341: a release whose migration renames a column (v0.15.0,
+  // `opencode_session_id` -> `runtime_session_id`) leaves the previous API
+  // tasks serving for ~8 min against the new schema. Their insert fails with
+  // 42703, and the old 500 made the web report every retry as an error.
+  for (const code of ['42703', '42P01']) {
+    test(`an undefined column or table (${code}) during a deploy maps to a typed, retryable 503`, () => {
+      // Drizzle keeps the postgres.js error on `cause`, as in the prod failure.
+      const raw = Object.assign(new Error('Failed query: insert into "kortix"."project_sessions" …'), {
+        cause: Object.assign(new Error('column "opencode_session_id" does not exist'), { code }),
+      });
+
+      const mapped = resolveSessionInsertFailure(raw);
+
+      expect(mapped.status).toBe(503);
+      expect(mapped.headers).toEqual({ 'Retry-After': '30' });
+      expect(mapped.body).toEqual({
+        error: 'An update is in progress. Try again in a moment.',
+        code: 'deploy_in_progress',
+        retry: true,
+      });
+      // The cause stays in the server log, so a real schema defect stays visible.
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy.mock.calls[0]?.[1]).toMatchObject({ pgCode: code });
+    });
+  }
 
   test('a non-Error value still yields the stable body and is logged', () => {
     const mapped = resolveSessionInsertFailure('boom');

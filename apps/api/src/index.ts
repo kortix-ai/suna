@@ -1,5 +1,8 @@
 // Expand the aggregate ECS secret before any module reads process.env.
 import './environment-secret';
+// zod 4 gives `.openapi()` only to schemas built after this import, and
+// `@kortix/api-contract` builds its schemas at load. Load it before any of them.
+import '@hono/zod-openapi';
 
 // ─── Observability (must follow environment hydration) ───────────────────────
 import './lib/sentry';

@@ -42,6 +42,7 @@ import { PROJECT_ACTIONS } from "../../iam";
 import { auth, errors, json } from "../../openapi";
 import { loadProjectForUser, assertProjectCapability } from "../lib/access";
 import { projectsApp } from "../lib/app";
+import { workspaceIdParam } from '../../shared/route-params';
 
 /** The three Slack conversation-join policies (channels/slack/participants.ts). */
 const CONVERSATION_POLICIES = ["owner_approval", "owner_only", "project_open"] as const;
@@ -194,7 +195,7 @@ async function serializeBinding(
     projectDefault: projectDefaultAgent,
   });
   const effectiveModel = await resolveBindingEffectiveModel(
-    row.opencodeModel,
+    row.sessionModel,
     effectiveAgent.agent,
     modelCtx,
     oneToOneConversation(row),
@@ -212,7 +213,7 @@ async function serializeBinding(
     // is its own binding named `Team › Channel`; this tells them apart.
     threadTitle,
     agentName: row.agentName,
-    opencodeModel: row.opencodeModel,
+    model: row.sessionModel,
     conversationPolicy: row.conversationPolicy,
     installedAt: row.installedAt.toISOString(),
     effectiveAgent,
@@ -223,7 +224,7 @@ async function serializeBinding(
 const ChannelBindingPatchBody = z.object({
   // null resets the override to the project default; omit to leave unchanged.
   agentName: z.string().max(128).nullable().optional(),
-  opencodeModel: z.string().max(256).nullable().optional(),
+  model: z.string().max(256).nullable().optional(),
   conversationPolicy: z.enum(CONVERSATION_POLICIES).optional(),
 });
 
@@ -235,15 +236,15 @@ export function registerChannelBindingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: "get",
-      path: "/{projectId}/channels/bindings",
+      path: "/{workspaceId}/channels/bindings",
       tags: ["channels"],
       summary: "List channel bindings of a project",
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: { 200: json(z.any(), "OK"), ...errors(404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param("projectId");
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, "read");
       if (!loaded) return c.json({ error: "Not found" }, 404);
       // Listing channel↔agent bindings exposes which connectors the project's
@@ -336,18 +337,18 @@ export function registerChannelBindingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: "patch",
-      path: "/{projectId}/channels/bindings/{bindingId}",
+      path: "/{workspaceId}/channels/bindings/{bindingId}",
       tags: ["channels"],
       summary: "Update a channel binding",
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), bindingId: z.string() }),
+        params: z.object({ workspaceId: z.string(), bindingId: z.string() }),
         body: { content: { "application/json": { schema: ChannelBindingPatchBody } } },
       },
       responses: { 200: json(z.any(), "OK"), ...errors(400, 403, 404, 409) },
     }),
     async (c: any) => {
-      const projectId = c.req.param("projectId");
+      const projectId = workspaceIdParam(c);
       const bindingId = c.req.param("bindingId");
       // Floor 'read'; project.connector.write below is the real gate (was 'manage'
       // → project.write, which over-gated a custom connector.write-only role).
@@ -376,7 +377,7 @@ export function registerChannelBindingsRoutes(): void {
       const body = parsed.data;
       if (
         body.agentName === undefined &&
-        body.opencodeModel === undefined &&
+        body.model === undefined &&
         body.conversationPolicy === undefined
       ) {
         return c.json({ error: "No fields to update", code: "empty_patch" }, 400);
@@ -424,10 +425,10 @@ export function registerChannelBindingsRoutes(): void {
         }
       }
 
-      if (body.opencodeModel !== undefined) {
+      if (body.model !== undefined) {
         let stored: string | null = null;
-        if (body.opencodeModel !== null) {
-          const trimmed = body.opencodeModel.trim();
+        if (body.model !== null) {
+          const trimmed = body.model.trim();
           if (!trimmed || /\s/.test(trimmed)) {
             return c.json(
               { error: `"${trimmed}" doesn't look like a model id`, code: "invalid_model" },

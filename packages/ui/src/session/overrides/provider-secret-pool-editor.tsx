@@ -194,3 +194,25 @@ export function NewProviderSecretPoolEditor({ projectId, selection, onChange }: 
         onChange(next);
       }} />;
 }
+
+/**
+ * The provider keys a session can choose from, grouped by nothing: the same
+ * filter the editors above apply (usable gateway keys; for a started session
+ * only the keys its person can reach). For the `chat_input` control's own list.
+ */
+export function useProviderKeyChoices(projectId: string, sessionId: string | undefined): {
+  keys: AccountSecretResource[];
+  loading: boolean;
+  error: boolean;
+} {
+  const { project, resources } = useResources(projectId);
+  const pools = useSessionProviderSecretPools(sessionId ? projectId : null, sessionId);
+  const session = useProjectSession(projectId, sessionId, { enabled: !!sessionId }).data;
+  const usable = usableKeys(resources.data?.secrets);
+  const keys = sessionId ? keysForSession(usable, sessionPersonalKeys(session, pools.data).user) : usable;
+  return {
+    keys,
+    loading: project.isLoading || resources.isLoading || (!!sessionId && pools.isLoading),
+    error: project.isError || resources.isError,
+  };
+}

@@ -32,7 +32,7 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   listAccounts,
-  listProjectsForAccount,
+  listWorkspacesForAccount,
   type KortixAccount,
   type KortixProject,
 } from '../core/rest/projects-client';
@@ -40,6 +40,9 @@ import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
 export type AccountsKey = ReturnType<typeof qk.accounts.list>;
+/**
+ * @deprecated The query key of `useProjects`; use `useWorkspaces`. Kept permanently.
+ */
 export type ProjectsKey = ReturnType<typeof qk.projects.list>;
 
 /**
@@ -57,7 +60,11 @@ export function accountsQueryOptions(userId?: string | null, enabled = true) {
   };
 }
 
-/** The same, for one account's project list. See {@link accountsQueryOptions}. */
+/**
+ * The same, for one account's project list. See {@link accountsQueryOptions}.
+ *
+ * @deprecated The query of `useProjects`; use `useWorkspaces`. Kept permanently.
+ */
 export function projectsQueryOptions(accountId?: string, enabled = true) {
   return {
     queryKey: qk.projects.list(accountId),
@@ -89,6 +96,9 @@ export function useAccounts(options: UseAccountsOptions = {}) {
   });
 }
 
+/**
+ * @deprecated Use `UseWorkspacesOptions` with `useWorkspaces`. Kept permanently.
+ */
 export interface UseProjectsOptions {
   enabled?: boolean;
 }
@@ -101,10 +111,12 @@ export interface UseProjectsOptions {
  * why `qk.projects.list()` and `qk.projects.list(accountId)` are siblings in
  * the key factory rather than a parent and a child, and why a host that wants
  * every account's projects issues one query per account.
+ *
+ * @deprecated Use `useWorkspaces`: every workspace of the caller, across accounts. This lists one account's projects. Kept permanently.
  */
 export function useProjects(accountId?: string, options: UseProjectsOptions = {}) {
   return useQuery<KortixProject[]>({
     ...projectsQueryOptions(accountId, options.enabled ?? true),
-    queryFn: () => listProjectsForAccount(accountId),
+    queryFn: () => listWorkspacesForAccount(accountId),
   });
 }

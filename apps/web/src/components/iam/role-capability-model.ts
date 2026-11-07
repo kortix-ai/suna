@@ -6,7 +6,7 @@
 //
 // A role's permission set is a list of ~44 dotted leaf actions. Showing 44
 // checkboxes made "what can this role do?" unanswerable at a glance, so the
-// matrix shows View and Edit per area, plus Comment for Artifacts, and expands a
+// matrix shows View and Edit per area, and expands a
 // cell back to its leaf actions on save. The wire format is unchanged:
 // `createRole` / `updateRolePermissions` still receive the same leaf strings,
 // and the IAM engine is untouched.
@@ -21,8 +21,7 @@
 // action. This used to be hardcoded here — ~150 lines of tables plus an
 // implication graph the client invented and the engine did not enforce, so the
 // editor could write a role the engine then read differently. Now it is the
-// engine's own data. This module owns the words and displays the Artifact
-// comment action separately from edit actions without changing its implications.
+// engine's own data and this module owns only the words (`AREA_COPY`).
 //
 // Checking a leaf checks everything it implies; unchecking a leaf unchecks
 // everything that implies it, so the matrix can never show a state the engine
@@ -33,7 +32,7 @@ import type { Permission } from '@/lib/iam-client';
 // ─── The area table (§7 mapping) ────────────────────────────────────────────
 
 export type CapabilityScope = 'project' | 'account';
-export type CellKind = 'view' | 'comment' | 'edit';
+export type CellKind = 'view' | 'edit';
 
 export interface AreaDef {
   /** Stable id used by `applyCell`. */
@@ -44,7 +43,6 @@ export interface AreaDef {
   /** Extra note rendered under the row (implication warnings). */
   note?: string;
   view: readonly string[];
-  comment: readonly string[];
   edit: readonly string[];
 }
 
@@ -53,7 +51,7 @@ export interface AreaDef {
  *  adds without an entry here renders with a humanized key and no hint, so a
  *  new permission is never invisible. */
 const AREA_COPY: Record<string, { label: string; hint?: string; note?: string }> = {
-  project: { label: 'Project', hint: 'The project itself — open it, rename it, delete it.' },
+  project: { label: 'Workspace', hint: 'The project itself — open it, rename it, delete it.' },
   sessions: { label: 'Sessions', hint: 'Read transcripts, start and stop runs.' },
   files: { label: 'Files', hint: 'The project workspace tree.' },
   customize: {
@@ -74,7 +72,7 @@ const AREA_COPY: Record<string, { label: string; hint?: string; note?: string }>
   groups: { label: 'Groups', hint: 'Groups and who belongs to them.' },
   roles: { label: 'Roles', hint: 'Custom roles and the assignments that hand them out.' },
   tokens: { label: 'API keys', hint: 'Service-account API keys and personal access keys.' },
-  projects: { label: 'Projects', hint: 'Creating a brand-new project in this account.' },
+  projects: { label: 'Workspaces', hint: 'Creating a brand-new project in this account.' },
   billing: { label: 'Billing', hint: 'Plan, invoices and payment method.' },
   audit: { label: 'Audit', hint: 'The account audit log.' },
   credentials: { label: 'Credentials', hint: 'Minting long-lived project tokens.' },
@@ -131,21 +129,20 @@ export function buildAreaTable(
   scope: CapabilityScope,
   permissions: readonly Permission[] | undefined,
 ): AreaDef[] {
-  const byArea = new Map<string, { view: string[]; comment: string[]; edit: string[] }>();
+  const byArea = new Map<string, { view: string[]; edit: string[] }>();
   for (const entry of inScope(scope, permissions)) {
     let cell = byArea.get(entry.area);
     if (!cell) {
-      cell = { view: [], comment: [], edit: [] };
+      cell = { view: [], edit: [] };
       byArea.set(entry.area, cell);
     }
-    if (entry.action === 'project.artifact.comment' && entry.level === 'edit') cell.comment.push(entry.action);
-    else if (entry.level === 'view') cell.view.push(entry.action);
+    if (entry.level === 'view') cell.view.push(entry.action);
     else if (entry.level === 'edit') cell.edit.push(entry.action);
   }
   // An area whose only leaves are `admin` gets no row — its leaves live in
   // Advanced, and an empty row would read as "nothing here".
   return [...byArea]
-    .filter(([, cell]) => cell.view.length + cell.comment.length + cell.edit.length > 0)
+    .filter(([, cell]) => cell.view.length + cell.edit.length > 0)
     .map(([key, cell]) => ({ key, ...areaCopy(key), ...cell }));
 }
 
@@ -211,9 +208,8 @@ export interface CellFold {
 export interface AreaFold {
   area: AreaDef;
   view: CellFold;
-  comment: CellFold;
   edit: CellFold;
-  /** True when a cell is a partial subset — the row shows a note. */
+  /** True when either cell is a partial subset — the row shows a note. */
   partial: boolean;
 }
 
@@ -246,7 +242,6 @@ function mappedLeaves(areas: readonly AreaDef[]): Set<string> {
   const out = new Set<string>();
   for (const area of areas) {
     for (const leaf of area.view) out.add(leaf);
-    for (const leaf of area.comment) out.add(leaf);
     for (const leaf of area.edit) out.add(leaf);
   }
   return out;
@@ -302,9 +297,8 @@ export function foldSelection(
 
   const areas: AreaFold[] = table.map((area) => {
     const view = cellFold('view', area.view, available, selected);
-    const comment = cellFold('comment', area.comment, available, selected);
     const edit = cellFold('edit', area.edit, available, selected);
-    return { area, view, comment, edit, partial: [view, comment, edit].some((cell) => cell.state === 'partial') };
+    return { area, view, edit, partial: view.state === 'partial' || edit.state === 'partial' };
   });
 
   const mapped = mappedLeaves(table);
@@ -332,7 +326,6 @@ export function foldSelection(
   const reachable = new Set<string>();
   for (const area of areas) {
     for (const leaf of area.view.leaves) reachable.add(leaf);
-    for (const leaf of area.comment.leaves) reachable.add(leaf);
     for (const leaf of area.edit.leaves) reachable.add(leaf);
   }
   for (const leaf of unmapped) reachable.add(leaf.action);
@@ -355,7 +348,6 @@ export function expandFold(fold: CapabilityFold): Set<string> {
   const out = new Set<string>();
   for (const area of fold.areas) {
     for (const leaf of area.view.present) out.add(leaf);
-    for (const leaf of area.comment.present) out.add(leaf);
     for (const leaf of area.edit.present) out.add(leaf);
   }
   for (const leaf of fold.unmapped) if (leaf.selected) out.add(leaf.action);
@@ -470,7 +462,7 @@ export function applyBulk(
   const leaves: string[] = [];
   for (const area of table) {
     leaves.push(...area.view);
-    if (action === 'edit-all') leaves.push(...area.comment, ...area.edit);
+    if (action === 'edit-all') leaves.push(...area.edit);
   }
   return addLeaves(permissions, selected, leaves, availableIn(scope, permissions));
 }

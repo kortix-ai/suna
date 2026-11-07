@@ -7,7 +7,7 @@
 // Off with VOICE_BRIDGE=0.
 import type { Msg } from './lane'
 import { chargeReply } from './cost'
-import { fastFetch } from './models'
+import { fastFetch, fastOn } from './models'
 
 const MODEL = process.env.VOICE_BRIDGE_MODEL ?? 'qwen/qwen3.8-27b'
 const SYSTEM =
@@ -24,7 +24,10 @@ const SYSTEM =
   'claim of yours there gets taken back by the answer. ' +
   'Where to go in a city (a ' +
   'restaurant, café, bar, hotel or other venue): (nothing), you get the names of venues wrong; the pick comes from what ' +
-  'is looked up. What to buy (a product, a model) is a question about the world as above. Never ' +
+  'is looked up. What to buy (a product, a model) is a question about the world as above. ' +
+  'What they told you before or what you know of them (their name, their plans, what they said last time, what you ' +
+  'remember about them): exactly (nothing). You have none of it, the agent has, and a check or a "no memory" of yours stands ' +
+  'in the call ("I\'m checking your calendar", "I don\'t have any memory of you" were said, and the agent then answered). Never ' +
   'say what you cannot see or do, never ' +
   'promise a time, no filler. Only if what they asked is too vague to act on (what to ' +
   'write, which one), ask the one short question you need instead, and nothing else: they answer before you act. When ' +
@@ -37,7 +40,7 @@ const SYSTEM =
 
 /** The sentence, or undefined (off, no model, or no answer within `ms`). */
 export async function bridge(user: string, history: Msg[], signal: AbortSignal, ms = 700): Promise<string | undefined> {
-  if (process.env.VOICE_BRIDGE === '0' || !process.env.GROQ_API_KEY || signal.aborted) return undefined
+  if (process.env.VOICE_BRIDGE === '0' || !fastOn() || signal.aborted) return undefined
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), ms)
   const stop = () => ac.abort()

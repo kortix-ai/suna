@@ -24,7 +24,7 @@ defaults keep today's behavior, so a valid file stays valid.
 | `connectors` | List of connectors (the `kortix-connectors` skill). |
 | `apps` | Map of Apps and their settings (the `kortix-apps` skill). |
 | `triggers` | List of triggers (below). |
-| `policy`, `policies`, `approvals` | Connector call policies and how long a held call stays decidable (`approvals.ttl`: `30m`, `4h`, `7d`; default 24h). Approve runs the held call once, as its caller, and resumes the agent with the result: the agent does not repeat it. A caller without a project-scoped token repeats it within 15 minutes. |
+| `policy`, `policies`, `approvals` | Connector call policies and how long a held call stays decidable (`approvals.ttl`: `30m`, `4h`, `7d`; default 24h). Approve runs the held call once, as its caller, and resumes the agent with the result: the agent does not repeat it. A caller without a workspace-scoped token repeats it within 15 minutes. |
 | `builtin_agents` | `my_kortix: true` adds My Kortix, the built-in agent (slug `mykortix`). Absent, `false` or an unreadable file = off. |
 | `spaces` | Work in progress: channels per area of work (below). |
 | `agents` | Map of agent name → agent block. Omitted: My Kortix only. |
@@ -36,18 +36,23 @@ defaults keep today's behavior, so a valid file stays valid.
 | `description` | What the agent does. The caller of `agent` reads it. |
 | `mode` | `primary`, `subagent` or `all`. A subagent target needs `subagent` or `all`. |
 | `prompt` / `prompt_file` | The system prompt inline, or a repository `.md` path. Not both. |
-| `model`, `variant` | Model id and reasoning tier. Omitted: the project default. |
+| `model`, `variant` | Model id and reasoning tier. Omitted: the workspace default. |
 | `temperature`, `top_p`, `steps` | Sampling, and the most model steps in one turn. |
 | `hidden` | `true` hides the agent from pickers. (`color` and `options` validate; pi ignores them.) |
-| `permission` | Tool rules (`../pi.md` → Permissions). Omitted: `allow`. No `skill` or `task` key. |
+| `permission` | Tool rules (`../pi.md` → Permissions): `allow`, `ask` or `deny`; `"*"` and `all` also mean `allow`. Omitted: `allow`. No `skill` or `task` key. |
 | `enabled` | `false`: no session can start with this agent. Default `true`. |
 | `codemode` | `on` (default), `only`, `off`. |
-| `tools` | `all`, `none`, a list, or `{ exclude: [names] }`. Set it on every agent: omitted is every tool, with a warning. |
-| `skills`, `extensions` | `all`, `none` (default), registered names, or `{ exclude: [names] }`: every one but those. Kortix skills count as registered. |
-| `subagents`, `commands` | `all`, `none` (default) or registered names. `subagents` is who this agent may call with the `agent` tool. |
-| `connectors`, `secrets`, `apps` | `all`, `none` (default) or names. |
+| `tools` | `"*"`, `none`, a list, or `{ exclude: [names] }`. Set it on every agent: omitted is every tool, with a warning. |
+| `skills`, `extensions` | `"*"`, `none` (default), registered names, or `{ exclude: [names] }`: every one but those. Kortix skills count as registered. |
+| `subagents`, `commands` | `"*"`, `none` (default) or registered names. `subagents` is who this agent may call with the `agent` tool. |
+| `connectors`, `secrets`, `apps` | `"*"`, `none` (default) or names. |
 | `policy_sets` | Connector slug → policy set name for this agent. |
-| `kortix_permissions` | `all`, `none` (default) or a list of `project.*` values. |
+| `kortix_permissions` | `"*"`, `none` (default) or a list of `workspace.*` values (`project.*` names still validate). |
+
+`"*"` is every name, on every grant above. Quote it: a bare `*` is a YAML
+alias, so `tools: *` does not parse and `kortix validate` prints the quoted
+line. `all` is the accepted alias, and a list that holds `"*"` is every name
+too.
 | `workspace` | `{ project_repository: true }` checks out the repository in `/workspace`. Default `false`. |
 | `sandbox` | A template slug, or `default`. |
 | `space` | Work in progress: the space the agent works in. Grouping only, never a grant. |
@@ -55,20 +60,20 @@ defaults keep today's behavior, so a valid file stays valid.
 
 ## spaces (work in progress)
 
-A space is a channel for one area of work: a room, then configured tabs
+A space is a channel for one area of work, with configured tabs
 (`goals`, `apps`, `artifacts`, `files`, `app`, `artifact`, `link`, `board`).
-It grants nothing. Spaces show only while the project flag
-`project_channels` is on; it is off by default, and while it is off the
-keys are kept but have no effect. A space's room needs `agent_rooms` (off
-by default); a Goals tab needs `goals` (off by default). Do not build a space
-unless the user asks and `kortix projects features` lists
-`project_channels` on.
+It grants nothing. Spaces show only while the workspace flag
+`chat` is on; it is off by default, and while it is off the
+keys are kept but have no effect. A Goals tab needs `goals` (off by
+default). Do not build a space
+unless the user asks and `kortix workspaces features` lists
+`chat` on.
 
 ```yaml
 spaces:
   sales: { label: Sales, order: 1, tabs: [{ type: apps }, { type: files, path: sales }] }
 agents:
-  closer: { space: sales, prompt: You run the sales pipeline., tools: all }
+  closer: { space: sales, prompt: You run the sales pipeline., tools: "*" }
 ```
 
 ## Registries
@@ -86,14 +91,19 @@ agents:
 
 ## kortix_permissions
 
-What an agent may do to the project through the CLI, the API and Git.
+What an agent may do to the workspace through the CLI, the API and Git.
 
-- `kortix validate --scopes` prints every grantable value. `all` or `"*"`
-  is every value. Account actions (`member.*`, `billing.*`) are never
-  grantable.
+- `kortix validate --scopes` prints every grantable value. Write the
+  `workspace.*` names. `"*"` (alias `all`) is every grantable value. The older
+  `project.*` names still validate and grant the same action; `kortix validate
+  --fix` rewrites them to their `workspace.*` names and keeps `"*"`.
+- Every workspace action is grantable except the people-only ones: minting
+  credentials (`workspace.token.create`, `workspace.token.personal.create`,
+  `workspace.credentials.issue`, `workspace.gateway.keys.manage`) and moving
+  money (`workspace.billing.write`, `workspace.account.delete`,
+  `workspace.delete`). No agent session holds them, whatever its grant.
 - Your effective grant is your `kortix_permissions` within your ceiling role.
-  `project.read` in your own project is always granted.
-  `project.credentials.issue` is for people only.
+  `workspace.read` in your own workspace is always granted.
 - Old names (`project.cr.*`, `project.customize.*`) still validate and are
   rewritten to the current values. Write the current values.
 - You grant only what you hold, in the agent editor, a scope route or a
@@ -101,11 +111,12 @@ What an agent may do to the project through the CLI, the API and Git.
 
 | `403` code | Meaning | Do |
 | --- | --- | --- |
-| `agent_scope_insufficient` | The action is not in your `kortix_permissions`. | Propose a CR that adds it. |
+| `agent_scope_insufficient` | The action (`workspace_action` in the body) is not in your `kortix_permissions`. | Propose a CR that adds it. |
 | `agent_ceiling_insufficient` | Your ceiling role does not allow it. | Ask an admin. |
 | `agent_human_only_action` | Only a person may do it. | Ask the user. |
 | `agent_not_accessible` | The person may not run that agent. | Ask the user. |
 | `agent_grant_escalation` | You tried to grant more than you hold. | Ask the user to grant it. |
+| `credential_fence_refused` | This credential is bound to one workspace, and the route is outside it. | Run it in that workspace, or ask the user. No grant changes it. |
 
 `kortix whoami --token-only` prints your grant. It says `none` right after a
 `kortix.yaml` change? The change broke your grant: revert it first.
@@ -187,7 +198,7 @@ triggers:
 | `cron` (+ `timezone`, default UTC) | At each slot of a 6-field croner expression, at most once a minute. |
 | `every` | Each fixed period: `5m`, `2h`; at least `60s`. |
 | `at` | Once, at an ISO-8601 instant. |
-| `webhook: { secret: <NAME> }` | On a signed `POST /v1/webhooks/projects/<project_id>/<slug>`. |
+| `webhook: { secret: <NAME> }` | On a signed `POST /v1/webhooks/workspaces/<workspace_id>/<slug>` (the older `/v1/webhooks/projects/<workspace_id>/<slug>` answers the same). |
 | `event: <name> \| "*"`, `app: <slug>` | When that App posts the event (`../scheduling.md` → Watch 24/7). |
 | `event: <TYPE>`, `connector: <slug>` | When the connected app reports that event (flag `event_triggers`; types: `kortix triggers events --connector <slug>`). |
 
@@ -204,16 +215,19 @@ triggers:
   `session_id`).
 - `run:` takes `prompt` or `app`, never both.
 - `type: change_request` fires once per merged change request of the
-  project. `filter.base` is the branch it must merge into (any when absent);
+  workspace. `filter.base` is the branch it must merge into (any when absent);
   other `filter` keys match the payload as on any trigger.
-- Webhook auth: `X-Kortix-Signature: sha256=<hex>` or GitHub's
-  `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with the secret), or the
-  secret as `X-Kortix-Token` or `Authorization: Bearer`. Add
-  `X-Kortix-Timestamp` (epoch seconds, within 5 minutes) and sign
-  `<timestamp>.<body>` to stop replay. Answers: `202` queued, `200` skipped
-  (paused or capped), `401` for every miss before authentication (no such
-  enabled webhook trigger, bad signature), `402` no usable model.
-- `kortix triggers pause` stops every trigger of the project; `resume`
+- Webhook auth: `X-Kortix-Signature: sha256=<hex>` (or `X-Hub-Signature-256`)
+  = HMAC-SHA256 of `<timestamp>.<body>` with the secret, plus the
+  **required** `X-Kortix-Timestamp` (epoch seconds, within 5 minutes), so a
+  captured delivery cannot replay. A signature without the timestamp, or of
+  the bare body, is refused `401`. Or the static token: the secret as
+  `X-Kortix-Token` or `Authorization: Bearer`, no timestamp. A plain GitHub
+  webhook signs the bare body, so it uses the static token. Answers: `202`
+  queued, `200` skipped (paused or capped), `401` for every miss before
+  authentication (no such enabled webhook trigger, bad signature, missing or
+  stale timestamp), `402` no usable model.
+- `kortix triggers pause` stops every trigger of the workspace; `resume`
   starts them again. `enabled: false` stops one.
 
 Prompt variables, `{{ dotted.path }}` (a missing value renders empty):
@@ -230,7 +244,7 @@ Prompt variables, `{{ dotted.path }}` (a missing value renders empty):
 
 `kortix validate` exits `1` on an error, unknown keys included. `kortix
 ship`, the CR merge and every Kortix write refuse such a file. A file
-already on the default branch never stops the project. What runs with an
+already on the default branch never stops the workspace. What runs with an
 error:
 
 | The error is in | At run time |
@@ -239,9 +253,9 @@ error:
 | An agent or a trigger | That entry is off. A session that names the agent fails with the issue. |
 | A connector, App, skill, tool, command, extension, space or sandbox template | That entry is gone. |
 | `project` or `default_agent` | The key falls back to its default. |
-| Anything else (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, an unknown format version, YAML syntax) | No project agent runs. My Kortix runs when the file sets `builtin_agents.my_kortix: true`, so it can fix the file. |
+| Anything else (`env`, `sandbox`, `policy`, `policies`, `approvals`, `imports`, an unknown format version, YAML syntax) | No workspace agent runs. My Kortix runs when the file sets `builtin_agents.my_kortix: true`, so it can fix the file. |
 
-Each rule only takes access away. The project page shows the errors and
+Each rule only takes access away. The workspace page shows the errors and
 the warnings without a fix id, with **Fix with My Kortix**. Every session's
 system prompt lists the errors.
 

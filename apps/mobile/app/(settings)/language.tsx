@@ -1,4 +1,3 @@
-import * as React from 'react';
 
 import { Text } from '@/components/ui/text';
 import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';

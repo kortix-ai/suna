@@ -9,14 +9,18 @@ describe('queue terminal recovery', () => {
     test(`settles only the observed token after ${endReason}`, async () => {
       const cleared: unknown[][] = [];
       const observed: unknown[][] = [];
+      const ended: unknown[][] = [];
       const settled = await settleCompletedInboxTurns(box, {
         provider: (() => ({})) as never,
         observe: async (...args) => { observed.push(args); return { observation: 'terminal', endReason, daemonAnswered: true, orphanedPrompt: false }; },
         clear: async (...args) => { cleared.push(args); return true; },
+        turnEnded: async (...args) => { ended.push(args); },
       });
       expect(settled).toBe(true);
       expect(observed[0]?.[3]).toMatchObject(turn);
       expect(cleared).toEqual([['box-1', 'token-1', undefined, endReason]]);
+      // The daemon's end frame will find this turn already closed: the excerpt and idle notices are stamped here.
+      expect(ended).toEqual([['session-1', endReason === 'failed' ? 'error' : 'idle']]);
     });
   }
   for (const [observation, endReason] of [['active', null], ['unknown', null], ['terminal', null], ['terminal', 'abandoned']] as const) {
@@ -69,10 +73,13 @@ test('a recovered completion wakes its session immediately and does not impose a
 });
 
 
-test('a superseded recovery token cannot wake the queue', async () => {
+test('a superseded recovery token cannot wake the queue or stamp the turn end', async () => {
+  let ended = false;
   expect(await settleCompletedInboxTurns(box, {
     provider: (() => ({})) as never,
     observe: async () => ({ observation: 'terminal', endReason: 'completed', daemonAnswered: true, orphanedPrompt: false }),
     clear: async () => false,
+    turnEnded: async () => { ended = true; },
   })).toBe(false);
+  expect(ended).toBe(false);
 });

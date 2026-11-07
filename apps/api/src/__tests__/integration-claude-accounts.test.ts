@@ -7,7 +7,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { accountMembers, accountSecretResources, accounts, projectSessions, projects, sessionProviderSecretPools } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { CLAUDE_ACCOUNT, claudeCredentialsForGateway, countUsableClaudeAccounts, markClaudeAccountRefused, resolveClaudeCredentials } from '../claude-subscription/accounts';
+import { coolDownAccountSecret } from '../secrets/account-resource';
 import { writeProviderAccount } from '../secrets/provider-accounts';
+import { isModelServableForAccount } from '../llm-gateway/resolution/default-model';
+import { resolveCandidates } from '../llm-gateway/resolution/resolve-candidates';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
 
@@ -71,6 +74,74 @@ describe('the Claude account a request uses', () => {
     expect(await markClaudeAccountRefused(ACCOUNT, OWN, digest(token('own')))).toBe(true);
     expect(await ids(principal(OWNER))).toEqual([SHARED, SELECTED]);
     await db.update(accountSecretResources).set({ needsReauthAt: null }).where(eq(accountSecretResources.secretId, OWN));
+  });
+
+  test('a session stays on one account across calls, moves when its usage runs out, and a probe never moves it', async () => {
+    const usage = (percent: number, limited = false) => ({
+      windows: [{ id: 'weekly', window_minutes: 10080, used_percent: percent, resets_at: new Date(Date.now() + 86_400_000).toISOString() }],
+      limited, observed_at: new Date().toISOString(), source: 'response',
+    });
+    const setUsage = (secretId: string, value: unknown) =>
+      db.update(accountSecretResources).set({ usage: value }).where(eq(accountSecretResources.secretId, secretId));
+    const pin = async () => {
+      const [row] = await db.select({ metadata: projectSessions.metadata }).from(projectSessions).where(eq(projectSessions.sessionId, SESSION));
+      return (row?.metadata as { provider_account_pins?: Record<string, string> } | null)?.provider_account_pins?.['claude-agent'];
+    };
+    // An earlier test's call pinned this session already: start it fresh.
+    await db.update(projectSessions).set({ metadata: {} }).where(eq(projectSessions.sessionId, SESSION));
+    // Selected accounts used to rotate on every call; now the session keeps the first it got.
+    await db.insert(sessionProviderSecretPools).values({ sessionId: SESSION, providerId: 'claude-agent', secretIds: [SHARED, SELECTED], updatedAt: new Date() });
+    const session = principal(null, { sessionId: SESSION });
+    for (let call = 0; call < 4; call++) expect((await ids(session))[0]).toBe(SHARED);
+    expect(await pin()).toBe(SHARED);
+
+    // Its account nears the end of the week: the session moves to the one with room, and stays.
+    await setUsage(SHARED, usage(97));
+    expect(await ids(session)).toEqual([SELECTED, SHARED]);
+    expect(await pin()).toBe(SELECTED);
+    await setUsage(SHARED, usage(5));
+    expect((await ids(session))[0]).toBe(SELECTED);
+
+    // A probe (turn gate, picker) reads the order and never moves the session.
+    await setUsage(SELECTED, usage(40, true));
+    expect((await resolveClaudeCredentials(session, { probe: true }))[0]!.secretId).toBe(SHARED);
+    expect(await pin()).toBe(SELECTED);
+    // The next real call leaves the limited account.
+    expect((await ids(session))[0]).toBe(SHARED);
+    expect(await pin()).toBe(SHARED);
+
+    // Shared accounts of a session without a selection are sticky the same way.
+    await db.delete(sessionProviderSecretPools).where(eq(sessionProviderSecretPools.sessionId, SESSION));
+    await setUsage(SELECTED, null);
+    await setUsage(SHARED, usage(96));
+    expect((await ids(session))[0]).toBe(SELECTED);
+    await setUsage(SHARED, null);
+    expect((await ids(session))[0]).toBe(SELECTED);
+
+    await db.update(projectSessions).set({ metadata: {} }).where(eq(projectSessions.sessionId, SESSION));
+  });
+
+  test("a session's Claude step sent to the gateway while every Claude account rests is a resting pool, so the project's chain serves it", async () => {
+    const session = { ...principal(null), sessionId: SESSION };
+    const refusal = async () => resolveCandidates(session, 'claude-agent/opus').then(() => null, (err: { code?: string; restSeconds?: number }) => err);
+    const servable = (restingIsServable?: boolean) => isModelServableForAccount({
+      accountId: ACCOUNT, projectId: PROJECT, userId: OWNER, sessionId: SESSION, personalUserId: null, freeModelsOnly: false,
+      model: 'claude-agent/opus', restingIsServable,
+    });
+    // An account has room: the gateway still cannot run Claude Code.
+    expect((await refusal())?.code).toBe('model_not_found');
+    expect(await servable(false)).toBe(true);
+
+    for (const secretId of [SHARED, SELECTED]) await coolDownAccountSecret(secretId, ACCOUNT, 3 * 3600);
+    const resting = await refusal();
+    expect(resting?.code).toBe('provider_pool_rate_limited');
+    expect(resting?.restSeconds).toBeGreaterThan(3 * 3600 - 60);
+    // The fallback stays until an account has room; a turn gate still lets the person try.
+    expect(await servable(false)).toBe(false);
+    expect(await servable()).toBe(true);
+
+    await db.update(accountSecretResources).set({ cooldownUntil: null, cooldownProbeAt: null }).where(eq(accountSecretResources.accountId, ACCOUNT));
+    expect(await servable(false)).toBe(true);
   });
 
   test('the gateway answer: tokens to try, the provider turned off, or no account', async () => {

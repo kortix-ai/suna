@@ -187,6 +187,28 @@ describe('only the channel’s own threads mount a private channel folder', () =
   });
 });
 
+describe('with chat on, a public channel or DM thread mounts its space folder', () => {
+  const grants: FolderGrant[] = [
+    { path: '/Users/ana', level: 'manage', principalType: 'user', principalId: 'ana', source: 'system' },
+    { path: '/Sales', level: 'read', principalType: 'agent', principalId: 'sa', source: 'admin' },
+  ];
+  const paths = (spaceFolder: string | null, owner: string | null) =>
+    planFolderMounts(
+      sessionMountCandidates(grants, { agentId: 'sa', owner, groupIds: new Set(), own: owner ? '/Users/ana' : null, channelFolder: null, privateChannelFolders: NO_PRIVATE_CHANNEL_FOLDERS, spaceFolder }),
+      16,
+    ).mounts.map((m) => `${m.path}@${m.mountPath}${m.readOnly ? ':ro' : ''}`);
+
+  test('a #general thread and its workers mount /Company/Channels/general read-write', () => {
+    expect(paths('/Company/Channels/general', null)).toEqual(['/Sales@/drives/sales:ro', '/Company/Channels/general@/drives/general']);
+    expect(paths(null, null)).toEqual(['/Sales@/drives/sales:ro']);
+  });
+
+  test('a DM folder inside the owner’s own folder is not mounted twice', () => {
+    expect(paths('/Users/ana/Agents/writer', 'ana')).toEqual(['/Users/ana@/drives/me', '/Sales@/drives/sales:ro']);
+    expect(paths('/Users/ana/Agents/writer', null)).toEqual(['/Sales@/drives/sales:ro', '/Users/ana/Agents/writer@/drives/writer']);
+  });
+});
+
 // A person's own folder opens for its owner and the project's admins (as
 // people, never through a session); each admin open is recorded for the owner.
 describe("a person's own folder opens for its owner and for admins as people", () => {

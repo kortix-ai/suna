@@ -2,12 +2,15 @@ import { createHash, randomBytes } from 'node:crypto';
 import { cliDeviceGrants } from '@kortix/db';
 import { and, eq, gt, lt, sql } from 'drizzle-orm';
 import { db, withDbTransaction } from '../shared/db';
-import { createAccountToken } from '../repositories/account-tokens';
+import { createAccountToken, resolveMintExpiry } from '../repositories/account-tokens';
 import { actorForUser, type Actor } from '../iam/actor';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
+import { captureProductEvent } from '../shared/product-analytics';
 
 export const CLI_GRANT_TTL = 600;
 export const CLI_POLL_INTERVAL = 5;
+/** The CLI device login expires after this many days without use. */
+export const CLI_LOGIN_TTL_DAYS = 90;
 const digest = (secret: string) => createHash('sha256').update(secret).digest('hex');
 export const normalizeCliCode = (code: string) => code.trim().toUpperCase().replace(/-/g, '');
 
@@ -52,11 +55,28 @@ export async function pollCliGrant(deviceCode: string) {
       .where(eq(cliDeviceGrants.deviceCodeHash, grant.deviceCodeHash));
     if (grant.status !== 'approved' || !grant.userId || !grant.accountId) return { error: 'authorization_pending' };
     await assertAuthorized(actorForUser(grant.userId, grant.accountId), ACCOUNT_ACTIONS.TOKEN_PERSONAL_CREATE);
+    // Person-wide (the CLI acts as the person in each workspace), with a
+    // renewing expiry: 90 days out, moved out again on every use, so a CLI in
+    // use stays signed in and an abandoned one stops working.
+    // The workspace's key maximum, when shorter, bounds the window.
+    const expiry = await resolveMintExpiry(grant.accountId, undefined);
+    const days = expiry.ok && expiry.expiresAt
+      ? Math.max(1, Math.min(CLI_LOGIN_TTL_DAYS, Math.round((expiry.expiresAt.getTime() - Date.now()) / 86_400_000)))
+      : CLI_LOGIN_TTL_DAYS;
     const token = await createAccountToken({
       accountId: grant.accountId, userId: grant.userId, name: 'CLI · device login',
+      expiresAt: new Date(Date.now() + days * 86_400_000),
+      expiryRenewDays: days,
     });
     await db.update(cliDeviceGrants).set({ status: 'consumed' })
       .where(eq(cliDeviceGrants.deviceCodeHash, grant.deviceCodeHash));
+    captureProductEvent({
+      userId: grant.userId,
+      accountId: grant.accountId,
+      event: 'user_logged_in',
+      dedupeKey: grant.deviceCodeHash,
+      properties: { method: 'cli_device', source: 'cli' },
+    });
     return { token: token.secretKey };
   });
 }

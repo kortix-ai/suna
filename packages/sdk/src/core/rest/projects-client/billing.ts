@@ -90,10 +90,20 @@ export interface AccountState {
     total: number;
     daily: number;
     monthly: number;
-    /** Next scheduled reset of the expiring credit bucket. */
+    /** Next scheduled reset of the expiring credit bucket. Null on a
+     *  workspace that gets no free credits (see `free_grant`). */
     expires_at?: string | null;
     extra: number;
     can_run: boolean;
+    /**
+     * The Free plan's monthly credits go to a person's first workspace only.
+     * `eligible: false` marks a further workspace: Free with 0 credits,
+     * `tier.monthly_credits` 0 and no reset date. `claimed_workspace_id` is
+     * the workspace that holds the caller's free credits; the API sets it
+     * only on a workspace that is not eligible, and only when the caller is a
+     * member of the workspace that holds them. Absent on older APIs.
+     */
+    free_grant?: { eligible: boolean; claimed_workspace_id: string | null };
     /** Lifetime rollups derived from credit_ledger, server-side. Present once
      *  the API is updated; absent on older responses. */
     lifetime_granted?: number;
@@ -316,6 +326,13 @@ export interface AccountState {
     ttl_seconds?: number;
     local_mode?: boolean;
   };
+  /**
+   * The plan is comped, with no Stripe subscription, until `until`: a
+   * workspace split off a paid account keeps that plan to the end of the
+   * account's current period, then moves to Free with free credits. Null when
+   * there is no comp. Absent on older APIs.
+   */
+  plan_comp?: { until: string; source: 'workspace_split' } | null;
 }
 
 export function getDefaultAccountState(): AccountState {
@@ -849,6 +866,38 @@ export async function purchaseCredits(input: PurchaseCreditsInput): Promise<Purc
       cancel_url: input.cancelUrl,
     }),
     'Failed to purchase credits',
+  );
+}
+
+export interface RedeemCreditCodeInput {
+  /** As the person typed it; the API ignores case and surrounding spaces. */
+  code: string;
+  accountId?: string;
+}
+
+/** USD, like every billing amount: 1 USD = 100 credits. */
+export interface RedeemCreditCodeResult {
+  code: string;
+  amount_usd: number;
+  /** The account's balance after the grant. */
+  balance: number;
+}
+
+/**
+ * Redeem a credit code for an account (`billing.write`). Adds the code's
+ * amount to the non-expiring credits, once per account. A refusal throws an
+ * `ApiError` whose `code` is `credit_code_invalid`, `credit_code_expired`,
+ * `credit_code_exhausted` or `credit_code_already_redeemed`, and whose
+ * message is the sentence to show.
+ */
+export async function redeemCreditCode(input: RedeemCreditCodeInput): Promise<RedeemCreditCodeResult> {
+  return unwrap(
+    await backendApi.post<RedeemCreditCodeResult>(
+      '/billing/redeem-code',
+      { code: input.code, account_id: input.accountId },
+      { showErrors: false },
+    ),
+    'Failed to redeem the code',
   );
 }
 

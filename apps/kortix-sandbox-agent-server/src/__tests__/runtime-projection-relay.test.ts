@@ -30,8 +30,9 @@ function makeDoc(overrides: Record<string, unknown> = {}) {
     seq: 41,
     built_at: '2026-08-27T00:00:00.000Z',
     identity: {
-      opencode_session_id: 'ses_abc',
-      opencode_version: '1.18.23',
+      harness: 'pi',
+      runtime_session_id: 'ses_abc',
+      harness_version: '1.4.0',
       daemon_build: 1756240000,
       agent_config_etag: null,
       head_seq: { ses_abc: 2016 },

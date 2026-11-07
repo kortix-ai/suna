@@ -189,6 +189,15 @@ async function startReplicaServices(kind: ProcessKind) {
   await import('./platform/services/managed-git-backend')
     .then((m) => m.refreshGitBackend())
     .catch(() => {});
+  // Self-host: the sign-up policy the auth service's hook reads. A failure
+  // leaves the previous policy row in force.
+  await import('./shared/self-host-signup-policy')
+    .then((m) => m.syncSelfHostSignupPolicy())
+    .catch((err) =>
+      appLogger.error('[startup] Self-host sign-up policy not written', {
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
   // Warm the maintenance config, so a fresh pod serves the stored config from
   // request #1, not the cold-cache default.
   await maintenanceSetting.refresh().catch(() => {});
@@ -389,7 +398,12 @@ async function runShutdown(signal: string): Promise<void> {
   // Flush observability data last, after the drain: audit rows are buffered off
   // the request path, and requests that finished during the drain wrote some.
   await within(
-    Promise.allSettled([shutdownAuditEvents(), appLogger.flush(), flushSentry()]),
+    Promise.allSettled([
+      shutdownAuditEvents(),
+      appLogger.flush(),
+      flushSentry(),
+      import('./shared/product-analytics').then((m) => m.shutdownProductAnalytics()),
+    ]),
     WORKER_STOP_BUDGET_MS,
     'flush',
   );

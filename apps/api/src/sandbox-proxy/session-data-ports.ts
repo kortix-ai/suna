@@ -5,8 +5,8 @@ import { OPENCODE_PORTS } from '../shared/opencode-ports';
  *
  * The ports that carry it, and the difference between them is a provider detail:
  *
- *   - 8000 — the in-box agent daemon (OpenCode REST/SSE + owner-synced secrets)
- *   - 4096 / 4097 — opencode's own HTTP/SSE server, reached DIRECTLY on Daytona.
+ *   - 8000 — kortixd, the in-box daemon (the runtime's REST/SSE + owner-synced secrets)
+ *   - 4096 / 4097 — an old OpenCode box's own HTTP/SSE server, reached DIRECTLY on Daytona.
  *     A PAIR, because the daemon's verified reload boots the replacement on the
  *     idle half and swaps onto it, so either can be live (shared/opencode-ports).
  *     Listing only 4096 would reopen the leak this module documents below on any

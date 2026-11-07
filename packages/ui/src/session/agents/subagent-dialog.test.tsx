@@ -17,6 +17,8 @@ const touched = [
   'requestAnimationFrame',
   'cancelAnimationFrame',
   'IS_REACT_ACT_ENVIRONMENT',
+  // The transcript's stores read `localStorage` when they load: run standalone, the file needs one.
+  'localStorage',
   ...Object.getOwnPropertyNames(windowObject).filter((key) => /^[A-Z]/.test(key) && !(key in globalThis)),
   // Bun ships its own event classes; Radix and React dispatch happy-dom's.
   'Event',
@@ -94,7 +96,9 @@ mock.module('./legacy-subagent-chat', () => ({
 const { createRoot } = await import('react-dom/client');
 const { IntlTestProvider } = await import('../../test-utils/intl');
 const { TestUiHost } = await import('../../test-utils/ui-host');
-const { SubagentDialogContent } = await import('./subagent-dialog-content');
+const { SubagentDialogContent, SubagentPanel } = await import('./subagent-dialog-content');
+const { SubagentDialog } = await import('./subagent-view');
+const { AgentActivateContext } = await import('../tool/shared/infrastructure-contexts');
 
 const PROJECT = 'proj_1';
 const LEAD = 'ses_lead';
@@ -173,7 +177,7 @@ describe('SubagentDialog: a child that is its own project session', () => {
     expect(text).toContain('runs as My Kortix');
     expect(text).toContain('working · 1m');
     expect(dom.q('[data-turn="u0"]')).not.toBeNull();
-    expect(dom.q('a[href="/projects/proj_1/sessions/ses_child"]')?.textContent).toContain('Open page');
+    expect(dom.q('a[href="/workspaces/proj_1/sessions/ses_child"]')?.textContent).toContain('Open page');
     expect(dom.q('[aria-label="Stop namer"]')).not.toBeNull();
     expect(dom.q('[aria-label="Close"]')).not.toBeNull();
   });
@@ -257,5 +261,69 @@ describe('SubagentDialog: a child that is not a project session', () => {
     expect(dom.dialog()!.getAttribute('data-body')).toBe('error');
     expect(dom.q('[data-legacy-chat]')).toBeNull();
     expect(dom.text()).toContain('Try again');
+  });
+});
+
+describe('SubagentPanel: an agent beside the chat', () => {
+  test('its face, name and state head the panel, with Open page, Stop and Close; its conversation and a message box below', async () => {
+    let closed = 0;
+    row = { data: childRow({ name: 'Name the release' }) };
+    const dom = await open(<SubagentPanel sessionId={CHILD} title="namer" handle="namer" onClose={() => void closed++} />);
+    const panel = dom.q('[data-testid="subagent-panel"]')!;
+    expect(panel.getAttribute('data-body')).toBe('peek');
+    expect(panel.querySelector('header [data-tone="agent"]')).not.toBeNull();
+    // The name the chat row showed, then what it works on, then the row's own state words.
+    expect(panel.querySelector('header h2')?.textContent).toBe('namer');
+    expect(panel.querySelector('header')?.textContent).toContain('Name the release');
+    expect(panel.querySelector('header [data-agent-state="working"]')?.textContent).toContain('Working1m');
+    // Beside the chat, opening it leaves the focus where the person was typing.
+    expect(windowObject.document.activeElement?.getAttribute('data-testid')).not.toBe('subagent-dialog-message');
+    expect(dom.q('a[href="/workspaces/proj_1/sessions/ses_child"]')?.textContent).toContain('Open page');
+    expect(dom.q('[aria-label="Stop namer"]')).not.toBeNull();
+    expect(dom.q('[data-turn="u0"]')).not.toBeNull();
+    expect(dom.q('[data-testid="subagent-dialog-message"]')).not.toBeNull();
+    expect(dom.q('[data-testid="subagent-dialog"]')).toBeNull();
+    await act(async () => dom.q('[aria-label="Close"]')!.click());
+    expect(closed).toBe(1);
+  });
+
+  test('a failed agent says it did not finish in one sentence; the raw error waits behind Details', async () => {
+    row = { data: childRow({ board_state: 'failed', status: 'failed' }) };
+    const dom = await open(<SubagentPanel sessionId={CHILD} failure="provider rejected the request" onClose={() => {}} />);
+    const failure = dom.q('[data-testid="subagent-panel-failure"]')!;
+    expect(failure.textContent).toContain('The agent stopped before it finished.');
+    expect(failure.textContent).not.toContain('provider rejected the request');
+    await act(async () => (failure.querySelector('button[aria-expanded="false"]') as HTMLElement).click());
+    expect(failure.textContent).toContain('provider rejected the request');
+  });
+});
+
+describe('SubagentDialog: where it opens', () => {
+  test('in a chat with a side panel, opening hands the agent to the panel and shows no dialog', async () => {
+    const opened: unknown[] = [];
+    const changes: boolean[] = [];
+    const dom = await open(
+      <AgentActivateContext.Provider value={(agent) => void opened.push(agent)}>
+        <SubagentDialog open onOpenChange={(value) => void changes.push(value)} sessionId={CHILD} title="Name the release" handle="namer" failure="boom" />
+      </AgentActivateContext.Provider>,
+    );
+    expect(opened).toEqual([{ sessionId: CHILD, title: 'Name the release', handle: 'namer', failure: 'boom' }]);
+    expect(changes).toEqual([false]);
+    expect(dom.dialog()).toBeNull();
+  });
+
+  test('another project\'s agent, or a chat with no panel, opens the dialog', async () => {
+    const opened: unknown[] = [];
+    const elsewhere = await open(
+      <AgentActivateContext.Provider value={(agent) => void opened.push(agent)}>
+        <SubagentDialog open onOpenChange={() => {}} sessionId={CHILD} projectId={PROJECT + '_other'} />
+      </AgentActivateContext.Provider>,
+    );
+    expect(opened).toEqual([]);
+    expect(elsewhere.dialog()).not.toBeNull();
+    await act(async () => roots.splice(0).forEach((root) => root.unmount()));
+    windowObject.document.body.innerHTML = '';
+    const noPanel = await open(<SubagentDialog open onOpenChange={() => {}} sessionId={CHILD} />);
+    expect(noPanel.dialog()).not.toBeNull();
   });
 });

@@ -27,13 +27,16 @@ export async function listAgentIdentities(accountId: string) {
  *  principals a "Who can use it" picker offers for a secret value or a
  *  connector account. `listAgentIdentities` spans the account and needs
  *  `policy.read`. */
-export async function listProjectAgentIdentities(projectId: string) {
+export async function listWorkspaceAgentIdentities(projectId: string) {
   return unwrap(
-    await backendApi.get<{ agents: AgentIdentity[] }>(`/projects/${projectId}/agent-identities`, {
+    await backendApi.get<{ agents: AgentIdentity[] }>(`/workspaces/${projectId}/agent-identities`, {
       showErrors: false,
     }),
   ).agents;
 }
+
+/** @deprecated Use `listWorkspaceAgentIdentities`. Kept permanently. */
+export const listProjectAgentIdentities = listWorkspaceAgentIdentities;
 
 export async function getRolePermissions(accountId: string, roleId: string) {
   return unwrap(

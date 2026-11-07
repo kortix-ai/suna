@@ -117,7 +117,7 @@ export function ImageRenderer({
 }: ImageRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const backdrops = useLocalizedUiCatalog(BACKDROPS);
-  // `null` outside a <PreviewFitProvider> (Advanced-mode viewer, /projects
+  // `null` outside a <PreviewFitProvider> (Advanced-mode viewer, /workspaces
   // previews, the file-preview modal, share pages) — `report` below is then
   // an inert no-op, which is how this stays byte-identical everywhere except
   // the Easy panel.

@@ -14,7 +14,7 @@ import {
 const ACCOUNT = 'account_1';
 const GROUP = '33333333-3333-4333-8333-333333333333';
 const ALICE = '11111111-1111-4111-8111-111111111111';
-const IAM = `/v1/accounts/${ACCOUNT}/iam`;
+const IAM = `/v1/workspaces/${ACCOUNT}/iam`;
 
 let tmp: string;
 let runner: string;
@@ -45,7 +45,7 @@ const GROUPS = [
 
 const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   const p = url.pathname;
-  if (p === `/v1/accounts/${ACCOUNT}/members` && req.method === 'GET') {
+  if (p === `/v1/workspaces/${ACCOUNT}/members` && req.method === 'GET') {
     return Response.json([
       {
         user_id: ALICE,
@@ -146,7 +146,7 @@ describe('kortix groups', () => {
       'create <name>',
       'members <group>',
       'add <group> <user>...',
-      'projects <group>',
+      'workspaces <group>',
       'group.read',
       'kortix access grant --group',
     ]) {

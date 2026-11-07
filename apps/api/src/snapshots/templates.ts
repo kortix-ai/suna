@@ -13,12 +13,11 @@
  */
 
 import { and, eq, ne, or, sql } from 'drizzle-orm';
-import { sandboxTemplates, projects } from '@kortix/db';
+import { sandboxTemplates } from '@kortix/db';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
 import { DEFAULT_CPU, DEFAULT_DISK_GB, DEFAULT_MEMORY_GB } from './build-context';
 import { isWarmBuildSlug, templateSlugFromBuildSlug } from './build-slug';
-import { metadataMerge } from '../projects/lib/metadata-merge';
 import { isReapableTemplatePredecessor } from './predecessor-reap-policy';
 import { readManifest } from '../projects/triggers';
 import { resolveCommitSha, readRepoFile, type GitBackedProject } from '../projects/git';
@@ -45,6 +44,7 @@ export {
 import { getSandboxProvider } from './providers';
 import { BoundedMap } from '../shared/bounded-map';
 import { resolveSessionPlacement } from '../platform/services/sandbox-region';
+import { metadataMerge, projectsView, updateProjectRows } from '../workspaces/rows';
 
 /** Pretty resolved view used by both the boot path and the UI. */
 export interface ResolvedTemplate {
@@ -412,9 +412,9 @@ export async function refreshTemplateState(
 export async function projectImageRegion(projectId: string): Promise<string | undefined> {
   if (!projectId) return undefined;
   const [row] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ metadata: projectsView.metadata })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   return (await resolveSessionPlacement(projectId, row?.metadata ?? null)).location;
 }
@@ -438,7 +438,7 @@ export async function computeTemplateIdentity(
    * NON-agent runtime layer (contentHash with the non-agent runtime fingerprint
    * in place of the full one). The builder swaps the agent ONLY when this matches
    * the predecessor's STORED swapKey (→ the agent binary is the sole delta);
-   * otherwise it does a full rebuild. Never ships stale opencode/CLI/entrypoint.
+   * otherwise it does a full rebuild. Never ships a stale CLI/entrypoint.
    */
   swapKey: string;
 }> {
@@ -458,7 +458,7 @@ export async function computeTemplateIdentity(
   };
   const hash = computeSnapshotHash({ ...hashInputs, runtimeFingerprint });
   // swapKey identifies EVERYTHING the agent-swap does NOT touch: the user image,
-  // the spec, and the NON-agent runtime layer (opencode/entrypoint/CLI/slack-cli/
+  // the spec, and the NON-agent runtime layer (entrypoint/CLI/slack-cli/
   // SDK/manifest-schema/layer+browser versions). It is computed by hashing
   // the same inputs with the non-agent runtime fingerprint in place of the full one.
   // Two identities with the SAME swapKey differ ONLY by the agent binary → the swap
@@ -787,9 +787,9 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
     const validDefault =
       wantedDefault && tomlTemplates.some((t) => t.slug === wantedDefault) ? wantedDefault : null;
     const [projectRow] = await db
-      .select({ metadata: projects.metadata })
-      .from(projects)
-      .where(eq(projects.projectId, project.projectId))
+      .select({ metadata: projectsView.metadata })
+      .from(projectsView)
+      .where(eq(projectsView.projectId, project.projectId))
       .limit(1);
     const meta = (projectRow?.metadata ?? {}) as Record<string, unknown>;
     const current = typeof meta.default_sandbox_slug === 'string' ? meta.default_sandbox_slug : null;
@@ -797,15 +797,12 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
       // FIX-J: SQL-side atomic merge of ONLY `default_sandbox_slug` (set / delete)
       // so this manifest-sync write can't revert a routing pin written between the
       // read above and this write.
-      await db
-        .update(projects)
-        .set({
-          metadata: validDefault
-            ? metadataMerge({ default_sandbox_slug: validDefault })
-            : metadataMerge({}, ['default_sandbox_slug']),
-          updatedAt: new Date(),
-        })
-        .where(eq(projects.projectId, project.projectId));
+      await updateProjectRows(eq(projectsView.projectId, project.projectId), {
+        metadata: validDefault
+          ? metadataMerge({ default_sandbox_slug: validDefault })
+          : metadataMerge({}, ['default_sandbox_slug']),
+        updatedAt: new Date(),
+      });
     }
   } catch (err) {
     console.warn(

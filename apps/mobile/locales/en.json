@@ -653,7 +653,6 @@
     "cancelRequestDescription": "You can cancel this request anytime before the deletion date. All your data will be preserved if you cancel.",
     "scheduledBadge": "Scheduled",
     "notAvailableTitle": "Not available on this server",
-    "projectsAndSessions": "Projects and sessions",
     "credentialsAndConnections": "Credentials and connections",
     "subscriptionAndBilling": "Subscription",
     "when": "When",
@@ -667,8 +666,9 @@
     "deleting": "Deleting…",
     "cancelling": "Cancelling…",
     "finalTitle": "Are you sure?",
-    "finalDescriptionNow": "Your projects, sessions, and credentials are deleted now. Billing records are kept as long as the law requires. This cannot be undone.",
-    "finalDescriptionScheduled": "Your projects, sessions, and credentials are deleted in 14 days. Billing records are kept as long as the law requires. You can cancel before then."
+    "finalDescriptionNow": "Your workspaces, sessions, and credentials are deleted now. Billing records are kept as long as the law requires. This cannot be undone.",
+    "finalDescriptionScheduled": "Your workspaces, sessions, and credentials are deleted in 14 days. Billing records are kept as long as the law requires. You can cancel before then.",
+    "workspacesAndSessions": "Workspaces and sessions"
   },
   "connections": {
     "title": "Connections",
@@ -800,7 +800,7 @@
     "upgradeYourPlan": "Upgrade Your Plan",
     "upgradeDescription": "Get more credits and unlock premium features",
     "topUp": "Top Up",
-    "topUpDescription": "Top up your account with additional credits",
+    "topUpDescription": "Top up your workspace with additional credits",
     "upgrade": "Upgrade",
     "totalUsage": "Total Usage",
     "selectedPeriod": "Selected period",
@@ -1149,13 +1149,11 @@
     "sounds": "Sounds",
     "richAnswers": "Rich answers",
     "workspace": "Workspace",
-    "accounts": "Accounts",
     "help": "Help",
     "docs": "Docs",
     "support": "Support",
     "advanced": "Advanced",
-    "logOut": "Log out",
-    "project": "Project"
+    "logOut": "Log out"
   },
   "profile": {
     "changePhoto": "Change profile photo",
@@ -1167,7 +1165,7 @@
     "current": "Current",
     "currentPlan": "Current plan",
     "includes": "{{plan}} includes",
-    "askOwner": "Ask an account owner or admin to upgrade",
+    "askOwner": "Ask a workspace owner or admin to upgrade",
     "contactSales": "Contact sales",
     "upgradeTo": "Upgrade to {{plan}}",
     "switchTo": "Switch to {{plan}}",
@@ -1178,7 +1176,8 @@
     "creditsPlan": "Kortix Credits",
     "pickAmount": "Pick any monthly amount on the web. Unlimited members share one credit pool.",
     "includes": "Includes",
-    "notNow": "Not now"
+    "notNow": "Not now",
+    "continueFree": "Continue with Free"
   },
   "sessions": {
     "showMoreSubsessions_one": "Show {{count}} more",
@@ -1202,7 +1201,7 @@
     "archivedView": "Archived",
     "archivedEmpty": "Sessions you archive will show up here.",
     "stoppedBy": "Stopped by {{name}}",
-    "stopNotAllowed": "Only the member who started this run, the session owner or a project manager can stop it."
+    "stopNotAllowed": "Only the member who started this run, the session owner or a workspace manager can stop it."
   },
   "genui": {
     "call": "Call",
@@ -1229,14 +1228,8 @@
     "button": "Update"
   },
   "invites": {
-    "group": "Invites",
+    "group": "Invitations",
     "fallbackTitle": "Invite",
-    "invitedYouToProject": "{{inviter}} invited you to a project.",
-    "invitedToProject": "You have been invited to a project.",
-    "invitedYouToTeam": "{{inviter}} invited you to join a team.",
-    "invitedToTeam": "You have been invited to join a team.",
-    "joinProject": "You'll join {{project}} as {{role}}.",
-    "joinAccount": "You'll join this account as {{role}} and see projects the owner gives you access to.",
     "roleMember": "a member",
     "roleManager": "a manager",
     "roleAdmin": "an admin",
@@ -1255,15 +1248,19 @@
     "wrongAccountTitle": "Switch accounts",
     "wrongAccountBody": "This invite is addressed to a different account. You're signed in as {{email}}.",
     "directoryTitle": "Sign in with single sign-on",
-    "directoryBody": "Your organization's directory added you to this account. Open this invite in a browser and sign in with your organization's single sign-on, or ask an account admin to resend the invite.",
+    "directoryBody": "Your organization's directory added you to this workspace. Open this invite in a browser and sign in with your organization's single sign-on, or ask a workspace admin to resend the invite.",
     "ssoDomainUnverifiedBody": "Your single sign-on provider has not verified this email's domain. Sign out and sign back in with your email address to use this invite.",
     "signOutAndContinue": "Sign out and continue",
-    "backToProjects": "Back to projects"
+    "invitedYouToWorkspace": "{{inviter}} invited you to a workspace.",
+    "invitedToWorkspace": "You have been invited to a workspace.",
+    "joinWorkspace": "You'll join {{workspace}} as {{role}}.",
+    "joinThisWorkspace": "You'll join this workspace as {{role}}.",
+    "backToWorkspaces": "Back to workspaces"
   },
   "approvals": {
-    "waitingManagers": "Anyone who manages this project can approve or deny it.",
+    "waitingManagers": "Anyone who manages this workspace can approve or deny it.",
     "waitingTitle": "Waiting on approval",
-    "waitingWho": "The person who started this session or anyone who manages this project can approve or deny it."
+    "waitingWho": "The person who started this session or anyone who manages this workspace can approve or deny it."
   },
   "imageGen": {
     "generating": "Generating image",
@@ -1292,10 +1289,69 @@
     "states": {
       "resolving": "Choosing the image for this session.",
       "serving_last_ready": "Starting from the last ready image. The new one builds in the background.",
-      "waiting_for_build": "The first image for this project is building. The session starts when it is ready.",
-      "building": "Building the first image for this project. This happens once and takes a few minutes.",
+      "waiting_for_build": "The first image for this workspace is building. The session starts when it is ready.",
+      "building": "Building the first image for this workspace. This happens once and takes a few minutes.",
       "copying_to_region": "Copying the image to this session's region.",
       "waiting_for_provider": "The image is finishing. The session starts when it is ready."
+    }
+  },
+  "workspace": {
+    "switcherTitle": "Workspaces",
+    "create": "Create workspace",
+    "createTitle": "Create a workspace",
+    "createBody": "A workspace is where your company works with Kortix: people, agents and everything they make.",
+    "createOnWebTitle": "Create a workspace on the web",
+    "createOnWebLine": "Workspaces are created on kortix.com.",
+    "invitedHint": "Invited? Open the invite link from your email, or ask an admin to invite {{email}}.",
+    "yours": "Your workspace",
+    "openNamed": "Open {{workspace}}",
+    "open": "Open workspace",
+    "settings": "Workspace settings",
+    "search": "Search workspaces",
+    "loadFailed": "Couldn't load workspaces",
+    "loadFailedBody": "Check your connection and try again.",
+    "loadOneFailed": "Couldn't load this workspace",
+    "emptyTitle": "No workspaces yet",
+    "noMatches": "No matches for \"{{query}}\"",
+    "noMatchesBody": "Try a different search term",
+    "allWorkspaces": "All workspaces",
+    "switch": "Switch workspace",
+    "switchNamed": "Switch workspace, {{workspace}}",
+    "actions": "Workspace actions",
+    "actionsNamed": "Workspace actions, {{workspace}}",
+    "archive": "Archive workspace",
+    "archiveConfirm": "Archive “{{workspace}}”?",
+    "archiveFailed": "Unable to archive. Check your connection and try again.",
+    "archiving": "Archiving…",
+    "archived": "Workspace archived",
+    "delete": "Delete workspace",
+    "deleteBody": "Removes “{{workspace}}” and everything inside it, for every member. This cannot be undone. Type the workspace name to confirm.",
+    "deleteTypeName": "Type the workspace name to confirm",
+    "deleteConfirmTitle": "Delete this workspace?",
+    "deleteConfirmBody": "Removes “{{workspace}}” for every member. This cannot be undone.",
+    "deleteFailed": "Unable to delete the workspace",
+    "name": "Workspace name",
+    "billing": "Billing",
+    "billingAndMembers": "Billing and members",
+    "onWeb": "On kortix.com",
+    "members": "Members",
+    "git": "Git",
+    "auditLog": "Audit log",
+    "join": "Join",
+    "joinNamed": "Join {{workspace}}",
+    "inviteFrom": "{{inviter}} · {{role}}",
+    "roleOwner": "Owner",
+    "roleAdmin": "Admin",
+    "roleManager": "Manager",
+    "roleMember": "Member",
+    "startFailure": {
+      "sessionTitle": "Your session has ended",
+      "sessionBody": "Sign in again to continue.",
+      "unreachableTitle": "Can't reach Kortix",
+      "unreachableBody": "Check your connection, then try again.",
+      "serverTitle": "Could not open your workspace",
+      "serverBody": "Try again, or open another workspace.",
+      "signInAgain": "Sign in again"
     }
   }
 }

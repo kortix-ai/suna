@@ -51,7 +51,7 @@ export async function ensureConnectorsConnected(
   flags: { noConnect: boolean; yes: boolean },
 ): Promise<void> {
   if (flags.noConnect) return;
-  const ex = `/connectors/projects/${projectId}`;
+  const ex = `/connectors/workspaces/${projectId}`;
 
   let connectors: ShipConnector[];
   try {
@@ -119,7 +119,7 @@ export async function reconcileShippedManifest(
   projectId: string,
 ): Promise<void> {
   try {
-    await client.post(`/connectors/projects/${projectId}/connectors/sync`);
+    await client.post(`/connectors/workspaces/${projectId}/connectors/sync`);
   } catch (err) {
     // A reconcile failure does not invalidate the completed git push.
     // The rotating server discovery sweep retries the project — except on a
@@ -136,7 +136,7 @@ async function connectPipedreamApp(
 ): Promise<boolean> {
   try {
     const resp = await client.post<{ url: string; expires_at: string }>(
-      `/projects/${projectId}/connect-requests`,
+      `/workspaces/${projectId}/connect-requests`,
       { slug: c.slug },
     );
     process.stdout.write(`\n    ${C.bold}${c.slug}${C.reset} ${C.faded}(${c.name})${C.reset}\n`);

@@ -11,6 +11,7 @@
  * thread sends to that sub-agent's own runtime session.
  */
 
+import { HeldMessages } from './HeldMessages';
 import React, { useMemo, useCallback, useRef, useEffect, useLayoutEffect, useState } from 'react';
 import {
   View,
@@ -38,7 +39,6 @@ import Reanimated, {
   useReducedMotion,
   useSharedValue,
   withTiming,
-  interpolate,
 } from 'react-native-reanimated';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
@@ -77,7 +77,7 @@ import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { Icon } from '@/components/ui/icon';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import { ComposerBottomFade, composerSafeAreaPadding } from '@/components/session/composer-bottom-fade';
-import { LIQUID_GLASS_AVAILABLE, LiquidGlassCapsule } from '@/components/kortix/liquid-glass-capsule';
+import { GlassButtons, LIQUID_GLASS_AVAILABLE } from '@/components/kortix/liquid-glass';
 
 import {
   addOptimisticMessage,
@@ -626,7 +626,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     delivery: SessionPromptDelivery = 'steer',
   ) => {
     if (!projectId || !projectSessionId) {
-      toast.error('No project session to queue a prompt');
+      toast.error('No session to queue a prompt');
       throw new Error('No project session to queue a prompt');
     }
     const nowMs = Date.now();
@@ -950,9 +950,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     () => ({ projectId: projectId ?? null, requestConnect: requestConnectorConnect }),
     [projectId, requestConnectorConnect],
   );
-  // Only a runtime with a config document (OpenCode) is asked for it; pi
-  // has none, and the project's model defaults cover the composer.
-  // (the SDK asks only a runtime that lists `session.config`).
+  // Only a runtime that lists `session.config` is asked for it (the SDK's
+  // rule); pi does not, and the project's model defaults cover the composer.
   const { data: config } = useRuntimeConfig();
   // A runtime without slash commands (pi) gets no list: no "/" or "#"
   // suggestions and no AutoContinue, so nothing dispatches to /command (E1).
@@ -965,7 +964,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     agents: rawAgents,
     boundAgent: boundAgentName,
     latestAgent,
-    defaultAgent: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+    defaultAgent: projectConfig?.default_agent,
     models,
     providers,
     modelDefaults,
@@ -2273,7 +2272,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           windowSize={11}
           updateCellsBatchingPeriod={32}
           contentContainerStyle={{ paddingTop: listTopInset }}
-          ListHeaderComponent={olderHistoryHeader}
+          ListHeaderComponent={olderHistoryHeader ?? undefined}
           maintainVisibleContentPosition={holdPosition ? MAINTAIN_FIRST_VISIBLE : undefined}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
@@ -2316,6 +2315,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
                     style={turns.length > 0 ? { marginTop: webSpace(6) } : undefined}
                   />
                 ) : null}
+                {/* Web `HeldMessageList` above the composer: messages another agent sent that wait on the person. */}
+                {projectId && projectSessionId ? <HeldMessages projectId={projectId} sessionId={projectSessionId} /> : null}
               </View>
               {/* The room (FACT 1): lets the newest turn pin near the top. */}
               <View onLayout={handleSpacerLayout} style={{ height: room }} />
@@ -2485,8 +2486,8 @@ const SCROLL_BUTTON_EASING = ReanimatedEasing.bezier(0.23, 1, 0.32, 1);
  * of content away from the end. Opacity + scale 0.97 → 1, `duration-normal`
  * in, `duration-fast` out. Tapping glides to the end and follows from there.
  *
- * iOS 26+: a glass circle (`LiquidGlassCapsule`, 40pt) behind the ghost
- * button and caret, the same recipe as every hamburger (`MenuButton`) and the
+ * iOS 26+: the ghost button draws its caret inside the system glass
+ * (`GlassButtons`, 40pt circle, system press response), the same recipe as every hamburger (`MenuButton`) and the
  * composer card it sits above (Jay, 2026-10-20). Android, older iOS and a
  * binary without `ExpoUI` keep the `secondary` round button with a 1pt
  * `border-border` ring (Jay, 2026-09-22), so it separates from the prose
@@ -2517,16 +2518,17 @@ function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress:
       // list (`zIndex`).
       style={[{ position: 'absolute', right: 16, bottom: 10, zIndex: 20 }, style]}
     >
-      <Button
-        variant={LIQUID_GLASS_AVAILABLE ? 'ghost' : 'secondary'}
-        size="icon"
-        className={LIQUID_GLASS_AVAILABLE ? 'rounded-full' : 'rounded-full border border-border'}
-        accessibilityLabel="Scroll to bottom"
-        onPress={onPress}
-      >
-        {LIQUID_GLASS_AVAILABLE ? <LiquidGlassCapsule /> : null}
-        <Icon as={CaretDownIcon} size={20} className="text-foreground" />
-      </Button>
+      <GlassButtons>
+        <Button
+          variant={LIQUID_GLASS_AVAILABLE ? 'ghost' : 'secondary'}
+          size="icon"
+          className={LIQUID_GLASS_AVAILABLE ? 'rounded-full' : 'rounded-full border border-border'}
+          accessibilityLabel="Scroll to bottom"
+          onPress={onPress}
+        >
+          <Icon as={CaretDownIcon} size={20} className="text-foreground" />
+        </Button>
+      </GlassButtons>
     </Reanimated.View>
   );
 }

@@ -24,7 +24,7 @@
  * the bot token never enters the sandbox.
  */
 import { createHash } from 'node:crypto';
-import { projectSessions, projects } from '@kortix/db';
+import { projectSessions } from '@kortix/db';
 import type { ChannelEnvelope } from '@kortix/shared';
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { eq } from 'drizzle-orm';
@@ -82,6 +82,7 @@ import {
   type DiscordStoredInteraction,
   type DiscordStoredMessage,
 } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 /** Discord's error for a thread start on a message that already has one: a retry's. */
 const THREAD_ALREADY_CREATED = 160004;
@@ -292,10 +293,10 @@ const discordQuestions: QuestionPort = {
 /** Plain-text next step per `classifyTurnError` title (slack/errors.ts). Another title ('Run failed') gets the fallback. */
 const RUN_ERROR_ADVICE: Partial<Record<string, string>> = {
   'Out of credits': 'A workspace admin can top up credits in Kortix. Then send your message again.',
-  'Usage limit reached': 'Wait, then send your message again. A project admin can also pick another model in Kortix.',
+  'Usage limit reached': 'Wait, then send your message again. A workspace admin can also pick another model in Kortix.',
   'Response too long': 'Ask the agent to continue, or narrow the request.',
   'Conversation too long': 'Use /new to start a new conversation.',
-  'Agent unavailable': 'Use /agent to pick another agent, then /new and your message again. A project admin can also fix the agent in Kortix.',
+  'Agent unavailable': 'Use /agent to pick another agent, then /new and your message again. A workspace admin can also fix the agent in Kortix.',
   'Model unavailable': 'Use /model to pick another model, then send your message again.',
   'ChatGPT login needs reconnection': 'Whoever connected the ChatGPT account must reconnect it in Kortix. Then send your message again.',
   'Provider rejected the request': 'A workspace admin can check the model provider settings in Kortix. Then send your message again.',
@@ -364,7 +365,7 @@ export function discordNotice(target: ChannelTarget, notice: ChannelNotice): str
     case 'start_failed':
       return [
         `Kortix could not start this conversation's session, so the agent did not run.${notice.reason ? ` ${notice.reason}` : ''}`,
-        'Use /new, then send your message again. If it fails again, a project admin can check the session in Kortix.',
+        'Use /new, then send your message again. If it fails again, a workspace admin can check the session in Kortix.',
         `Details: ${sessionWebUrl(config.FRONTEND_URL, target.projectId, notice.sessionId)}`,
       ].join('\n');
   }
@@ -517,7 +518,7 @@ async function startThread(message: DiscordStoredMessage, conversation: DiscordC
 
 /** The project row, or null for a project deleted since the message was stored. */
 async function loadProject(projectId: string) {
-  const [project] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [project] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   return project ?? null;
 }
 
@@ -539,7 +540,7 @@ export async function handleDiscordMessage(
     if (conversation.addressed && (await claimThreadCreate(`discord:gone:${message.channel_id}`, 60 * 60_000).catch(() => null))) {
       await postMessage(
         message.channel_id,
-        { content: `This ${conversation.direct ? 'conversation' : 'channel'} is not connected to a Kortix project any more. Use /connect to pick one.` },
+        { content: `This ${conversation.direct ? 'conversation' : 'channel'} is not connected to a Kortix workspace any more. Use /connect to pick one.` },
         message.id,
       );
     }
@@ -646,7 +647,7 @@ export async function handleDiscordMessage(
           visibility: 'project',
           body: {
             agent_name: start.agentName,
-            ...(start.model ? { opencode_model: start.model } : {}),
+            ...(start.model ? { model: start.model } : {}),
             ...(start.pools ? { provider_secret_pools: start.pools } : {}),
             title_source: text || null,
           },
@@ -733,7 +734,7 @@ export async function handleDiscordInteraction(
   const install = project && (await installFor(event.projectId, conversation));
   const press = interaction.type === 3;
   if (!project || !install) {
-    const gone = 'This channel is not connected to a Kortix project any more. Use /connect to pick one.';
+    const gone = 'This channel is not connected to a Kortix workspace any more. Use /connect to pick one.';
     return void (press ? await ephemeralFollowUp(interaction.token, gone) : await refuseCommand(interaction.token, gone));
   }
   // The webhook refused them already; an admin removed them since.
@@ -768,7 +769,7 @@ export async function handleDiscordInteraction(
     await ephemeralFollowUp(
       interaction.token,
       done
-        ? `This ${conversation.direct ? 'conversation' : 'channel'} now uses the Kortix project ${project.name}. ${conversation.direct ? 'Send' : 'Mention the bot with'} your message to start.`
+        ? `This ${conversation.direct ? 'conversation' : 'channel'} now uses the Kortix workspace ${project.name}. ${conversation.direct ? 'Send' : 'Mention the bot with'} your message to start.`
         : 'Kortix could not connect this channel. Use /connect again.',
     );
     return;
@@ -809,7 +810,7 @@ export function isDiscordInteractionEvent(event: IntegrationEvent): boolean {
  * silence. Never throws.
  */
 export async function tellDeadDiscordEvent(event: IntegrationEvent): Promise<void> {
-  const text = 'Kortix could not handle this after several tries. Send it again in a few minutes. If it keeps failing, a project admin can check Kortix.';
+  const text = 'Kortix could not handle this after several tries. Send it again in a few minutes. If it keeps failing, a workspace admin can check Kortix.';
   try {
     if (isDiscordInteractionEvent(event)) {
       const { interaction, conversation } = event.data as unknown as DiscordInteractionEventData;

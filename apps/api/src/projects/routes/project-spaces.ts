@@ -1,7 +1,7 @@
 /**
  * Project spaces: channels and the caller's DMs with an agent
  * (`lib/project-spaces.ts`). Every route needs `session` project access and the
- * `project_channels` flag. A public channel is seen and used by every member
+ * `chat` flag. A public channel is seen and used by every member
  * of the project; membership (`lib/project-space-members.ts`) is its roster. A
  * private channel exists only for its members (`lib/space-access.ts`): to
  * anyone else every route answers 404 `space_not_found`, never 403, so its id
@@ -25,6 +25,7 @@ import {
   SpaceMemberListSchema,
   SpaceMembersAddInputSchema,
   SpaceSchema,
+  SpaceTabsInputSchema,
   SpaceUpdateInputSchema,
 } from '@kortix/api-contract';
 import type { Context } from 'hono';
@@ -35,6 +36,7 @@ import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import type { AppEnv } from '../../types';
 import { auth, errors, json } from '../../openapi';
+import { recordAuditEvent } from '../../shared/audit';
 import { isUuid } from '../../shared/validate';
 import { DEFAULT_AGENT_SENTINEL, isLaunchableAgentName, loadProjectAgents } from '../agents';
 import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
@@ -62,22 +64,27 @@ import {
   SPACE_NOT_FOUND,
   createChannel,
   findLiveChannel,
+  findLiveSpace,
   findSessionSpace,
   getOrCreateDm,
   listHiddenPrivateChannels,
   listSpacesForUser,
+  mayEditSpaceTabs,
   serializeSpace,
+  setSpaceTabs,
   type SpaceViewer,
   updateChannel,
 } from '../lib/project-spaces';
 import { canSeeSpace, PRIVATE_CHANNELS_UNAVAILABLE, privateChannelsAvailable, spaceAccessFor } from '../../shared/space-access';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { sessionPerson } from '../lib/chat-threads';
+import { workspaceIdParam } from '../../shared/route-params';
 
-const projectParams = z.object({ projectId: z.string() });
+const projectParams = z.object({ workspaceId: z.string() });
 const spaceParams = projectParams.extend({ spaceId: z.string() });
 
 /**
- * The project (`session` access), the `project_channels` flag, then a live
+ * The project (`session` access), the `chat` flag, then a live
  * channel of the project the caller may see: the gate of every
  * `/spaces/:spaceId/*` tab route. A DM, an archived channel, an unknown id and
  * a private channel the caller is not in answer 404. `managerMay`: a project
@@ -97,11 +104,11 @@ async function loadChannel(c: Context<AppEnv>, opts: { managerMay?: boolean } = 
 
 type LoadedProject = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
 
-/** The project (`session` access) and the `project_channels` flag: the gate of every route here. */
+/** The project (`session` access) and the `chat` flag: the gate of every route here. */
 async function loadSpacesProject(c: Context<AppEnv>) {
-  const loaded = await loadProjectForUser(c, c.req.param('projectId')!, 'session');
+  const loaded = await loadProjectForUser(c, workspaceIdParam(c)!, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  const gate = requireFeatureFlag(c, loaded.row.metadata, 'project_channels');
+  const gate = requireFeatureFlag(c, loaded.row.metadata, 'chat');
   if (gate) return gate;
   return loaded;
 }
@@ -113,14 +120,55 @@ async function projectAgentCheck(loaded: LoadedProject): Promise<(name: string) 
 }
 
 /**
- * Renaming, archiving, converting, joining and changing members are people's
- * decisions: a session-bound agent/sandbox token is refused before any channel
- * is looked up (403), so the answer says nothing about the id.
+ * Creating, converting and joining a channel are people's decisions: a
+ * session-bound agent/sandbox token is refused before any channel is looked
+ * up (403), so the answer says nothing about the id. Renaming, describing,
+ * archiving, the agent list and the members an agent may change for its
+ * person (`sessionSpaceEditor`).
  */
 const SESSION_BOUND_CALLER = {
-  error: 'An agent cannot change a channel or its members. A person must do it.',
+  error: 'An agent cannot do this. A person must do it.',
   code: 'session_bound_caller',
 } as const;
+
+/**
+ * A session-bound caller changing a space for its person: the session is
+ * filed in the space or works for a person in it (the tabs rule,
+ * `mayEditSpaceTabs`), and it gets its person's own standing (the channel's
+ * creator, a project manager through its token, a member), never more. The
+ * viewer to authorize with, or the 403/404 a person in its place would get.
+ */
+async function sessionSpaceEditor(c: Context<AppEnv>, loaded: LoadedProject, spaceId: string) {
+  const bound = callerKortixSessionId(c)!;
+  const { row } = loaded;
+  const person = await sessionPerson(row.projectId, bound);
+  if (!person) return c.json({ error: 'This session works for no person, so it cannot change a space.', code: 'forbidden' }, 403);
+  const space = isUuid(spaceId) ? await findLiveSpace(row.projectId, spaceId) : null;
+  const bare = await spaceViewer(c, loaded);
+  if (!space || (space.kind === 'dm' && space.dmUserId !== person) || !canSeeSpace(space, bare.access)) return c.json(SPACE_NOT_FOUND, 404);
+  if (!(await mayEditSpaceTabs(space, bare, person))) {
+    return c.json({ error: 'Only an agent working in this space can change it.', code: 'forbidden' }, 403);
+  }
+  // The token is the person's, bounded by its grant: its verdict is the person's standing.
+  const manager = await projectCapabilityAllowed(c, person, row.accountId, row.projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+  return { viewer: { userId: person, manager, access: bare.access }, sessionId: bound, person };
+}
+
+/** The audit row of a change an agent session made to a space for its person. Never throws. */
+function auditSessionSpaceChange(loaded: LoadedProject, editor: { sessionId: string; person: string }, spaceId: string, action: string, metadata: Record<string, unknown>): void {
+  void recordAuditEvent({
+    accountId: loaded.row.accountId,
+    projectId: loaded.row.projectId,
+    sessionId: editor.sessionId,
+    actorUserId: editor.person,
+    actorType: 'agent',
+    onBehalfOfUserId: editor.person,
+    action,
+    resourceType: 'project_space',
+    resourceId: spaceId,
+    metadata,
+  }).catch(() => undefined);
+}
 
 /**
  * A project manager may edit any channel and delete any link; anyone else only
@@ -163,7 +211,7 @@ function registerSpaceRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/spaces',
+      path: '/{workspaceId}/spaces',
       tags: ['spaces'],
       summary: 'List the channels of a project and the caller’s direct messages',
       ...auth,
@@ -194,7 +242,7 @@ function registerSpaceRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/spaces/private',
+      path: '/{workspaceId}/spaces/private',
       tags: ['spaces'],
       summary: 'List the private channels the caller is not in (project managers)',
       description:
@@ -210,7 +258,7 @@ function registerSpaceRoutes(): void {
       const loaded = await loadSpacesProject(c);
       if (loaded instanceof Response) return loaded;
       const viewer = await spaceViewer(c, loaded);
-      if (!viewer.manager) return c.json({ error: 'Only a project manager can list private channels.', code: 'forbidden' }, 403);
+      if (!viewer.manager) return c.json({ error: 'Only a workspace manager can list private channels.', code: 'forbidden' }, 403);
       return c.json({ channels: await listHiddenPrivateChannels(loaded.row, viewer.access) }, 200);
     },
   );
@@ -219,7 +267,7 @@ function registerSpaceRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/spaces',
+      path: '/{workspaceId}/spaces',
       tags: ['spaces'],
       summary: 'Create a channel',
       ...auth,
@@ -254,7 +302,7 @@ function registerSpaceRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/spaces/dm',
+      path: '/{workspaceId}/spaces/dm',
       tags: ['spaces'],
       summary: 'Open the caller’s direct message with an agent',
       ...auth,
@@ -289,11 +337,13 @@ function registerSpaceRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/spaces/{spaceId}',
+      path: '/{workspaceId}/spaces/{spaceId}',
       tags: ['spaces'],
       summary: 'Update a channel',
       description:
         'Only the channel’s creator or a project manager (`project.members.manage`) may edit it; anyone else gets 403 `forbidden`. ' +
+        'A session token (an agent in a thread) may for its person, with that person\'s standing, when the session is filed in the ' +
+        'space or works for a person in it; it may not change `visibility` (403 `session_bound_caller`). ' +
         'A DM is 400 `dm_not_editable`. `agents` replaces the channel’s agent list (the first is its default): a repeated name or ' +
         'a name that is not an agent of the project is 400 `invalid_agents`.',
       ...auth,
@@ -307,7 +357,9 @@ function registerSpaceRoutes(): void {
       },
     }),
     async (c) => {
-      if (callerKortixSessionId(c) !== null) return c.json(SESSION_BOUND_CALLER, 403);
+      const bound = callerKortixSessionId(c) !== null;
+      // Making a channel private moves its files and changes who reaches them: a person does it.
+      if (bound && c.req.valid('json').visibility !== undefined) return c.json(SESSION_BOUND_CALLER, 403);
       const loaded = await loadSpacesProject(c);
       if (loaded instanceof Response) return loaded;
       const spaceId = c.req.param('spaceId');
@@ -318,8 +370,13 @@ function registerSpaceRoutes(): void {
         const invalid = await invalidChannelAgents(loaded, input.agents);
         if (invalid) return c.json(invalid, 400);
       }
-      const viewer = await spaceViewer(c, loaded);
+      const editor = bound ? await sessionSpaceEditor(c, loaded, spaceId) : null;
+      if (editor instanceof Response) return editor;
+      const viewer = editor?.viewer ?? (await spaceViewer(c, loaded));
       const result = await updateChannel(loaded.row.projectId, viewer, spaceId, input);
+      if (editor && !('error' in result)) {
+        auditSessionSpaceChange(loaded, editor, spaceId, 'space.updated', { fields: Object.keys(input).sort() });
+      }
       if ('error' in result) return c.json(result.error.body, result.error.status);
       // The channel's folder follows a rename, best effort (it logs a failure).
       // Waited for, so the renaming client never sees the new slug before the
@@ -341,11 +398,58 @@ function registerSpaceRoutes(): void {
     },
   );
 
+  // PUT /v1/projects/:projectId/spaces/:spaceId/tabs — replace the space's tabs after Chat.
+  projectsApp.openapi(
+    createRoute({
+      method: 'put',
+      path: '/{workspaceId}/spaces/{spaceId}/tabs',
+      tags: ['spaces'],
+      summary: 'Replace the tabs of a space',
+      description:
+        'The whole ordered list after Chat (Chat is always first and is never stored): add, remove, rename and reorder in one call. ' +
+        'At most 20 tabs. Every tab needs a `ref`: a Drive file path (`file`), a Drive folder path (`folder`), an artifact id, an App slug or an https URL (`link`). ' +
+        'The server fetches a new link URL once (public addresses only, 5 s) and sets `embeddable`: false when the page refuses framing or cannot be reached. ' +
+        'A person may when they may edit the channel (`can_edit`) or own the DM. A session token may for a session filed in the space ' +
+        'or working for a person in it. Anyone else gets 403 `forbidden`; a space the caller may not see is 404 `space_not_found`.',
+      ...auth,
+      request: {
+        params: spaceParams,
+        body: { required: true, content: { 'application/json': { schema: SpaceTabsInputSchema } } },
+      },
+      responses: {
+        200: json(SpaceSchema, 'The space with its new tabs'),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c) => {
+      const loaded = await loadSpacesProject(c);
+      if (loaded instanceof Response) return loaded;
+      const { row: project, userId } = loaded;
+      const spaceId = c.req.param('spaceId');
+      const space = isUuid(spaceId) ? await findLiveSpace(project.projectId, spaceId) : null;
+      const bound = callerKortixSessionId(c);
+      const person = bound ? await sessionPerson(project.projectId, bound) : userId;
+      // Another member's DM is not found, never "not editable".
+      if (!space || (space.kind === 'dm' && space.dmUserId !== userId && space.dmUserId !== person)) return c.json(SPACE_NOT_FOUND, 404);
+      const viewer = await spaceViewer(c, loaded);
+      if (!canSeeSpace(space, viewer.access)) return c.json(SPACE_NOT_FOUND, 404);
+      if (!(await mayEditSpaceTabs(space, viewer, person))) {
+        return c.json(
+          { error: 'Only the space’s creator, a workspace manager, the DM’s owner or an agent working in the space can change its tabs.', code: 'forbidden' },
+          403,
+        );
+      }
+      const updated = await setSpaceTabs(project.projectId, space, c.req.valid('json').tabs);
+      if (!updated) return c.json(SPACE_NOT_FOUND, 404);
+      return c.json(serializeSpace(updated, viewer, await isSpaceMember(updated, viewer.userId)), 200);
+    },
+  );
+
   // GET /v1/projects/:projectId/spaces/:spaceId/apps — Apps deployed from the channel's threads.
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/spaces/{spaceId}/apps',
+      path: '/{workspaceId}/spaces/{spaceId}/apps',
       tags: ['spaces'],
       summary: 'List the Apps of a channel',
       description:
@@ -377,7 +481,7 @@ function registerSpaceLinkRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/spaces/{spaceId}/links',
+      path: '/{workspaceId}/spaces/{spaceId}/links',
       tags: ['spaces'],
       summary: 'List the links of a channel',
       ...auth,
@@ -400,7 +504,7 @@ function registerSpaceLinkRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/spaces/{spaceId}/links',
+      path: '/{workspaceId}/spaces/{spaceId}/links',
       tags: ['spaces'],
       summary: 'Add a link to a channel',
       description:
@@ -431,7 +535,7 @@ function registerSpaceLinkRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/spaces/{spaceId}/links/{linkId}',
+      path: '/{workspaceId}/spaces/{spaceId}/links/{linkId}',
       tags: ['spaces'],
       summary: 'Pin or unpin a link of a channel',
       description:
@@ -465,7 +569,7 @@ function registerSpaceLinkRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/spaces/{spaceId}/links/{linkId}',
+      path: '/{workspaceId}/spaces/{spaceId}/links/{linkId}',
       tags: ['spaces'],
       summary: 'Remove a link from a channel',
       ...auth,
@@ -480,7 +584,7 @@ function registerSpaceLinkRoutes(): void {
       const result = isUuid(linkId) ? await deleteSpaceLink(space.spaceId, linkId, viewer) : 'not_found';
       if (result === 'not_found') return c.json({ error: 'Link not found', code: 'link_not_found' }, 404);
       if (result === 'forbidden') {
-        return c.json({ error: 'Only the person who added the link or a project manager can remove it.', code: 'forbidden' }, 403);
+        return c.json({ error: 'Only the person who added the link or a workspace manager can remove it.', code: 'forbidden' }, 403);
       }
       void refreshRunningThreadNotes(loaded.row.projectId, space.spaceId);
       return c.json({ ok: true as const }, 200);
@@ -494,7 +598,7 @@ function registerSpaceMemberRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/spaces/{spaceId}/members',
+      path: '/{workspaceId}/spaces/{spaceId}/members',
       tags: ['spaces'],
       summary: 'List the people in a channel',
       description:
@@ -516,11 +620,12 @@ function registerSpaceMemberRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/spaces/{spaceId}/members',
+      path: '/{workspaceId}/spaces/{spaceId}/members',
       tags: ['spaces'],
       summary: 'Add people to a channel',
       description:
         'A member of the channel, its creator or a project manager may add; anyone else gets 403 `forbidden`. ' +
+        'A session token (an agent in a thread of the space) adds for its person, with that person\'s standing. ' +
         'A manager outside a private channel adds other people, never themself (403 `manager_self_add`). ' +
         'Every id must be a member of the project, else 400 `not_project_member` names them and nobody is added. ' +
         'Someone already in the channel is skipped. `#general` is 400 `default_channel`.',
@@ -532,12 +637,16 @@ function registerSpaceMemberRoutes(): void {
       responses: { 200: json(SpaceMemberListSchema, 'The channel’s people after the add'), ...errors(400, 403, 404) },
     }),
     async (c) => {
-      if (callerKortixSessionId(c) !== null) return c.json(SESSION_BOUND_CALLER, 403);
-      const channel = await loadChannel(c, { managerMay: true });
+      const bound = callerKortixSessionId(c) !== null;
+      const channel = await loadChannel(c, { managerMay: !bound });
       if (channel instanceof Response) return channel;
-      const { loaded, space, viewer } = channel;
-      const result = await addSpaceMembers(space, loaded.row, viewer, c.req.valid('json').user_ids);
+      const { loaded, space } = channel;
+      const editor = bound ? await sessionSpaceEditor(c, loaded, space.spaceId) : null;
+      if (editor instanceof Response) return editor;
+      const userIds = c.req.valid('json').user_ids;
+      const result = await addSpaceMembers(space, loaded.row, editor?.viewer ?? channel.viewer, userIds);
       if ('error' in result) return c.json(result.error.body, result.error.status);
+      if (editor) auditSessionSpaceChange(loaded, editor, space.spaceId, 'space.members.added', { user_ids: userIds });
       // A private channel's new members get its folder grant.
       if (space.visibility === 'private') await afterPrivateChannelChange(loaded.row.projectId, { enforce: false });
       return c.json(result.list, 200);
@@ -548,28 +657,33 @@ function registerSpaceMemberRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/spaces/{spaceId}/members/{userId}',
+      path: '/{workspaceId}/spaces/{spaceId}/members/{userId}',
       tags: ['spaces'],
       summary: 'Remove a person from a channel, or leave it',
       description:
         'A project manager removes anyone. The channel’s creator removes anyone but themself. A member removes only ' +
         'themself (Leave; `me` names the caller). The creator is removed only by a manager (403 `creator_not_removable`); other refusals are ' +
+        'the same for a session token (an agent in a thread of the space), which removes for its person, with that person\'s standing; ' +
         '403 `forbidden`. `#general` is 400 `default_channel`.',
       ...auth,
       request: { params: spaceParams.extend({ userId: z.string() }) },
       responses: { 200: json(SpaceMemberListSchema, 'The channel’s people after the removal'), ...errors(400, 403, 404) },
     }),
     async (c) => {
-      if (callerKortixSessionId(c) !== null) return c.json(SESSION_BOUND_CALLER, 403);
-      const channel = await loadChannel(c, { managerMay: true });
+      const bound = callerKortixSessionId(c) !== null;
+      const channel = await loadChannel(c, { managerMay: !bound });
       if (channel instanceof Response) return channel;
-      const { loaded, space, viewer } = channel;
-      // `me`: the caller (Leave), so a client needs no user id of its own.
+      const { loaded, space } = channel;
+      const editor = bound ? await sessionSpaceEditor(c, loaded, space.spaceId) : null;
+      if (editor instanceof Response) return editor;
+      const viewer = editor?.viewer ?? channel.viewer;
+      // `me`: the caller (Leave), so a client needs no user id of its own; for an agent, its person.
       const param = c.req.param('userId');
-      const userId = param === 'me' ? loaded.userId : param;
+      const userId = param === 'me' ? viewer.userId : param;
       if (!isUuid(userId)) return c.json({ error: 'Member not found', code: 'member_not_found' }, 404);
       const result = await removeSpaceMember(space, loaded.row, viewer, userId);
       if ('error' in result) return c.json(result.error.body, result.error.status);
+      if (editor) auditSessionSpaceChange(loaded, editor, space.spaceId, 'space.members.removed', { user_ids: [userId] });
       // Leaving a private channel ends its folder grant and any mount of it.
       if (space.visibility === 'private') await afterPrivateChannelChange(loaded.row.projectId, { enforce: true });
       return c.json(result.list, 200);
@@ -580,7 +694,7 @@ function registerSpaceMemberRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/spaces/{spaceId}/join',
+      path: '/{workspaceId}/spaces/{spaceId}/join',
       tags: ['spaces'],
       summary: 'Join a channel',
       description: 'Any member of the project joins a public channel; a private channel they are not in is 404 `space_not_found`. Idempotent. `#general` is 400 `default_channel`.',
@@ -606,7 +720,7 @@ function registerChannelsOnboardingRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/onboarding/channels',
+      path: '/{workspaceId}/onboarding/channels',
       tags: ['spaces'],
       summary: 'Read the caller’s Channels onboarding state',
       description:
@@ -628,7 +742,7 @@ function registerChannelsOnboardingRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/onboarding/channels/marks',
+      path: '/{workspaceId}/onboarding/channels/marks',
       tags: ['spaces'],
       summary: 'Record a Channels onboarding mark for the caller',
       ...auth,

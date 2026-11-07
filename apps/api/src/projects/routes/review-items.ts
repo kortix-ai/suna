@@ -39,6 +39,7 @@ import {
   reviewSummary,
   serializeReviewItem,
 } from '../review-items';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const KINDS = ['change', 'approval', 'output', 'decision', 'batch'] as const;
 const RISKS = ['none', 'low', 'medium', 'high'] as const;
@@ -49,14 +50,14 @@ export function registerReviewItemsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/review/summary',
+      path: '/{workspaceId}/review/summary',
       tags: ['review'],
       summary: 'Count the review items that need you',
       description:
         'How many review items wait on the caller (the Needs you segment of `GET /review/items`), in total and by originating session. Counts only: the always-mounted badges poll this, not the list.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
       },
       responses: {
         200: json(
@@ -70,7 +71,7 @@ export function registerReviewItemsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -95,14 +96,14 @@ export function registerReviewItemsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/review/items',
+      path: '/{workspaceId}/review/items',
       tags: ['review'],
       summary: 'List review items (approvals and change requests)',
       description:
         'One page of the inbox: Needs you, then Waiting, then Done, newest first within each. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page. A walk is not a snapshot: an item whose status changes between two pages can come back on a later page or be missed.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z
           .object({
             segment: queryText('`needs_you`, `waiting` or `done`. Default: all three. Anything else is a 400.'),
@@ -124,7 +125,7 @@ export function registerReviewItemsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -176,12 +177,12 @@ export function registerReviewItemsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/review/items/{reviewItemId}',
+      path: '/{workspaceId}/review/items/{reviewItemId}',
       tags: ['review'],
       summary: 'Get a review item',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), reviewItemId: z.string() }),
+        params: z.object({ workspaceId: z.string(), reviewItemId: z.string() }),
       },
       responses: {
         200: json(z.object({ review_item: AnyObject }), 'Review item'),
@@ -189,7 +190,7 @@ export function registerReviewItemsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -218,12 +219,12 @@ export function registerReviewItemsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/review/items',
+      path: '/{workspaceId}/review/items',
       tags: ['review'],
       summary: 'Create a review item',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             kind: z.enum(['output', 'decision', 'batch']).openapi({ description: 'Review item kind.' }),
             title: z.string().openapi({ description: 'Title.' }),
@@ -240,7 +241,7 @@ export function registerReviewItemsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const body = await readJsonObject(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -315,12 +316,12 @@ export function registerReviewItemsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/review/items/{reviewItemId}/act',
+      path: '/{workspaceId}/review/items/{reviewItemId}/act',
       tags: ['review'],
       summary: 'Approve, reject or act on a review item',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), reviewItemId: z.string() }),
+        params: z.object({ workspaceId: z.string(), reviewItemId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             verdict: z.enum(['approve', 'reject', 'changes', 'answer', 'dismiss']).openapi({ description: 'Decision on the item.' }),
             feedback: z.string().optional().openapi({ description: 'Comment or answer text.' }),
@@ -332,7 +333,7 @@ export function registerReviewItemsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const reviewItemId = c.req.param('reviewItemId');
       const body = await readJsonObject(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -365,7 +366,8 @@ export function registerReviewItemsRoutes(): void {
         feedback: normalizeString(body.feedback),
         actingUserId: loaded.userId,
       });
-      if (!row) return c.json({ error: 'Review item not found' }, 404);
+      // Null after the read above: another reviewer decided it first.
+      if (!row) return c.json({ error: 'Review item is already decided' }, 409);
       return c.json(serializeReviewItem(row));
     },
   );
@@ -374,12 +376,12 @@ export function registerReviewItemsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/review/bulk',
+      path: '/{workspaceId}/review/bulk',
       tags: ['review'],
       summary: 'Act on several review items at once',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             ids: z.array(z.string()).openapi({ description: 'Review item ids (native, call:<execution_id>), at most 50. review_item_ids is accepted as an alias.' }),
             verdict: z.enum(['approve', 'reject', 'changes', 'answer', 'dismiss']).openapi({ description: 'Decision applied to every item.' }),
@@ -400,7 +402,7 @@ export function registerReviewItemsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const body = await readJsonObject(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);

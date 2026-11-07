@@ -13,8 +13,8 @@ export interface ManagedModel {
   // Platinum's price per 1M tokens. The gateway bills Platinum's `usage.cost`;
   // this applies only when a response carries none.
   pricing: { inputPerMillion: number; outputPerMillion: number; cachedInputPerMillion?: number };
-  // Image input. Also sets the served `modalities`: OpenCode drops image parts
-  // for a model without `image` input.
+  // Image input. Also sets the served `attachment` and `modalities`: the
+  // runtime drops image parts for a model that cannot take images.
   vision: boolean;
   // `reasoning_effort` values Platinum accepts; the thinking control's variants.
   reasoningOptions?: CatalogReasoningOption[];
@@ -222,7 +222,7 @@ export function isRetiredManagedModelId(id: string): boolean {
   return RETIRED_MANAGED_MODEL_IDS.has(id);
 }
 
-/** Strip the opencode `kortix/` namespace off a managed ref. */
+/** Strip the runtime's `kortix/` provider namespace off a managed ref. */
 function bareManagedId(ref: string): string {
   return ref.startsWith('kortix/') ? ref.slice('kortix/'.length) : ref;
 }

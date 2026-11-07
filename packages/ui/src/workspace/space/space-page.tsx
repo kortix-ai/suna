@@ -17,9 +17,7 @@ import {
   useFeatureFlag,
   useProjectConfig,
   useProjectSessions,
-  useRoom,
   useSessionsNeedingInput,
-  useSpaceRoom,
 } from '@kortix/sdk/react';
 import { HashIcon, PlusIcon } from '@phosphor-icons/react';
 
@@ -39,12 +37,8 @@ import { CountBadge } from '../../primitives/count-badge';
 import { EmptyState } from '../../primitives/empty-state';
 import { useOptionalSidebar } from '../../primitives/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
-import { UserAvatar } from '../../primitives/user-avatar';
 import { SpaceTabMenu } from './space-tab-menu';
 import { SpaceTabPanel, useTabLabel } from './space-tab-panels';
-
-/** The key of the room tab, always first. */
-export const ROOM_TAB = 'room';
 
 /** How many faces a pile shows before "+N". */
 const PILE = 4;
@@ -64,12 +58,12 @@ export function visibleSpaceTabs(
 }
 
 /**
- * /projects/[id]/spaces/[slug]: a space is a channel. One header block: the
+ * /workspaces/[id]/spaces/[slug]: a space is a channel. One header block: the
  * title bar names it and shows what `spaces.<slug>.header` picks (its agents,
- * the people in its room, the sessions that wait on you, and the actions),
- * and the tabs sit directly under it. The first tab is always the room; the
- * tabs after it come from `spaces.<slug>.tabs`. `?tab=` deep links a tab.
- * The "+" menu and Edit tabs write the same manifest list.
+ * the sessions that wait on you, and the actions), and the tabs from
+ * `spaces.<slug>.tabs` sit directly under it. The first tab is the default;
+ * `?tab=` deep links another. A space with no tab shows its intro. The "+"
+ * menu and Edit tabs write the same manifest list.
  */
 export function SpacePage({ projectId, slug }: { projectId: string; slug: string }) {
   const t = useTranslations('spaces');
@@ -104,20 +98,18 @@ export function SpacePage({ projectId, slug }: { projectId: string; slug: string
 
   const tabs = visibleSpaceTabs(space, { goals: goalsOn, artifacts: artifactsOn });
   const requested = params.get('tab');
-  const active = tabs.some((entry) => entry.key === requested) ? requested! : ROOM_TAB;
+  const first = tabs[0]?.key ?? null;
+  const active = tabs.some((entry) => entry.key === requested) ? requested! : first;
   const selectTab = (key: string) => {
-    router.replace(key === ROOM_TAB ? pathname : `${pathname}?tab=${encodeURIComponent(key)}`);
+    router.replace(key === first ? pathname : `${pathname}?tab=${encodeURIComponent(key)}`);
   };
 
   return (
     <div className="flex h-svh flex-col overflow-hidden">
       <SpaceHeader projectId={projectId} space={space} />
-      <Tabs value={active} onValueChange={selectTab} className="flex min-h-0 flex-1 flex-col gap-0">
+      <Tabs value={active ?? ''} onValueChange={selectTab} className="flex min-h-0 flex-1 flex-col gap-0">
         {/* Directly under the name, on the content's gutter (`px-5`); its rule runs edge to edge. */}
         <TabsList type="underline" className="w-full shrink-0 justify-start overflow-x-auto px-5">
-          <TabsTrigger value={ROOM_TAB} className="w-fit flex-none">
-            {t('tabs.room')}
-          </TabsTrigger>
           {tabs.map((entry) => (
             <SpaceTabTrigger key={entry.key} value={entry.key} tab={entry.tab} />
           ))}
@@ -133,7 +125,7 @@ export function SpacePage({ projectId, slug }: { projectId: string; slug: string
           <SpaceTabPanel
             projectId={projectId}
             space={space}
-            tab={active === ROOM_TAB ? null : (tabs.find((entry) => entry.key === active)?.tab ?? null)}
+            tab={tabs.find((entry) => entry.key === active)?.tab ?? null}
           />
         </div>
       </Tabs>
@@ -160,7 +152,6 @@ function SpaceTabTrigger({ value, tab }: { value: string; tab: SpaceTab }) {
 function SpaceHeader({ projectId, space }: { projectId: string; space: ManifestSpace }) {
   const config = useProjectConfig(projectId);
   const sidebar = useOptionalSidebar();
-  const roomsOn = useFeatureFlag(projectId, 'agent_rooms').enabled;
   // My Kortix runs only with `builtin_agents.my_kortix: true`: no Ask button otherwise.
   const items = spaceHeader(space).filter(
     (item) => item !== 'ask_my_kortix' || config?.builtin_agents?.my_kortix === true,
@@ -169,7 +160,7 @@ function SpaceHeader({ projectId, space }: { projectId: string; space: ManifestS
   const strip: ReactNode[] = [];
   for (const item of items) {
     if (item === 'agents' && agents.length) strip.push(<SpaceAgents key={item} projectId={projectId} agents={agents} />);
-    if (item === 'members' && roomsOn) strip.push(<SpaceMembers key={item} projectId={projectId} slug={space.name} />);
+    // `members` showed the people of the space's Room; Rooms were removed (2026-11), so it draws nothing.
     if (item === 'needs_you') strip.push(<SpaceNeedsYou key={item} projectId={projectId} agents={agents} />);
   }
   // The primary action sits on the trailing edge, whatever the config order.
@@ -223,30 +214,6 @@ function PileMore({ count }: { count: number }) {
   return (
     <span className="bg-muted text-muted-foreground ring-background relative flex h-6 min-w-6 items-center justify-center rounded-sm px-1 text-xs tabular-nums ring-2">
       +{count}
-    </span>
-  );
-}
-
-/** The people in the space's room, as a face pile. Nothing before the room exists. */
-function SpaceMembers({ projectId, slug }: { projectId: string; slug: string }) {
-  const t = useTranslations('spaces');
-  const room = useSpaceRoom(projectId, slug);
-  const detail = useRoom(projectId, room.data?.room_id ?? null);
-  const people = (detail.data?.members ?? []).filter((member) => member.kind === 'person');
-  if (!people.length) return null;
-  return (
-    <span role="group" aria-label={t('members', { count: people.length })} className="flex items-center -space-x-1">
-      {people.slice(0, PILE).map((person) => (
-        <UserAvatar
-          key={person.member_id}
-          name={person.label}
-          email={person.user_id ?? person.label}
-          size="sm"
-          ring
-          hint={person.label}
-        />
-      ))}
-      {people.length > PILE ? <PileMore count={people.length - PILE} /> : null}
     </span>
   );
 }

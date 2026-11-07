@@ -32,7 +32,7 @@ function provisioning(
     agent_name: 'kortix',
     retriable: true,
     sandbox: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     observed_at: observed,
     action: 'none',
     boot: {
@@ -44,8 +44,8 @@ function provisioning(
   };
 }
 
-const STARTING = { stage: 'starting', agent_name: 'kortix', retriable: true, opencode_session_id: null, boot: { phase: 'booting', since: at(3, 0), actively_starting: true, image: null } };
-const READY = { stage: 'ready', agent_name: 'kortix', retriable: false, opencode_session_id: 'ses_rt', boot: { phase: 'ready', since: at(3, 5), actively_starting: false, image: null } };
+const STARTING = { stage: 'starting', agent_name: 'kortix', retriable: true, runtime_session_id: null, boot: { phase: 'booting', since: at(3, 0), actively_starting: true, image: null } };
+const READY = { stage: 'ready', agent_name: 'kortix', retriable: false, runtime_session_id: 'ses_rt', boot: { phase: 'ready', since: at(3, 5), actively_starting: false, image: null } };
 
 /** Every image state once, plus one repeat that must not print a line. */
 const IMAGE_WALK = [
@@ -62,11 +62,11 @@ const IMAGE_WALK = [
 
 const IMAGE_WALK_LINES = [
   'provisioning · choosing the image (0:01)',
-  'provisioning · building the first image for this project (0:42)',
+  'provisioning · building the first image for this workspace (0:42)',
   'provisioning · starting from the last ready image while the new one builds (0:05)',
   "provisioning · copying the image to the session's region (0:07)",
   'provisioning · waiting for the provider to finish the image (retrying, 0:03)',
-  'provisioning · waiting for the first image for this project to finish building (0:05)',
+  'provisioning · waiting for the first image for this workspace to finish building (0:05)',
   'starting',
   'ready',
 ];
@@ -87,7 +87,7 @@ function sessionRow() {
     sandbox_provider: 'platinum',
     sandbox_id: null,
     sandbox_url: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     name: 'Image wait',
     custom_name: null,
     agent_name: 'kortix',
@@ -105,7 +105,7 @@ function startServer(): string {
     port: 0,
     fetch(req) {
       const path = new URL(req.url).pathname;
-      const project = `/v1/projects/${PROJECT}`;
+      const project = `/v1/workspaces/${PROJECT}`;
       if (req.method === 'POST' && path === `${project}/sessions`) {
         return Response.json(sessionRow(), { status: 201 });
       }
@@ -257,7 +257,7 @@ describe('kortix sessions start', () => {
     const r = await runCli(['sessions', 'start', SESSION, ...P]);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain(
-      `${SHORT} is provisioning · building the first image for this project (0:42) — re-run with --wait`,
+      `${SHORT} is provisioning · building the first image for this workspace (0:42) — re-run with --wait`,
     );
   });
 

@@ -6,13 +6,13 @@ kinds:
 | Kind | Names | Source |
 | --- | --- | --- |
 | Runtime tools | `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `agent` | pi (`../pi.md`). `codemode` is set by `agents.<name>.codemode`. |
-| Kortix tools | `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `show` | Kortix. Always registered. `memory` is retired (2026-10-30): a kortix.yaml that names it gets a warning; an ejected `tools/memory.ts` stays a project tool. |
-| Project tools | Any snake_case name | A module in the repository, registered under `tools:`. |
+| Kortix tools | `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `show` | Kortix. Always registered. `memory` is retired (2026-10-30): a kortix.yaml that names it gets a warning; an ejected `tools/memory.ts` stays a workspace tool. |
+| Workspace tools | Any snake_case name | A module in the repository, registered under `tools:`. |
 
 `kortix tools ls` lists the tools the current files give a session:
 `NAME`, `KIND` (`kortix`, `kortix (overridden)`, `project`), `SOURCE`.
 
-## Add a project tool
+## Add a workspace tool
 
 1. Write the module, for example `tools/lookup_order.ts` (below).
 2. Register it: `tools: { lookup_order: tools/lookup_order.ts }`.
@@ -31,7 +31,7 @@ kinds:
    and the web app's tool views depend on them.
 3. `kortix validate`, `kortix tools ls` (kind `kortix (overridden)`), CR.
 
-The copy is the project's. Kortix no longer updates it. Delete the entry and
+The copy is the workspace's. Kortix no longer updates it. Delete the entry and
 the file to return to the maintained tool.
 
 ## Remove a tool from an agent
@@ -48,7 +48,7 @@ agents:
     tools: none
 ```
 
-Set `tools` on every agent; `tools: all` is every tool. A name must be a
+Set `tools` on every agent; `tools: "*"` is every tool (`all` is the same). A name must be a
 runtime, Kortix or registered tool. `tools` hides a tool; `permission`
 decides calls to a visible one. A subagent gets the tools both its own list
 and the caller's list allow. Leave `agent` and `task` (its old name) out to

@@ -5,7 +5,6 @@
  * Matches the design pattern from TriggersScreen
  */
 
-import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';

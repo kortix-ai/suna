@@ -225,6 +225,31 @@ describe('doc autosave', () => {
     expect(statuses.at(-1)).toBe('saved');
   });
 
+  test('⌘S during a failed save backoff retries at once instead of waiting it out', async () => {
+    const { clock, file, type, saver, statuses } = setup();
+    const write = file.write;
+    let down = 1;
+    file.write = async (text, base) => {
+      if (down-- > 0) throw new Error('Failed to fetch');
+      return write(text, base);
+    };
+    type('offline');
+    await clock.advance(AUTOSAVE_MS);
+    expect(statuses.at(-1)).toBe('error');
+    // The backoff is 5 s; the person presses ⌘S after 1 s and the network is back. The retry runs
+    // as soon as the gap between saves allows (SAVE_GAP_MS after the failed one), not after 5 s.
+    await clock.advance(1_000);
+    saver.flush();
+    await clock.advance(SAVE_GAP_MS - 1_000);
+    expect(file.text).toBe('offline');
+    expect(statuses.at(-1)).toBe('saved');
+    // The failed attempt never reached the file; the retry is its one write.
+    expect(file.writes).toHaveLength(1);
+    // The backoff timer that was waiting does not write a second time.
+    await clock.advance(10_000);
+    expect(file.writes).toHaveLength(1);
+  });
+
   test('closing mid-save hands the outcome to the next editor of the doc; a closed editor never writes on its own', async () => {
     const { clock, file, type, saver, artifactId } = setup();
     file.latency = 1_000;
@@ -239,60 +264,5 @@ describe('doc autosave', () => {
     file.replace('start');
     await clock.advance(VERIFY_MS * 2);
     expect(file.text).toBe('start');
-  });
-
-  test('a comment snapshot waits for the current save and returns the actual saved text and version', async () => {
-    const { clock, file, type, saver } = setup();
-    file.latency = 1_000;
-    type('Selected passage.');
-    let settled = false;
-    const snapshot = saver.snapshot().then((value) => {
-      settled = true;
-      return value;
-    });
-    await clock.advance(999);
-    expect(settled).toBe(false);
-    await clock.advance(1);
-    expect(await snapshot).toEqual({ version: file.version(), text: 'Selected passage.' });
-    expect(file.writes).toHaveLength(1);
-    expect(await saver.snapshot()).toEqual({ version: file.version(), text: 'Selected passage.' });
-    expect(file.writes).toHaveLength(1);
-  });
-
-  test('a comment snapshot rejects a save failure', async () => {
-    const failed = setup();
-    failed.file.write = async () => {
-      throw new Error('Synthetic save failure');
-    };
-    failed.type('unsaved');
-    await expect(failed.saver.snapshot()).rejects.toThrow();
-  });
-  test('a comment snapshot rejects a save conflict', async () => {
-    const conflict = setup();
-    conflict.file.replace('Another writer.');
-    conflict.type('My passage.');
-    await expect(conflict.saver.snapshot()).rejects.toThrow();
-  });
-  test('a comment snapshot rejects edits made while its save waits', async () => {
-    const changed = setup();
-    changed.file.latency = 1_000;
-    changed.type('First passage.');
-    let failure: unknown;
-    const snapshot = changed.saver.snapshot().catch((error) => {
-      failure = error;
-    });
-    changed.type('Different passage.');
-    await changed.clock.advance(1_000);
-    await snapshot;
-    expect(failure).toBeInstanceOf(Error);
-  });
-
-  test('a comment snapshot uses an upstream idle refresh without writing the old editor text', async () => {
-    const { file, saver } = setup();
-    file.replace('The agent updated this passage.');
-    const refreshed = await saver.refresh(file.version());
-    expect(refreshed).toEqual({ text: file.text, version: file.version() });
-    expect(await saver.snapshot()).toEqual({ text: file.text, version: file.version() });
-    expect(file.writes).toHaveLength(0);
   });
 });

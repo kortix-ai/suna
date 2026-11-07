@@ -11,14 +11,15 @@
  * A field the block does not declare stays the App's own. Everything else on
  * the row (name, access, external URL, runtime state) is not declarable.
  */
-import { appLinks, apps, projects } from '@kortix/db';
+import { appLinks, apps } from '@kortix/db';
 import { validateAppsV2, type ManifestIssue } from '@kortix/manifest-schema';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { mutateManifestWithRetry, type ManifestCommitResult } from '../connectors/manifest-mutation';
-import { withProjectGitAuth } from '../projects/surface';
+import { withProjectGitAuth, withoutAppTriggers } from '../projects/surface';
 import { db } from '../shared/db';
 import { AppLimitError, assertAppMachineWithinLimits } from './limits';
 import { UnknownLinkedAppError, resolveAppLinks } from './links';
+import { projectsView } from '../workspaces/rows';
 
 export interface AppManifestFields {
   cpu?: number;
@@ -71,7 +72,7 @@ export function declaredAppFields(block: unknown): AppManifestFields {
  */
 export async function commitAppFields(projectId: string, slug: string, fields: AppManifestFields): Promise<ManifestCommitResult> {
   if (Object.keys(fields).length === 0) return { ok: true };
-  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
   let project: Awaited<ReturnType<typeof withProjectGitAuth>>;
   try {
@@ -114,9 +115,18 @@ export function withoutApp(appsNode: Row, slug: string): Row {
   return out;
 }
 
-/** Remove `apps.<slug>` (and references to it) from kortix.yaml. Nothing is committed when the file does not declare it. */
-export async function commitAppRemoval(projectId: string, slug: string): Promise<ManifestCommitResult> {
-  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+/** What an App delete removed from kortix.yaml: the triggers that named the App. */
+export type AppRemovalResult = (ManifestCommitResult & { ok: false }) | { ok: true; removedTriggers: string[] };
+
+/**
+ * Remove `apps.<slug>`, the references to it, and the triggers that name it
+ * (its work triggers and the schedule that calls it) from kortix.yaml, in one
+ * commit. Nothing is committed when the file names the App nowhere. Without
+ * `mayRemoveTriggers` a file with such triggers is refused (403), so an App
+ * delete never removes a trigger its caller could not delete.
+ */
+export async function commitAppRemoval(projectId: string, slug: string, options: { mayRemoveTriggers: boolean }): Promise<AppRemovalResult> {
+  const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
   let project: Awaited<ReturnType<typeof withProjectGitAuth>>;
   try {
@@ -124,11 +134,26 @@ export async function commitAppRemoval(projectId: string, slug: string): Promise
   } catch (error) {
     return { ok: false, error: (error as Error).message || 'failed to read kortix.yaml', status: 400 };
   }
-  return mutateManifestWithRetry(project, `the App ${slug} was being deleted`, (manifest) => {
-    if (!isRow(manifest.raw.apps) || !(slug in manifest.raw.apps)) return { ok: true, commitMessage: null };
-    manifest.raw.apps = withoutApp(manifest.raw.apps, slug);
-    return { ok: true, commitMessage: `chore: remove App ${slug}` };
+  let removedTriggers: string[] = [];
+  const result = await mutateManifestWithRetry(project, `the App ${slug} was being deleted`, (manifest) => {
+    const retired = withoutAppTriggers(manifest, slug);
+    removedTriggers = retired.removed;
+    if (removedTriggers.length > 0 && !options.mayRemoveTriggers) {
+      return {
+        ok: false,
+        status: 403,
+        code: 'app_triggers_need_delete',
+        error: `Deleting ${slug} also removes the triggers that name it (${removedTriggers.join(', ')}); you need permission to delete triggers.`,
+      };
+    }
+    manifest.raw = retired.manifest.raw;
+    const declared = isRow(manifest.raw.apps) && slug in manifest.raw.apps;
+    if (declared) manifest.raw.apps = withoutApp(manifest.raw.apps as Row, slug);
+    if (!declared && removedTriggers.length === 0) return { ok: true, commitMessage: null };
+    const triggers = removedTriggers.length > 0 ? ` and its triggers ${removedTriggers.join(', ')}` : '';
+    return { ok: true, commitMessage: declared ? `chore: remove App ${slug}${triggers}` : `chore: remove the triggers of App ${slug}: ${removedTriggers.join(', ')}` };
   });
+  return result.ok ? { ok: true, removedTriggers } : result;
 }
 
 /**
@@ -180,7 +205,7 @@ export async function syncDeclaredApps(projectId: string, appsNode: unknown): Pr
         if (!same) links = found;
       } catch (error) {
         if (!(error instanceof UnknownLinkedAppError)) throw error;
-        result.errors.push({ slug, error: `apps.${slug}.uses names no App of this project its creator can open: ${error.slugs.join(', ')}` });
+        result.errors.push({ slug, error: `apps.${slug}.uses names no App of this workspace its creator can open: ${error.slugs.join(', ')}` });
       }
     }
     if (Object.keys(update).length === 0 && !links) continue;

@@ -40,7 +40,9 @@ mock.module('../projects/lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async () => ({
     userId: OWNER,
-    row: { projectId: PROJECT, accountId: ACCOUNT, metadata: {} },
+    // A legacy project (its account holds others): DELETE purges it at once.
+    // A 1:1 workspace closes for 14 days first (K2), and purges after.
+    row: { projectId: PROJECT, accountId: ACCOUNT, metadata: {}, splitPending: true },
   }),
   assertProjectCapability: async () => {},
 }));
@@ -56,6 +58,7 @@ async function seed(): Promise<void> {
     accountId: ACCOUNT,
     name: 'connector-purge-project',
     repoUrl: 'https://example.test/connector-purge.git',
+    splitPending: true,
   });
   await db.insert(connectors).values({
     connectorId: CONNECTOR,
@@ -169,7 +172,7 @@ describe('purging a project removes its connector rows', () => {
     });
     const res = await projectsApp.request(`/${PROJECT}`, { method: 'DELETE' });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, deleted: true, archived: true, repo_deleted: false });
+    expect(await res.json()).toEqual({ ok: true, deleted: true, archived: true, repo_deleted: false, deletion_scheduled_for: null });
 
     const [row] = await db.select().from(projects).where(eq(projects.projectId, PROJECT)).limit(1);
     expect(row?.status).toBe('archived');

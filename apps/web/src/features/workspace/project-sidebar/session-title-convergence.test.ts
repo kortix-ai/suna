@@ -4,7 +4,7 @@
  * `generateSessionTitleFromFirstPrompt` (apps/api) writes
  * `project_sessions.metadata.name` fire-and-forget, 3–15s after the first
  * prompt, and emits NOTHING — no SSE event, no invalidation, no notification
- * path of any kind. The browser's live event stream comes from opencode inside
+ * path of any kind. The browser's live event stream comes from the runtime inside
  * the sandbox, not from the Kortix API, so the API cannot announce it there
  * without a transport it does not have.
  *

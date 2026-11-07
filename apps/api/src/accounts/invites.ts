@@ -1,16 +1,10 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
-import {
-  accountGroupMembers,
-  accountInvitations,
-  accountMemberships,
-  accounts,
-  projects,
-} from '@kortix/db';
+import { accountGroupMembers, accountInvitations } from '@kortix/db';
 import type { Context } from 'hono';
 import type { AppEnv } from '../types';
 import { config } from '../config';
-import { db } from '../shared/db';
+import { db, withDbTransaction } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
 import { createInviteAcceptRateLimitMiddleware } from '../middleware/rate-limit';
@@ -18,10 +12,13 @@ import { getMembership } from './core/app';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { normalizeProjectRole } from '../iam/roles';
 import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assignments';
+import { addWorkspaceMember } from '../iam/workspace-members';
 import { trustedEmailForUser } from '../iam/email-trust';
 import { getSsoProvider } from '../repositories/sso';
 import { isUuid } from '../shared/validate';
 import { logger } from '../lib/logger';
+import { captureProductEvent } from '../shared/product-analytics';
+import { accountsView, projectsView } from '../workspaces/rows';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -202,9 +199,9 @@ async function invitedProjects(
   const projectNames = new Map<string, string>();
   if (projectIds.length > 0) {
     const projectRows = await db
-      .select({ projectId: projects.projectId, name: projects.name, accountId: projects.accountId })
-      .from(projects)
-      .where(inArray(projects.projectId, projectIds));
+      .select({ projectId: projectsView.projectId, name: projectsView.name, accountId: projectsView.accountId })
+      .from(projectsView)
+      .where(inArray(projectsView.projectId, projectIds));
     for (const row of projectRows) projectNames.set(`${row.accountId}:${row.projectId}`, row.name);
   }
   return new Map(
@@ -237,6 +234,17 @@ export function validateBootstrapGroup(raw: unknown): { group_id: string } | nul
 // membership itself is already committed and shouldn't roll back because a
 // project no longer exists. Each entry is validated first (see
 // validateBootstrapGrant) so a bad jsonb write can't break acceptance.
+/** A time-boxed invite's membership end (`{account_expires_at}` in bootstrap_grants), or null. */
+function inviteMembershipExpiry(invite: typeof accountInvitations.$inferSelect): Date | null {
+  for (const raw of (invite.bootstrapGrants ?? []) as unknown[]) {
+    if (raw && typeof raw === 'object' && 'account_expires_at' in raw) {
+      const at = new Date(String((raw as { account_expires_at: unknown }).account_expires_at));
+      if (!Number.isNaN(at.getTime())) return at;
+    }
+  }
+  return null;
+}
+
 async function applyBootstrapGrants(
   invite: typeof accountInvitations.$inferSelect,
   userId: string,
@@ -246,6 +254,8 @@ async function applyBootstrapGrants(
   if (rawBootstraps.length === 0 || invite.initialRole !== 'member') return applied;
 
   for (const raw of rawBootstraps) {
+    // The membership expiry entry is applied by the membership write itself.
+    if (raw && typeof raw === 'object' && 'account_expires_at' in raw) continue;
     // A SCIM Group membership parked while this user was a pending invite —
     // materialize it now that they have a real user row. Idempotent.
     const grp = validateBootstrapGroup(raw);
@@ -334,9 +344,9 @@ accountInvitesRouter.openapi(
     if (!caller.email) return c.json({ invites: [] });
 
     const rows = await db
-      .select({ invite: accountInvitations, accountName: accounts.name })
+      .select({ invite: accountInvitations, accountName: accountsView.name })
       .from(accountInvitations)
-      .leftJoin(accounts, eq(accounts.accountId, accountInvitations.accountId))
+      .leftJoin(accountsView, eq(accountsView.accountId, accountInvitations.accountId))
       .where(
         and(
           sql`lower(${accountInvitations.email}) = ${caller.email}`,
@@ -430,9 +440,9 @@ accountInvitesRouter.openapi(
   }
 
   const [accountRow] = await db
-    .select({ name: accounts.name })
-    .from(accounts)
-    .where(eq(accounts.accountId, invite.accountId))
+    .select({ name: accountsView.name })
+    .from(accountsView)
+    .where(eq(accountsView.accountId, invite.accountId))
     .limit(1);
 
   const inviterEmail = await lookupAuthEmail(invite.invitedBy);
@@ -470,6 +480,7 @@ accountInvitesRouter.openapi(
       200: json(InviteAcceptSchema, 'Invite accepted'),
       403: json(ErrorSchema, 'Forbidden'),
       410: json(ErrorSchema, 'Invite expired'),
+      409: json(ErrorSchema, 'Invite no longer open'),
       ...errors(401, 404, 429),
     },
   }),
@@ -495,78 +506,89 @@ accountInvitesRouter.openapi(
     return c.json({ error: 'Invite has already been accepted by another account.' }, 409);
   }
 
-  // Only block a *fresh* accept on expiry. An already-accepted invite stays
-  // redeemable for the addressed user so re-entry can heal a grant that was
-  // never written (see below).
+  // A fresh accept is refused on expiry. Re-entry of an accepted invite
+  // changes nothing (below), so it answers the same whatever the date.
   if (!alreadyAccepted && isExpired(invite)) {
     return c.json({ error: 'This invite has expired. Ask the owner to send a new one.' }, 410);
   }
 
   const existingMembership = await getMembership(userId, invite.accountId);
-  // An accepted invite only heals grants for a CURRENT member. After removal or
-  // leave it must not re-create the membership: the owner sends a new invite.
+  // After removal or leave an accepted invite must not re-create the
+  // membership: the owner sends a new invite.
   if (alreadyAccepted && !existingMembership) {
     return c.json({ error: 'This invite was already used. Ask the owner to send a new one.' }, 410);
   }
-  // `onConflictDoNothing` on the (user, account) primary key keeps the identity
-  // insert idempotent on re-entry. Members are unlimited and free: there is no
-  // seat check. `SYSTEM_ACTOR` below: the writer is the INVITEE, who by
-  // definition holds no permission in this account yet — the invitation is the
-  // authorization.
-  await db
-    .insert(accountMemberships)
-    .values({ userId, accountId: invite.accountId })
-    .onConflictDoNothing({
-      target: [accountMemberships.userId, accountMemberships.accountId],
-    });
-  // Re-entry of a current member never rewrites their role (an admin demotion sticks).
-  if (!alreadyAccepted) {
-    await assignRole(SYSTEM_ACTOR, invite.accountId, {
-      principal: { type: 'user', id: userId },
-      roleKey: invite.initialRole,
-      scope: { type: 'account' },
-      source: 'invite',
-      exclusive: true,
+  // Re-entry of an accepted invite applies nothing. Its grants were the
+  // inviter's intent at invite time; an admin or the IdP may have removed a
+  // project role or a group since, and an old link must not undo that.
+  if (alreadyAccepted) {
+    return c.json({
+      account_id: invite.accountId,
+      account_role: invite.initialRole,
+      already_accepted: true,
+      bootstrap_grants_applied: [],
     });
   }
 
-  // Stamp accepted_at on first accept. The isNull guard makes concurrent
-  // accepts collapse to a single write without us caring who won — both
-  // callers still go on to (idempotently) apply grants below.
-  if (!alreadyAccepted) {
-    await db
+  // One transaction: the stamp is a compare-and-set on `accepted_at IS NULL`
+  // and an unexpired invite, so of two concurrent accepts only one applies the
+  // membership and the role, and an invite that expired or was revoked since
+  // the read above applies nothing.
+  const accepted = await withDbTransaction(async () => {
+    const [stamped] = await db
       .update(accountInvitations)
       .set({ acceptedAt: new Date(), acceptedByUserId: userId })
       .where(
         and(
           eq(accountInvitations.inviteId, invite.inviteId),
           isNull(accountInvitations.acceptedAt),
+          gt(accountInvitations.expiresAt, new Date()),
         ),
-      );
+      )
+      .returning({ inviteId: accountInvitations.inviteId });
+    if (!stamped) return null;
+    // THE membership write. Membership is access: the invitee reaches the
+    // workspace with no second grant. Members are unlimited and free: there
+    // is no seat check. `SYSTEM_ACTOR`: the writer is the INVITEE, who holds
+    // no permission here yet — the invitation is the authorization.
+    await addWorkspaceMember(invite.accountId, userId, invite.initialRole === 'admin' ? 'admin' : 'member', [], {
+      writer: SYSTEM_ACTOR,
+      source: 'invite',
+      grantedBy: invite.invitedBy,
+      expiresAt: inviteMembershipExpiry(invite),
+    });
+    return true;
+  });
+  if (!accepted) {
+    return c.json({ error: 'This invite is no longer open. Reload it, or ask the owner to send a new one.' }, 409);
   }
-
-  // Apply bootstrap grants on EVERY accept path — this is what makes acceptance
-  // self-healing. Previously grants ran only on the first accept, AFTER
-  // accepted_at was stamped and best-effort; any failure there (or a retried /
-  // concurrent accept hitting the already-accepted early return) left the
-  // member with no project_members row, so the invited project was invisible
-  // to them and re-clicking the link never fixed it. applyBootstrapGrants is
-  // idempotent, so re-running it on re-entry just heals the missing grant.
+  // Only the accept that won the stamp applies the grants. They are
+  // best-effort per grant (a project may be gone), so they run after the
+  // commit: a failed statement inside the transaction would abort it.
   const appliedGrants = await applyBootstrapGrants(invite, userId);
 
-  // Staged `pending` assignments become this user's own. Run on every accept
-  // for the same self-healing reason applyBootstrapGrants is: a partial earlier
-  // run must be repairable by clicking the link again.
+  // Staged `pending` assignments become this user's own. They are the
+  // account's current staging (SCIM, an admin), not a replay of the invite.
   try {
     await convertPendingAssignments(invite.accountId, invite.email, userId);
   } catch (err) {
     console.warn('[accept-invite] converting pending assignments failed', err);
   }
 
+  {
+    captureProductEvent({
+      userId,
+      accountId: invite.accountId,
+      event: 'member_joined',
+      dedupeKey: invite.inviteId,
+      properties: { via: 'invite', role: invite.initialRole },
+    });
+  }
+
   return c.json({
     account_id: invite.accountId,
     account_role: invite.initialRole,
-    already_accepted: alreadyAccepted,
+    already_accepted: false,
     bootstrap_grants_applied: appliedGrants,
   });
   },

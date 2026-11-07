@@ -6,7 +6,7 @@
  * CLI). Until now they were only reachable two ways: scaffolded into a project's
  * git tree by `kortix init`, or baked into the sandbox image at
  * `/opt/kortix/managed-skills` and overlaid per session. Both require being
- * *inside* Kortix. An OpenCode agent holding only the `kortix` binary and a
+ * *inside* Kortix. An agent holding only the `kortix` binary and a
  * token had no way to read them.
  *
  * SOURCE OF TRUTH: `@kortix/starter`. This module runs the exact same extraction
@@ -40,7 +40,7 @@ const SKILLS_PREFIX = `${SKILLS_DIR}/`;
 const SKILL_ENTRYPOINT = 'SKILL.md';
 
 export interface ManagedSkillFile {
-  /** Path relative to the skill directory, e.g. `references/opencode/tools.md`. */
+  /** Path relative to the skill directory, e.g. `references/bindings.md`. */
   path: string;
   content: string;
 }

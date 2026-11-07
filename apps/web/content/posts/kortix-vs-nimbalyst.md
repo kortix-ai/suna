@@ -5,7 +5,7 @@ date: "2026-10-13"
 canonical: "https://kortix.com/blog/kortix-vs-nimbalyst"
 author: "team"
 tags: ["Comparisons"]
-updated: "2026-10-22"
+updated: "2026-11-06"
 slug: "/kortix-vs-nimbalyst"
 ---
 Nimbalyst gives one developer a visual window for Claude Code and Codex sessions, and Kortix is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. The difference shows when an agent's work stops being a patch and becomes a permission, a connector or a decision somebody else has to approve.
@@ -63,7 +63,7 @@ The stack sits where you want it. Run it on Kortix Cloud, in your VPC, or on you
 
 ## What each costs
 
-Kortix prices in credits for the agent computer. Free is $0 with 500 credits a month and 1 project, on your own provider keys or a ChatGPT subscription. Paid plans start from $50 a month, at 1 credit = $0.01 and 11 credits = 1 hour of agent computer (checked October 2026). Members are unlimited on one shared credit pool, and unused credits roll over one month ([Kortix pricing](https://kortix.com/pricing)).
+Kortix prices in credits for the agent computer. Free is $0 with 500 credits a month on your first workspace, on your own provider keys or a ChatGPT subscription. Paid plans start from $50 a month, at 1 credit = $0.01 and 11 credits = 1 hour of agent computer (checked October 2026). Members are unlimited on one shared credit pool, and unused credits roll over one month ([Kortix pricing](https://kortix.com/pricing)).
 
 Nimbalyst is free for individuals: the app and the personal wiki. Sharing that wiki with a team is $200 per user a year, free while the beta lasts (checked October 2026, [Nimbalyst pricing](https://nimbalyst.com/pricing)).
 
@@ -78,8 +78,8 @@ Kortix asks a team to keep agents, grants and memory in a repository. That is mo
 | Dimension | Kortix | Nimbalyst |
 | --- | --- | --- |
 | Open source | Yes, self-host or managed cloud | App code MIT licensed |
-| Agent support | The OpenCode harness, any model | Claude Code, Codex; OpenCode and Copilot in alpha (checked October 2026) |
-| Where configuration lives | `kortix.yaml` and agent files in the project repo | App settings, with documents in git |
+| Agent support | An open-source agent harness, any model | Claude Code, Codex; OpenCode and Copilot in alpha (checked October 2026) |
+| Where configuration lives | `kortix.yaml` and agent files in the workspace repo | App settings, with documents in git |
 | Where agents run | Its own cloud computer per session | A worktree on the developer's machine |
 | Who reviews the work | A person merges a change request | Each person approves diffs before commit |
 | Price shape | Free tier, credits from $50 a month | Free for individuals, team wiki per user |
@@ -90,7 +90,7 @@ Choose Nimbalyst when the agents work on code and documents one team already hol
 
 Choose Kortix when agents reach systems the whole company shares. Choose it when a connector grant has to pass a review, or when work has to start without somebody opening a laptop. The manifest turns access into a diff, and the change request turns the diff into a decision with a name on it.
 
-A team can run both. Keep the coding loop in Nimbalyst, put the company's agents, connectors and memory in a Kortix project, and let the repository be where the two meet.
+A team can run both. Keep the coding loop in Nimbalyst, put the company's agents, connectors and memory in a Kortix workspace, and let the repository be where the two meet.
 
 For the neighboring choice between a coding workspace and a company system, read the [Kortix vs OpenHands comparison](/blog/kortix-vs-openhands). If you are choosing a system rather than a workspace, see [how to pick an open-source AI agent platform](/blog/open-source-ai-agent-platform).
 

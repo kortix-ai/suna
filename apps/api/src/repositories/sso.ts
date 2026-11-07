@@ -47,8 +47,8 @@ export type SsoGroupMapping = {
 // ─── Provider ─────────────────────────────────────────────────────────────
 
 /**
- * A personal account: its id is its owner's auth user id
- * (`bootstrapPersonalAccount`).
+ * A legacy personal account: its id is its owner's auth user id. Sign-up
+ * created one until Workspaces D3 (2026-11-05); new accounts never match.
  */
 export async function isPersonalAccount(accountId: string): Promise<boolean> {
   if (!isUuid(accountId)) return false;

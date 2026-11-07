@@ -96,13 +96,13 @@ export async function postEnvToDaemon(args: {
   serviceKey: string;
   snapshot: SandboxEnvSnapshot;
   refreshModels?: boolean;
-  /** Runtime env the daemon applies to the OPENCODE process (allow-listed there). */
-  opencodeEnv?: Record<string, string | null>;
+  /** Runtime env the daemon applies to the runtime process (allow-listed there). */
+  runtimeEnv?: Record<string, string | null>;
   /** The gateway base the box's model provider points at. */
   llmGatewayBaseUrl?: string;
   requireAgentEnvProof?: boolean;
 }): Promise<{
-  opencodeState: string | null;
+  runtimeState: string | null;
   revision: string;
   exported: number;
   managed: number | null;
@@ -110,16 +110,16 @@ export async function postEnvToDaemon(args: {
   agentEnvWritten: boolean;
   /**
    * How the daemon applied the config, or null when it did not say (an older
-   * daemon, or no reload was needed). 'kept-old' is the verified swap
-   * declining: the new opencode never came up and the previous one still
+   * daemon, or no reload was needed). 'kept-old' is a verified swap
+   * declining: the new runtime never came up and the previous one still
    * serves — the push landed, the config did not.
    */
-  opencodeReload: 'disposed' | 'restarted' | 'kept-old' | null;
+  runtimeReload: 'disposed' | 'restarted' | 'kept-old' | null;
   /**
    * Did applying the config interrupt a turn someone was waiting on?
    * `null` = the box did not say (older daemon, or no reload happened).
    */
-  opencodeTurnEnded: boolean | null;
+  runtimeTurnEnded: boolean | null;
 }> {
   if (!(await isSecureOrPrivateTarget(args.previewUrl))) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
@@ -131,7 +131,7 @@ export async function postEnvToDaemon(args: {
   };
 
   const runtimeEnv = {
-    ...(args.opencodeEnv ?? {}),
+    ...(args.runtimeEnv ?? {}),
     [SECRET_CAPABILITIES_ENV_NAME]: args.snapshot.capabilitiesJson,
   };
   const res = await fetch(`${args.previewUrl.replace(/\/$/, '')}/kortix/env`, {
@@ -143,8 +143,6 @@ export async function postEnvToDaemon(args: {
       revision: args.snapshot.revision,
       refreshModels: args.refreshModels ?? false,
       runtimeEnv,
-      // The same map under its pre-W3 name, for a daemon built before W3.
-      opencodeEnv: runtimeEnv,
       // `llmGatewayEnabled: true` is what switches a box that booted with the
       // gateway off (a mode that no longer exists) over to the gateway.
       ...(args.llmGatewayBaseUrl ? { llmGatewayEnabled: true, llmGatewayBaseUrl: args.llmGatewayBaseUrl } : {}),
@@ -156,9 +154,9 @@ export async function postEnvToDaemon(args: {
     const body = await res.text().catch(() => '');
     throw new EnvSyncHttpError(res.status, body);
   }
-  // The daemon echoes opencode's post-sync state. After a model-affecting change
-  // it restarts opencode and reports `starting` here — the signal we use to wait
-  // for readiness before the prompt is forwarded.
+  // The daemon echoes the runtime's post-sync state. After a model-affecting
+  // change it reloads the runtime and reports `starting` here — the signal we
+  // use to wait for readiness before the prompt is forwarded.
   const body = (await res.json().catch(() => null)) as {
     ok?: unknown;
     revision?: unknown;
@@ -169,14 +167,10 @@ export async function postEnvToDaemon(args: {
     runtime?: unknown;
     runtime_reload?: unknown;
     runtime_turn_ended?: unknown;
-    /** Pre-W3 names of the three fields above; a daemon built before W3 sends only these. */
-    opencode?: unknown;
-    opencode_reload?: unknown;
-    opencode_turn_ended?: unknown;
   } | null;
-  const runtimeState = body?.runtime ?? body?.opencode;
-  const runtimeReload = body?.runtime_reload ?? body?.opencode_reload;
-  const runtimeTurnEnded = body?.runtime_turn_ended ?? body?.opencode_turn_ended;
+  const runtimeState = body?.runtime;
+  const runtimeReload = body?.runtime_reload;
+  const runtimeTurnEnded = body?.runtime_turn_ended;
   const expectedExported = Object.keys(args.snapshot.env).length;
   if (args.requireAgentEnvProof) {
     if (!body || body.ok !== true) throw new Error('env sync proof missing ok=true');
@@ -191,14 +185,14 @@ export async function postEnvToDaemon(args: {
     }
   }
   return {
-    opencodeState: typeof runtimeState === 'string' ? runtimeState : null,
-    // How the daemon applied the config. 'kept-old' means the verified swap
-    // declined: the new opencode never came up, so the running one still
-    // serves and the change did NOT take. An older daemon omits the field
-    // entirely — null, meaning "could not tell", never "it worked".
-    opencodeReload:
+    runtimeState: typeof runtimeState === 'string' ? runtimeState : null,
+    // How the daemon applied the config. 'kept-old' means a verified swap
+    // declined: the new runtime never came up, so the running one still
+    // serves and the change did NOT take. A daemon that omits the field
+    // answers null, meaning "could not tell", never "it worked".
+    runtimeReload:
       typeof runtimeReload === 'string' ? (runtimeReload as 'disposed' | 'restarted' | 'kept-old') : null,
-    opencodeTurnEnded: typeof runtimeTurnEnded === 'boolean' ? runtimeTurnEnded : null,
+    runtimeTurnEnded: typeof runtimeTurnEnded === 'boolean' ? runtimeTurnEnded : null,
     revision: typeof body?.revision === 'string' ? body.revision : args.snapshot.revision,
     exported: typeof body?.exported === 'number' ? body.exported : expectedExported,
     managed: typeof body?.managed === 'number' ? body.managed : null,

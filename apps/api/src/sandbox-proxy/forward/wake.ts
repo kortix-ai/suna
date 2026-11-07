@@ -1,5 +1,5 @@
 import { BOOT_PHASE_HEADER, RUNTIME_NOT_READY_CODE } from '@kortix/api-contract/runtime-relay';
-import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
+import { isPtyWebSocketPath } from '../../platform/providers/pty-ingress';
 import { resumeStoppedSandboxByExternalId, stoppedSandboxWakePending } from '../../projects/session-open';
 import { loadSandbox, type SandboxRecord } from '../backend';
 import { isBrowserNavigation, portUnreachableResponse } from '../preview-response';
@@ -26,7 +26,7 @@ import type { PreviewProxyAccess } from './access';
  *
  * Two cases, and the difference between them is the whole point:
  *
- *  - A real user mutating OpenCode session data. A POST/PUT/PATCH/DELETE is an
+ *  - A real user mutating session data. A POST/PUT/PATCH/DELETE is an
  *    explicit action. A GET/HEAD/OPTIONS can be transcript hydration, cache
  *    warming, polling, or a background reconnect and must never resume a box.
  *  - A real user LOADING A PREVIEW PAGE. `browserNavigation` is the load-bearing
@@ -92,7 +92,7 @@ export function shouldWakeStoppedSandboxForWsAttach(
 ): boolean {
   if (status !== 'stopped') return false;
   if (!opts.wakeRequested) return false;
-  return classifyPtyWebSocketPath(remainingPath) !== null;
+  return isPtyWebSocketPath(remainingPath);
 }
 
 /**
@@ -191,7 +191,6 @@ export function isDaemonRuntimeNotReady(headers: Headers, bodyText: string): boo
     // not JSON
   }
   // legacy: a daemon built before the code and the header sends only this
-  // text (pi and OpenCode's boot steps, then OpenCode's process gate). Delete
-  // once no box runs such a daemon.
-  return /sandbox runtime not ready|opencode not ready/.test(bodyText);
+  // text. Delete once no box runs such a daemon.
+  return /sandbox runtime not ready/.test(bodyText);
 }

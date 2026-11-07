@@ -26,6 +26,7 @@ import {
   EXTENSION_HARNESSES,
   HARNESS_TOOL_NAMES,
   KORTIX_SKILL_NAMES,
+  RETIRED_KORTIX_SKILL_NAMES,
   KORTIX_SKILL_PREFIX,
   KORTIX_TOOL_NAMES,
   PI_PACKAGE_NPM_RE,
@@ -63,8 +64,10 @@ import {
   type GrantSetV2,
   type PermissionConfigV2,
   type PiPackageEntryV2,
+  isEveryGrant,
   resolveGrantSet,
   resolveProjectRepository,
+  TOOLS_SHAPE_ERROR,
   TOOLS_UNSET_WARNING,
   validateAgentMdFrontmatter,
   validateAppGrantList,
@@ -80,8 +83,8 @@ import { BUILTIN_AGENT_KEYS, BUILTIN_AGENTS, LEGACY_MY_KORTIX_AGENT_NAME, type B
 export type CodemodeV3 = (typeof CODEMODE_VALUES)[number];
 export type ContextV3 = (typeof CONTEXT_VALUES)[number];
 
-/** `agents.<name>.tools`: `all` (default), `none`, a list, or `{ exclude: [...] }`. */
-export type AgentToolsV3 = 'all' | 'none' | string[] | { exclude: string[] };
+/** `agents.<name>.tools`: `"*"` (default; alias `all`), `none`, a list, or `{ exclude: [...] }`. Read it with `isEveryGrant`. */
+export type AgentToolsV3 = '*' | 'all' | 'none' | string[] | { exclude: string[] };
 
 /**
  * `agents.<name>.skills` and `.extensions`: a grant set, or `{ exclude: [...] }`,
@@ -100,7 +103,7 @@ export interface CommandV3 {
 export interface ExtensionV3 {
   /**
    * A repo module path, loaded as an OpenCode plugin.
-   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+   * @deprecated OpenCode only: OpenCode is deleted (2026-10-30). See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted".
    */
   opencode?: string;
   /** `npm:<name>@<x.y.z>`, a repo path, or pi's `{ source, extensions, … }` form. */
@@ -115,7 +118,7 @@ export function excludedNamesV3(value: unknown): string[] | null {
 }
 
 /**
- * The names a v3 grant selects from `universe`: `all` is every name,
+ * The names a v3 grant selects from `universe`: `"*"` / `all` is every name,
  * `{ exclude }` every name but the listed ones, a list as written, and an
  * omitted or `none` grant none.
  */
@@ -165,12 +168,13 @@ export interface AgentBlockV3 {
   network_egress?: { version: 1; default: 'deny'; rules: [] };
 }
 
-/** One block of a board tab: a grid card that shows a room, a file, an App,
- *  an embedded page or markdown text. Display only. */
+/** One block of a board tab: a grid card that shows a file, an App, an
+ *  embedded page or markdown text. Display only. `chat` is retired with Rooms
+ *  (2026-11): it still validates, and hosts render nothing for it. */
 export interface SpaceBlockV3 {
   type: 'chat' | 'artifact' | 'app' | 'iframe' | 'text';
   label?: string;
-  /** chat: the name of a project room. */
+  /** @deprecated chat: the name of a removed Room. Ignored. */
   room?: string;
   /** artifact: a project file path. */
   path?: string;
@@ -205,7 +209,7 @@ export interface SpaceTabV3 {
 
 export type SpaceHeaderItem = (typeof SPACE_HEADER_ITEMS)[number];
 
-/** A space is a channel: a room (always the first tab) plus configured tabs.
+/** A space is a channel with configured tabs.
  *  Agents join it with `agents.<name>.space`. Display and config only: no
  *  behavior, no grants. */
 export interface SpaceV3 {
@@ -213,7 +217,7 @@ export interface SpaceV3 {
   description?: string;
   order?: number;
   header?: SpaceHeaderItem[];
-  /** The tabs after the room, in order. Absent = the host's default set. */
+  /** The tabs, in order. Absent = the host's default set. */
   tabs?: SpaceTabV3[];
 }
 
@@ -745,14 +749,14 @@ function validateAgentBlockV3(
 }
 
 /**
- * A grant of registered names: `all`, `none`, or a list where each name is
+ * A grant of registered names: `"*"` (alias `all`), `none`, or a list where each name is
  * registered. `excludable` also takes `{ exclude: [names] }`.
  */
 function validateNamedGrantV3(value: unknown, where: string, label: string, known: Set<string>, issues: ManifestIssue[], excludable = false): void {
   let names: unknown = value;
   if (excludable && isTable(value)) {
     if (Object.keys(value).length !== 1 || !Array.isArray(value.exclude) || value.exclude.some((name) => typeof name !== 'string' || !name.trim())) {
-      issues.push({ path: where, message: `${label} must be \`all\`, \`none\`, a list of names, or \`{ exclude: [names] }\`.`, severity: 'error' });
+      issues.push({ path: where, message: `${label} must be \`"*"\` (every name), \`none\`, a list of names, or \`{ exclude: [names] }\`.`, severity: 'error' });
       return;
     }
     names = value.exclude;
@@ -762,7 +766,15 @@ function validateNamedGrantV3(value: unknown, where: string, label: string, know
     if (issues.length !== before) return;
   }
   if (!Array.isArray(names)) return;
-  const unknown = names.map((item) => String(item).trim()).filter((item) => !known.has(item));
+  // A list that holds `"*"` grants every name (`resolveGrantSet`): nothing to look up.
+  if (names === value && isEveryGrant(names)) return warnRedundantNames(names, where, issues);
+  const trimmed = names.map((item) => String(item).trim());
+  // A retired Kortix skill (its feature is gone) grants nothing: a warning, never a failed parse.
+  const retired = label === 'skills' ? trimmed.filter((item) => RETIRED_KORTIX_SKILL_NAMES.includes(item)) : [];
+  if (retired.length > 0) {
+    issues.push({ path: where, message: `belongs to a removed feature and grants nothing: ${retired.join(', ')}. Remove it from the manifest.`, severity: 'warning' });
+  }
+  const unknown = trimmed.filter((item) => !known.has(item) && !retired.includes(item));
   if (unknown.length > 0) {
     issues.push({
       path: where,
@@ -774,23 +786,33 @@ function validateNamedGrantV3(value: unknown, where: string, label: string, know
   }
 }
 
-/** `tools`: `all` | `none` | a list | `{ exclude: [...] }`; each name a harness, Kortix or registered tool. */
+/** A list that holds `"*"` and other names: the other names grant nothing more. */
+function warnRedundantNames(value: unknown, where: string, issues: ManifestIssue[]): void {
+  if (!Array.isArray(value)) return;
+  const others = value.map((item) => String(item).trim()).filter((item) => item !== '*');
+  if (others.length > 0) {
+    issues.push({ path: where, message: `"*" grants every name, so the other entries do nothing: ${others.join(', ')}. Write \`"*"\` alone.`, severity: 'warning' });
+  }
+}
+
+/** `tools`: `"*"` (alias `all`) | `none` | a list | `{ exclude: [...] }`; each name a harness, Kortix or registered tool. */
 function validateToolGrantV3(value: unknown, where: string, known: Set<string>, issues: ManifestIssue[]): void {
   if (value === undefined) {
     issues.push({ path: where, message: TOOLS_UNSET_WARNING, severity: 'warning' });
     return;
   }
-  if (value === 'all' || value === 'none') return;
+  // `"*"`, `all` and a list that holds `"*"` are every tool.
+  if (value === 'none' || isEveryGrant(value)) return warnRedundantNames(value, where, issues);
   let names: unknown = value;
   if (isTable(value)) {
     if (Object.keys(value).length !== 1 || !Array.isArray(value.exclude)) {
-      issues.push({ path: where, message: 'tools must be `all`, `none`, a list of tool names, or `{ exclude: [names] }`.', severity: 'error' });
+      issues.push({ path: where, message: TOOLS_SHAPE_ERROR, severity: 'error' });
       return;
     }
     names = value.exclude;
   }
   if (!Array.isArray(names) || names.some((name) => typeof name !== 'string' || !name.trim())) {
-    issues.push({ path: where, message: 'tools must be `all`, `none`, a list of tool names, or `{ exclude: [names] }`.', severity: 'error' });
+    issues.push({ path: where, message: TOOLS_SHAPE_ERROR, severity: 'error' });
     return;
   }
   const missing = (names as string[]).map((name) => name.trim()).filter((name) => !known.has(name) && !name.startsWith('pty_'));

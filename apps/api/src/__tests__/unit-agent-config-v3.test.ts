@@ -119,7 +119,7 @@ describe('applyAgentConfigV3', () => {
       mode: 'primary',
       temperature: 0.2,
       prompt_file: 'agents/support.md',
-      skills: 'all',
+      skills: '*',
       // v3-only grants the body did not send are kept.
       subagents: ['researcher'],
       commands: ['report'],
@@ -144,9 +144,28 @@ describe('applyAgentConfigV3', () => {
       model: 'kortix/glm-5.3-flash',
       prompt_file: 'agents/support.md',
       permission: { bash: 'ask' },
-      connectors: 'all',
+      // The wire's `all` is written as kortix.yaml's canonical "*".
+      connectors: '*',
     });
     expect(block(applied.raw, 'support').secrets).toBeUndefined();
+  });
+
+  test('"every name" is `all` on the wire and "*" in the file; a value that already says it is kept', () => {
+    const text = V3.replace('    connectors: [github]\n', '    connectors: "*"\n').replace('    permission:\n      bash: ask\n', '    permission:\n      bash: all\n');
+    const starred = parseManifestString(text, 'kortix.yaml');
+    const read = readAgentBlockV2(starred, 'support');
+    if (!read.ok || !read.block) throw new Error('no block');
+    const view = agentConfigViewV3(read.block, null);
+    expect(view.governance).toMatchObject({ connectors: 'all', tools: 'all' });
+    expect(view.behavior.permission).toEqual({ bash: 'allow' });
+    // A GET → PUT round trip writes back what the file said, byte for byte.
+    const applied = applyAgentConfigV3(starred, 'support', { governance: view.governance, behavior: view.behavior });
+    if (!applied.ok) throw new Error(applied.error);
+    expect(block(applied.raw, 'support')).toMatchObject({ connectors: '*', tools: 'all', permission: { bash: 'all' } });
+    // A changed rule is written as sent.
+    const changed = applyAgentConfigV3(starred, 'support', { governance: view.governance, behavior: { ...view.behavior, permission: { bash: 'deny' } } });
+    if (!changed.ok) throw new Error(changed.error);
+    expect(block(changed.raw, 'support').permission).toEqual({ bash: 'deny' });
   });
 
   test('an inline prompt stays inline', () => {
@@ -262,7 +281,7 @@ describe('the v2 writers accept a v3 manifest', () => {
 
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
-    expect(block(applied.raw, 'support')).toMatchObject({ secrets: 'all', prompt_file: 'agents/support.md' });
+    expect(block(applied.raw, 'support')).toMatchObject({ secrets: '*', prompt_file: 'agents/support.md' });
   });
 
   test('grantSecretToAgentV2 grants a secret to a v3 agent (kortix secrets grant)', () => {
@@ -283,12 +302,13 @@ describe('synthesizeBlankManifest', () => {
     expect(serializeManifest(synthesized)).not.toContain('kortix_version');
     expect(block(synthesized.raw, 'worker')).toMatchObject({
       mode: 'primary',
-      skills: 'all',
-      connectors: 'all',
-      secrets: 'all',
-      kortix_permissions: 'all',
+      skills: '*',
+      connectors: '*',
+      secrets: '*',
+      kortix_permissions: '*',
       workspace: { project_repository: true },
     });
+    expect(serializeManifest(synthesized)).toContain('skills: "*"');
   });
 });
 

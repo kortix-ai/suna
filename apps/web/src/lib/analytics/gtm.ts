@@ -58,13 +58,13 @@ export function analyticsLocation(origin: string, pathname: string, search?: str
  * path without its locale prefix.
  */
 const ANALYTICS_EXCLUDED_PREFIXES = [
-  '/projects',
+  '/workspaces',
   '/admin',
   '/settings',
   '/connections',
   '/invites',
   '/setup',
-  '/new',
+  '/workspaces/new',
   '/secret-intake',
   '/connect',
   '/approve',
@@ -175,7 +175,7 @@ export function getPageContext(pathname: string): ContainerLoadData {
 
   // Workspace/Threads - NOT tracked for routeChange (internal navigation)
   if (
-    pathname.startsWith('/projects') ||
+    pathname.startsWith('/workspaces') ||
     pathname.startsWith('/workspace') ||
     pathname.startsWith('/thread')
   ) {
@@ -409,6 +409,9 @@ export function trackLogin(method: AuthMethod) {
 export function trackCtaSignup() {
   if (typeof window === 'undefined') return;
 
+  // Lazy: lib/track → posthog-config imports this module.
+  const location = window.location.pathname;
+  void import('@/lib/track').then(({ track }) => track('cta_signup_clicked', { location }));
   initDataLayer();
 
   const ctaEvent = {

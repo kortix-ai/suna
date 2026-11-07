@@ -2,6 +2,7 @@
 
 import { Button } from '../../primitives/button';
 import {
+  Command,
   CommandGroup,
   CommandInput,
   CommandItem,
@@ -91,7 +92,12 @@ import { Tag } from '../../primitives/tag';
 type ModelRef = { providerID: string; modelID: string };
 
 /**
- * The one default this picker sets: the ACCOUNT default model, from the star on
+ * The one default this picker sets: the WORKSPACE default model (the project
+ * default — a workspace is one account and its project), from the star on a
+ * row. `accountDefault` / `onSetAccountDefault` keep their names (a public
+ * prop contract); the host passes the project default through them.
+ *
+ * History: it set the ACCOUNT default, from the star on
  * a row. It is the default for every member of the account, so it needs
  * `project.model.write` and the star is hidden without it.
  *
@@ -159,6 +165,9 @@ function ModelRow({
   connectLabel: string;
 }) {
   const t = useTranslations('modelSelector');
+  // The star sets the WORKSPACE default (the project default): a workspace
+  // is one account and its project (Workspaces, PR 1).
+  const tDefault = useTranslations('workspaces.models');
   // Kept in the list so a default stays visible, but not runnable: the row
   // reads "Connect" and selecting it opens the connection (KRTX-3011).
   const unavailable = model.available === false;
@@ -278,10 +287,10 @@ function ModelRow({
             type="button"
             aria-label={
               isAccountDefault
-                ? t('defaultAria', { model: model.modelName })
-                : t('setDefaultAria', { model: model.modelName })
+                ? tDefault('defaultAria', { model: model.modelName })
+                : tDefault('setDefaultAria', { model: model.modelName })
             }
-            title={isAccountDefault ? t('defaultTitle') : t('setDefaultTitle')}
+            title={isAccountDefault ? tDefault('defaultTitle') : tDefault('setDefaultTitle')}
             /* No `aria-pressed`: that promises a toggle, and clicking the
                filled star does nothing. Clearing an account default is a real
                action with a real fallback behind it, and it belongs where the
@@ -365,8 +374,13 @@ export interface ModelSelectorProps {
   triggerLabelClassName?: string;
   /** `secondary` for a page-level control; the composer keeps `ghost`. */
   triggerVariant?: 'ghost' | 'secondary';
-  /** `field`: the full-width `h-9` form-field box, the same as `AgentSelector`'s. */
-  appearance?: 'chip' | 'field';
+  /**
+   * `field`: the full-width `h-9` form-field box, the same as `AgentSelector`'s.
+   * `inline`: no trigger and no popover. The search and the list render in
+   * place and fill their parent (a flex column), for a host panel that already
+   * owns the surface: the `chat_input` control's right pane.
+   */
+  appearance?: 'chip' | 'field' | 'inline';
 
   projectId?: string;
 
@@ -414,6 +428,7 @@ export function ModelSelector({
   onOpenChange,
 }: ModelSelectorProps) {
   const tModel = useTranslations('modelSelector');
+  const tDefault = useTranslations('workspaces.models');
   const t = useTranslations('threads');
 
   // Controlled when `open` is supplied, uncontrolled otherwise — Radix's own
@@ -624,12 +639,263 @@ export function ModelSelector({
     openUpgrade();
   }, [openUpgrade, setOpen]);
 
-  return (
+  const inline = appearance === 'inline';
+  const listBody = (
+    <>
+      <CommandInput
+        compact
+        placeholder={tModel('search')}
+        value={search}
+        onValueChange={setSearch}
+        rightElement={
+          canManageModels && canConnectProvider ? (
+          <div className="-mr-0.5 flex shrink-0 items-center gap-0.5">
+            <Hint label={tModel('connectProvider')} side="top" className="z-50">
+              <button
+                type="button"
+                aria-label={tModel('addProvider')}
+                onClick={() => handleOpenProviderModal('providers')}
+                className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
+              >
+                <Plus className="size-4" />
+              </button>
+            </Hint>
+            <Hint label={tModel('manageModels')} side="top" className="z-50">
+              <button
+                type="button"
+                aria-label={tModel('manageModels')}
+                onClick={() => handleOpenProviderModal('models')}
+                className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
+              >
+                <SlidersHorizontal className="size-4" />
+              </button>
+            </Hint>
+          </div>
+          ) : undefined
+        }
+      />
+
+      {/* Same condition as the group headings below: with one group the
+          input's own `border-b` (command.tsx) is the only divider —
+          adding this too stacks a doubled hairline. With 2+ groups the
+          sectioned list earns the stronger edge under the input. */}
+      {grouped.length > 1 && <CommandSeparator className="bg-border/60" />}
+
+      <CommandList className={inline ? 'max-h-none min-h-0 flex-1' : 'max-h-[380px]'}>
+        {modelsLoading || entitlementsPending ? (
+          <div
+            className="flex min-h-32 items-center justify-center"
+            role="status"
+            aria-label={tModel('loading')}
+          >
+            <Loading className="text-muted-foreground size-4 shrink-0" />
+          </div>
+        ) : grouped.length > 0 ? (
+          <>
+            {pinnedDefault && (
+              <>
+                {/* The model you chose, first, so it never has to be
+                    hunted for in a provider group. Deliberately a COPY —
+                    it also stays in its own provider section below, so
+                    that section is never missing a model, and the star
+                    in both places is the same fact. */}
+                <CommandGroup
+                  heading={<GroupHeading>{tDefault('yourDefault')}</GroupHeading>}
+                  forceMount
+                >
+                  <ModelRow
+                    model={pinnedDefault.model}
+                    groupProviderID={pinnedDefault.providerID}
+                    groupProviderName={pinnedDefault.providerName}
+                    isSelected={
+                      availableSelectedModel?.providerID === pinnedDefault.model.providerID &&
+                      availableSelectedModel?.modelID === pinnedDefault.model.modelID
+                    }
+                    isAccountDefault
+                    defaultControls={rowDefaultControls}
+                    onSelect={handleSelect}
+                    connectLabel={tPooled('connect')}
+                    scope="pinned"
+                  />
+                </CommandGroup>
+                <CommandSeparator />
+              </>
+            )}
+
+            {sections.map((section, sectionIndex) => {
+              const selectedInSection = section.models.find(
+                (m) =>
+                  availableSelectedModel?.providerID === m.providerID &&
+                  availableSelectedModel?.modelID === m.modelID,
+              );
+              const open = isPickerGroupOpen({
+                groupIndex: sectionIndex,
+                groupProviderID: section.id,
+                hasSearch: searching,
+                containsSelected: !!selectedInSection,
+                toggled: toggledGroups,
+              });
+              // Records the flip of what is on screen, so collapsing a
+              // default-open group (the managed set, or the one holding
+              // the selected model) works like collapsing any other.
+              const toggle = () =>
+                setToggledGroups((prev) => new Map(prev).set(section.id, !open));
+              const collapsible = sections.length > 1;
+              return (
+                <Fragment key={section.id}>
+                  {sectionIndex > 0 && <CommandSeparator />}
+                  <CommandGroup forceMount>
+                    {/* The LABEL is the control: the provider's name
+                        expands and collapses its own models, rather than
+                        a separate "show N models" row underneath it.
+                        Every section gets the same header, the managed
+                        set included. A lone section has nothing to
+                        collapse against, so it gets no header. */}
+                    {collapsible && (
+                      <CommandItem
+                        value={`section-${section.id}`}
+                        onSelect={toggle}
+                        className="cursor-pointer"
+                      >
+                        {open ? (
+                          <ChevronDown className="text-muted-foreground size-3.5 shrink-0" />
+                        ) : (
+                          <CaretRight className="text-muted-foreground size-3.5 shrink-0" />
+                        )}
+                        <span className="min-w-0 truncate text-sm font-medium">
+                          {section.label}
+                        </span>
+                        <span className="flex-1" />
+                        {/* Said once for the section, not once per row:
+                            every model under a subscription heading is
+                            billed the same way. */}
+                        {section.models.some(isSubscriptionModel) && (
+                          <Tag>{tModel('included')}</Tag>
+                        )}
+                        {/* A collapsed group that holds the selected
+                            model names it, so collapsing never hides
+                            what you are on. */}
+                        {!open && selectedInSection && (
+                          <>
+                            <span className="text-muted-foreground min-w-0 truncate text-xs">
+                              {pickerModelName(selectedInSection)}
+                            </span>
+                            <Check className="text-foreground size-4 shrink-0" />
+                          </>
+                        )}
+                        {!open && !selectedInSection && (
+                          <span className="text-muted-foreground text-xs tabular-nums">
+                            {section.models.length}
+                          </span>
+                        )}
+                      </CommandItem>
+                    )}
+                    {open &&
+                      section.models.map((model) => (
+                        <ModelRow
+                          key={`${section.id}:${model.providerID}:${model.modelID}`}
+                          model={model}
+                          groupProviderID={section.providerID}
+                          groupProviderName={section.label}
+                          isSelected={
+                            availableSelectedModel?.providerID === model.providerID &&
+                            availableSelectedModel?.modelID === model.modelID
+                          }
+                          isAccountDefault={
+                            defaultControls?.accountDefault?.providerID === model.providerID &&
+                            defaultControls?.accountDefault?.modelID === model.modelID
+                          }
+                          defaultControls={rowDefaultControls}
+                          onSelect={handleSelect}
+                          connectLabel={tPooled('connect')}
+                          scope="model"
+                          showSubscriptionTag={false}
+                        />
+                      ))}
+                  </CommandGroup>
+                </Fragment>
+              );
+            })}
+          </>
+        ) : hasAnyModel ? (
+          /* Models ARE connected — the SEARCH matched none of them.
+             `grouped` is built from `visibleModels`, which is already
+             filtered by `search`, so the branch below could not tell the
+             two apart: typing "zzz" with 40 models connected showed
+             "No models available" and a Connect-provider CTA. */
+          <ModelSearchEmpty
+            search={search}
+            modelCount={models.filter((model) => model.enabled !== false && !(isClaudeSubscriptionModel(model) && model.available === false)).length}
+            onClear={() => setSearch('')}
+            onUpgrade={showUpgradeOption ? handleUpgrade : undefined}
+          />
+        ) : (
+          <div className="px-3 py-5 text-center">
+            <div className="text-foreground text-sm font-medium">{tModel('empty.title')}</div>
+            <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
+              {showUpgradeOption
+                ? tModel('empty.upgradeDescription')
+                : tModel('empty.description')}
+            </p>
+            <div className="mt-4 flex items-center justify-center gap-2">
+              {showUpgradeOption && (
+                <Button type="button" size="xs" onClick={handleUpgrade}>
+                  <CreditCard className="size-3.5" />
+                  {tModel('upgrade')}
+                </Button>
+              )}
+              {canConnectProvider && (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant={showUpgradeOption ? 'outline' : 'default'}
+                  onClick={() => handleOpenProviderModal('providers')}
+                >
+                  <KeyRound className="size-3.5" />
+                  {tModel('connectProvider')}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </CommandList>
+    </>
+  );
+
+  const modals = (
     <>
       {connectionModal}
       {projectId && chatGptPossible && ProviderAccountsModal && (
         <ProviderAccountsModal projectId={projectId} providerId="codex" open={chatGptOpen} onOpenChange={setChatGptOpen} />
       )}
+    </>
+  );
+
+  if (inline) {
+    return (
+      <>
+        {modals}
+        {/* The popover's own list rhythm (`CommandPopoverContent`), on the host's surface. */}
+        <Command
+          shouldFilter={false}
+          className={cn(
+            'min-h-0 flex-1 rounded-none bg-transparent',
+            '[&_[cmdk-group]]:px-1.5 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0',
+            // No hairlines in a host pane: the search is a filled field, groups part by space.
+            '[&_[data-slot=command-input-wrapper]]:bg-muted [&_[data-slot=command-input-wrapper]]:mx-2 [&_[data-slot=command-input-wrapper]]:h-8 [&_[data-slot=command-input-wrapper]]:gap-2 [&_[data-slot=command-input-wrapper]]:rounded-md [&_[data-slot=command-input-wrapper]]:border-b-0 [&_[data-slot=command-input-wrapper]]:px-2.5',
+            '[&_[data-slot=command-input]]:h-8 [&_[data-slot=command-input]]:text-sm',
+            '[&_[data-slot=command-separator]]:hidden [&_[data-slot=command-group]]:py-1',
+          )}
+        >
+          {listBody}
+        </Command>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {modals}
       <CommandPopover
         open={disabled ? false : open}
         onOpenChange={(next) => !disabled && setOpen(next)}
@@ -673,225 +939,7 @@ export function ModelSelector({
           sideOffset={8}
           className="w-[min(300px,calc(100vw-1.5rem))]"
         >
-          <>
-            <CommandInput
-              compact
-              placeholder={tModel('search')}
-              value={search}
-              onValueChange={setSearch}
-              rightElement={
-                canManageModels && canConnectProvider ? (
-                <div className="-mr-0.5 flex shrink-0 items-center gap-0.5">
-                  <Hint label={tModel('connectProvider')} side="top" className="z-50">
-                    <button
-                      type="button"
-                      aria-label={tModel('addProvider')}
-                      onClick={() => handleOpenProviderModal('providers')}
-                      className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
-                    >
-                      <Plus className="size-4" />
-                    </button>
-                  </Hint>
-                  <Hint label={tModel('manageModels')} side="top" className="z-50">
-                    <button
-                      type="button"
-                      aria-label={tModel('manageModels')}
-                      onClick={() => handleOpenProviderModal('models')}
-                      className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
-                    >
-                      <SlidersHorizontal className="size-4" />
-                    </button>
-                  </Hint>
-                </div>
-                ) : undefined
-              }
-            />
-
-            {/* Same condition as the group headings below: with one group the
-                input's own `border-b` (command.tsx) is the only divider —
-                adding this too stacks a doubled hairline. With 2+ groups the
-                sectioned list earns the stronger edge under the input. */}
-            {grouped.length > 1 && <CommandSeparator className="bg-border/60" />}
-
-            <CommandList className="max-h-[380px]">
-              {modelsLoading || entitlementsPending ? (
-                <div
-                  className="flex min-h-32 items-center justify-center"
-                  role="status"
-                  aria-label={tModel('loading')}
-                >
-                  <Loading className="text-muted-foreground size-4 shrink-0" />
-                </div>
-              ) : grouped.length > 0 ? (
-                <>
-                  {pinnedDefault && (
-                    <>
-                      {/* The model you chose, first, so it never has to be
-                          hunted for in a provider group. Deliberately a COPY —
-                          it also stays in its own provider section below, so
-                          that section is never missing a model, and the star
-                          in both places is the same fact. */}
-                      <CommandGroup
-                        heading={<GroupHeading>{tModel('yourDefault')}</GroupHeading>}
-                        forceMount
-                      >
-                        <ModelRow
-                          model={pinnedDefault.model}
-                          groupProviderID={pinnedDefault.providerID}
-                          groupProviderName={pinnedDefault.providerName}
-                          isSelected={
-                            availableSelectedModel?.providerID === pinnedDefault.model.providerID &&
-                            availableSelectedModel?.modelID === pinnedDefault.model.modelID
-                          }
-                          isAccountDefault
-                          defaultControls={rowDefaultControls}
-                          onSelect={handleSelect}
-                          connectLabel={tPooled('connect')}
-                          scope="pinned"
-                        />
-                      </CommandGroup>
-                      <CommandSeparator />
-                    </>
-                  )}
-
-                  {sections.map((section, sectionIndex) => {
-                    const selectedInSection = section.models.find(
-                      (m) =>
-                        availableSelectedModel?.providerID === m.providerID &&
-                        availableSelectedModel?.modelID === m.modelID,
-                    );
-                    const open = isPickerGroupOpen({
-                      groupIndex: sectionIndex,
-                      groupProviderID: section.id,
-                      hasSearch: searching,
-                      containsSelected: !!selectedInSection,
-                      toggled: toggledGroups,
-                    });
-                    // Records the flip of what is on screen, so collapsing a
-                    // default-open group (the managed set, or the one holding
-                    // the selected model) works like collapsing any other.
-                    const toggle = () =>
-                      setToggledGroups((prev) => new Map(prev).set(section.id, !open));
-                    const collapsible = sections.length > 1;
-                    return (
-                      <Fragment key={section.id}>
-                        {sectionIndex > 0 && <CommandSeparator />}
-                        <CommandGroup forceMount>
-                          {/* The LABEL is the control: the provider's name
-                              expands and collapses its own models, rather than
-                              a separate "show N models" row underneath it.
-                              Every section gets the same header, the managed
-                              set included. A lone section has nothing to
-                              collapse against, so it gets no header. */}
-                          {collapsible && (
-                            <CommandItem
-                              value={`section-${section.id}`}
-                              onSelect={toggle}
-                              className="cursor-pointer"
-                            >
-                              {open ? (
-                                <ChevronDown className="text-muted-foreground size-3.5 shrink-0" />
-                              ) : (
-                                <CaretRight className="text-muted-foreground size-3.5 shrink-0" />
-                              )}
-                              <span className="min-w-0 truncate text-sm font-medium">
-                                {section.label}
-                              </span>
-                              <span className="flex-1" />
-                              {/* Said once for the section, not once per row:
-                                  every model under a subscription heading is
-                                  billed the same way. */}
-                              {section.models.some(isSubscriptionModel) && (
-                                <Tag>{tModel('included')}</Tag>
-                              )}
-                              {/* A collapsed group that holds the selected
-                                  model names it, so collapsing never hides
-                                  what you are on. */}
-                              {!open && selectedInSection && (
-                                <>
-                                  <span className="text-muted-foreground min-w-0 truncate text-xs">
-                                    {pickerModelName(selectedInSection)}
-                                  </span>
-                                  <Check className="text-foreground size-4 shrink-0" />
-                                </>
-                              )}
-                              {!open && !selectedInSection && (
-                                <span className="text-muted-foreground text-xs tabular-nums">
-                                  {section.models.length}
-                                </span>
-                              )}
-                            </CommandItem>
-                          )}
-                          {open &&
-                            section.models.map((model) => (
-                              <ModelRow
-                                key={`${section.id}:${model.providerID}:${model.modelID}`}
-                                model={model}
-                                groupProviderID={section.providerID}
-                                groupProviderName={section.label}
-                                isSelected={
-                                  availableSelectedModel?.providerID === model.providerID &&
-                                  availableSelectedModel?.modelID === model.modelID
-                                }
-                                isAccountDefault={
-                                  defaultControls?.accountDefault?.providerID === model.providerID &&
-                                  defaultControls?.accountDefault?.modelID === model.modelID
-                                }
-                                defaultControls={rowDefaultControls}
-                                onSelect={handleSelect}
-                                connectLabel={tPooled('connect')}
-                                scope="model"
-                                showSubscriptionTag={false}
-                              />
-                            ))}
-                        </CommandGroup>
-                      </Fragment>
-                    );
-                  })}
-                </>
-              ) : hasAnyModel ? (
-                /* Models ARE connected — the SEARCH matched none of them.
-                   `grouped` is built from `visibleModels`, which is already
-                   filtered by `search`, so the branch below could not tell the
-                   two apart: typing "zzz" with 40 models connected showed
-                   "No models available" and a Connect-provider CTA. */
-                <ModelSearchEmpty
-                  search={search}
-                  modelCount={models.filter((model) => model.enabled !== false && !(isClaudeSubscriptionModel(model) && model.available === false)).length}
-                  onClear={() => setSearch('')}
-                  onUpgrade={showUpgradeOption ? handleUpgrade : undefined}
-                />
-              ) : (
-                <div className="px-3 py-5 text-center">
-                  <div className="text-foreground text-sm font-medium">{tModel('empty.title')}</div>
-                  <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
-                    {showUpgradeOption
-                      ? tModel('empty.upgradeDescription')
-                      : tModel('empty.description')}
-                  </p>
-                  <div className="mt-4 flex items-center justify-center gap-2">
-                    {showUpgradeOption && (
-                      <Button type="button" size="xs" onClick={handleUpgrade}>
-                        <CreditCard className="size-3.5" />
-                        {tModel('upgrade')}
-                      </Button>
-                    )}
-                    {canConnectProvider && (
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant={showUpgradeOption ? 'outline' : 'default'}
-                        onClick={() => handleOpenProviderModal('providers')}
-                      >
-                        <KeyRound className="size-3.5" />
-                        {tModel('connectProvider')}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              )}
-            </CommandList>
-          </>
+          {listBody}
         </CommandPopoverContent>
       </CommandPopover>
     </>

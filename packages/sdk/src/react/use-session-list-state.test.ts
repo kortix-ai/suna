@@ -78,7 +78,7 @@ test('setPinned shows the pin at once, then the server state, then invalidates t
     done = api.setPinned('S1', true);
   });
   await settle();
-  expect(held.map((h) => `${h.method} ${h.path}`)).toEqual(['PUT /projects/P1/sessions/S1/pin']);
+  expect(held.map((h) => `${h.method} ${h.path}`)).toEqual(['PUT /workspaces/P1/sessions/S1/pin']);
   expect(held[0]!.body).toEqual({ pinned: true });
   expect(cached('S1').pinned_at).toBeTruthy();
   expect(cached('S1').archived_at).toBeNull();

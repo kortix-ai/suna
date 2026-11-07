@@ -185,7 +185,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
         agentName: 'kortix',
         baseRef: null,
         metadata: {},
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
       },
       grants: [],
       canManageProject: true,
@@ -199,7 +199,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
       source: 'mirror',
       complete: true,
       captured_at: '2026-08-26T00:00:00.000Z',
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       message_count: 3,
       messages: [{ info: { id: 'msg_1' }, parts: [] }],
     });
@@ -214,8 +214,8 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
       epoch: 'bmtaokkdb0piayh',
       seq: 41,
       identity: {
-        opencode_session_id: 'ses_root',
-        opencode_version: '1.18.23',
+        runtime_session_id: 'ses_root',
+        harness_version: '1.18.23',
         daemon_build: 1756240000,
         agent_config_etag: 'ff8a8b4f',
         head_seq: { ses_root: 2016 },

@@ -21,7 +21,7 @@ const entries = (...urls) => urls.map((url) => ({ url, title: '' }));
 
 describe('historyTarget', () => {
   test('Back lands on the previous in-app entry', () => {
-    const list = entries(`${APP}/projects/p1`, `${APP}/new`);
+    const list = entries(`${APP}/workspaces/p1`, `${APP}/workspaces/new`);
     expect(historyTarget(list, 1, 'back', inApp)).toBe(0);
   });
 
@@ -29,7 +29,7 @@ describe('historyTarget', () => {
     // A server redirect to github.com is committed in-window: will-navigate
     // never ran for it. Traversal must not reload it inside the app.
     const list = entries(
-      `${APP}/projects/p1`,
+      `${APP}/workspaces/p1`,
       'https://github.com/login/oauth/authorize',
       `${APP}/github/setup`,
     );
@@ -38,15 +38,15 @@ describe('historyTarget', () => {
 
   test('Back skips a hostname that only begins with the app origin', () => {
     const list = entries(
-      `${APP}/projects/p1`,
-      'https://kortix.com.attacker.example/projects/p2',
-      `${APP}/new`,
+      `${APP}/workspaces/p1`,
+      'https://kortix.com.attacker.example/workspaces/p2',
+      `${APP}/workspaces/new`,
     );
     expect(historyTarget(list, 2, 'back', inApp)).toBe(0);
   });
 
   test('Back has no target at the first in-app entry', () => {
-    const list = entries('about:blank', `${APP}/new`);
+    const list = entries('about:blank', `${APP}/workspaces/new`);
     expect(historyTarget(list, 1, 'back', inApp)).toBe(-1);
   });
 

@@ -2,6 +2,7 @@
 
 import { CommandPaletteBoundary } from '@/features/workspace/command-palette-boundary';
 import { DriveUploadTray } from '@kortix/ui/files';
+import { VoiceCallCard } from '@kortix/ui/session/voice/voice-call-card';
 import { AppPreviewPoolLoader } from '@/features/apps/app-preview-pool-loader';
 import { ArtifactFramePreloader } from '@/features/artifacts/artifact-frame-preloader';
 import { useTranslations } from '@/i18n/use-translations';
@@ -43,7 +44,6 @@ import {
   qk,
   useFeatureFlag,
   useGatewayCatalogSync,
-  useProjectSpaces,
 } from '@kortix/sdk/react';
 import { SidebarGlyph as PanelLeft } from '@kortix/ui/icons';
 
@@ -160,16 +160,16 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     // stale query key the shell already ignores, so there is no server data to
     // fetch. Dropping a param changes the router cache key, so `router.replace`
     // would miss the segment cache and run a cold RSC fetch for nothing — on
-    // the component every `/projects/*` page mounts. Next patches
+    // the component every `/workspaces/*` page mounts. Next patches
     // `replaceState` and updates its own canonical URL, so `useSearchParams`
     // still reports the stripped URL. Same mechanism as `openTabAndNavigate` in
     // `packages/ui/src/internal/stores/tab-store.ts`.
     //
     // The path comes from `window.location.pathname`, never a hardcoded
-    // `/projects/<id>`. This shell is mounted by
-    // `app/(app)/projects/[id]/layout.tsx`, so the effect runs on EVERY route
+    // `/workspaces/<id>`. This shell is mounted by
+    // `app/(app)/workspaces/[id]/layout.tsx`, so the effect runs on EVERY route
     // beneath it, and rewriting the address bar to the project root while
-    // `/projects/<id>/files` is still the rendered view desyncs the two: the
+    // `/workspaces/<id>/files` is still the rendered view desyncs the two: the
     // sidebar's active-row test stops matching, Back leaves for somewhere the
     // user never was, and a reload lands on a different screen. Only the query
     // key is being dropped here — the path must not move.
@@ -205,17 +205,14 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     newSession();
   }, [newSession]);
 
-  // Channels on: "New session" (Mod+T, the desktop File menu) opens the
-  // default channel and focuses its composer, where a message starts a thread.
-  const channels = useFeatureFlag(projectId, 'project_channels').enabled;
-  const spaces = useProjectSpaces(projectId, { enabled: channels });
-  const defaultChannelSlug = spaces.data?.find((space) => space.kind === 'channel' && space.is_default)?.slug;
+  // Spaces on: "New session" (Mod+T, the desktop File menu) opens the
+  // person's own space and focuses its composer, where a message starts a thread.
+  const channels = useFeatureFlag(projectId, 'chat').enabled;
   const openDefaultChannel = useCallback(() => {
-    if (!defaultChannelSlug) return;
-    router.push(uiRoutes().channel(projectId, defaultChannelSlug));
-    // Already on that channel the composer does not remount; ask it for focus.
+    router.push(`${uiRoutes().project(projectId)}/chat`);
+    // Already on that space the composer does not remount; ask it for focus.
     window.dispatchEvent(new CustomEvent('focus-session-textarea'));
-  }, [defaultChannelSlug, projectId, router]);
+  }, [projectId, router]);
   useProjectShellShortcuts({ projectId, onNewSession: channels ? openDefaultChannel : handleNewSession });
 
   const params = useParams<{ sessionId?: string }>();
@@ -268,6 +265,10 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
             started in one folder still shows its progress after the user moves
             on. Empty, it renders nothing. */}
         <DriveUploadTray />
+
+        {/* A voice call placed from an agent's page (flag `voice_call`): it goes on wherever the person goes in the
+            project. Without a call, nothing. */}
+        <VoiceCallCard />
 
         {/* App previews load here in the background and stay loaded while
             the project is open, so the Apps page shows them at once. */}

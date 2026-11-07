@@ -5,7 +5,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { configureKortix } from '../core/http/config';
 import { PRESENCE_AWAKE_REFRESH_MS } from './human-presence';
-import { useSession } from './opencode';
+import { useSession } from './runtime-hooks';
 import { qk } from './query-keys';
 import { sessionStartKey } from '../core/rest/projects-client/session-sandbox';
 
@@ -137,18 +137,45 @@ describe('useSession presence alerts', () => {
 });
 
 /**
- * `presencePageExit` follows the project's `notification_center` flag. Off is
- * the presence before KRTX-1742: no `pagehide` report, and every absent PUT
- * (hidden, idle, unmount) goes without `keepalive`. A closing tab still turns
- * hidden and sends absent, but the browser may cancel that PUT as the page
- * unloads, and then the lease lives to its 90 s expiry. On, `pagehide` reports
- * absent too, and every absent PUT goes with `keepalive`, so it outlives the
- * page and ends the lease at once.
+ * Page exit is on by default since notifications graduated (2026-11-06):
+ * `pagehide` reports absent, and every absent PUT (hidden, idle, unmount) goes
+ * with `keepalive`, so it outlives the page and ends the lease at once.
+ * `presencePageExit: false` is the presence before KRTX-1742: no `pagehide`
+ * report and no `keepalive`. A closing tab still turns hidden and sends absent,
+ * but the browser may cancel that PUT as the page unloads, and then the lease
+ * lives to its 90 s expiry.
  */
 describe('useSession presence page exit', () => {
-  test('by default, pagehide sends no absent PUT', async () => {
+  test('by default, pagehide sends absent with keepalive', async () => {
     act(() => {
       renderer = create(mount({}));
+    });
+    await flush();
+    act(() => win.fire('pagehide'));
+    await flush();
+    expect(puts.map((p) => [p.body.active, p.keepalive])).toEqual([
+      [true, false],
+      [false, true],
+    ]);
+  });
+
+  test('by default, unmounting sends absent with keepalive', async () => {
+    act(() => {
+      renderer = create(mount({ presenceAlerts: true }));
+    });
+    await flush();
+    act(() => renderer!.unmount());
+    renderer = null;
+    await flush();
+    expect(puts.map((p) => [p.body.active, p.keepalive])).toEqual([
+      [true, false],
+      [false, true],
+    ]);
+  });
+
+  test('with presencePageExit false, pagehide sends no absent PUT', async () => {
+    act(() => {
+      renderer = create(mount({ presencePageExit: false }));
     });
     await flush();
     act(() => win.fire('pagehide'));
@@ -156,9 +183,9 @@ describe('useSession presence page exit', () => {
     expect(puts.map((p) => p.body.active)).toEqual([true]);
   });
 
-  test('by default, a closing page sends absent on visibilitychange without keepalive', async () => {
+  test('with presencePageExit false, a closing page sends absent on visibilitychange without keepalive', async () => {
     act(() => {
-      renderer = create(mount({}));
+      renderer = create(mount({ presencePageExit: false }));
     });
     await flush();
     act(() => win.fire('pagehide'));
@@ -173,9 +200,9 @@ describe('useSession presence page exit', () => {
     ]);
   });
 
-  test('by default, unmounting sends absent without keepalive', async () => {
+  test('with presencePageExit false, unmounting sends absent without keepalive', async () => {
     act(() => {
-      renderer = create(mount({ presenceAlerts: true }));
+      renderer = create(mount({ presenceAlerts: true, presencePageExit: false }));
     });
     await flush();
     act(() => renderer!.unmount());

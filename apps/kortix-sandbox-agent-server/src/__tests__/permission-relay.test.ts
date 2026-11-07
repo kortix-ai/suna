@@ -29,7 +29,7 @@ beforeAll(() => {
         auth: req.headers.get('authorization'),
         body: text ? JSON.parse(text) : null,
       })
-      return Response.json({ ok: status === 200 }, { status })
+      return Response.json({ ok: status === 200, live_wait_ms: 0, approved: true, grant: 'bash' }, { status })
     },
   })
 })
@@ -69,12 +69,12 @@ const REQUEST: PermissionRequest = {
 }
 
 describe('relayPermission', () => {
-  test('posts the permission to turn-permission with the sandbox token and never replies', async () => {
-    await relayPermission(REQUEST)
+  test('posts the permission, its tool and argument hash, and reads how to wait', async () => {
+    const answer = await relayPermission(REQUEST, { tool: 'bash', argsHash: 'hash-1' })
 
     expect(requests).toHaveLength(1)
     expect(requests[0]!.method).toBe('POST')
-    expect(requests[0]!.path).toBe('/v1/projects/proj-1/turn-permission')
+    expect(requests[0]!.path).toBe('/v1/workspaces/proj-1/turn-permission')
     expect(requests[0]!.auth).toBe('Bearer sandbox-token')
     expect(requests[0]!.body).toEqual({
       session_id: 'sess-1',
@@ -82,19 +82,30 @@ describe('relayPermission', () => {
       runtime_session_id: 'ses_root',
       permission: 'bash',
       patterns: ['git push *'],
+      tool: 'bash',
+      args_hash: 'hash-1',
+      args: { command: 'git push origin main' },
     })
+    expect(answer).toEqual({ liveWaitMs: 0, approved: true, grant: 'bash' })
     expect(requests.some((r) => r.path.startsWith('/permission'))).toBe(false)
+  })
+
+  test('arguments above the relay cap arrive as a preview', async () => {
+    await relayPermission({ ...REQUEST, metadata: { content: 'x'.repeat(40_000) } }, { tool: 'write', argsHash: 'hash-2' })
+    const args = requests[0]!.body.args as { truncated: boolean; preview: string }
+    expect(args.truncated).toBe(true)
+    expect(args.preview.length).toBe(2_000)
   })
 
   test('a non-2xx response is swallowed', async () => {
     status = 500
-    await expect(relayPermission(REQUEST)).resolves.toBeUndefined()
+    await expect(relayPermission(REQUEST)).resolves.toBeNull()
     expect(requests).toHaveLength(1)
   })
 
   test('an unreachable API is swallowed', async () => {
     process.env.KORTIX_API_URL = 'http://127.0.0.1:1'
-    await expect(relayPermission(REQUEST)).resolves.toBeUndefined()
+    await expect(relayPermission(REQUEST)).resolves.toBeNull()
     expect(requests).toHaveLength(0)
   })
 

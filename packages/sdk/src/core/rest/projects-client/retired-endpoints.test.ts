@@ -166,7 +166,8 @@ test.each(RETIRED)(
 test('both public-surface snapshots still list every retired projects-client name', () => {
   const surfaces = [publicSurface, publicTypeSurface] as Array<Record<string, string[]>>;
   for (const surface of surfaces) {
-    for (const entry of ['.', './projects-client']) {
+    // `./projects-client` left the package exports with the OpenCode-era surface (#11821); the root entry keeps these names.
+    for (const entry of ['.']) {
       expect(surface[entry]).toEqual(expect.arrayContaining(RETIRED.map(([name]) => name)));
     }
   }

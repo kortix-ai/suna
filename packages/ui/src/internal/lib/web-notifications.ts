@@ -15,25 +15,18 @@ import { createElement } from 'react';
  *  1. Browser support for the Notification API
  *  2. Permission is granted
  *  3. Master enable toggle is on
- *  4. The kind: for a notification-center payload (an inbox row, or a
- *     session of a project with `notification_center` on), the person's
- *     server-side Push choice; otherwise the per-browser kind switch
+ *  4. The kind: the person's server-side Push choice for it
  *  5. Optionally skips if tab is visible (onlyWhenHidden preference)
  *
  * Every OS notification carries the tag of the Web Push message for the same
  * event: `<type>:<sessionId>`, or `<type>:<projectId>:<triggerSlug>` for an
  * alert (`notificationTag`). Only two service-worker notifications with one
  * tag replace each other: a `new Notification` never replaces one. So while
- * this browser holds a Web Push subscription, the service worker shows a
- * notification-center payload's copy too, and whichever copy arrives second
- * replaces the first. Any other payload stays a `new Notification`, as before
- * the notification center (KRTX-1742).
+ * this browser holds a Web Push subscription, the service worker shows this
+ * page's copy too, and whichever copy arrives second replaces the first
+ * (KRTX-1742).
  */
 
-import {
-  cachedNotificationCenter,
-  cachedNotificationCenterAnswer,
-} from '../hooks/use-notification-center';
 import { hasWebPushSubscription } from '../notifications/web-push';
 import {
   customToast,
@@ -93,8 +86,7 @@ export type WebNotificationType =
   | 'automation_failed'
   | 'automation_recovered'
   | 'capture_device_down'
-  | 'capture_device_recovered'
-  | 'message';
+  | 'capture_device_recovered';
 
 export interface WebNotificationPayload {
   /** Which category this notification belongs to */
@@ -137,13 +129,6 @@ export interface WebNotificationPayload {
   changeRequest?: { crId: string; detail: string; reviewLabel: string };
   /** Localized "{count} tasks finished" for the stack several turns collapse into. */
   stackTitle?: (count: number) => string;
-  /** A row of the notification inbox. Inbox rows exist only for projects with `notification_center` on. */
-  fromInbox?: boolean;
-  /**
-   * The project's `notification_center` flag as the tab that raised the event
-   * knew it (a relayed completion). Absent: this tab's query cache decides.
-   */
-  notificationCenter?: boolean;
 }
 
 // ============================================================================
@@ -160,7 +145,6 @@ const TYPE_TO_KIND: Record<WebNotificationType, InboxNotificationKind> = {
   automation_recovered: 'automation_recovered',
   capture_device_down: 'capture_device_down',
   capture_device_recovered: 'capture_device_recovered',
-  message: 'message',
 };
 
 /**
@@ -181,33 +165,6 @@ function serverPushAllows(type: WebNotificationType): boolean {
   return serverPush[TYPE_TO_KIND[type]] !== false;
 }
 
-/**
- * The per-browser switch of each session kind: the kind gate for a payload of
- * a project with `notification_center` off. The other kinds come only from
- * the inbox.
- */
-const TYPE_TO_PREF: Partial<
-  Record<WebNotificationType, 'onCompletion' | 'onError' | 'onQuestion' | 'onPermission'>
-> = {
-  completion: 'onCompletion',
-  error: 'onError',
-  question: 'onQuestion',
-  permission: 'onPermission',
-};
-
-/**
- * An inbox row, or a session of a project with `notification_center` on: by
- * the raising tab's answer, else by this tab's cached detail or project list.
- * Fail-closed: no project id or nothing cached takes the path from before
- * the notification center.
- */
-function fromNotificationCenter(payload: WebNotificationPayload): boolean {
-  return (
-    payload.fromInbox === true ||
-    (payload.notificationCenter ?? cachedNotificationCenter(getSharedQueryClient(), payload.projectId))
-  );
-}
-
 /** Map notification types to sound events */
 const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
   completion: 'completion',
@@ -219,7 +176,6 @@ const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
   automation_recovered: 'completion',
   capture_device_down: 'error',
   capture_device_recovered: 'completion',
-  message: 'notification',
 };
 
 // ============================================================================
@@ -235,13 +191,13 @@ const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
  * time they click, minutes later, the person may be anywhere, so reading the
  * path at click time would resolve the wrong project or none at all.
  *
- * An optional two-letter locale segment leads (`/de/projects/…`).
- * `/projects/new` and `/projects/start` are pages, not projects.
+ * An optional two-letter locale segment leads (`/de/workspaces/…`).
+ * `/workspaces/new` and `/workspaces/start` are pages, not projects.
  */
 function currentProjectId(): string | null {
   if (typeof window === 'undefined') return null;
   const path = normalizeAppPathname(window.location.pathname);
-  return projectIdFromPathname(path.replace(/^\/[a-z]{2}(?=\/projects(?:\/|$))/, ''));
+  return projectIdFromPathname(path.replace(/^\/[a-z]{2}(?=\/(?:workspaces|projects)(?:\/|$))/, ''));
 }
 
 /**
@@ -313,8 +269,8 @@ export function spacesThreadHref(
   session: { sessionId: string; projectId: string | null | undefined },
   cache: QueryClient,
 ): string | null {
-  // An optional two-letter locale segment leads (`/de/projects/…`).
-  const match = /^(?:\/[a-z]{2})?\/projects\/([^/]+)\/(c|dm)\/([^/]+)\/?$/.exec(
+  // An optional two-letter locale segment leads (`/de/workspaces/…`).
+  const match = /^(?:\/[a-z]{2})?\/(?:workspaces|projects)\/([^/]+)\/(c|dm)\/([^/]+)\/?$/.exec(
     normalizeAppPathname(location.pathname),
   );
   if (!match || match[1] !== session.projectId) return null;
@@ -456,7 +412,6 @@ export function sendWebNotification(
   force = false,
 ): Notification | null {
   const { preferences } = useWebNotificationStore.getState();
-  const notificationCenter = fromNotificationCenter(payload);
 
   // `force` (the settings test button) never counts as on screen, focused or
   // another project: it exists to prove the channels work.
@@ -498,13 +453,8 @@ export function sendWebNotification(
     // Preferences check
     if (!preferences.enabled) return null;
 
-    // Kind check: the person's Push choice, or this browser's switch.
-    if (notificationCenter) {
-      if (!serverPushAllows(payload.type)) return null;
-    } else {
-      const prefKey = TYPE_TO_PREF[payload.type];
-      if (prefKey && !preferences[prefKey]) return null;
-    }
+    // Kind check: the person's Push choice, the same one the phone obeys.
+    if (!serverPushAllows(payload.type)) return null;
 
     // On-screen and other-project check: see `notificationChannels`.
     if (!channels.os) return null;
@@ -517,9 +467,8 @@ export function sendWebNotification(
 
   // With Web Push on, the service worker also shows this event's push, and a
   // `new Notification` would never replace it: hand this copy to the worker.
-  // `force` (the settings test button) keeps the in-page notification. A
-  // project with the flag off gets no push, so its copy stays in the page.
-  if (!force && notificationCenter && hasWebPushSubscription() && 'serviceWorker' in navigator) {
+  // `force` (the settings test button) keeps the in-page notification.
+  if (!force && hasWebPushSubscription() && 'serviceWorker' in navigator) {
     void showWorkerNotification(payload);
     return null;
   }
@@ -629,7 +578,6 @@ const NOTIFICATION_TOAST_VARIANT: Record<WebNotificationType, 'success' | 'error
   automation_recovered: 'success',
   capture_device_down: 'error',
   capture_device_recovered: 'success',
-  message: 'info',
 };
 
 /** Open what the notification is about: its session, or its `href`. */
@@ -927,15 +875,9 @@ export function notifyTaskComplete(
   const since = extra?.watchedSinceMs;
   if (since !== undefined && turnCompleteShownSince(sessionId, since)) return;
   // Resolved here and relayed whole: a receiving tab may be on a page whose
-  // path holds no project id, and may never have loaded the project's
-  // `notification_center` flag.
+  // path holds no project id.
   const projectId = extra?.projectId ?? currentProjectId();
-  const msg = {
-    sessionId,
-    sessionTitle,
-    projectId,
-    notificationCenter: cachedNotificationCenterAnswer(getSharedQueryClient(), projectId),
-  };
+  const msg = { sessionId, sessionTitle, projectId };
   broadcastTurnComplete(msg);
   notifyTaskCompleteFor(msg, tI18nComplete);
 }
@@ -946,7 +888,7 @@ export function notifyTaskComplete(
  * and loop. It takes the relayed message whole, so no field gets lost.
  */
 export function notifyTaskCompleteFor(
-  { sessionId, sessionTitle, projectId, notificationCenter }: Omit<TurnCompleteMsg, 'at'>,
+  { sessionId, sessionTitle, projectId }: Omit<TurnCompleteMsg, 'at'>,
   tI18nComplete: UiTranslator,
 ) {
   noteTurnCompleteShown(sessionId);
@@ -979,7 +921,6 @@ export function notifyTaskCompleteFor(
     // page — reinterpreting it as THIS tab's project would build a wrong
     // deep link (the same rule the click-time path documents above).
     projectId,
-    notificationCenter,
   };
   if (!projectId) {
     sendWebNotification(payload);

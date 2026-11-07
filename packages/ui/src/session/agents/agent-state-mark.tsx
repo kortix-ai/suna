@@ -1,38 +1,70 @@
 'use client';
 
-import { CheckIcon } from '@phosphor-icons/react';
-import { StatusDot, type StatusTone } from '../../primitives/status';
+import type { SessionDisplayStatus } from '../actions/session-label';
+import { SessionStatusMark } from '../list/session-status-mark';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
+import type { WorkflowAgentStatus, WorkflowPhaseStatus } from '../tool/tools/workflow-run';
 import type { AgentRowState } from './agent-model';
 
-const DOT_TONE: Record<Exclude<AgentRowState, 'idle' | 'completed'>, StatusTone> = {
-  working: 'success',
-  needs_input: 'warning',
-  failed: 'destructive',
-  stopped: 'neutral',
+/**
+ * Every agent surface draws the session list's glyphs (`SessionStatusMark`), so
+ * an agent row and its session row read the same: green arc working, green
+ * ring done, blue question needs you, red ring failed, gray ring stopped or not
+ * started. The working arc stays still, as in the session list.
+ */
+const ROW_GLYPH: Record<AgentRowState, SessionDisplayStatus> = {
+  working: 'running',
+  needs_input: 'needs-you',
+  failed: 'failed',
+  idle: 'done',
+  completed: 'done',
+  stopped: 'stopped',
 };
 
-/**
- * The state mark of an agent row: the live dot while it works, the attention
- * dot while it waits on the person, a check once its turn ended. The words
- * beside it say the state; the mark repeats it. The agents line and the
- * multi-agent tool cards draw the same mark.
- */
-export function AgentStateMark({ state }: { state: AgentRowState }) {
+const RUN_GLYPH: Record<WorkflowPhaseStatus | WorkflowAgentStatus, SessionDisplayStatus> = {
+  starting: 'starting',
+  pending: 'starting',
+  running: 'running',
+  done: 'done',
+  failed: 'failed',
+  stopped: 'stopped',
+};
+
+/** The session-list glyph a workflow run, phase or agent status draws. */
+export function runGlyphStatus(status: WorkflowPhaseStatus | WorkflowAgentStatus): SessionDisplayStatus {
+  return RUN_GLYPH[status];
+}
+
+/** The glyph at 14px in a 14px slot (agent rows set 12px text), or `md`: a dialog title's 18px. */
+function GlyphSlot({ status, size = 'sm' }: { status: SessionDisplayStatus; size?: 'sm' | 'md' }) {
+  return (
+    <span
+      aria-hidden
+      className={cn('flex shrink-0 items-center justify-center', size === 'md' ? 'size-5 [&>svg]:size-5' : 'size-3.5 [&>svg]:size-3.5')}
+    >
+      <SessionStatusMark status={status} waitingOn="answer" />
+    </span>
+  );
+}
+
+/** The state mark of an agent row (the agents line, the agent pane, the multi-agent tool cards). */
+export function AgentStateMark({ state, size }: { state: AgentRowState; size?: 'sm' | 'md' }) {
   const t = useTranslations('multiAgent.strip');
   return (
-    <span className="flex size-3 shrink-0 items-center justify-center">
-      {state === 'idle' || state === 'completed' ? (
-        <CheckIcon aria-hidden weight="bold" className="text-kortix-green size-3" />
-      ) : (
-        <StatusDot
-          tone={DOT_TONE[state]}
-          pulse={state === 'working'}
-          className={cn(state === 'working' && 'motion-reduce:animate-none')}
-        />
-      )}
+    <>
+      <GlyphSlot status={ROW_GLYPH[state]} size={size} />
       <span className="sr-only">{t(`state.${state}`)}</span>
-    </span>
+    </>
+  );
+}
+
+/** The state mark of a workflow run, phase or agent. The word beside it is for a screen reader. */
+export function RunStateMark({ status, label }: { status: WorkflowPhaseStatus | WorkflowAgentStatus; label: string }) {
+  return (
+    <>
+      <GlyphSlot status={RUN_GLYPH[status]} />
+      <span className="sr-only">{label}</span>
+    </>
   );
 }

@@ -4,11 +4,11 @@ import test from 'node:test';
 import { DEFAULT_AUTH_RETURN_URL, sanitizeAuthReturnUrl } from './return-url.ts';
 
 test('does not return from auth to the projects list', () => {
-  assert.equal(sanitizeAuthReturnUrl('/projects'), DEFAULT_AUTH_RETURN_URL);
+  assert.equal(sanitizeAuthReturnUrl('/workspaces'), DEFAULT_AUTH_RETURN_URL);
 });
 
 test('keeps explicit projects-list actions', () => {
-  assert.equal(sanitizeAuthReturnUrl('/projects?tab=recent'), '/projects?tab=recent');
+  assert.equal(sanitizeAuthReturnUrl('/workspaces?tab=recent'), '/workspaces?tab=recent');
 });
 
 test('rejects legacy auth return paths', () => {

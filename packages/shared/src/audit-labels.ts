@@ -18,6 +18,7 @@
  */
 import { AUDIT_EVENT_LABELS } from './audit-event-labels';
 import { AUDIT_ROUTE_LABELS } from './audit-route-labels';
+import { legacyWorkspaceRoute, renameWorkspaceRouteParams } from './workspace-routes';
 
 export { AUDIT_EVENT_LABELS } from './audit-event-labels';
 export { AUDIT_ROUTE_LABELS } from './audit-route-labels';
@@ -60,7 +61,7 @@ for (const [key, value] of Object.entries(AUDIT_ROUTE_LABELS)) {
   byAction.set(value.action, value);
   routeKeyByAction.set(value.action, key);
 }
-/** `opencode.*` → prefix `opencode.`; the longest prefix is tried first. */
+/** `agent.*` → prefix `agent.`; the longest prefix is tried first. */
 const families: Array<[prefix: string, title: string]> = [];
 for (const [key, title] of Object.entries(AUDIT_EVENT_LABELS)) {
   if (key.endsWith('.*')) families.push([key.slice(0, -1), title]);
@@ -76,11 +77,19 @@ families.sort((a, b) => b[0].length - a[0].length);
  */
 export function auditLabelForRoute(method: string, route: string): AuditRouteLabel | null {
   const verb = method.toUpperCase();
-  return (
-    resolve(`${verb} ${route}`) ??
-    (verb === 'HEAD' ? resolve(`GET ${route}`) : null) ??
-    resolve(`ALL ${route}`)
-  );
+  const exact = (template: string) =>
+    resolve(`${verb} ${template}`) ??
+    (verb === 'HEAD' ? resolve(`GET ${template}`) : null) ??
+    resolve(`ALL ${template}`);
+  const label = exact(route);
+  if (label) return label;
+  // A row written before the 2026-11-05 param rename names `:projectId` / `:accountId`.
+  const renamed = renameWorkspaceRouteParams(route);
+  const byRename = renamed === route ? null : exact(renamed);
+  if (byRename) return byRename;
+  // `/v1/workspaces/…` and the other canonical names share their legacy route's label.
+  const legacy = legacyWorkspaceRoute(renamed);
+  return legacy ? exact(legacy) : null;
 }
 
 /** The label of a request the server dispatches before the API router. */

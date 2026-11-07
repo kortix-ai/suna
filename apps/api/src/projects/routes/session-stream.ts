@@ -89,7 +89,6 @@ import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { isUuid } from '../../shared/validate';
 import { isPgBroadcastListening, waitForSessionChange } from '../../shared/pg-broadcast';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { PRESENCE_RENEW_MS, expireSessionPresence, renewSessionPresence } from '../lib/session-presence';
 import {
   CONTROL_EPOCH,
@@ -113,6 +112,8 @@ import {
   parseSseFrames,
 } from '../lib/session-runtime-transport';
 import { isV1TranscriptEvent } from '@kortix/api-contract/session-log';
+import { workspaceIdParam } from '../../shared/route-params';
+import { isParkedRuntimeDownReason } from '@kortix/api-contract/wire-values';
 
 /** Our own keepalive cadence. Matches the daemon's, so a stream with no box
  *  attached still proves liveness on the same clock a healthy one does. */
@@ -224,12 +225,12 @@ export function registerSessionStreamRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/events',
+      path: '/{workspaceId}/sessions/{sessionId}/events',
       tags: ['sessions'],
       summary: 'Stream live events of a session',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         query: z.object({
           since: z.string().optional(),
           epoch: z.string().optional(),
@@ -254,7 +255,7 @@ export function registerSessionStreamRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -296,9 +297,6 @@ export function registerSessionStreamRoutes(): void {
           ? {
               userId: String(loaded.userId),
               tabId: presenceTabId,
-              // KRTX-1742, only with the `notification_center` flag on: the
-              // stream end expires the lease. Off, it lives to its expiry.
-              expireOnClose: notificationsEnabled(loaded.row.metadata),
               extendDeadline: await projectCapabilityAllowed(
                 c,
                 String(loaded.userId),
@@ -498,7 +496,7 @@ export function registerSessionStreamRoutes(): void {
               // of its lease. Only the expiry this stream wrote: a newer stream
               // of the same tab (a reconnect, a control-to-runtime upgrade) may
               // have renewed it since. A reconnecting stream's renewal restores it.
-              if (presenceRenewal.expireOnClose && leaseWrittenUntil) {
+              if (leaseWrittenUntil) {
                 void expireSessionPresence(
                   presenceRenewal.userId,
                   sessionId,
@@ -621,6 +619,8 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
       type: 'kortix.runtime.status',
       state: 'down',
       reason,
+      // The decision, not only the string: a client never parses `reason`.
+      parked: isParkedRuntimeDownReason(reason),
       at: Date.now(),
     });
   };
@@ -812,7 +812,7 @@ function watchRuntimeHealth(args: PumpArgs, externalId: string, signal: AbortSig
  *
  * The envelope is written back out with exactly two additions — `channel` and
  * `epoch` — and no other change. `seq` is the daemon's number and stays the
- * daemon's number; `payload` is OpenCode's `properties` verbatim, which is what
+ * daemon's number; `payload` is the runtime event's `properties` verbatim, which is what
  * lets an existing SDK reducer apply it unchanged.
  */
 async function forwardRuntimeFrame(args: PumpArgs, event: string | null, data: string): Promise<void> {
@@ -862,8 +862,8 @@ async function forwardRuntimeFrame(args: PumpArgs, event: string | null, data: s
     const runtimeSessionId =
       typeof payload.runtime_session_id === 'string'
         ? payload.runtime_session_id
-        : typeof payload.opencode_session_id === 'string'
-          ? payload.opencode_session_id
+        : typeof payload.runtime_session_id === 'string'
+          ? payload.runtime_session_id
           : null;
     if (runtimeSessionId) args.onRuntimeTurnEnd(runtimeSessionId);
   }

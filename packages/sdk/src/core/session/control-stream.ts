@@ -35,6 +35,7 @@ import { platformConfig } from '../http/config';
 import type { SessionPrompt, SessionSentPrompt } from '../rest/projects-client/sessions';
 import type { RuntimeEvent } from '../stream/event-stream';
 import { platformEventTransport } from '../stream/platform-event-transport';
+import { isParkedRuntimeDownReason, type SessionControlFrameType } from '../wire-values';
 
 /** The payload of a `kortix.control.queue` frame: the whole inbox. */
 export interface SessionControlQueue {
@@ -49,19 +50,50 @@ export interface SessionControlQueue {
 
 /** One `kortix.control.*` frame. Each carries its subsystem's whole state. */
 export interface SessionControlFrame {
-  type: string;
+  /** One of `SESSION_CONTROL_FRAME_TYPES`; a newer API may send a type this SDK does not know. */
+  type: SessionControlFrameType | (string & {});
   cseq: number;
   cepoch: string;
   /** Server clock, ms. */
   at: number;
   payload: unknown;
+  /**
+   * This client's clock when the frame arrived. A late joiner is handed the
+   * newest frame of each type with it, so the frame keeps its real age.
+   */
+  receivedAtMs?: number;
 }
 
 /** `kortix.runtime.status`: whether the API is attached to the box. */
 export interface SessionRuntimeStatus {
   state: 'up' | 'down';
-  /** Why the runtime is down (`sandbox_stopped`, `daemon_503`, ...), else null. */
+  /** Why the runtime is down (`sandbox_stopped`, `daemon_503`, ...), else null. Display only. */
   reason: string | null;
+  /**
+   * The box is parked (its row is not running; only a send resumes it), not a
+   * transient attach failure. Present when the API decides it; an older API
+   * sends only `reason`, and `isParkedRuntimeDownReason` decides then.
+   */
+  parked?: boolean;
+}
+
+/** Why a session stream ended for good. The SDK does not reconnect it. */
+export type SessionStreamEndReason =
+  /** The server sent `kortix.stream.revoked`: the caller lost access mid-stream. */
+  | 'revoked'
+  /** `403`: the caller may not read this session. */
+  | 'forbidden'
+  /** `404`: the session does not exist, or is not visible to the caller. */
+  | 'not_found'
+  /** `401` on {@link UNAUTHORIZED_ATTEMPTS} connects in a row, each after a token refresh. */
+  | 'unauthorized';
+
+export interface SessionStreamEnd {
+  reason: SessionStreamEndReason;
+  /** The HTTP status that ended it; null for `revoked`. */
+  status: number | null;
+  /** This client's clock, ms. */
+  at: number;
 }
 
 export interface SessionControlStreamTiming {
@@ -69,6 +101,11 @@ export interface SessionControlStreamTiming {
   backoffMs?: readonly number[];
   /** Silence after which a connection is dead. Three server heartbeats. */
   livenessMs?: number;
+  /**
+   * How long one `kortix.control.session` frame proves the server owns session
+   * state. The server re-sends it every 20 s; three missed ones lapse it.
+   */
+  authorityMs?: number;
 }
 
 export interface SessionControlStreamOptions {
@@ -108,6 +145,13 @@ export interface SessionControlStreamOptions {
   onHeartbeat?: () => void;
   /** `true` on the first frame of a connection, `false` when it drops. */
   onConnectionChange?: (connected: boolean) => void;
+  /**
+   * The stream ended for good: access was revoked, or the server refused the
+   * connect with `403`/`404` (or `401` five times). The SDK does not reconnect;
+   * the polls take over and meet the same refusal. A new `openSessionStream`
+   * tries again.
+   */
+  onEnded?: (end: SessionStreamEnd) => void;
   /** Test seam. The first opener of a session sets it. */
   timing?: SessionControlStreamTiming;
 }
@@ -121,11 +165,16 @@ export interface SessionControlStreamHandle {
   lastQueue: () => SessionControlQueue | null;
   /** The newest frame of one control type, or null. */
   lastControl: (type: string) => SessionControlFrame | null;
+  /** Why the stream ended for good, or null while it runs. */
+  ended: () => SessionStreamEnd | null;
   close: () => void;
 }
 
 const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 20_000, 30_000];
 const LIVENESS_MS = 45_000;
+const AUTHORITY_MS = 60_000;
+/** Consecutive `401` connects that end a stream. Each one already replayed with a fresh token. */
+export const UNAUTHORIZED_ATTEMPTS = 5;
 
 interface SharedStream {
   subscribers: Set<SessionControlStreamOptions>;
@@ -150,6 +199,9 @@ interface SharedStream {
    * API from before R5 never does, and against it the SDK keeps every poll.
    */
   authoritative: boolean;
+  /** Lapses `authoritative` when no session frame re-proves it (`authorityMs`). */
+  authorityTimer: ReturnType<typeof setTimeout> | null;
+  ended: SessionStreamEnd | null;
   /** The next connect must happen now: a subscriber changed the URL. */
   reconnectNow: boolean;
   /** Ends the current attempt only (an upgrade), not the stream. */
@@ -159,6 +211,13 @@ interface SharedStream {
 
 // replica-local: one shared connection per session in this client.
 const streams = new Map<string, SharedStream>();
+// replica-local: why a session's stream ended for good, until a new open tries again.
+const endedStreams = new Map<string, SessionStreamEnd>();
+
+/** Why this session's stream ended for good (revoked, 403, 404, 401s), or null. */
+export function sessionStreamEnded(projectId: string, sessionId: string): SessionStreamEnd | null {
+  return endedStreams.get(`${projectId}/${sessionId}`) ?? null;
+}
 
 /** Join (or open) the session's stream. `close()` leaves it. */
 export function openSessionStream(options: SessionControlStreamOptions): SessionControlStreamHandle {
@@ -178,11 +237,14 @@ export function openSessionStream(options: SessionControlStreamOptions): Session
       connectedWithLog: false,
       tabId: null,
       authoritative: false,
+      authorityTimer: null,
+      ended: null,
       reconnectNow: false,
       attempt: null,
       abort: new AbortController(),
     };
     streams.set(key, shared);
+    if (endedStreams.delete(key)) notifyConnectionListeners();
   }
   const target = shared;
   const opening = target.subscribers.size === 0 && !target.attempt;
@@ -219,6 +281,7 @@ export function openSessionStream(options: SessionControlStreamOptions): Session
     connected: () => target.connected,
     lastQueue: () => target.lastQueue,
     lastControl: (type) => target.latest.get(type) ?? null,
+    ended: () => target.ended,
     close: () => {
       if (closed) return;
       closed = true;
@@ -234,6 +297,7 @@ export function openSessionStream(options: SessionControlStreamOptions): Session
         return;
       }
       target.abort.abort();
+      clearAuthority(target);
       if (streams.get(key) === target) streams.delete(key);
       if (target.connected) {
         target.connected = false;
@@ -274,6 +338,35 @@ export function subscribeSessionStreamConnections(listener: () => void): () => v
   };
 }
 
+function notifyConnectionListeners(): void {
+  for (const listener of [...connectionListeners]) safely(listener);
+}
+
+function clearAuthority(shared: SharedStream): void {
+  if (shared.authorityTimer) clearTimeout(shared.authorityTimer);
+  shared.authorityTimer = null;
+}
+
+/** A session frame proves the server owns session state for `authorityMs`. */
+function proveAuthority(shared: SharedStream, authorityMs: number): void {
+  clearAuthority(shared);
+  shared.authorityTimer = setTimeout(() => {
+    shared.authorityTimer = null;
+    if (!shared.authoritative) return;
+    shared.authoritative = false;
+    notifyConnectionListeners();
+  }, authorityMs);
+  if (shared.authoritative) return;
+  shared.authoritative = true;
+  notifyConnectionListeners();
+}
+
+/** The status of a refused connect, as the transport reports it. */
+function refusedStatus(error: unknown): number | null {
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status === 'number' ? status : null;
+}
+
 function safely(fn: () => void): void {
   try {
     fn();
@@ -296,14 +389,17 @@ function setConnected(shared: SharedStream, connected: boolean): void {
 async function run(options: SessionControlStreamOptions, shared: SharedStream): Promise<void> {
   const backoff = options.timing?.backoffMs ?? BACKOFF_MS;
   const livenessMs = options.timing?.livenessMs ?? LIVENESS_MS;
+  const authorityMs = options.timing?.authorityMs ?? AUTHORITY_MS;
   const stop = shared.abort.signal;
   let cseq: number | null = null;
   let cepoch: string | null = null;
   let seq: number | null = null;
   let epoch: string | null = null;
   let failures = 0;
+  let unauthorized = 0;
+  let ending: SessionStreamEnd | null = null;
 
-  while (!stop.aborted) {
+  while (!stop.aborted && !ending) {
     const attempt = new AbortController();
     shared.attempt = attempt;
     const end = () => attempt.abort();
@@ -331,7 +427,7 @@ async function run(options: SessionControlStreamOptions, shared: SharedStream): 
     try {
       // A path-only backendUrl (a same-origin proxy) resolves against the page.
       const url = new URL(
-        `${platformConfig().backendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(options.projectId)}/sessions/${encodeURIComponent(options.sessionId)}/events`,
+        `${platformConfig().backendUrl.replace(/\/$/, '')}/workspaces/${encodeURIComponent(options.projectId)}/sessions/${encodeURIComponent(options.sessionId)}/events`,
         globalThis.location?.href,
       );
       if (!withRuntime) url.searchParams.set('channels', 'control');
@@ -361,6 +457,7 @@ async function run(options: SessionControlStreamOptions, shared: SharedStream): 
           continue;
         }
         failures = 0;
+        unauthorized = 0;
         setConnected(shared, true);
         const type = typeof frame.type === 'string' ? frame.type : '';
 
@@ -391,6 +488,13 @@ async function run(options: SessionControlStreamOptions, shared: SharedStream): 
           continue;
         }
 
+        if (type === 'kortix.stream.revoked') {
+          // The server re-checks access every minute and closes the stream when
+          // it is gone. Reconnecting would only be refused again.
+          ending = { reason: 'revoked', status: null, at: Date.now() };
+          attempt.abort();
+          break;
+        }
         if (type === 'kortix.stream.heartbeat') {
           each(shared, (subscriber) => subscriber.onHeartbeat?.());
           continue;
@@ -399,6 +503,7 @@ async function run(options: SessionControlStreamOptions, shared: SharedStream): 
           const status: SessionRuntimeStatus = {
             state: frame.state === 'up' ? 'up' : 'down',
             reason: typeof frame.reason === 'string' ? frame.reason : null,
+            ...(typeof frame.parked === 'boolean' ? { parked: frame.parked } : {}),
           };
           shared.lastStatus = status;
           each(shared, (subscriber) => {
@@ -431,12 +536,10 @@ async function run(options: SessionControlStreamOptions, shared: SharedStream): 
           cepoch: cepoch ?? '',
           at: typeof frame.at === 'number' ? frame.at : Date.now(),
           payload: frame.payload,
+          receivedAtMs: Date.now(),
         };
         shared.latest.set(type, control);
-        if (type === 'kortix.control.session' && !shared.authoritative) {
-          shared.authoritative = true;
-          for (const listener of [...connectionListeners]) safely(listener);
-        }
+        if (type === 'kortix.control.session') proveAuthority(shared, authorityMs);
         each(shared, (subscriber) => subscriber.onControl?.(control));
         const payload = frame.payload as SessionControlQueue | undefined;
         if (type === 'kortix.control.queue' && payload?.known && Array.isArray(payload.prompts)) {
@@ -444,13 +547,25 @@ async function run(options: SessionControlStreamOptions, shared: SharedStream): 
           each(shared, (subscriber) => subscriber.onQueue?.(payload));
         }
       }
-    } catch {
-      // A failed connect or a dropped body. The backoff below retries it.
+    } catch (error) {
+      // A failed connect or a dropped body. The backoff below retries it, except
+      // a refusal that no retry can change.
+      const status = refusedStatus(error);
+      if (status === 403) ending = { reason: 'forbidden', status, at: Date.now() };
+      else if (status === 404) ending = { reason: 'not_found', status, at: Date.now() };
+      else if (status === 401) {
+        unauthorized += 1;
+        if (unauthorized >= UNAUTHORIZED_ATTEMPTS) ending = { reason: 'unauthorized', status, at: Date.now() };
+      } else unauthorized = 0;
     } finally {
       clearTimeout(watchdog);
       stop.removeEventListener('abort', end);
     }
     if (stop.aborted) break;
+    if (ending) {
+      finish(options, shared, ending);
+      break;
+    }
     // An upgrade (a subscriber changed the URL) reconnects at once, without
     // counting as a failure or a disconnect.
     if (shared.reconnectNow) {
@@ -472,10 +587,28 @@ async function run(options: SessionControlStreamOptions, shared: SharedStream): 
   }
 }
 
+/** End a stream for good: tell every subscriber, forget the connection, keep the reason. */
+function finish(options: SessionControlStreamOptions, shared: SharedStream, end: SessionStreamEnd): void {
+  const key = `${options.projectId}/${options.sessionId}`;
+  shared.ended = end;
+  shared.reconnectNow = false;
+  clearAuthority(shared);
+  shared.authoritative = false;
+  if (streams.get(key) === shared) streams.delete(key);
+  endedStreams.set(key, end);
+  if (shared.connected) setConnected(shared, false);
+  else notifyConnectionListeners();
+  each(shared, (subscriber) => subscriber.onEnded?.(end));
+}
+
 /** Test-only: end and forget every stream. */
 export function __resetSessionControlStreamsForTests(): void {
-  for (const shared of streams.values()) shared.abort.abort();
+  for (const shared of streams.values()) {
+    shared.abort.abort();
+    clearAuthority(shared);
+  }
   streams.clear();
+  endedStreams.clear();
 }
 
 /**

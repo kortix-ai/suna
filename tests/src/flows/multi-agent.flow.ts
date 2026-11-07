@@ -11,15 +11,15 @@ import type { FlowContext } from '../core/types';
 import { withDb } from '../fixtures/chat';
 import { bindDatabaseSessionCredential, createDatabaseSession, setDatabaseProjectFeature } from '../fixtures/database-project';
 
-const REACHABLE = '/v1/projects/:projectId/sessions/:sessionId/reachable';
-const SEND = '/v1/projects/:projectId/sessions/:sessionId/peer-messages';
-const APPROVE = '/v1/projects/:projectId/sessions/:sessionId/peer-messages/:messageId/approve';
-const DENY = '/v1/projects/:projectId/sessions/:sessionId/peer-messages/:messageId/deny';
-const INBOUND = '/v1/projects/:projectId/sessions/:sessionId/inbound';
-const TASKS = '/v1/projects/:projectId/sessions/:sessionId/tasks';
-const TASK = '/v1/projects/:projectId/sessions/:sessionId/tasks/:seq';
-const SESSION = '/v1/projects/:projectId/sessions/:sessionId';
-const SESSIONS = '/v1/projects/:projectId/sessions';
+const REACHABLE = '/v1/workspaces/:projectId/sessions/:sessionId/reachable';
+const SEND = '/v1/workspaces/:projectId/sessions/:sessionId/peer-messages';
+const APPROVE = '/v1/workspaces/:projectId/sessions/:sessionId/peer-messages/:messageId/approve';
+const DENY = '/v1/workspaces/:projectId/sessions/:sessionId/peer-messages/:messageId/deny';
+const INBOUND = '/v1/workspaces/:projectId/sessions/:sessionId/inbound';
+const TASKS = '/v1/workspaces/:projectId/sessions/:sessionId/tasks';
+const TASK = '/v1/workspaces/:projectId/sessions/:sessionId/tasks/:seq';
+const SESSION = '/v1/workspaces/:projectId/sessions/:sessionId';
+const SESSIONS = '/v1/workspaces/:projectId/sessions';
 
 type SendResult = { status: string; note: string; message: { id: string; status: string } | null; to: { handle: string; relation: string; can_receive: boolean } | null };
 
@@ -35,7 +35,7 @@ async function peerRows(ctx: FlowContext, sessionId: string) {
 
 /** A project PAT bound to `sessionId`: the credential a session's agent calls the API with. */
 async function sessionToken(ctx: FlowContext, projectId: string, accountId: string, sessionId: string) {
-  const minted = await ctx.client.as(ctx.P.OWNER).post('/v1/projects/:projectId/cli-token', { name: ctx.fixtures.name('peer') }, { params: { projectId } });
+  const minted = await ctx.client.as(ctx.P.OWNER).post('/v1/workspaces/:projectId/cli-token', { name: ctx.fixtures.name('peer') }, { params: { projectId } });
   minted.status(201);
   const token = minted.json<{ token_id: string; secret_key: string }>();
   await bindDatabaseSessionCredential(ctx.env, { tokenId: token.token_id, commandId: crypto.randomUUID(), sessionId, accountId, projectId });
@@ -44,7 +44,7 @@ async function sessionToken(ctx: FlowContext, projectId: string, accountId: stri
 
 async function dropTokens(ctx: FlowContext, projectId: string, tokenIds: string[]) {
   for (const tokenId of tokenIds) {
-    await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/cli-token/:tokenId', { params: { projectId, tokenId } }).catch(() => {});
+    await ctx.client.as(ctx.P.OWNER).del('/v1/workspaces/:projectId/cli-token/:tokenId', { params: { projectId, tokenId } }).catch(() => {});
   }
 }
 
@@ -68,10 +68,10 @@ flow(
     domain: 'multi-agent',
     requires: ['database'],
     routes: [
-      'GET /v1/projects/:projectId/sessions/:sessionId/reachable',
-      'POST /v1/projects/:projectId/sessions/:sessionId/peer-messages',
-      'GET /v1/projects/:projectId/sessions/:sessionId/peer-messages',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/reachable',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/peer-messages',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/peer-messages',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx) => {
@@ -125,9 +125,10 @@ flow(
         (await asLead.post(SEND, { to: lead, message: 'hi' }, { params: { ...p, sessionId: lead } })).status(400).body().has('$.code', 'recipient_is_self');
         (await asLead.post(SEND, { to: 'reviewer', message: 'hi', bogus: 1 }, { params: { ...p, sessionId: lead } })).status(400);
       });
-      await ctx.step("the reviewer's token cannot speak for the lead → 403; NONMEMBER → 403; ANON → 401", async () => {
+      await ctx.step("the reviewer's token cannot speak for the lead → 403; NONMEMBER → 404 workspace_not_found; ANON → 401", async () => {
         (await asReviewer.post(SEND, { to: 'reviewer', message: 'as lead' }, { params: { ...p, sessionId: lead } })).status(403).body().has('$.code', 'not_this_session');
-        (await ctx.client.as(ctx.P.NONMEMBER).get(REACHABLE, { params: { ...p, sessionId: lead } })).status(403);
+        // The canonical route answers a workspace the caller cannot read like an unknown one (design.md §3.2 C5).
+        (await ctx.client.as(ctx.P.NONMEMBER).get(REACHABLE, { params: { ...p, sessionId: lead } })).status(404).body().has('$.code', 'workspace_not_found');
         (await ctx.client.as(ctx.P.ANON).get(REACHABLE, { params: { ...p, sessionId: lead } })).status(401);
       });
       await ctx.step('the session row carries the board fields: agent_handle, inbound accept, board_state idle, attention null', async () => {
@@ -146,11 +147,11 @@ flow(
     domain: 'multi-agent',
     requires: ['database'],
     routes: [
-      'POST /v1/projects/:projectId/sessions/:sessionId/peer-messages',
-      'GET /v1/projects/:projectId/sessions/:sessionId/peer-messages',
-      'PUT /v1/projects/:projectId/sessions/:sessionId/inbound',
-      'POST /v1/projects/:projectId/sessions/:sessionId/peer-messages/:messageId/approve',
-      'POST /v1/projects/:projectId/sessions/:sessionId/peer-messages/:messageId/deny',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/peer-messages',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/peer-messages',
+      'PUT /v1/workspaces/:projectId/sessions/:sessionId/inbound',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/peer-messages/:messageId/approve',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/peer-messages/:messageId/deny',
     ],
   },
   async (ctx) => {
@@ -217,7 +218,7 @@ flow(
   {
     domain: 'multi-agent',
     requires: ['database'],
-    routes: ['POST /v1/projects/:projectId/sessions/:sessionId/peer-messages'],
+    routes: ['POST /v1/workspaces/:projectId/sessions/:sessionId/peer-messages'],
   },
   async (ctx) => {
     const { team, project, seed } = await seeder(ctx);
@@ -260,14 +261,14 @@ flow(
     domain: 'multi-agent',
     requires: ['database'],
     routes: [
-      'GET /v1/projects/:projectId/sessions/:sessionId/tasks',
-      'POST /v1/projects/:projectId/sessions/:sessionId/tasks',
-      'GET /v1/projects/:projectId/sessions/:sessionId/tasks/:seq',
-      'PATCH /v1/projects/:projectId/sessions/:sessionId/tasks/:seq',
-      'DELETE /v1/projects/:projectId/sessions/:sessionId/tasks/:seq',
-      'GET /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions',
-      'PATCH /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/tasks',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/tasks',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/tasks/:seq',
+      'PATCH /v1/workspaces/:projectId/sessions/:sessionId/tasks/:seq',
+      'DELETE /v1/workspaces/:projectId/sessions/:sessionId/tasks/:seq',
+      'GET /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions',
+      'PATCH /v1/workspaces/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx) => {
@@ -318,7 +319,7 @@ flow(
         (await asOutsider!.get(TASKS, { params: l })).status(403).body().has('$.code', 'not_in_team');
         (await owner.get(TASKS, { params: l })).status(200).body().has('$.tasks.length', 2);
         (await owner.get(TASK, { params: { ...l, seq: 99 } })).status(404);
-        (await ctx.client.as(ctx.P.NONMEMBER).get(TASKS, { params: l })).status(403);
+        (await ctx.client.as(ctx.P.NONMEMBER).get(TASKS, { params: l })).status(404).body().has('$.code', 'workspace_not_found');
       });
       await ctx.step('?team_lead=<lead> lists the two teammates with team_lead_session_id and agent_handle', async () => {
         const res = await owner.get(`${SESSIONS}?team_lead=${lead}`, { params: p });

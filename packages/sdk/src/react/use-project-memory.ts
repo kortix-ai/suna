@@ -2,15 +2,15 @@
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  addProjectMemoryNote,
-  deleteProjectMemoryPage,
-  getProjectMemoryLayer,
-  getProjectMemoryPage,
+  addWorkspaceMemoryNote,
+  deleteWorkspaceMemoryPage,
+  getWorkspaceMemoryLayer,
+  getWorkspaceMemoryPage,
   getSessionMemoryUsage,
-  listProjectMemoryHistory,
-  listProjectMemoryPages,
-  searchProjectMemory,
-  updateProjectMemoryPage,
+  listWorkspaceMemoryHistory,
+  listWorkspaceMemoryPages,
+  searchWorkspaceMemory,
+  updateWorkspaceMemoryPage,
   type AddProjectMemoryNoteInput,
   type ProjectMemoryPage,
   type ProjectMemoryPageListOptions,
@@ -24,7 +24,7 @@ import { qk } from './query-keys';
 // Memory: the Markdown files of the project's Drive. People and agents both
 // write them, so every read is the `inventory` tier. Pass `enabled: false`
 // while the project's Files (`drives`) are off: every route answers 403 then.
-// The Memory UI is a Channels surface: hosts also gate it on `project_channels`.
+// The Memory UI is a Channels surface: hosts also gate it on `chat`.
 
 type Id = string | null | undefined;
 type ReadOptions = { enabled?: boolean };
@@ -32,20 +32,23 @@ type ReadOptions = { enabled?: boolean };
 const on = (options: ReadOptions | undefined, ...ids: Id[]) => ids.every(Boolean) && (options?.enabled ?? true);
 
 /** One layer (`company` or a space id) with its page counts, `read_only` and `can_write`. */
-export function useProjectMemoryLayer(projectId: Id, layerKey: Id, options?: ReadOptions) {
+export function useWorkspaceMemoryLayer(projectId: Id, layerKey: Id, options?: ReadOptions) {
   return useQuery({
     queryKey: qk.project.memoryLayer(projectId ?? '', layerKey ?? ''),
-    queryFn: () => getProjectMemoryLayer(projectId as string, layerKey as string),
+    queryFn: () => getWorkspaceMemoryLayer(projectId as string, layerKey as string),
     enabled: on(options, projectId, layerKey),
     ...contract('inventory'),
   });
 }
 
+/** @deprecated Use `useWorkspaceMemoryLayer`. Kept permanently. */
+export const useProjectMemoryLayer = useWorkspaceMemoryLayer;
+
 /**
  * The layer's pages (one per Markdown file), without bodies. Each filter has
  * its own cache slot, and every memory write refreshes them all.
  */
-export function useProjectMemoryPages(
+export function useWorkspaceMemoryPages(
   projectId: Id,
   layerKey: Id,
   options?: ReadOptions & ProjectMemoryPageListOptions,
@@ -53,31 +56,40 @@ export function useProjectMemoryPages(
   const filter: ProjectMemoryPageListOptions = { type: options?.type };
   return useQuery({
     queryKey: qk.project.memoryPages(projectId ?? '', layerKey ?? '', filter),
-    queryFn: () => listProjectMemoryPages(projectId as string, layerKey as string, filter),
+    queryFn: () => listWorkspaceMemoryPages(projectId as string, layerKey as string, filter),
     enabled: on(options, projectId, layerKey),
     ...contract('inventory'),
   });
 }
 
+/** @deprecated Use `useWorkspaceMemoryPages`. Kept permanently. */
+export const useProjectMemoryPages = useWorkspaceMemoryPages;
+
 /** One page with its body and front-matter sources. */
-export function useProjectMemoryPage(projectId: Id, pageId: Id, options?: ReadOptions) {
+export function useWorkspaceMemoryPage(projectId: Id, pageId: Id, options?: ReadOptions) {
   return useQuery({
     queryKey: qk.project.memoryPage(projectId ?? '', pageId ?? ''),
-    queryFn: () => getProjectMemoryPage(projectId as string, pageId as string),
+    queryFn: () => getWorkspaceMemoryPage(projectId as string, pageId as string),
     enabled: on(options, projectId, pageId),
     ...contract('inventory'),
   });
 }
 
+/** @deprecated Use `useWorkspaceMemoryPage`. Kept permanently. */
+export const useProjectMemoryPage = useWorkspaceMemoryPage;
+
 /** One page's versions from Drive commits, newest first, at most 20. Older ones are in Files → Versions. */
-export function useProjectMemoryHistory(projectId: Id, pageId: Id, options?: ReadOptions) {
+export function useWorkspaceMemoryHistory(projectId: Id, pageId: Id, options?: ReadOptions) {
   return useQuery({
     queryKey: qk.project.memoryHistory(projectId ?? '', pageId ?? ''),
-    queryFn: () => listProjectMemoryHistory(projectId as string, pageId as string),
+    queryFn: () => listWorkspaceMemoryHistory(projectId as string, pageId as string),
     enabled: on(options, projectId, pageId),
     ...contract('inventory'),
   });
 }
+
+/** @deprecated Use `useWorkspaceMemoryHistory`. Kept permanently. */
+export const useProjectMemoryHistory = useWorkspaceMemoryHistory;
 
 /**
  * Search the pages the caller can read. Enabled only while `q` has 2–200
@@ -86,16 +98,19 @@ export function useProjectMemoryHistory(projectId: Id, pageId: Id, options?: Rea
  * so render hits only for a valid `q`. Debounce the input in the host: every
  * distinct `q` is one request.
  */
-export function useProjectMemorySearch(projectId: Id, input: ProjectMemorySearchInput, options?: ReadOptions) {
+export function useWorkspaceMemorySearch(projectId: Id, input: ProjectMemorySearchInput, options?: ReadOptions) {
   const query = { ...input, q: input.q.trim() };
   return useQuery({
     queryKey: qk.project.memorySearch(projectId ?? '', query),
-    queryFn: () => searchProjectMemory(projectId as string, query),
+    queryFn: () => searchWorkspaceMemory(projectId as string, query),
     enabled: on(options, projectId) && query.q.length >= 2 && query.q.length <= 200,
     placeholderData: keepPreviousData,
     ...contract('inventory'),
   });
 }
+
+/** @deprecated Use `useWorkspaceMemorySearch`. Kept permanently. */
+export const useProjectMemorySearch = useWorkspaceMemorySearch;
 
 /**
  * A thread's "Used memory": the files its agent was listed at the first turn.
@@ -135,32 +150,41 @@ function useMemoryWritten(projectId: string) {
 }
 
 /** Append a Remember-box sentence to a layer's `Notes.md`. */
-export function useAddProjectMemoryNote(projectId: string, layerKey: string) {
+export function useAddWorkspaceMemoryNote(projectId: string, layerKey: string) {
   const written = useMemoryWritten(projectId);
   return useMutation({
-    mutationFn: (input: AddProjectMemoryNoteInput) => addProjectMemoryNote(projectId, layerKey, input),
+    mutationFn: (input: AddProjectMemoryNoteInput) => addWorkspaceMemoryNote(projectId, layerKey, input),
     onError: callerShowsError,
     onSuccess: () => written(),
   });
 }
 
+/** @deprecated Use `useAddWorkspaceMemoryNote`. Kept permanently. */
+export const useAddProjectMemoryNote = useAddWorkspaceMemoryNote;
+
 /** Replace a page's body. A stale `base_version` rejects with `ApiError` code `version_conflict`. */
-export function useUpdateProjectMemoryPage(projectId: string) {
+export function useUpdateWorkspaceMemoryPage(projectId: string) {
   const written = useMemoryWritten(projectId);
   return useMutation({
     mutationFn: (args: { pageId: string; input: UpdateProjectMemoryPageInput }) =>
-      updateProjectMemoryPage(projectId, args.pageId, args.input),
+      updateWorkspaceMemoryPage(projectId, args.pageId, args.input),
     onError: callerShowsError,
     onSuccess: (page: ProjectMemoryPage) => written([page]),
   });
 }
 
+/** @deprecated Use `useUpdateWorkspaceMemoryPage`. Kept permanently. */
+export const useUpdateProjectMemoryPage = useUpdateWorkspaceMemoryPage;
+
 /** Delete a page's file for good. Resolves `{ ok, version_id }`. */
-export function useDeleteProjectMemoryPage(projectId: string) {
+export function useDeleteWorkspaceMemoryPage(projectId: string) {
   const written = useMemoryWritten(projectId);
   return useMutation({
-    mutationFn: (pageId: string) => deleteProjectMemoryPage(projectId, pageId),
+    mutationFn: (pageId: string) => deleteWorkspaceMemoryPage(projectId, pageId),
     onError: callerShowsError,
     onSuccess: () => written(),
   });
 }
+
+/** @deprecated Use `useDeleteWorkspaceMemoryPage`. Kept permanently. */
+export const useDeleteProjectMemoryPage = useDeleteWorkspaceMemoryPage;

@@ -25,7 +25,7 @@ describe('isCustomizeSectionVisible — gates on the READ leaf, not write', () =
     // The old rule required a write leaf for every section → a
     // read-only / granular role saw a blank panel. Now the read leaf is enough.
     const can = canFrom(READS); // deliberately no write leaf
-    // No `agents` here — it graduated to /projects/<id>/agent and is not a
+    // No `agents` here — it graduated to /workspaces/<id>/agent and is not a
     // customize section anymore. `commands` came back into the overlay.
     expect(isCustomizeSectionVisible('commands', can)).toBe(true);
     expect(isCustomizeSectionVisible('channels', can)).toBe(true);

@@ -45,7 +45,7 @@ import {
   splitPastedContent,
   type PastedContent,
 } from '@kortix/shared';
-import { Keyboard, Pressable, View, type TextInput } from 'react-native';
+import { Keyboard, Pressable, View, type TextInputInstance } from 'react-native';
 import { useIsFocused, useRouter } from 'expo-router';
 import {
   KeyboardAvoidingView,
@@ -134,20 +134,12 @@ export interface ProjectHomeProps {
   onOpenDrawer: () => void;
   /**
    * The bell at the top right (KRTX-1742): the caller's unread count and the
-   * move to the Notifications page. Omitted while the project's
-   * `notification_center` flag is off: no bell.
+   * move to the Notifications page. Omitted: no bell.
    */
   notifications?: { unreadCount: number; onOpen: () => void };
-  /**
-   * Read-and-clear the draft text and files to seed the composer with, if any
-   * — e.g. a project-home send the user cancelled from `SessionConnecting`
-   * before it connected (COR-146: `ProjectScreen.handleCancelConnect`). Called
-   * once, at mount; the parent's `homeKey` bump remounts this screen whenever
-   * it has a draft to hand back, so a lazy initial read is enough — no effect
-   * needed, and nothing here re-reads it on a later re-render. The files
-   * upload again (`useComposerAttachments`'s `initialFiles`).
-   */
-  takeInitialDraft?: () => { text: string; files: AttachedFile[] };
+  /** A cancelled connection's immutable draft, acknowledged after the composer commits. */
+  initialDraft?: { text: string; files: AttachedFile[] };
+  consumeInitialDraft?: (draft: { text: string; files: AttachedFile[] }) => void;
 }
 
 export function ProjectHome({
@@ -156,13 +148,17 @@ export function ProjectHome({
   onSubmitNewSession,
   onOpenDrawer,
   notifications,
-  takeInitialDraft,
+  initialDraft: initialDraftProp,
+  consumeInitialDraft,
 }: ProjectHomeProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const toast = useToast();
-  // One read at mount: the text seeds the draft, the files seed the uploads.
-  const [initialDraft] = React.useState(() => takeInitialDraft?.() ?? { text: '', files: [] });
+  // Snapshot at mount; an abandoned render must not consume the parent's draft.
+  const [initialDraft] = React.useState(initialDraftProp ?? { text: '', files: [] });
+  React.useEffect(() => {
+    consumeInitialDraft?.(initialDraft);
+  }, [initialDraft, consumeInitialDraft]);
   // The first project, just created on `/new` (COR-161), or the drawer's New
   // session before home mounted: open with the keyboard up. One-shot, read
   // once at mount.
@@ -172,7 +168,7 @@ export function ProjectHome({
   // never opens behind a route that is still popping. Home is "on top" from
   // the start of the pop, and the drawer is still closing then: a focus in
   // that window can be dropped, so it is retried until the field has it.
-  const composerInputRef = React.useRef<TextInput>(null);
+  const composerInputRef = React.useRef<TextInputInstance>(null);
   const isScreenFocused = useIsFocused();
   const [focusRequest, setFocusRequest] = React.useState(0);
   const handledFocusRequest = React.useRef(0);
@@ -217,7 +213,7 @@ export function ProjectHome({
     () => (projectConfig ? threadAgents(projectConfig) : undefined),
     [projectConfig],
   );
-  const defaultAgent = projectConfig?.default_agent ?? projectConfig?.open_code_default_agent ?? null;
+  const defaultAgent = projectConfig?.default_agent ?? null;
   // `/`: home has no session runtime, so the list is the project config's
   // skills and commands, the same list web's home composer shows.
   const homeCommands = React.useMemo<Command[]>(() => {
@@ -516,7 +512,7 @@ function HomeComposer({
   onSubmit: (draft: string, pastes: PastedContent[]) => Promise<void>;
   onPasteFile: (files: AttachedFile[]) => void;
   autoFocus: boolean;
-  inputRef: React.Ref<TextInput>;
+  inputRef: React.Ref<TextInputInstance>;
   disabled: boolean;
   sending: boolean;
   attachments: AttachedFile[];

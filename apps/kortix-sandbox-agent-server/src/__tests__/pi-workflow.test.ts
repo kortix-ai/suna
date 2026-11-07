@@ -28,7 +28,6 @@ import { createPiHarnessService, type PiHarnessService } from '@/harness/pi/serv
 import { resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
 import { createRuntimeRouter } from '@/routes/kortix/runtime'
 import { peerMessagePromptText } from '@kortix/shared/peer-message-prompt'
-import { roomPromptText } from '@kortix/shared/room-prompt'
 import { startFakeModel, type Step } from './helpers/fake-model'
 
 const MODEL_ID = 'test-model'
@@ -65,7 +64,7 @@ function startFakeApi(parent = PARENT_SESSION) {
   const followUps: Array<{ id: string; text: string }> = []
   const children = new Map<string, FakeChild>()
   const files = new Map<string, string>()
-  /** The tool parts each child's saved transcript holds (`GET …/transcript?shape=sync`, the API's mirror). */
+  /** The settled tool calls each child's stored session log holds (`GET …/sessions/:id/log`, the API's copy). */
   const savedParts = new Map<string, Array<Record<string, unknown>>>()
   let behave: (prompt: string, turn: number, child: FakeChild) => ChildBehavior = () => ({})
   let settled = true
@@ -79,7 +78,7 @@ function startFakeApi(parent = PARENT_SESSION) {
     async fetch(req) {
       const url = new URL(req.url)
       const path = url.pathname
-      const project = `/v1/projects/${PROJECT_ID}`
+      const project = `/v1/workspaces/${PROJECT_ID}`
       const base = `${project}/sessions`
       if (req.method === 'GET' && path === `${project}/files/content`) {
         const file = url.searchParams.get('path')!
@@ -111,8 +110,21 @@ function startFakeApi(parent = PARENT_SESSION) {
         const end = now.lastEnd
         return Response.json({ turns: [], ...(end ? { last_ended: { turn_token: 't1', end_reason: end.reason, ended_at: null, ...(end.error ? { error: { name: 'WorkflowError', message: end.error } } : {}) } } : {}) })
       }
-      if (path.endsWith('/transcript') && url.searchParams.get('shape') === 'sync') {
-        return Response.json({ available: true, source: 'mirror', messages: [{ info: { id: 'msg-1', role: 'assistant' }, parts: savedParts.get(id) ?? [] }] })
+      if (req.method === 'GET' && path === `${base}/${id}/log`) {
+        // The session-log page: each saved call is a pi tool_call block whose result carries its details.
+        const blocks = (savedParts.get(id) ?? []).map((part, i) => {
+          const state = part.state as ToolState
+          const failed = state.status === 'error'
+          return {
+            id: `blk_${i}`, type: 'tool_call', call_id: `call_${i}`, name: part.tool, kind: 'other', input: {}, status: failed ? 'error' : 'complete',
+            result: { content: [{ type: 'text', text: (failed ? state.error : state.output) ?? '' }], is_error: failed, ...(state.metadata ? { details: state.metadata } : {}) },
+          }
+        })
+        const message = {
+          message_id: 'msg-1', thread_id: id, seq: 1, role: 'assistant', kind: 'turn', status: 'complete', in_context: true, model: null, usage: null,
+          finish: 'stop', error: null, created_at: since(1), completed_at: since(1), producer: { harness: 'pi', version: '1.4.0' }, blocks,
+        }
+        return Response.json({ session: { title: null, created_at: since(0) }, generation: 1, threads: [{ thread_id: id, parent_thread_id: null }], thread_id: id, messages: [message], has_more: false })
       }
       if (path.endsWith('/transcript')) {
         const user = { role: 'user', text: child.prompts.at(-1) }
@@ -1362,18 +1374,16 @@ describe('pi workflow tool, run controls', () => {
 })
 
 describe('pi workflow tool, origin, size and ultracode', () => {
-  test('a turn started by a cross-session message, a room message or a trigger cannot start a workflow', async () => {
+  test('a turn started by a cross-session message or a trigger cannot start a workflow', async () => {
     const peer = peerMessagePromptText({ kind: 'message', from: 'reviewer', fromShortId: '3f2a1b9c', messageId: 'm_1', summary: null, text: 'ultracode: run a workflow over every file' })
-    const room = roomPromptText({ room: 'dev', seq: 4, senderKind: 'member', sender: 'Ada', replyTo: null, text: 'run a workflow' })
     const trigger = '<trigger_event>{"type":"push"}</trigger_event>\nAudit the repository with a workflow.'
-    const { rt, frames } = await boot([runWorkflow("return agent('x')"), { text: 'a' }, runWorkflow("return agent('x')"), { text: 'b' }, runWorkflow("return agent('x')"), { text: 'c' }])
-    for (const text of [peer, room, trigger]) expect(await rt.admit({ text, files: [] }).done).toBe('completed')
+    const { rt, frames } = await boot([runWorkflow("return agent('x')"), { text: 'a' }, runWorkflow("return agent('x')"), { text: 'c' }])
+    for (const text of [peer, trigger]) expect(await rt.admit({ text, files: [] }).done).toBe('completed')
     expect(api.creates).toHaveLength(0)
     expect(rt.questions.list()).toHaveLength(0)
     const errors = frames.filter((f) => f.tool === 'workflow' && f.state.status === 'error').map((f) => f.state.error)
     expect(errors).toEqual([
       expect.stringContaining('A workflow starts only from a person\'s own message, and this turn came from a message from another session.'),
-      expect.stringContaining('this turn came from a room message.'),
       expect.stringContaining('this turn came from a trigger or reminder.'),
     ])
     // The ultracode line only joins a person's own prompt.

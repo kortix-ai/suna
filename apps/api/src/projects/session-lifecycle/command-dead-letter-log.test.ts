@@ -15,6 +15,7 @@ import type { SessionLifecycleCommandRow } from './store';
 // alert, no postCreate claims to release, no session to park.
 let returning: SessionLifecycleCommandRow[] = [];
 mock.module('../../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: () => true,
   db: {
     update: () => ({

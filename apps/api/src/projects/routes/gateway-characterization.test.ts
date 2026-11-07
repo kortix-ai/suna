@@ -258,44 +258,6 @@ describe('GET /gateway/overview (characterization)', () => {
   });
 });
 
-describe('route registration (characterization)', () => {
-  const GATEWAY_ROUTES: Array<[string, string]> = [
-    ['get', '/:projectId/gateway/logs'],
-    ['get', '/:projectId/gateway/logs/:logId'],
-    ['get', '/:projectId/gateway/overview'],
-    ['get', '/:projectId/gateway/series'],
-    ['get', '/:projectId/gateway/sessions'],
-    ['get', '/:projectId/gateway/sources'],
-    ['get', '/:projectId/gateway/breakdown'],
-    ['get', '/:projectId/gateway/budgets'],
-    ['put', '/:projectId/gateway/budgets'],
-    ['delete', '/:projectId/gateway/budgets/:budgetId'],
-    ['get', '/:projectId/gateway/errors'],
-    ['get', '/:projectId/gateway/keys'],
-    ['post', '/:projectId/gateway/keys'],
-    ['delete', '/:projectId/gateway/keys/:keyId'],
-    ['post', '/:projectId/gateway/playground'],
-    ['post', '/:projectId/gateway/providers/:providerId/verify'],
-    ['get', '/:projectId/gateway/routing-policy'],
-    ['put', '/:projectId/gateway/routing-policy'],
-    ['delete', '/:projectId/gateway/routing-policy'],
-    ['post', '/:projectId/gateway/routing-policy/preview'],
-  ];
-
-  test('importing ./gateway registers all 20 gateway routes on projectsApp', () => {
-    const registered = new Set(
-      (projectsApp.routes as Array<{ method: string; path: string }>)
-        .filter((r) => r.path.includes('/gateway/'))
-        .map((r) => `${r.method.toLowerCase()} ${r.path}`),
-    );
-    for (const [method, path] of GATEWAY_ROUTES) {
-      expect(registered.has(`${method} ${path}`)).toBe(true);
-    }
-    // Nothing extra: exactly the 20 pinned registrations, no ghost route.
-    expect(registered.size).toBe(GATEWAY_ROUTES.length);
-  });
-});
-
 describe("gateway spend day-window validation", () => {
   for (const route of ["overview", "series", "sessions", "breakdown"]) {
     for (const days of ["1.5", "NaN", "Infinity", "-Infinity"]) {

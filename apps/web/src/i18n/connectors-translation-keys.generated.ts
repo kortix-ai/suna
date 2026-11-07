@@ -3,17 +3,17 @@ export const CONNECTORS_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   '3,000+ apps · MCP · OpenAPI · GraphQL · raw HTTP': 'textbe2dc4d42749',
   '3,000+ apps, OAuth handled': 'text5145b39c830f',
   '3,000+ connected': 'text27691018adc6',
-  'A connector belongs to the project, not to a laptop or a login. Add it once and every session that project starts can reach it — with no second setup and no key passed around in a DM.':
+  'A connector belongs to the workspace, not to a laptop or a login. Add it once and every session that workspace starts can reach it — with no second setup and no key passed around in a DM.':
     'text8bb2b50055b6',
-  'A connector lives in one project. Another project cannot see it, call it, or read its credential — a project is its own blast radius.':
+  'A connector lives in one workspace. Another workspace cannot see it, call it, or read its credential — a workspace is its own blast radius.':
     'text08fc52a618da',
   'A drawer of keys in the agent’s environment': 'text4a77be626bd1',
   'A gate that errors out teaches an agent to retry around it. A Kortix gate holds the call open, so the agent is still mid-task when you answer — and picks up exactly where it stopped.':
     'textc87684446059',
   'A hash of the arguments, and a redacted result — never a raw secret.': 'text5ef80ac814da',
-  'A sandbox is a real Linux machine the model can run anything on. So we do not put your credentials in it. The sandbox carries exactly one Kortix token, scoped to the project, and every outbound call is assembled on our side of the wall.':
+  'A sandbox is a real Linux machine the model can run anything on. So we do not put your credentials in it. The sandbox carries exactly one Kortix token, scoped to the workspace, and every outbound call is assembled on our side of the wall.':
     'text17ca81a2d026',
-  'A tool left on Default has no rule of its own and falls through to the project default. Until you set that default to risk — reads run, writes and destructive actions ask — an untouched project runs everything.':
+  'A tool left on Default has no rule of its own and falls through to the workspace default. Until you set that default to risk — reads run, writes and destructive actions ask — an untouched workspace runs everything.':
     'text8ddf68018449',
   'A tool-name rule can only ask “may the agent send email?” — which is rarely the question. A condition points at a value inside the call and matches it with a glob or a regular expression, so a rule can allow sending to your own domain and stop at everything else. A list argument passes only when every entry passes, so one off-list recipient is enough to hold the call. Anything the rule cannot decide resolves toward less access, never more.':
     'texteaf72e534b81',
@@ -33,18 +33,18 @@ export const CONNECTORS_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Audit: 'textbb6aea287396',
   Block: 'text211d0bb8cf4f',
   Channels: 'text4c8906cf76f5',
-  'Choose who the connection belongs to: one project-managed account everyone shares, or a personal authorization where each member acts as themselves and an automated principal cannot act at all.':
+  'Choose who the connection belongs to: one workspace-managed account everyone shares, or a personal authorization where each member acts as themselves and an automated principal cannot act at all.':
     'text0c056ad641d1',
   'Client secrets': 'text422a9c2f3b55',
   'Connect a tool once, for the whole company. Agents reach it through one scoped token that Kortix brokers server-side — so the raw credential never lands in the machine the model is driving.':
     'text58aede554b21',
   'Connect once': 'text926cd23cff57',
   'Connect the first one in a minute.': 'text9ae2faa5b263',
-  'Connector credentials are encrypted with a per-project key and stored apart from the values a sandbox is allowed to read.':
+  'Connector credentials are encrypted with a per-workspace key and stored apart from the values a sandbox is allowed to read.':
     'texteb17bf5059eb',
   'Connector keys stay server-side': 'text86e3b86877d0',
   Connectors: 'textc3d2e79ebdd0',
-  'Connectors → Add app → Easy connect. Real screen, real project.': 'text6f301991f6d7',
+  'Connectors → Add app → Easy connect. Real screen, real workspace.': 'text6f301991f6d7',
   'Credentials encrypted, brokered server-side, never handed to the model.': 'textdacd5f120ffe',
   Custom: 'text494ca78f7374',
   'Custom APIs': 'text5f1a6dcd508e',
@@ -82,14 +82,14 @@ export const CONNECTORS_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Pauses for a human': 'text8932a840affb',
   'Per agent': 'text79b8817235ae',
   'Per person': 'text6c6874dfe7ec',
-  'Per project': 'text1d9c7125d64e',
+  'Per workspace': 'text1d9c7125d64e',
   'Permissions on a real Google Drive connector — 51 tools, one answer each.': 'text52111885153a',
   'Pick the app, click through its OAuth screen, done. Kortix stores the connection, not your password — Gmail, Notion, Linear, Salesforce, HubSpot, Zendesk, Google Drive and thousands more.':
     'textf57829f4ec88',
   'Point Kortix at an OpenAPI or Postman spec, a GraphQL endpoint, a remote MCP server, or a bare HTTP base URL. It reads the source, works out the authentication, and turns every operation into a tool.':
     'textde8b3da50590',
   Policy: 'textc611981fab98',
-  'Project-wide rules are evaluated first and cannot be overridden by whoever adds a connector later.':
+  'Workspace-wide rules are evaluated first and cannot be overridden by whoever adds a connector later.':
     'textb69c0515beff',
   'Ran, denied, waiting on approval, or errored.': 'text4518e8b34f66',
   'Reach is granted, not inherited. An agent gets the connectors you list for it and nothing else, and effective access is always the intersection of what the person can do and what the agent was granted.':
@@ -102,7 +102,7 @@ export const CONNECTORS_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Rules that read the arguments, not just the tool name': 'text31d70af6b303',
   'Runs on its own': 'text6bf8684cc2aa',
   Scope: 'textb073f6c68ef8',
-  'Scoped to one project and narrowed again by what that agent is allowed to touch. Turning a connector off takes effect on the next call. Nothing in the sandbox needs rotating, because nothing in the sandbox was ever a secret of yours.':
+  'Scoped to one workspace and narrowed again by what that agent is allowed to touch. Turning a connector off takes effect on the next call. Nothing in the sandbox needs rotating, because nothing in the sandbox was ever a secret of yours.':
     'text8f6e69f092b0',
   'Slack and email connect the same way, so an agent can be reached and can reply where the work already happens.':
     'texte0401ccff09d',

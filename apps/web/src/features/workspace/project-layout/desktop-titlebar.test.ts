@@ -45,12 +45,7 @@ const chrome = require_(join(repoRoot, 'apps/desktop-electron/src/window-chrome.
 
 const css = readFileSync(join(repoRoot, 'apps/web/src/app/globals.css'), 'utf8');
 
-test('account settings keeps Back to app left and utilities right in web browsers', () => {
-  const sidebar = readFileSync(
-    join(repoRoot, 'packages/ui/src/internal/account-hub/account-settings-sidebar.tsx'),
-    'utf8',
-  );
-  expect(codeOnly(sidebar)).toMatch(/kx-overlay-sidebar-titlebar[^'"\n]*justify-between/);
+test('the overlay sidebar titlebar puts its utilities right on macOS', () => {
   expect(css).toMatch(/html\[data-desktop-platform='macos'\] \.kx-overlay-sidebar-titlebar\s*\{[^}]*justify-content:\s*flex-end/);
 });
 
@@ -364,7 +359,7 @@ describe('nothing re-hard-codes the band', () => {
   });
 
   test('pages without a titlebar owner get a full-height root drag band', () => {
-    // Auth, `/projects`, and `/new` have no row in the band. The 6px strip was
+    // Auth, `/workspaces`, and `/workspaces/new` have no row in the band. The 6px strip was
     // their only drag area.
     expect(css).toMatch(
       /body:not\(:has\(\[data-kx-titlebar-owner\]\)\) \.kx-desktop-chrome \{\s*height: max\(6px, var\(--kx-titlebar-inset\)\);/,
@@ -380,7 +375,7 @@ describe('nothing re-hard-codes the band', () => {
     // The strip is fixed at z-index 9999 and Back at z-50. A click in Back's
     // no-drag rect reaches the page, and the page hit test picks the topmost
     // box. The grown strip and its child must be transparent to that test, or
-    // Back is dead on auth, `/projects`, `/new`, and onboarding.
+    // Back is dead on auth, `/workspaces`, `/workspaces/new`, and onboarding.
     const grown = css.match(
       /html\[data-desktop-platform='macos'\]\s+body:not\(:has\(\[data-kx-titlebar-owner\]\)\)\s+\.kx-desktop-chrome,\s*html\[data-desktop-platform='macos'\]\s+body:not\(:has\(\[data-kx-titlebar-owner\]\)\)\s+\.kx-desktop-chrome\s+>\s+\* \{([^}]*)\}/,
     );
@@ -453,10 +448,6 @@ describe('top-reaching standalone surfaces clear native macOS controls', () => {
       join(repoRoot, 'apps/web/src/app/[locale]/admin/_components/admin-shell.tsx'),
       'utf8',
     ),
-    accountHub: readFileSync(
-      join(repoRoot, 'apps/web/src/features/accounts/hub/account-hub-panel.tsx'),
-      'utf8',
-    ),
     presentation: readFileSync(
       join(
         repoRoot,
@@ -482,21 +473,8 @@ describe('top-reaching standalone surfaces clear native macOS controls', () => {
     expect(sources.presentation).toContain('kx-titlebar-row');
   });
 
-  test('the account hub starts with its titlebar row, not a blank strip', () => {
-    expect(codeOnly(sources.accountHub)).not.toContain('className="kx-titlebar-spacer"');
-  });
-
-  test('account hub actions and breadcrumb share the titlebar band', () => {
-    const sidebar = codeOnly(readFileSync(join(repoRoot, 'packages/ui/src/internal/account-hub/account-settings-sidebar.tsx'), 'utf8'));
-    const shell = codeOnly(readFileSync(join(repoRoot, 'packages/ui/src/internal/account-hub/account-settings-shell.tsx'), 'utf8'));
-    expect(sidebar).toContain('kx-titlebar-row kx-titlebar-band-height');
-    expect(shell).toContain('kx-titlebar-row kx-titlebar-band-height');
-    expect(shell).toContain('data-sidebar-collapsed={open ? undefined :');
-  });
-
-  test('overlay sidebar and collapsed account header clear the native lights', () => {
+  test('the overlay sidebar clears the native lights', () => {
     expect(css).toMatch(/html\[data-desktop-platform='macos'\] \.kx-overlay-sidebar-titlebar\s*\{[^}]*padding-left:\s*var\(--kx-titlebar-control-left\)/);
-    expect(css).toMatch(/html\[data-desktop-platform='macos'\] \.kx-account-hub-header\[data-sidebar-collapsed\]\s*\{[^}]*padding-left:\s*var\(--kx-titlebar-control-left\)/);
     expect(css).toMatch(/html\[data-desktop-platform='macos'\]\[data-desktop-fullscreen='true'\] \.kx-overlay-sidebar-titlebar\s*\{[^}]*padding-left:\s*0/);
   });
 
@@ -554,7 +532,7 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
     // why the component exists. See HeaderlessSessionSurface.
     'sessions/[sessionId]/page.tsx': join(
       repoRoot,
-      'apps/web/src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx',
+      'apps/web/src/app/[locale]/(app)/workspaces/[id]/sessions/[sessionId]/page.tsx',
     ),
   };
 

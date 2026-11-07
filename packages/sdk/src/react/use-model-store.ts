@@ -64,7 +64,9 @@ interface ModelStore {
 // LocalStorage persistence
 // ============================================================================
 
-const STORE_KEY = 'opencode-model-store-v1';
+const STORE_KEY = 'kortix-model-store-v1';
+/** The key before 2026-11-06. `loadStore` moves a value saved under it to `STORE_KEY` once. */
+const LEGACY_STORE_KEY = 'opencode-model-store-v1';
 
 /**
  * Cap the per-session maps (`sessionModel`, `sessionAgentName`). They're keyed
@@ -84,7 +86,7 @@ function capSessionMap<V>(map: Record<string, V> | undefined): Record<string, V>
 
 /**
  * Guarantee the persisted store's shape no matter what localStorage holds.
- * Proven live (SampleCo 2026-08-26): a malformed `opencode-model-store-v1`
+ * Proven live (2026-08-26): a malformed persisted model store
  * value crashed every route with "a.user is not iterable" because consumers
  * iterate `store.user` and `loadStore` returned `JSON.parse(raw)` unvalidated.
  * Corrupt or legacy data degrades to defaults — it never throws downstream.
@@ -116,6 +118,13 @@ function loadStore(): ModelStore {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) return sanitizeModelStore(JSON.parse(raw));
+    const legacy = localStorage.getItem(LEGACY_STORE_KEY);
+    if (legacy) {
+      localStorage.removeItem(LEGACY_STORE_KEY);
+      const store = sanitizeModelStore(JSON.parse(legacy));
+      safeSetItem(STORE_KEY, JSON.stringify(store));
+      return store;
+    }
   } catch {
     // ignore
   }
@@ -148,7 +157,10 @@ function setStore(next: ModelStore) {
 registerIdentityReset(() => {
   _store = { user: [], recent: [], variant: {} };
   try {
-    if (typeof localStorage !== 'undefined') localStorage.removeItem(STORE_KEY);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(STORE_KEY);
+      localStorage.removeItem(LEGACY_STORE_KEY);
+    }
   } catch {
     // Storage-blocked context: the in-memory reset above is what matters.
   }

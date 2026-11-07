@@ -43,6 +43,7 @@ import {
 import { saveResult } from '../connector-gateway/result-spill.ts';
 import { resolveProjectId } from '../project-link.ts';
 import { tokenRejectedLine } from '../command-helpers.ts';
+import { fromWorkspaceAlias } from '../command-argv.ts';
 
 const PROVIDERS = ['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
 
@@ -296,14 +297,14 @@ async function call({ args, flags, repeated }: Invocation): Promise<void> {
   // A name that matches nothing is denied and the denial lists what was
   // available — it never falls back to a different account.
   const result = await callWithApprovalHandoff(connector, slug, action, parsed, {
-    account: flags.account,
+    account: typeof flags.account === 'string' ? fromWorkspaceAlias(flags.account) : flags.account,
     approvalContext: flags.reason,
   });
   // Keep bearer approval links on the web surface, not in terminal output or files.
   if (result.status === 'pending_approval') {
     result.approval_url = undefined;
     const projectId = resolveProjectId(stringValue(flags.project));
-    const scope = projectId ? ` --project ${projectId}` : '';
+    const scope = projectId ? ` --workspace ${projectId}` : '';
     // `runs_on_approval`: the gate holds the input, so Kortix runs the call
     // once after approval (mirrors heldRunRule in approval-expiry.ts).
     const runsOnApproval = (result as { runs_on_approval?: boolean }).runs_on_approval === true;
@@ -313,11 +314,11 @@ async function call({ args, flags, repeated }: Invocation): Promise<void> {
         : APPROVAL_RERUN_RULE;
     result.approval_instructions = result.execution_id
       ? `Have an authorized human review the call and use their personal CLI credentials to run kortix review act call:${result.execution_id} approve${scope} or kortix review act call:${result.execution_id} reject${scope}. ${rule}`
-      : `Ask a human to review the pending call in the project Review Center. ${rule}`;
+      : `Ask a human to review the pending call in the workspace Review Center. ${rule}`;
   }
   // `--out <file>`: the full result goes to the file, a summary to stdout
   // (bytes, the shape of `data`, the path). Large results stay out of the
-  // agent's context, where OpenCode would truncate them.
+  // agent's context, where the harness would truncate them.
   // The tool ran and reported a failure (MCP `isError`, GraphQL `errors`):
   // the call did not do its job, so the exit code says so.
   const raw = result as typeof result & { upstream_error?: string; error?: string };
@@ -416,10 +417,11 @@ async function connect({ args, flags }: Invocation): Promise<void> {
   // opens the link — the default) or `project` (shared with every member).
   // An agent should leave it alone unless the human asked for a shared
   // account; minting a shared one needs project.connector.write.
+  const ownerFlag = typeof flags.owner === 'string' ? fromWorkspaceAlias(flags.owner) : flags.owner;
   const owner: 'me' | 'project' | undefined =
-    flags.owner === 'me' || flags.owner === 'project' ? flags.owner : undefined;
+    ownerFlag === 'me' || ownerFlag === 'project' ? ownerFlag : undefined;
   if (flags.owner !== undefined && owner === undefined) {
-    throw new CliError('--owner must be me or project', 'USAGE');
+    throw new CliError('--owner must be me or workspace', 'USAGE');
   }
   const link = await mintConnectLink({
     slug,
@@ -457,15 +459,15 @@ const CONNECTORS_HELP = {
     ls: 'kortix connectors ls — list connectors + tools this session can use',
     discover: 'kortix connectors discover "<intent>" — search tools by natural language',
     show: "kortix connectors show <connector>.<action> — show a tool's input and output schema",
-    call: "kortix connectors call <connector> <action> '<json-args>'|@args.json|- [--account <label|id|me|project>] [--reason <text>] [--attach <file>]... [--attach-path <dotted.path>] — run a tool or return its approval link; the result echoes the account it ran as. With several accounts and none named/pinned, denied with reason account_required — name --account or pin a default. --attach stages a file from /workspace/{output,artifacts,reports,deliverables} and appends its reference to the action's attachments array (e.g. Microsoft Graph body.message.attachments); the gateway builds the provider's attachment item. Never put base64 in args. --reason <text> tells the human approver what the call does when policy holds it (who it emails, what it says, what it deletes); always pass it for writes whose args are only ids (send_draft, delete, merge). --out <file> writes the full JSON result to <file> and prints only { saved_to, bytes, shape } — use it for list/search calls that can return more than ~16 KB, then query the file with jq or bun",
+    call: "kortix connectors call <connector> <action> '<json-args>'|@args.json|- [--account <label|id|me|workspace>] [--reason <text>] [--attach <file>]... [--attach-path <dotted.path>] — run a tool or return its approval link; the result echoes the account it ran as. With several accounts and none named/pinned, denied with reason account_required — name --account or pin a default. --attach stages a file from /workspace/{output,artifacts,reports,deliverables} and appends its reference to the action's attachments array (e.g. Microsoft Graph body.message.attachments); the gateway builds the provider's attachment item. Never put base64 in args. --reason <text> tells the human approver what the call does when policy holds it (who it emails, what it says, what it deletes); always pass it for writes whose args are only ids (send_draft, delete, merge). --out <file> writes the full JSON result to <file> and prints only { saved_to, bytes, shape } — use it for list/search calls that can return more than ~16 KB, then query the file with jq or bun",
     upload:
       'kortix connectors upload <file> --connector <slug> — stage one file; prints `ref`, the value {"$kortix_attachment":"<id>"}. Put it in call args: as an attachments[] element it becomes the provider attachment item, in a string field (contentBytes, content) it becomes the base64. Single-use, expires in 24 h',
     add: 'kortix connectors add <slug> --provider composio --app <toolkit> — add a managed app connector NOW (no CR), then connect',
-    rm: 'kortix connectors rm <slug> — remove a connector from the project',
+    rm: 'kortix connectors rm <slug> — remove a connector from the workspace',
     accounts:
-      'kortix connectors accounts <connector> [--json] [--default <label|id>] — the connected accounts a call may run as, default first; each is shared with the project or private to one member (the names --account takes). --default pins one so unnamed calls use it',
+      'kortix connectors accounts <connector> [--json] [--default <label|id>] — the connected accounts a call may run as, default first; each is shared with the workspace or private to one member (the names --account takes). --default pins one so unnamed calls use it',
     connect:
-      'kortix connectors connect <connector-slug> [--owner me|project] — start the connector provider authorization and hand the URL to the human; --owner project makes the account shared with every member',
+      'kortix connectors connect <connector-slug> [--owner me|workspace] — start the connector provider authorization and hand the URL to the human; --owner workspace makes the account shared with every member',
   },
 };
 

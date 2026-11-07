@@ -20,6 +20,7 @@ import {
 import type { ApiClient } from '../api/client.ts';
 import type { ProjectSession } from '../api/types.ts';
 import { C, help, pad, status } from '../style.ts';
+import { fromWorkspaceAlias, toWorkspaceAlias } from '../command-argv.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -57,34 +58,34 @@ export interface SessionPublicShare {
 const SHARE_HELP = help`Usage: kortix sessions share <session-id> [options]
 
 Set who inside Kortix can open this session. With no --mode it prints the
-current setting and changes nothing. Owner-governed: the API refuses a project
+current setting and changes nothing. Owner-governed: the API refuses a workspace
 manager who cannot already read the session.
 
-A shared session runs only on provider keys shared with the whole project. If
+A shared session runs only on provider keys shared with the whole workspace. If
 its model ran on your own keys or ChatGPT connection, sharing switches it to
-the project's keys for that provider. If none runs the model, the share is
+the workspace's keys for that provider. If none runs the model, the share is
 refused and the session stays private.
 
 Modes:
   private            Only the session's owner.
-  project            Every member of the project.
+  workspace          Every member of the workspace.
   members            Only the named members and groups.
 
 Options:
-  --mode <mode>      private | project | members.
+  --mode <mode>      private | workspace | members.
   --member <id|email>  Member allowed in members mode (repeatable). An email
-                     resolves through the project members you can see: a
+                     resolves through the workspace members you can see: a
                      plain member sees only themselves, so pass a user id.
   --group <id>       Account group allowed in members mode (repeatable).
   --show             Print the current setting and exit.
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>   Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
 
 Examples:
   kortix sessions share <session-id> --show
-  kortix sessions share <session-id> --mode project
+  kortix sessions share <session-id> --mode workspace
   kortix sessions share <session-id> --mode members --member dev@example.com
 `;
 
@@ -92,7 +93,7 @@ const LINKS_HELP = help`Usage: kortix sessions links <session-id> <subcommand> [
 
 Public, unauthenticated links onto one session — a preview port, or one
 workspace file. Minting one needs the session OWNER (a link needs no login, so
-it is the owner's call); listing and revoking also accept a project manager.
+it is the owner's call); listing and revoking also accept a workspace manager.
 
 Subcommands:
   ls                 List every link ever minted, newest first. --json.
@@ -101,7 +102,7 @@ Subcommands:
 
 Create options:
   --port <n>         Preview port (default 3000). Refused for 22, 3211 (the
-                     file-share server), 8000 and the opencode ports.
+                     file-share server), 4096, 4097 and 8000.
   --path <p>         Path inside the preview (default /).
   --preview <id>     Named candidate instead of --port/--path: web | vite |
                      dev-server | api-docs (see \`sessions preview --list\`).
@@ -113,7 +114,7 @@ Create options:
   --expires <iso>    Expiry timestamp (ISO 8601).
 
 Global options:
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>   Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -137,7 +138,7 @@ async function resolveMemberIds(
   if (emails.length === 0) return values;
   let members: AccessMember[];
   try {
-    const resp = await client.get<{ members: AccessMember[] }>(`/projects/${projectId}/access`);
+    const resp = await client.get<{ members: AccessMember[] }>(`/workspaces/${projectId}/access`);
     members = resp.members ?? [];
   } catch (err) {
     surfaceApiError(err);
@@ -152,7 +153,7 @@ async function resolveMemberIds(
     const hit = members.find((m) => m.email?.toLowerCase() === value.toLowerCase());
     if (!hit) {
       process.stderr.write(
-        `${status.err(`No project member with email "${value}" in the member list you can see.`)}\n` +
+        `${status.err(`No workspace member with email "${value}" in the member list you can see.`)}\n` +
           `  ${C.dim}If they are a member, you may not be allowed to see this person. ` +
           `Pass ${C.reset}${C.cyan}--member <user-id>${C.reset}${C.dim} instead.${C.reset}\n`,
       );
@@ -166,7 +167,7 @@ async function resolveMemberIds(
 /** Render a sharing intent as one line. */
 export function describeSharing(sharing: SessionSharing | null | undefined): string {
   if (!sharing) return 'private (owner only)';
-  if (sharing.mode === 'project') return 'project (every project member)';
+  if (sharing.mode === 'project') return 'workspace (every workspace member)';
   if (sharing.mode === 'private') return 'private (owner only)';
   const members = sharing.memberIds ?? [];
   const groups = sharing.groupIds ?? [];
@@ -192,9 +193,9 @@ export async function runSessionsShare(argv: string[]): Promise<number> {
   let show = false;
   let json = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
-    mode = takeFlagValue(rest, ['--mode']);
+    mode = fromWorkspaceAlias(takeFlagValue(rest, ['--mode']));
     memberArgs = takeFlagValues(rest, ['--member']);
     groupIds = takeFlagValues(rest, ['--group']);
     show = takeFlagBool(rest, ['--show']);
@@ -210,7 +211,7 @@ export async function runSessionsShare(argv: string[]): Promise<number> {
     return 2;
   }
   if (mode && !['private', 'project', 'members'].includes(mode)) {
-    process.stderr.write(`${status.err(`--mode must be private, project or members.`)}\n`);
+    process.stderr.write(`${status.err(`--mode must be private, workspace or members.`)}\n`);
     return 2;
   }
   if (mode === 'members' && memberArgs.length + groupIds.length === 0) {
@@ -268,7 +269,7 @@ export async function runSessionsShare(argv: string[]): Promise<number> {
   let updated: SharedSession;
   try {
     updated = await client.put<SharedSession>(
-      `/projects/${projectId}/sessions/${canonicalSessionId}/sharing`,
+      `/workspaces/${projectId}/sessions/${canonicalSessionId}/sharing`,
       body,
     );
   } catch (err) {
@@ -303,13 +304,13 @@ export async function runSessionsLinks(argv: string[]): Promise<number> {
   let expires: string | undefined;
   let json = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
     port = takeFlagValue(rest, ['--port']);
     path = takeFlagValue(rest, ['--path']);
     previewId = takeFlagValue(rest, ['--preview']);
     filePath = takeFlagValue(rest, ['--file']);
-    mode = takeFlagValue(rest, ['--mode']);
+    mode = fromWorkspaceAlias(takeFlagValue(rest, ['--mode']));
     label = takeFlagValue(rest, ['--label']);
     expires = takeFlagValue(rest, ['--expires']);
     json = takeFlagBool(rest, ['--json']);
@@ -341,7 +342,7 @@ export async function runSessionsLinks(argv: string[]): Promise<number> {
   );
   if (!located) return 1;
   const { client, projectId, session } = located.located;
-  const base = `/projects/${projectId}/sessions/${session.session_id}/public-shares`;
+  const base = `/workspaces/${projectId}/sessions/${session.session_id}/public-shares`;
 
   if (sub === 'ls' || sub === 'list') {
     let shares: SessionPublicShare[];
@@ -426,7 +427,7 @@ export async function runSessionsLinks(argv: string[]): Promise<number> {
     emitJson(created);
     return 0;
   }
-  process.stdout.write(`\n${status.ok(`Public link minted ${C.dim}(${created.mode})${C.reset}`)}\n`);
+  process.stdout.write(`\n${status.ok(`Public link minted ${C.dim}(${toWorkspaceAlias(created.mode)})${C.reset}`)}\n`);
   process.stdout.write(`  ${C.dim}share_id ${C.reset}${created.share_id}\n`);
   process.stdout.write(`  ${C.dim}url      ${C.reset}${C.cyan}${shareUrl(created)}${C.reset}\n`);
   if (created.expires_at) {

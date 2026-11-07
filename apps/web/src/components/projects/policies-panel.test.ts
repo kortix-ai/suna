@@ -7,7 +7,7 @@ import { seedDraft, toPayloadRule } from '@kortix/ui/workspace/projects/policies
 // Regression test for the Better Stack error pattern `236e88fb…` —
 //   `TypeError: Cannot read properties of undefined (reading 'map')`
 // thrown from the project layout's global-view render path
-// (`/projects/:id?c=global` → `GlobalRulesPanel` → `PoliciesPanel`). The seeding
+// (`/workspaces/:id?c=global` → `GlobalRulesPanel` → `PoliciesPanel`). The seeding
 // `useEffect` previously did `query.data.policies.map(...)` after only guarding
 // `query.data` itself; a `listProjectPolicies` response with a missing/`null`
 // `policies` field (empty/new project, backend shape gap, partial response)

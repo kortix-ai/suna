@@ -75,7 +75,7 @@ const ownTexts = new Map<string, string[]>();
 const landing = new Map<string, Promise<Known | null>>();
 
 /** A save makes `text` the newest; a load keeps the place it already has. */
-function remember(artifactId: string, text: string, loaded = false) {
+export function remember(artifactId: string, text: string, loaded = false) {
   const list = ownTexts.get(artifactId) ?? [];
   if (loaded && list.includes(text)) return;
   ownTexts.set(artifactId, [...list.filter((t) => t !== text).slice(-19), text]);
@@ -84,6 +84,23 @@ function remember(artifactId: string, text: string, loaded = false) {
 /** Where a text sits in this tab's history of the doc (newest last); -1 when this tab never had it. */
 const ownIndex = (artifactId: string, text: string) =>
   ownTexts.get(artifactId)?.lastIndexOf(text) ?? -1;
+
+/**
+ * The file's text after a 409, against `mine` (the text this tab wrote) on
+ * top of `base` (the text it edited): `same` (the mount re-versioned it),
+ * `ours` (a text this tab had at or before `base`: an older copy came back),
+ * or `theirs` (another writer).
+ */
+function fileVerdict(
+  artifactId: string,
+  text: string,
+  mine: string,
+  base: string,
+): 'same' | 'ours' | 'theirs' {
+  if (text === mine) return 'same';
+  const at = ownIndex(artifactId, text);
+  return at >= 0 && at <= ownIndex(artifactId, base) ? 'ours' : 'theirs';
+}
 
 /**
  * Saves of this doc still on their way from an editor that closed, retries
@@ -153,12 +170,12 @@ export function createDocSaver(start: Known, deps: DocSaverDeps) {
 
   /** The file against `mine`, written on top of `base` (see the module comment). */
   const reconcile = (now: Known, mine: string, base: string): 'same' | 'ours' | 'theirs' => {
-    if (now.text === mine) {
+    const verdict = fileVerdict(id, now.text, mine, base);
+    if (verdict === 'same') {
       known = now;
       return 'same';
     }
-    const at = ownIndex(id, now.text);
-    if (at < 0 || at > ownIndex(id, base) || heals >= MAX_HEALS) return 'theirs';
+    if (verdict === 'theirs' || heals >= MAX_HEALS) return 'theirs';
     heals += 1;
     known = now;
     queued = queued ?? mine;
@@ -249,20 +266,18 @@ export function createDocSaver(start: Known, deps: DocSaverDeps) {
         void save(deps.text());
       }, AUTOSAVE_MS);
     },
-    /** Save now (⌘S, leaving), when an edit waits. */
+    /**
+     * Save now (⌘S, leaving), when an edit waits. A failed save waiting out its backoff (up to
+     * 30 s) is tried as soon as the gap between saves allows instead.
+     */
     flush() {
-      if (debounce === null) return;
-      debounce = stop(debounce);
-      void save(deps.text());
-    },
-    async snapshot(): Promise<Known> {
-      if (conflict) throw new Error('The document has a save conflict');
-      this.flush();
-      const waiting = landing.get(id);
-      const saved = waiting ? await waiting : known;
-      if (!saved || debounce !== null || saving || next !== null || queued !== null || conflict)
-        throw new Error('The document has unsaved changes');
-      return saved;
+      if (debounce !== null) {
+        debounce = stop(debounce);
+        void save(deps.text());
+        return;
+      }
+      if (next !== null && queued !== null && !saving && !conflict)
+        later(Math.max(0, ended + SAVE_GAP_MS - clock.now()));
     },
     /** The conflict's Keep mine: write this tab's text over theirs, then autosave resumes. */
     keepMine() {

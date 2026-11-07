@@ -368,7 +368,7 @@ async function reclaimUser(
         label: "gc",
         auth: { mode: "bearer", token: jwt },
       });
-      for (const id of await ownedAccountIds(client, u.id)) accountIds.add(id);
+      for (const id of await ownedAccountIds(client)) accountIds.add(id);
 
       if (db) {
         summary.sessionsStopped += await stopLiveSessions(client, db, [...accountIds], summary);
@@ -431,8 +431,10 @@ async function stopLiveSessions(
   return stopped;
 }
 
-async function ownedAccountIds(client: Client, userId: string): Promise<string[]> {
-  const ids = new Set<string>([userId]);
+async function ownedAccountIds(client: Client): Promise<string[]> {
+  // No account is created at sign-up (Workspaces D3), so the user id names
+  // no account by itself: the list is the only source.
+  const ids = new Set<string>();
   try {
     const res = await client.get("/v1/accounts");
     const body = res.json<{ accounts?: any[] } | any[]>();
@@ -442,7 +444,7 @@ async function ownedAccountIds(client: Client, userId: string): Promise<string[]
       if (id) ids.add(String(id));
     }
   } catch {
-    // fall back to the personal account only
+    // no account to reclaim through the API; the user delete still reclaims
   }
   return [...ids];
 }

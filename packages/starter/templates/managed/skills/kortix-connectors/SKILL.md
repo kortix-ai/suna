@@ -12,14 +12,14 @@ Three things, one per question:
   Its slug is what `kortix connectors call <slug> <action>` takes. An app is
   installed once per way.
 - **Account**: WHO a call runs as. A sign-in on the profile, shared with the
-  project or private to one member. One profile holds several.
+  workspace or private to one member. One profile holds several.
 - **Rule set** (a policy set): WHAT one agent may do on the profile. Named
   tool rules, given to an agent in `agents.<name>.policy_sets`.
 
 Every call is decided in this order. The first layer with a matching rule
 decides:
 
-1. project `policies:` (nothing overrides them);
+1. workspace `policies:` (nothing overrides them);
 2. the calling agent's rule set on this profile;
 3. the profile's base `policies:`;
 4. `sensitive: true` → approval;
@@ -32,7 +32,7 @@ audits it. The sandbox carries only `KORTIX_TOKEN`.
 <fast-path>
 1. **See what exists.** `kortix connectors ls`: slugs, status, and an
    `ACCOUNTS` column.
-2. **Add an app the project lacks**, then hand the human the link:
+2. **Add an app the workspace lacks**, then hand the human the link:
    ```sh
    kortix connectors catalog <name>          # `installed as <slug>` = it is already here
    kortix connectors catalog install <id>    # e.g. kortix:linear, composio:gmail; live at once
@@ -207,7 +207,7 @@ connectors:
             action: block
 agents:
   support:
-    tools: all
+    tools: "*"
     connectors: [gmail]
     policy_sets:
       gmail: read_only
@@ -232,8 +232,8 @@ kortix connectors rules                                                 # every 
   Check the result with `policy <slug> effective`.
 - A name is `[a-z0-9][a-z0-9_-]{0,63}`; `base` is reserved. Channel profiles
   and `computer` hold no sets.
-- Changing any agent's `policy_sets` needs `project.agent.write` AND
-  `project.connector.write`. Without both in your own grant you cannot change
+- Changing any agent's `policy_sets` needs `workspace.agent.write` AND
+  `workspace.connector.write`. Without both in your own grant you cannot change
   any entry, your own included (`403 agent_grant_escalation`): ask the human.
 - `list_connectors` (MCP) shows `policy_set` per profile: the set YOUR agent
   runs under, `null` for base rules.
@@ -277,18 +277,18 @@ decides which accounts a call reaches:
 | App, browser | `backendUrl: '/_kortix/api/v1'` + `kortixAppViewerToken()` (App set to `--viewer api`) | the viewer's shared and private accounts |
 | App, server | `createAppViewerKortix(request, { backendUrl })` | the same, per request |
 | Convex action, App job with no viewer | a service account bearer (`kortix_sa_…`) in an env var | shared accounts nobody narrowed; never a private one |
-| External program, CI | a personal access token, `kortix tokens new <name> --project <id>` | the token owner's shared and private accounts |
+| External program, CI | a personal access token, `kortix tokens new <name> --workspace <id>` | the token owner's shared and private accounts |
 
 A service account is a human step: ask the person to run
 `kortix tokens service-accounts new <name>` and
-`kortix access grant --service-account <id> --role member --project <id>`,
+`kortix access grant --service-account <id> --role member --workspace <id>`,
 and to store the bearer (`npx convex env set KORTIX_API_KEY …` for Convex; a
-project secret under `apps.<slug>.secrets` for an App, not named `KORTIX_*`).
+workspace secret under `apps.<slug>.secrets` for an App, not named `KORTIX_*`).
 Build the rest while you wait. Recipes: `references/sdk.md`.
 </from-apps-and-backends>
 
 <rules>
-- Decision order: project rules → your rule set → base rules → sensitive →
+- Decision order: workspace rules → your rule set → base rules → sensitive →
   default mode. A `policy_block` (with `policy_set` when your set decided)
   or `policy_set_missing` is final: tell the human which set blocked which
   action. Never route around it through another profile, account, or raw key.

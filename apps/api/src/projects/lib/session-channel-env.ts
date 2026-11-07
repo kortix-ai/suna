@@ -32,7 +32,7 @@ export function sessionChannelEnvFromMetadata(metadata: unknown): Record<string,
 }
 
 /**
- * The channel or DM a thread belongs to (`project_channels`), for the agent:
+ * The channel or DM a thread belongs to (`chat`), for the agent:
  * `KORTIX_SPACE_SLUG` is the channel's slug, or the agent's name in a DM.
  * Its folders are named in /drives/README.md.
  */
@@ -42,4 +42,13 @@ export function sessionSpaceEnv(
   const name = space?.kind === 'channel' ? space.slug : space?.dmAgentName;
   if (!space || !name) return {};
   return { KORTIX_SPACE_ID: space.spaceId, KORTIX_SPACE_KIND: space.kind, KORTIX_SPACE_SLUG: name };
+}
+
+/** The session that started this one: the parent column, else the spawn link a box wrote (`metadata.spawned_by_session`). */
+export function sessionParentEnv(
+  row: { parentSessionId?: string | null; metadata?: unknown } | undefined,
+): Record<string, string> {
+  const spawnedBy = (row?.metadata as Record<string, unknown> | null | undefined)?.spawned_by_session;
+  const parent = row?.parentSessionId?.trim() || (typeof spawnedBy === 'string' ? spawnedBy.trim() : '');
+  return parent ? { KORTIX_PARENT_SESSION_ID: parent } : {};
 }

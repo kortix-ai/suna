@@ -41,7 +41,7 @@ import {
   type PeerCaller,
 } from '../peer-messages/service';
 
-const SessionParams = z.object({ projectId: z.string().uuid(), sessionId: z.string().min(1).max(128) });
+const SessionParams = z.object({ workspaceId: z.string().uuid(), sessionId: z.string().min(1).max(128) });
 const MessageParams = SessionParams.extend({ messageId: z.string().min(1).max(64) });
 
 type Mode = 'speak' | 'read' | 'person';
@@ -86,7 +86,7 @@ function peerError(c: Context, err: unknown) {
 
 export function registerPeerMessagesRoutes(): void {
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/sessions/{sessionId}/reachable', tags: ['sessions'],
+    method: 'get', path: '/{workspaceId}/sessions/{sessionId}/reachable', tags: ['sessions'],
     summary: 'List the agents a session can message',
     description:
       '`scope=mine` (default): its parent, children, lead and teammates. `scope=project`: every live session of the project the caller may see; ' +
@@ -103,7 +103,7 @@ export function registerPeerMessagesRoutes(): void {
     },
     responses: { 200: json(ReachableAgentsSchema, 'The session and the agents it can reach'), ...errors(400, 403, 404) },
   }), async (c) => {
-    const { projectId, sessionId } = c.req.valid('param');
+    const { workspaceId: projectId, sessionId } = c.req.valid('param');
     const query = c.req.valid('query');
     const access = await authorize(c, projectId, sessionId, 'speak');
     if (!access.ok) return access.response;
@@ -120,7 +120,7 @@ export function registerPeerMessagesRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/sessions/{sessionId}/peer-messages', tags: ['sessions'],
+    method: 'post', path: '/{workspaceId}/sessions/{sessionId}/peer-messages', tags: ['sessions'],
     summary: 'Send a message from this session to another session',
     description:
       '`to` is a handle, a session id or 8+ character prefix, `parent`, `main`, or `@name`. The answer never waits for the receiver: ' +
@@ -135,7 +135,7 @@ export function registerPeerMessagesRoutes(): void {
       ...errors(400, 402, 403, 404, 429),
     },
   }), async (c) => {
-    const { projectId, sessionId } = c.req.valid('param');
+    const { workspaceId: projectId, sessionId } = c.req.valid('param');
     const access = await authorize(c, projectId, sessionId, 'speak');
     if (!access.ok) return access.response;
     // A delivered message may start a turn: the same gate as a prompt.
@@ -153,14 +153,14 @@ export function registerPeerMessagesRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/sessions/{sessionId}/peer-messages', tags: ['sessions'],
+    method: 'get', path: '/{workspaceId}/sessions/{sessionId}/peer-messages', tags: ['sessions'],
     summary: 'List the messages a session sent or received',
     description: '`direction=in`: received; `out`: sent; absent: both. Newest first, at most 100. A held message past its window reads `expired`.',
     ...auth,
     request: { params: SessionParams, query: z.object({ direction: z.enum(['in', 'out']).optional() }) },
     responses: { 200: json(z.object({ messages: z.array(PeerMessageSchema) }), 'The messages'), ...errors(400, 403, 404) },
   }), async (c) => {
-    const { projectId, sessionId } = c.req.valid('param');
+    const { workspaceId: projectId, sessionId } = c.req.valid('param');
     const access = await authorize(c, projectId, sessionId, 'read');
     if (!access.ok) return access.response;
     return c.json({ messages: await listPeerMessages(sessionId, c.req.valid('query').direction ?? 'both') }, 200);
@@ -168,7 +168,7 @@ export function registerPeerMessagesRoutes(): void {
 
   for (const decision of ['approve', 'deny'] as const) {
     projectsApp.openapi(createRoute({
-      method: 'post', path: `/{projectId}/sessions/{sessionId}/peer-messages/{messageId}/${decision}`, tags: ['sessions'],
+      method: 'post', path: `/{workspaceId}/sessions/{sessionId}/peer-messages/{messageId}/${decision}`, tags: ['sessions'],
       summary: decision === 'approve' ? 'Approve a held message to this session' : 'Deny a held message to this session',
       description: decision === 'approve'
         ? 'Delivers a message the session holds (inbound `hold`). A person who may prompt the session only. `409` when it expired or was decided.'
@@ -177,7 +177,7 @@ export function registerPeerMessagesRoutes(): void {
       request: { params: MessageParams },
       responses: { 200: json(PeerMessageSchema, 'The decided message'), ...errors(400, 402, 403, 404, 409) },
     }), async (c) => {
-      const { projectId, sessionId, messageId } = c.req.valid('param');
+      const { workspaceId: projectId, sessionId, messageId } = c.req.valid('param');
       const access = await authorize(c, projectId, sessionId, 'person');
       if (!access.ok) return access.response;
       if (decision === 'approve') {
@@ -193,7 +193,7 @@ export function registerPeerMessagesRoutes(): void {
   }
 
   projectsApp.openapi(createRoute({
-    method: 'put', path: '/{projectId}/sessions/{sessionId}/inbound', tags: ['sessions'],
+    method: 'put', path: '/{workspaceId}/sessions/{sessionId}/inbound', tags: ['sessions'],
     summary: 'Set who may send this session a message',
     description: '`accept` (default): messages arrive. `hold`: each waits for approval, 5 minutes. `refuse`: senders are told it was not sent. A person who may prompt the session only.',
     ...auth,
@@ -203,7 +203,7 @@ export function registerPeerMessagesRoutes(): void {
     },
     responses: { 200: json(z.object({ inbound: SessionInboundSchema }), 'The setting'), ...errors(400, 403, 404) },
   }), async (c) => {
-    const { projectId, sessionId } = c.req.valid('param');
+    const { workspaceId: projectId, sessionId } = c.req.valid('param');
     const access = await authorize(c, projectId, sessionId, 'person');
     if (!access.ok) return access.response;
     return c.json({ inbound: await setSessionInbound(sessionId, c.req.valid('json').inbound) }, 200);

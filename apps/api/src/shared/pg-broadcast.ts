@@ -137,6 +137,14 @@ let sessionListBustHandler: ((projectId: string) => void) | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 const LISTEN_RETRY_MS = 60_000;
 
+function invokeSubscriber<T>(handler: ((arg: T) => void) | null | undefined, arg: T): void {
+  try {
+    handler?.(arg);
+  } catch {
+    // A subscriber must not take the listener down.
+  }
+}
+
 // replica-local: a waiter waits in this process; the NOTIFY reaches every replica.
 const settleWaiters = new Map<string, Set<() => void>>();
 
@@ -177,11 +185,7 @@ export function onLifecycleCommandDue(handler: ((dueAtMs: number) => void) | nul
 function deliverCommandDue(payload: string): void {
   const dueAtMs = Number(payload);
   if (!Number.isFinite(dueAtMs)) return;
-  try {
-    commandDueHandler?.(dueAtMs);
-  } catch {
-    // A subscriber must not take the listener down.
-  }
+  invokeSubscriber(commandDueHandler, dueAtMs);
 }
 
 /** The control reconciler registers once, at import. Kept across stop/start. */
@@ -192,11 +196,7 @@ export function onSessionPromptsChanged(handler: ((sessionId: string) => void) |
 function deliverPromptsChanged(payload: string): void {
   // The payload is a session id and nothing else.
   if (!isUuid(payload)) return;
-  try {
-    promptsChangedHandler?.(payload);
-  } catch {
-    // A subscriber must not take the listener down.
-  }
+  invokeSubscriber(promptsChangedHandler, payload);
 }
 
 /** The chrome registry registers once, at import. Kept across stop/start. */
@@ -249,11 +249,7 @@ function deliverSessionChanged(payload: string): void {
   // The payload is a session id and nothing else.
   if (!isUuid(payload)) return;
   for (const handler of [...sessionChangedHandlers]) {
-    try {
-      handler(payload);
-    } catch {
-      // A subscriber must not take the listener down.
-    }
+    invokeSubscriber(handler, payload);
   }
 }
 
@@ -280,11 +276,7 @@ export function publishSpaceAccessBust(projectId: string): void {
 function deliverSpaceAccessBust(payload: string): void {
   // The payload is a project id and nothing else.
   if (!isUuid(payload)) return;
-  try {
-    spaceAccessBustHandler?.(payload);
-  } catch {
-    // A subscriber must not take the listener down.
-  }
+  invokeSubscriber(spaceAccessBustHandler, payload);
 }
 
 /** `projects/lib/session-list-poll-memo.ts` registers once, at import. Kept across stop/start. */
@@ -300,11 +292,7 @@ export function publishSessionListBust(projectId: string): void {
 function deliverSessionListBust(payload: string): void {
   // The payload is a project id and nothing else.
   if (!isUuid(payload)) return;
-  try {
-    sessionListBustHandler?.(payload);
-  } catch {
-    // A subscriber must not take the listener down.
-  }
+  invokeSubscriber(sessionListBustHandler, payload);
 }
 
 /** The forwarder registers once, at import. Kept across stop/start. */
@@ -339,11 +327,7 @@ function deliver(payload: string): void {
   // is not ours; dropping it costs a TTL window, acting on it would not.
   if (!isUuid(payload)) return;
   for (const handler of handlers) {
-    try {
-      handler(payload);
-    } catch {
-      // A subscriber must not take the listener down.
-    }
+    invokeSubscriber(handler, payload);
   }
 }
 
@@ -375,31 +359,13 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
     // comes back, so a database restart does not need handling here.
     await sql.listen(BASE_MOVE_CHANNEL, deliver);
     // `sql.listen` keeps one connection for every channel of this client.
-    await sql.listen(TUNNEL_FORWARD_CHANNEL, (payload) => {
-      try {
-        tunnelForwardHandler?.(payload);
-      } catch {
-        // A subscriber must not take the listener down.
-      }
-    });
+    await sql.listen(TUNNEL_FORWARD_CHANNEL, (payload) => invokeSubscriber(tunnelForwardHandler, payload));
     await sql.listen(LIFECYCLE_COMMAND_SETTLED_CHANNEL, wakeSettleWaiters);
     await sql.listen(LIFECYCLE_COMMAND_DUE_CHANNEL, deliverCommandDue);
     await sql.listen(SESSION_PROMPTS_CHANGED_CHANNEL, deliverPromptsChanged);
     await sql.listen(SESSION_CHANGED_CHANNEL, deliverSessionChanged);
-    await sql.listen(IAM_CACHE_BUST_CHANNEL, (payload) => {
-      try {
-        iamCacheBustHandler?.(payload);
-      } catch {
-        // A subscriber must not take the listener down.
-      }
-    });
-    await sql.listen(CHROME_COMMAND_CHANNEL, (payload) => {
-      try {
-        chromeCommandHandler?.(payload);
-      } catch {
-        // A subscriber must not take the listener down.
-      }
-    });
+    await sql.listen(IAM_CACHE_BUST_CHANNEL, (payload) => invokeSubscriber(iamCacheBustHandler, payload));
+    await sql.listen(CHROME_COMMAND_CHANNEL, (payload) => invokeSubscriber(chromeCommandHandler, payload));
     await sql.listen(SPACE_ACCESS_BUST_CHANNEL, deliverSpaceAccessBust);
     await sql.listen(SESSION_LIST_BUST_CHANNEL, deliverSessionListBust);
     listener = sql;

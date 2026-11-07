@@ -1,9 +1,9 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
-  createProjectResourceGrant,
-  deleteProjectResourceGrant,
-  listProjectResourceGrants,
+  createWorkspaceResourceGrant,
+  deleteWorkspaceResourceGrant,
+  listWorkspaceResourceGrants,
 } from './index';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -31,20 +31,20 @@ configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }
 const last = () => calls[calls.length - 1];
 
 test('listProjectResourceGrants hits the resource-grants collection', async () => {
-  const result = await listProjectResourceGrants('P1');
-  expect(last().url).toContain('/projects/P1/resource-grants');
+  const result = await listWorkspaceResourceGrants('P1');
+  expect(last().url).toContain('/workspaces/P1/resource-grants');
   expect(last().method).toBe('GET');
   expect(result.resources.secrets).toEqual([]);
 });
 
 test('createProjectResourceGrant posts a snake_case grant body', async () => {
-  await createProjectResourceGrant('P1', {
+  await createWorkspaceResourceGrant('P1', {
     resourceType: 'secret',
     resourceId: 'MY_SECRET',
     principalType: 'member',
     principalId: 'user-1',
   });
-  expect(last().url).toContain('/projects/P1/resource-grants');
+  expect(last().url).toContain('/workspaces/P1/resource-grants');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({
     resource_type: 'secret',
@@ -55,7 +55,7 @@ test('createProjectResourceGrant posts a snake_case grant body', async () => {
 });
 
 test('createProjectResourceGrant forwards an explicit expiry (including null)', async () => {
-  await createProjectResourceGrant('P1', {
+  await createWorkspaceResourceGrant('P1', {
     resourceType: 'agent',
     resourceId: 'researcher',
     principalType: 'group',
@@ -72,7 +72,7 @@ test('createProjectResourceGrant forwards an explicit expiry (including null)', 
 });
 
 test('deleteProjectResourceGrant deletes by grant id', async () => {
-  await deleteProjectResourceGrant('P1', 'G9');
-  expect(last().url).toContain('/projects/P1/resource-grants/G9');
+  await deleteWorkspaceResourceGrant('P1', 'G9');
+  expect(last().url).toContain('/workspaces/P1/resource-grants/G9');
   expect(last().method).toBe('DELETE');
 });

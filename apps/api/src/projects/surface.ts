@@ -25,6 +25,14 @@ export {
 // Idle sessions off a fallback model (consumed by worker/jobs/session-model-fallback).
 export { revertIdleSessionFallbacks } from './lib/session-model-fallback-revert';
 
+// Chat (`chat`): a thread's board of the chat's other threads (consumed by the turn-start path).
+export { chatThreadBoardTurn } from './lib/chat-threads';
+export { sessionWhereTurn } from './lib/session-where';
+export { messageAddressesOnlyPeople, notifyMessageMentions } from './lib/space-posts';
+export { runSpaceWatcherTick } from './lib/space-watch/wake';
+export { runGoalReconcilerTick } from './goals/reconcile';
+export { sessionSpaceAgents } from './lib/front-thread';
+
 // A person's pins and archive (consumed by account erasure and offboarding).
 export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/session-user-state';
 
@@ -65,7 +73,7 @@ export {
 
 // Every declared agent's grant (consumed by the connectors rules matrix).
 export { extractAgents, grantsByAgent, loadProjectAgents } from './agents';
-export { mentionTokens, mentionsMember } from './rooms/envelope';
+export { mentionTokens } from './lib/mentions';
 export { resolveAndAuthorizeAgentAs } from './lib/agent-access';
 export { loadVisibleSession } from './lib/session-visibility';
 export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
@@ -73,7 +81,13 @@ export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
 export { sandboxKeepsMessageIds } from './session-lifecycle/inbox-admission';
 
 // Project access, the route app and the secret envelope.
-export { assertProjectCapability, loadProjectForUser } from './lib/access';
+export { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from './lib/access';
+
+// An App delete takes the triggers that name the App (consumed by ../apps routes and app-manifest).
+export { dropRetiredAppTriggers, runtimeTriggersNamingApp, withoutAppTriggers } from './lib/app-trigger-retire';
+
+// An always-on App that keeps crashing alerts the triggers that name it (consumed by ../apps/idle-reaper).
+export { clearAppCrashAlerts, raiseAppCrashAlerts } from './lib/app-health-alerts';
 
 // Who may decide a gated connector call (consumed by ../setup-links/approval-app,
 // so the approval page refuses exactly whom the resolve route refuses).
@@ -82,9 +96,21 @@ export { approvalCallerOf } from './lib/http-approval-caller';
 export { approvalTargetSession, expireDueApprovals } from './lib/connector-approval-decision';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
-export { listProjectSecretNamesForConsumer, listResolvedProjectSecrets } from './secrets';
+export { listProjectSecretNamesForConsumer, listResolvedProjectSecrets, resolveProjectSecretForConsumer } from './secrets';
 // App events (`type: app` triggers): apps/event-routes.ts appends through these.
-export { ingestAppEvents, parseAppEventsBody, type AppEventInput } from './lib/app-events';
+export {
+  APP_EVENT_LOG_STATUSES,
+  asTestEvents,
+  emitAppPlatformEvent,
+  isAppPlatformEvent,
+  decodeAppEventCursor,
+  ingestAppEvents,
+  listAppEventLog,
+  parseAppEventsBody,
+  type AppEventInput,
+  type AppEventLogEntry,
+  type AppEventLogStatus,
+} from './lib/app-events';
 // One-off App runs (runAfter / runAt) on the trigger engine.
 export { cancelAppRun, insertAppRun } from './lib/app-runs';
 export { currentInstanceId } from './instance-scope';
@@ -106,8 +132,10 @@ export { markKortixRemovalIntent } from './runtime-identity';
 export { disableRemindersAuthoredBy } from './lib/session-reminders';
 
 // Nested `projects.metadata` writes (consumed by ../feature-flags/write).
-export { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from './lib/metadata-merge';
+export { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../workspaces/rows';
 export { MANIFEST_PROJECT_NAME_KEY, projectNameAction } from './lib/manifest-project-name';
+// Workspace name = account name = project name (consumed by account rename and manifest sync).
+export { renameAccountOfSoleProject, renameSoleProjectOfAccount } from './lib/workspace-name';
 
 // Whether any app-event adapter is configured (consumed by ../feature-flags/registry).
 
@@ -135,6 +163,7 @@ export { flushDriveSyncBeforeStop } from './reaping/stop-box';
 
 // Close the stored copy of a question a client answered (consumed by ../sandbox-proxy).
 export { clearOpenQuestions } from './lib/pending-questions';
+export { closeRepliedPermission } from './lib/pending-permissions';
 
 // A chat button answers a stored question, in the turn it blocks or as a
 // follow-up (consumed by channels/telegram).
@@ -180,7 +209,7 @@ export { noteSandboxHealthBody } from './lib/turn-start-convergence';
 
 export { registerRuntimeFork } from './lib/runtime-session-snapshot';
 
-// `project_channels` on: file every session into `#general`, and the "turned on
+// `chat` on: file every session into `#general`, and the "turned on
 // again" record (consumed by ../feature-flags/toggle-effects).
 export { turnOnChannels } from './lib/project-spaces';
 export { recordChannelsReenabled } from './lib/channels-onboarding';
@@ -201,3 +230,30 @@ export {
 } from './git/push-manifest-check';
 // A manifest write refused while the default branch's kortix.yaml is not YAML (consumed by the HTTP error handler).
 export { ManifestWriteRefusedError } from './manifest-io';
+
+// The transfer engine and the workspace split's data movement (consumed by workspaces/split).
+export {
+  afterProjectMoved,
+  copyProjectSiteBlobs,
+  moveOwnedRows,
+  PROJECT_TRANSFER_APP_TABLES,
+  PROJECT_TRANSFER_LEAVE_TABLES,
+  PROJECT_TRANSFER_TABLES,
+} from './lib/project-transfer';
+export {
+  countRotatingLogins,
+  isRotatingLogin,
+  projectGrantCounts,
+  reachingGroupsSql,
+  reachingUsersSql,
+  ProjectSplitError,
+  reverseProjectSplit,
+  splitProjectIntoNewAccount,
+  type SplitCopiedIds,
+} from './lib/workspace-split-copy';
+
+// Session and sandbox status transitions (consumed by the preview proxy's
+// lifecycle writes) and the canonical live session set (consumed by every
+// domain that counts or stops live sessions).
+export { settleLiveSessionsOfAccounts, transitionSandbox, transitionSession } from './session-lifecycle/status-transitions';
+export { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES } from './lib/session-status';

@@ -2,10 +2,11 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   createAccountSecretResource, deleteAccountSecretResource, grantAccountSecretResource,
-  listAccountSecretResources, retryAccountSecretResource, revokeAccountSecretResourceGrant, rotateAccountSecretResource,
+  listAccountSecretResources, refreshAccountSecretUsage, retryAccountSecretResource, revokeAccountSecretResourceGrant, rotateAccountSecretResource,
   setAccountSecretResourceAccess,
   getSessionProviderSecretPool, setSessionProviderSecretPool,
   listSessionProviderSecretPools,
+  listSubscriptionConnections, refreshSubscriptionConnectionUsage,
 } from './account-secret-resources';
 import type { SecretValueStatus } from './secrets';
 
@@ -42,6 +43,39 @@ test('retry ends a cooldown with a body-less POST on the secret', async () => {
   await retryAccountSecretResource('account', 'secret');
   expect(calls.map((call) => [call.method, call.url])).toEqual([
     ['POST', 'http://test.local/accounts/account/secret-resources/secret/retry'],
+  ]);
+});
+
+test('usage refresh carries the project that grants access to an existing account-wide subscription', async () => {
+  await refreshAccountSecretUsage('account', 'secret', 'project/one');
+  expect(calls.map((call) => [call.method, call.url, call.body])).toEqual([
+    ['POST', 'http://test.local/accounts/account/secret-resources/secret/usage?project_id=project%2Fone', null],
+  ]);
+});
+
+test('subscription discovery and legacy refresh preserve project and storage identity', async () => {
+  await listSubscriptionConnections('account', 'project/one');
+  await refreshSubscriptionConnectionUsage('account', 'secret', 'project/one', 'project');
+  expect(calls.map((call) => [call.method, call.url])).toEqual([
+    ['GET', 'http://test.local/accounts/account/subscription-connections?project_id=project%2Fone'],
+    ['POST', 'http://test.local/accounts/account/subscription-connections/secret/usage?project_id=project%2Fone&storage=project'],
+  ]);
+});
+
+test('usage refresh is a body-less POST on the secret and returns the snapshot', async () => {
+  const usage = {
+    windows: [{ id: 'five_hour', window_minutes: 300, used_percent: 42, resets_at: '2026-11-04T16:00:00.000Z' }],
+    limited: false, observed_at: '2026-11-04T14:00:00.000Z', source: 'usage_endpoint' as const,
+  };
+  globalThis.fetch = mock(async (url: unknown, init: RequestInit = {}) => {
+    calls.push({ url: String(url), method: init.method ?? 'GET', body: init.body ? JSON.parse(String(init.body)) : null });
+    return new Response(JSON.stringify({ usage, provider_account: { email: 'person@example.test', plan: 'pro' } }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as unknown as typeof fetch;
+  const result = await refreshAccountSecretUsage('account', 'secret');
+  expect(result).toEqual({ usage, provider_account: { email: 'person@example.test', plan: 'pro' } });
+  expect(result.provider_account?.email).toBe('person@example.test');
+  expect(calls.map((call) => [call.method, call.url, call.body])).toEqual([
+    ['POST', 'http://test.local/accounts/account/secret-resources/secret/usage', null],
   ]);
 });
 
@@ -84,7 +118,7 @@ test('list preserves an empty configured pool after its last resource disappears
   }) as unknown as typeof fetch;
   expect(await listSessionProviderSecretPools('project/id', 'session/id')).toEqual(result);
   expect(calls).toEqual([{
-    url: 'http://test.local/projects/project%2Fid/sessions/session%2Fid/provider-secret-pools',
+    url: 'http://test.local/workspaces/project%2Fid/sessions/session%2Fid/provider-secret-pools',
     method: 'GET', body: null,
   }]);
 });

@@ -126,9 +126,10 @@ const DIRECT_STREAM_PEEK_MAX_CHARS = 64 * 1024;
  * Reads a streamed direct response up to its first `data:` frame, for at most
  * `commitAfterMs`. An error frame there served nothing, so it throws the
  * `UpstreamHttpError` a non-2xx answer throws: dispatch fails over, and the
- * client gets an HTTP error. OpenCode compacts on a 400
- * `context_length_exceeded` and retries a 429; an in-band error frame is an
- * UnknownError to it, and the turn ends. Any other first frame, a timeout, a
+ * client gets an HTTP error. pi compacts and retries on a 400
+ * `context_length_exceeded` and retries a 429 (kortixd `harness/pi/runtime.ts`,
+ * `harness/pi/transient-retry.ts`). OpenCode read an in-band error frame as an
+ * UnknownError and ended the turn. Any other first frame, a timeout, a
  * client abort, or EOF returns a response that replays the bytes read and
  * continues the body, as the AI SDK transport's `openStream` does for its own
  * streams. The relay then settles a stopped prefill as it always did.

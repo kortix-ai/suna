@@ -26,7 +26,8 @@ import {
   useTeammates,
 } from '@kortix/sdk/react';
 import { countAgents, parseWorkflowRun, type WorkflowRun, type WorkflowRunAgent } from '../tool/tools/workflow-run';
-import { WorkflowProgress, type AgentStopState } from '../tool/tools/workflow-progress';
+import { RunProgressRing, type AgentStopState } from '../tool/tools/workflow-progress';
+import { WorkflowRunRows } from '../tool/tools/workflow-run-card';
 import {
   isActive,
   lineSummary,
@@ -156,6 +157,25 @@ export function AgentsLineView({
   const { summary, text } = useLineText(rows, runs, compact);
 
   if (rows.length === 0 && runs.length === 0) return null;
+
+  // One agent and nothing else to list: the line opens it, not a one-row popover.
+  const only = rows.length === 1 && runs.length === 0 && !tasks ? rows[0]! : null;
+  if (only) {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        data-testid="agents-line"
+        aria-label={t('openAgent', { name: only.handle })}
+        onClick={() => onOpen({ sessionId: only.sessionId, title: only.handle })}
+        className="text-muted-foreground hit-area-y-3 min-w-0 shrink gap-1.5 rounded-lg px-2 text-xs font-normal tabular-nums"
+      >
+        <AgentStateMark state={LINE_STATE[summary.mark]} />
+        <span className="max-w-64 min-w-0 truncate">{text}</span>
+      </Button>
+    );
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -451,7 +471,12 @@ function WorkflowLineRow({
           onClick={() => setOpen((value) => !value)}
           className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1.5 pl-2 text-left text-xs outline-none"
         >
-          <AgentStateMark state={RUN_STATE[run.status]} />
+          <RunProgressRing
+            done={counts.done}
+            failed={counts.failed}
+            total={Math.max(counts.total, 1)}
+            ended={run.status === 'done' ? 'done' : run.status === 'stopped' ? 'stopped' : undefined}
+          />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-baseline gap-2">
               <span className="text-foreground min-w-0 truncate font-medium" title={title}>
@@ -488,13 +513,12 @@ function WorkflowLineRow({
       </div>
       {open && run.agents.length > 0 && (
         <div className="pl-5">
-          <WorkflowProgress
+          {/* The same rows as the run's card in the chat. */}
+          <WorkflowRunRows
             run={run}
             live={live}
             now={now}
-            onOpen={(agent) =>
-              agent.sessionId && onOpen({ sessionId: agent.sessionId, title: agent.agent ? `${agent.label} · ${agent.agent}` : agent.label })
-            }
+            onOpen={(agent) => agent.sessionId && onOpen({ sessionId: agent.sessionId, title: agent.label })}
             stop={stop}
           />
         </div>

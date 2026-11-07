@@ -197,7 +197,9 @@ export const BoundActivateContext = createContext<(() => void) | null>(null);
 
 /** The call is in flight AND its turn is live: the only time a loading state may animate. */
 export function useToolLive(): boolean {
-  return useContext(ToolRunningContext) && useContext(ToolMotionContext);
+  const running = useContext(ToolRunningContext);
+  const motion = useContext(ToolMotionContext);
+  return running && motion;
 }
 
 export function useToolOpen(): boolean {
@@ -481,7 +483,7 @@ function BasicToolRow({ icon, trigger, running, outcome, triggerAction, onSubtit
 
   if (press || (activates && activate)) {
     return (
-      <Pressable accessibilityRole="button" onPress={press ? (locked ? undefined : press) : activate} style={rowStyle}>
+      <Pressable accessibilityRole="button" onPress={press ? (locked ? undefined : press) : (activate ?? undefined)} style={rowStyle}>
         {header}
       </Pressable>
     );

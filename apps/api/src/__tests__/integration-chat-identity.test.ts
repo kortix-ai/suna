@@ -49,7 +49,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await requireMfa(false);
-  await db.delete(chatUserIdentities).where(eq(chatUserIdentities.workspaceId, TENANT));
+  await db.delete(chatUserIdentities).where(eq(chatUserIdentities.platformTeamId, TENANT));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, 'login:teams:%'));
   await removeSeeded([project]);
 });

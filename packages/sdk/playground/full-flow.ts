@@ -104,7 +104,7 @@ async function main() {
   // 3. Ready the session (boots/resumes the sandbox — slow on first run),
   //    then connect the stream BEFORE sending so no early events are missed.
   console.log("\nreadying session (first boot provisions a sandbox)…");
-  const { opencodeSessionId } = await retryUntilReady(() =>
+  const { runtimeSessionId } = await retryUntilReady(() =>
     session.ensureReady(),
   );
 
@@ -123,7 +123,7 @@ async function main() {
       }
       if (
         narrowed.type === "session.idle" &&
-        narrowed.sessionID === opencodeSessionId
+        narrowed.sessionID === runtimeSessionId
       ) {
         resolveIdle();
       }
@@ -148,7 +148,7 @@ async function main() {
 
   // 5. Render the whole transcript from the runtime, exactly like example 04.
   const result = await session.runtime.session.messages({
-    sessionID: opencodeSessionId,
+    sessionID: runtimeSessionId,
   });
   const messages = (result.data ?? []) as MessageWithParts[];
   console.log("\n--- transcript ---");

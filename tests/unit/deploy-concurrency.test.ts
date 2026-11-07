@@ -1,8 +1,9 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT, readWorkflow } from '../src/fixtures/repo';
 
-const workflows = resolve(import.meta.dirname, '../../.github/workflows');
+const workflows = resolve(REPO_ROOT, '.github/workflows');
 
 /**
  * A deploy workflow QUEUES; it never cancels an in-flight run.
@@ -25,7 +26,7 @@ describe('deploy workflows queue instead of cancelling', () => {
 
   for (const name of files) {
     it(`${name} never sets cancel-in-progress: true`, () => {
-      const source = readFileSync(resolve(workflows, name), 'utf8');
+      const source = readWorkflow(name);
       const settings = source
         .split('\n')
         .filter((line) => !line.trim().startsWith('#'))
@@ -33,4 +34,27 @@ describe('deploy workflows queue instead of cancelling', () => {
       for (const line of settings) expect(line.trim()).toBe('cancel-in-progress: false');
     });
   }
+});
+
+/**
+ * A rollback and a release roll the same prod ECS services and Vercel
+ * production. Before 2026-11-06 they had separate groups, so a rollback
+ * dispatched during a release roll raced it. One group serializes them.
+ */
+describe('rollback-prod and deploy-prod share one concurrency group', () => {
+  const group = (name: string) =>
+    /^concurrency:\n(?: {2}#.*\n)* {2}group: (\S+)\n {2}cancel-in-progress: false$/m.exec(
+      readWorkflow(name),
+    )?.[1];
+
+  it('uses the deploy-prod group in both files', () => {
+    expect(group('deploy-prod.yml')).toBe('deploy-prod');
+    expect(group('rollback-prod.yml')).toBe('deploy-prod');
+  });
+
+  it('documents the ref the prod environment admits', () => {
+    const source = readWorkflow('rollback-prod.yml');
+    expect(source).toContain('rollback-prod.yml --repo kortix-ai/CompanyOS --ref prod');
+    expect(source).not.toContain('--ref dev');
+  });
 });

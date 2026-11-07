@@ -3,16 +3,23 @@ import { describe, expect, test } from 'bun:test';
 import { accountInviteLanding, type KortixAccount, type KortixProject } from '@kortix/sdk';
 
 import {
-  buildAccountSections,
-  countProjects,
+  buildWorkspaceRows,
+  canCreateWorkspace,
+  githubSourceAccount,
   decideDoor,
-  filterSections,
+  failedAccountIds,
+  filterWorkspaceRows,
   inviteLandingPath,
+  reusableEmptyAccount,
   type ProjectListResult,
 } from './project-selector-model';
 
-function account(id: string, role: KortixAccount['account_role'], name = `Account ${id}`): KortixAccount {
-  return { account_id: id, name, account_role: role } as KortixAccount;
+function account(
+  id: string,
+  role: KortixAccount['account_role'],
+  overrides: Partial<KortixAccount> = {},
+): KortixAccount {
+  return { account_id: id, name: `Account ${id}`, account_role: role, ...overrides } as KortixAccount;
 }
 
 function project(id: string, accountId: string, overrides: Partial<KortixProject> = {}): KortixProject {
@@ -30,182 +37,186 @@ function list(accountId: string, data: KortixProject[] | undefined, isError = fa
   return { accountId, data, isError };
 }
 
-describe('buildAccountSections — one section per user state', () => {
-  test('a member with project.create can create; an owner without it cannot', () => {
-    const sections = buildAccountSections({ accounts: [account('member', 'member'), account('owner', 'owner')], lists: [list('member', []), list('owner', [])], creatableAccountIds: new Set(['member']) });
-    expect(sections.find((s) => s.accountId === 'member')?.state).toBe('empty-creatable');
-    expect(sections.find((s) => s.accountId === 'owner')?.state).toBe('empty-member');
+describe('buildWorkspaceRows — one flat row per workspace', () => {
+  test('an account with no project is not a workspace', () => {
+    expect(buildWorkspaceRows({ accounts: [account('a', 'owner')], lists: [list('a', [])] })).toEqual([]);
   });
 
-  test('new user: an owned account with no project is empty-creatable', () => {
-    const sections = buildAccountSections({ creatableAccountIds: new Set(['a']), accounts: [account('a', 'owner')], lists: [list('a', [])] });
-    expect(sections).toHaveLength(1);
-    expect(sections[0]).toMatchObject({ state: 'empty-creatable', canCreate: true, projects: [] });
-  });
-
-  test('account member with no shared project is empty-member, never dropped', () => {
-    const sections = buildAccountSections({ creatableAccountIds: new Set(['a']), accounts: [account('m', 'member')], lists: [list('m', [])] });
-    expect(sections[0]).toMatchObject({ state: 'empty-member', canCreate: false });
-  });
-
-  test('project member sees exactly the granted projects under the owning account', () => {
-    const sections = buildAccountSections({
-      accounts: [account('m', 'member')],
-      lists: [list('m', [project('p1', 'm')])],
+  test('a legacy account with two projects shows two workspaces, with no account heading', () => {
+    const rows = buildWorkspaceRows({
+      accounts: [account('a', 'admin')],
+      lists: [list('a', [project('p1', 'a'), project('p2', 'a')])],
     });
-    expect(sections[0]).toMatchObject({ state: 'projects', canCreate: false });
-    expect(sections[0].projects.map((p) => p.project_id)).toEqual(['p1']);
+    expect(rows.map((row) => row.workspaceId)).toEqual(['p1', 'p2']);
+    expect(rows.every((row) => row.role === 'admin' && row.accountId === 'a')).toBe(true);
   });
 
-  test('a failed list is its own state with no projects', () => {
-    const sections = buildAccountSections({ creatableAccountIds: new Set(['a']), accounts: [account('a', 'admin')], lists: [list('a', undefined, true)] });
-    expect(sections[0].state).toBe('failed');
-  });
-
-  test('archived projects are not offered', () => {
-    const sections = buildAccountSections({
-      accounts: [account('a', 'owner')],
-      creatableAccountIds: new Set(['a']),
-      lists: [list('a', [project('p1', 'a', { status: 'archived' })])],
-    });
-    expect(sections[0].state).toBe('empty-creatable');
-  });
-
-  test('projects sort most recently opened first; accounts sort by their latest project', () => {
-    const sections = buildAccountSections({
-      accounts: [account('old', 'owner'), account('new', 'member'), account('empty', 'owner')],
+  test('workspaces from every account sort by most recently opened, then by name', () => {
+    const rows = buildWorkspaceRows({
+      accounts: [account('a', 'owner'), account('b', 'member')],
       lists: [
-        list('old', [project('o1', 'old', { last_opened_at: '2026-09-01T00:00:00Z' })]),
-        list('new', [
-          project('n1', 'new', { last_opened_at: '2026-09-10T00:00:00Z' }),
-          project('n2', 'new', { last_opened_at: '2026-09-20T00:00:00Z' }),
-        ]),
-        list('empty', []),
+        list('a', [project('old', 'a', { last_opened_at: '2026-01-01T00:00:00Z' }), project('zz', 'a', { name: 'Zed' })]),
+        list('b', [project('new', 'b', { last_opened_at: '2026-06-01T00:00:00Z' }), project('aa', 'b', { name: 'Ada' })]),
       ],
     });
-    expect(sections.map((s) => s.accountId)).toEqual(['new', 'old', 'empty']);
-    expect(sections[0].projects.map((p) => p.project_id)).toEqual(['n2', 'n1']);
+    expect(rows.map((row) => row.workspaceId)).toEqual(['new', 'old', 'aa', 'zz']);
   });
 
-  test("a project in an account the user is not a member of still gets a section", () => {
-    const sections = buildAccountSections({
+  test('archived projects are not offered, and a project listed twice is listed once', () => {
+    const rows = buildWorkspaceRows({
       accounts: [account('a', 'owner')],
-      lists: [list('a', [project('p1', 'a'), project('shared', 'foreign')])],
+      lists: [list('a', [project('p1', 'a'), project('gone', 'a', { status: 'archived' })]), list('a', [project('p1', 'a')])],
     });
-    expect(sections.map((s) => s.accountId).sort()).toEqual(['a', 'foreign']);
-    expect(countProjects(sections)).toBe(2);
+    expect(rows.map((row) => row.workspaceId)).toEqual(['p1']);
   });
 
-  test("the personal account's \"'s Account\" suffix is stripped", () => {
-    const sections = buildAccountSections({
-      accounts: [account('a', 'owner', "Marko's Account")],
-      lists: [list('a', [])],
-    });
-    expect(sections[0].accountName).toBe('Marko');
+  test('a project in an account the user is not a member of is still listed, as a member', () => {
+    const rows = buildWorkspaceRows({ accounts: [], lists: [list('x', [project('shared', 'x')])] });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ workspaceId: 'shared', role: 'member', accountName: 'Account' });
   });
 });
 
-describe('filterSections', () => {
-  const sections = buildAccountSections({
-    accounts: [account('a', 'owner', 'Acme'), account('b', 'member', 'Beta')],
-    lists: [
-      list('a', [project('1', 'a', { name: 'Website' }), project('2', 'a', { name: 'Billing' })]),
-      list('b', [project('3', 'b', { name: 'Research' })]),
-    ],
+describe('filterWorkspaceRows', () => {
+  const rows = buildWorkspaceRows({
+    accounts: [account('a', 'owner', { name: 'Acme' })],
+    lists: [list('a', [project('p1', 'a', { name: 'Website' }), project('p2', 'a', { name: 'Docs site' })])],
   });
 
-  test('matches project names case-insensitively', () => {
-    const result = filterSections(sections, 'bill');
-    expect(result.flatMap((s) => s.projects.map((p) => p.name))).toEqual(['Billing']);
+  test('matches every word of the workspace name, in any order', () => {
+    expect(filterWorkspaceRows(rows, 'SITE docs').map((row) => row.workspaceId)).toEqual(['p2']);
   });
 
-  test('an account-name match keeps every project in that account', () => {
-    expect(filterSections(sections, 'beta').flatMap((s) => s.projects.map((p) => p.name))).toEqual(['Research']);
+  test('does not match the account name: the account is not a separate thing', () => {
+    expect(filterWorkspaceRows(rows, 'acme')).toEqual([]);
   });
 
   test('an empty query returns the input unchanged', () => {
-    expect(filterSections(sections, '  ')).toBe(sections);
+    expect(filterWorkspaceRows(rows, '  ')).toBe(rows);
   });
 });
 
-describe('decideDoor — skip the selector only for one obvious answer', () => {
-  const two = buildAccountSections({
-    accounts: [account('a', 'owner')],
-    lists: [list('a', [project('p1', 'a'), project('p2', 'a')])],
+describe('failedAccountIds', () => {
+  test('names only the accounts whose list failed', () => {
+    expect(failedAccountIds([list('a', []), list('b', undefined, true)])).toEqual(['b']);
   });
-  const one = buildAccountSections({ creatableAccountIds: new Set(['a']), accounts: [account('a', 'owner')], lists: [list('a', [project('p1', 'a')])] });
-  const none = buildAccountSections({ creatableAccountIds: new Set(['a']), accounts: [account('a', 'owner')], lists: [list('a', [])] });
+});
 
-  test('the remembered project opens directly', () => {
-    expect(decideDoor({ sections: two, inviteCount: 0, rememberedProjectId: 'p2' })).toEqual({
+describe('reusableEmptyAccount — what Create workspace fills', () => {
+  test('the newest owned account with no active project', () => {
+    const reused = reusableEmptyAccount({
+      accounts: [
+        account('older', 'owner', { created_at: '2026-01-01T00:00:00Z' }),
+        account('newer', 'owner', { created_at: '2026-05-01T00:00:00Z' }),
+      ],
+      lists: [list('older', []), list('newer', [project('gone', 'newer', { status: 'archived' })])],
+    });
+    expect(reused?.account_id).toBe('newer');
+  });
+
+  test('ownership is the role: an account whose id is not the user id still counts', () => {
+    expect(reusableEmptyAccount({ accounts: [account('acc_x', 'owner')], lists: [list('acc_x', [])] })?.account_id).toBe(
+      'acc_x',
+    );
+  });
+
+  test('an admin or member account, a non-empty account, a failed or unread list is never reused', () => {
+    expect(
+      reusableEmptyAccount({
+        accounts: [account('admin', 'admin'), account('full', 'owner'), account('failed', 'owner'), account('unread', 'owner')],
+        lists: [list('admin', []), list('full', [project('p', 'full')]), list('failed', undefined, true)],
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('canCreateWorkspace — the server rule: every create makes a new account', () => {
+  test('open everywhere unless the instance restricts account creation', () => {
+    expect(canCreateWorkspace({ restricted: false, isPlatformAdmin: false })).toBe(true);
+    expect(canCreateWorkspace({ restricted: true, isPlatformAdmin: false })).toBe(false);
+  });
+
+  test('a restricted instance lets only a platform admin create; an empty account of theirs changes nothing', () => {
+    expect(canCreateWorkspace({ restricted: true, isPlatformAdmin: true })).toBe(true);
+    expect(canCreateWorkspace({ restricted: true, isPlatformAdmin: false, reusableAccount: account('a', 'owner') })).toBe(
+      false,
+    );
+  });
+});
+
+describe('githubSourceAccount — whose GitHub connection a GitHub-source create uses', () => {
+  const rows = buildWorkspaceRows({
+    accounts: [account('m', 'member'), account('o', 'owner'), account('d', 'admin'), account('x', 'owner')],
+    lists: [list('m', [project('pm', 'm')]), list('o', [project('po', 'o')]), list('d', [project('pd', 'd')]), list('x', [])],
+  });
+  const accounts = [account('m', 'member'), account('o', 'owner'), account('d', 'admin'), account('x', 'owner')];
+
+  test('the first open workspace in list order where the caller is an owner or admin', () => {
+    const byId = (id: string) => rows.find((row) => row.workspaceId === id)!;
+    expect(githubSourceAccount({ accounts, rows: [byId('pm'), byId('pd'), byId('po')] })?.account_id).toBe('d');
+    expect(githubSourceAccount({ accounts, rows: [byId('po'), byId('pd')] })?.account_id).toBe('o');
+  });
+
+  test('never a member-only workspace, a workspace that is not open, or an account with no workspace', () => {
+    const byId = (id: string) => rows.find((row) => row.workspaceId === id)!;
+    expect(githubSourceAccount({ accounts, rows: [byId('pm')] })).toBeNull();
+    expect(githubSourceAccount({ accounts, rows: [{ ...byId('po'), state: 'deleting' }] })).toBeNull();
+    expect(githubSourceAccount({ accounts, rows: undefined })).toBeNull();
+  });
+});
+
+describe('decideDoor — skip the chooser only for one obvious answer', () => {
+  const rows = buildWorkspaceRows({
+    accounts: [account('a', 'owner'), account('b', 'member')],
+    lists: [list('a', [project('p1', 'a'), project('p2', 'a')]), list('b', [project('p3', 'b')])],
+  });
+
+  test('the remembered workspace opens directly', () => {
+    expect(decideDoor({ workspaces: rows, inviteCount: 0, rememberedProjectId: 'p3' })).toEqual({
       kind: 'open',
-      projectId: 'p2',
-      accountId: 'a',
+      projectId: 'p3',
+      accountId: 'b',
     });
   });
 
-  test('a remembered project the user lost access to falls back to the selector', () => {
-    expect(decideDoor({ sections: two, inviteCount: 0, rememberedProjectId: 'gone' })).toEqual({ kind: 'select' });
+  test('a remembered workspace the user lost access to falls back to the chooser', () => {
+    expect(decideDoor({ workspaces: rows, inviteCount: 0, rememberedProjectId: 'gone' })).toEqual({ kind: 'select' });
   });
 
-  test('several projects and no memory show the selector', () => {
-    expect(decideDoor({ sections: two, inviteCount: 0, rememberedProjectId: null })).toEqual({ kind: 'select' });
+  test('exactly one workspace opens directly; none shows the chooser, never a form', () => {
+    expect(decideDoor({ workspaces: rows.slice(0, 1), inviteCount: 0, rememberedProjectId: null })).toMatchObject({
+      kind: 'open',
+    });
+    expect(decideDoor({ workspaces: [], inviteCount: 0, rememberedProjectId: null })).toEqual({ kind: 'select' });
   });
 
-  test('exactly one project opens directly', () => {
-    expect(decideDoor({ sections: one, inviteCount: 0, rememberedProjectId: null }).kind).toBe('open');
+  test('a pending invite always shows the chooser, even with a remembered workspace', () => {
+    expect(decideDoor({ workspaces: rows, inviteCount: 1, rememberedProjectId: 'p1' })).toEqual({ kind: 'select' });
   });
 
-  test('a new user with no project gets the selector, never a form', () => {
-    expect(decideDoor({ sections: none, inviteCount: 0, rememberedProjectId: null })).toEqual({ kind: 'select' });
-  });
-
-  test('a pending invite always shows the selector, even with a remembered project', () => {
-    expect(decideDoor({ sections: one, inviteCount: 1, rememberedProjectId: 'p1' })).toEqual({ kind: 'select' });
-  });
-});
-
-// KRTX-1731: after an account switch (palette, invite accept) the door reopened
-// the project this browser remembered, in whatever account, and reset the
-// selected account to it. A requested account bounds the decision.
-describe('decideDoor — a requested account', () => {
-  const twoAccounts = buildAccountSections({
-    accounts: [account('a', 'owner'), account('b', 'member')],
-    lists: [list('a', [project('pa', 'a')]), list('b', [project('pb1', 'b'), project('pb2', 'b')])],
-  });
-
-  test('a remembered project outside the requested account is not opened', () => {
+  test("a requested account bounds the answer and wins over a pending invite", () => {
     expect(
-      decideDoor({ sections: twoAccounts, inviteCount: 0, rememberedProjectId: 'pa', requestedAccountId: 'b' }),
-    ).toEqual({ kind: 'select', accountId: 'b' });
-  });
-
-  test('a remembered project inside the requested account opens', () => {
+      decideDoor({ workspaces: rows, inviteCount: 1, rememberedProjectId: 'p1', requestedAccountId: 'b' }),
+    ).toEqual({ kind: 'open', projectId: 'p3', accountId: 'b' });
     expect(
-      decideDoor({ sections: twoAccounts, inviteCount: 0, rememberedProjectId: 'pb2', requestedAccountId: 'b' }),
-    ).toEqual({ kind: 'open', projectId: 'pb2', accountId: 'b' });
-  });
-
-  test("the requested account's only project opens, even with a pending invite", () => {
-    expect(
-      decideDoor({ sections: twoAccounts, inviteCount: 1, rememberedProjectId: 'pb1', requestedAccountId: 'a' }),
-    ).toEqual({ kind: 'open', projectId: 'pa', accountId: 'a' });
+      decideDoor({ workspaces: rows, inviteCount: 0, rememberedProjectId: 'p3', requestedAccountId: 'a' }),
+    ).toEqual({ kind: 'select' });
   });
 });
 
 describe('inviteLandingPath — the route of an accepted invite', () => {
   test('a project landing opens that project', () => {
-    expect(inviteLandingPath({ kind: 'project', projectId: 'pw', accountId: 'b' })).toBe('/projects/pw');
+    expect(inviteLandingPath({ kind: 'project', projectId: 'pw', accountId: 'b' })).toBe('/workspaces/pw');
   });
 
   test('an account landing goes to the door for the joined account', () => {
-    expect(inviteLandingPath({ kind: 'account', accountId: 'b' })).toBe('/projects/start?account=b');
+    expect(inviteLandingPath({ kind: 'account', accountId: 'b' })).toBe('/workspaces/start?account=b');
   });
 
   // The web hosts' three inputs, through the SDK rule.
   test('an accept that granted a project, a re-opened project invite, a workspace invite', () => {
     expect(inviteLandingPath(accountInviteLanding({ account_id: 'b', bootstrap_grants_applied: [{ project_id: 'pw' }] }))).toBe(
-      '/projects/pw',
+      '/workspaces/pw',
     );
     const described = {
       account_id: 'b',
@@ -214,9 +225,9 @@ describe('inviteLandingPath — the route of an accepted invite', () => {
         { project_id: 'px', name: 'Docs', role: 'manager' },
       ],
     };
-    expect(inviteLandingPath(accountInviteLanding({ account_id: described.account_id }, described))).toBe('/projects/pw');
+    expect(inviteLandingPath(accountInviteLanding({ account_id: described.account_id }, described))).toBe('/workspaces/pw');
     expect(inviteLandingPath(accountInviteLanding({ account_id: 'b', bootstrap_grants_applied: [] }, { projects: [] }))).toBe(
-      '/projects/start?account=b',
+      '/workspaces/start?account=b',
     );
   });
 });

@@ -49,7 +49,6 @@ mock.module('../../../internal/lib/use-project-can', () => ({
   useProjectCans: (projectId: string | undefined, actions: readonly string[]) =>
     Object.fromEntries(actions.map((action) => [action, { allowed: true }])),
   projectPermissionTarget: () => undefined,
-  projectPermissionProbes: () => [],
 }));
 
 mock.module('../../../internal/lib/manifest-health', () => ({

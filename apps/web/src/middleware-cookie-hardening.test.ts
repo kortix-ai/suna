@@ -32,7 +32,7 @@ import { middleware } from './middleware';
  * possible, source assertion — comments stripped first — where it is not).
  */
 
-const FOREIGN_PROJECT = '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c';
+const FOREIGN_PROJECT = '/workspaces/319395c1-9c3f-41b4-ac6c-9539a12dbb7c';
 
 function setCookieFor(response: Response, name: string): string | undefined {
   return response.headers.getSetCookie().find((value) => value.startsWith(`${name}=`));
@@ -103,7 +103,7 @@ describe('__Secure-kortix_test_access: never minted on an open path', () => {
     process.env.WEB_PROTECTION_PASSWORD = 'test-protection-pw';
 
     const response = await middleware(
-      new NextRequest(new Request('https://dev.kortix.com/projects')),
+      new NextRequest(new Request('https://dev.kortix.com/workspaces')),
     );
 
     expect(response.status).toBe(401);

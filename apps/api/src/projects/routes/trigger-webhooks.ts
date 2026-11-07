@@ -1,9 +1,12 @@
-/** Inbound trigger webhooks: `POST /v1/webhooks/projects/:projectId/:slug` fires a webhook trigger. */
+/**
+ * Inbound trigger webhooks: `POST /v1/webhooks/workspaces/:workspaceId/:slug`
+ * (canonical, `webhookWorkspacesApp`) and `POST /v1/webhooks/projects/:workspaceId/:slug`
+ * (permanent) fire a webhook trigger.
+ */
 import { db } from '../../shared/db';
 import { getProjectSecretValueForConsumer } from '../secrets';
 import { loadProjectTriggers } from '../triggers';
 import { invalidateProjectMirror } from '../git';
-import { projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json } from '../../openapi';
@@ -16,7 +19,7 @@ import { ACCOUNT_STATE_FIRE_CODES, markGitTriggerAttemptFailed } from '../lib/tr
 import { takeThrottledRunSlot } from '../lib/trigger-run-caps';
 import { raiseTriggerAlert } from '../lib/trigger-alerts';
 import { recordTriggerRun, triggerRunFromFire } from '../trigger-execution-store';
-import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, verifyWebhookSignature, verifyWebhookToken, webhookPayload, webhookTimestampFresh } from '../lib/triggers';
 import { PROJECT_TRIGGERS_PAUSED_REASON, automaticFirePauseReason } from '../lib/trigger-scheduler-state';
 import {
   validateWebhookSecretConfiguration,
@@ -26,21 +29,21 @@ import { consumeProjectWebhookManifestRefreshBudget, consumeProjectWebhookReject
 import { logger } from '../../lib/logger';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 import { isRuntimeTriggerSlug, runtimeWebhookSpec } from '../lib/runtime-triggers';
-
-const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 300;
+import { workspaceIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 export function registerTriggerWebhooksRoutes(): void {
-  projectWebhooksApp.use('/projects/:projectId/:slug', createProjectWebhookRateLimitMiddleware());
+  projectWebhooksApp.use('/projects/:workspaceId/:slug', createProjectWebhookRateLimitMiddleware());
 
   projectWebhooksApp.openapi(createRoute({
     method: 'post',
-    path: '/projects/{projectId}/{slug}',
+    path: '/projects/{workspaceId}/{slug}',
     tags: ['triggers'],
     summary: 'Fire a webhook trigger',
     description:
-      'Authenticated by the trigger secret, not a bearer token: send `X-Kortix-Signature` / `X-Hub-Signature-256` (HMAC of the raw body), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. Add `X-Kortix-Timestamp` (epoch seconds, within 5 minutes) to sign `<timestamp>.<body>` and stop replay. Every pre-authentication miss answers 401. The JSON body is the payload the prompt template renders.',
+      'Authenticated by the trigger secret, not a bearer token: send `X-Kortix-Signature` / `X-Hub-Signature-256` (HMAC-SHA256 of `<X-Kortix-Timestamp>.<raw body>`) with `X-Kortix-Timestamp` (epoch seconds, within 5 minutes) — a missing or stale timestamp is refused, so a captured signature cannot replay — or the secret as `X-Kortix-Token` or `Authorization: Bearer`. Every pre-authentication miss answers 401. The JSON body is the payload the prompt template renders.',
     // No body schema: the handler HMACs the raw bytes, so nothing may parse them first.
-    request: { params: z.object({ projectId: z.string(), slug: z.string() }) },
+    request: { params: z.object({ workspaceId: z.string(), slug: z.string() }) },
     responses: {
       200: json(z.object({ status: z.literal('skipped'), reason: z.string() }), 'Accepted, not fired'),
       202: json(TriggerFireResultSchema, 'Queued or fired'),
@@ -49,7 +52,7 @@ export function registerTriggerWebhooksRoutes(): void {
       ...errors(400, 401, 402, 500),
     },
   }), async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const slug = c.req.param('slug');
     if (!isUuid(projectId)) return c.json({ error: 'Invalid project id' }, 400);
     // A kortix.yaml slug, or a runtime trigger id (`trigger.<hex>`, `automation.<hex>` from before the rename, `reminder.<hex>`).
@@ -69,10 +72,10 @@ export function registerTriggerWebhooksRoutes(): void {
 
     const [project] = await db
       .select()
-      .from(projects)
+      .from(projectsView)
       .where(and(
-        eq(projects.projectId, projectId),
-        eq(projects.status, 'active'),
+        eq(projectsView.projectId, projectId),
+        eq(projectsView.status, 'active'),
       ))
       .limit(1);
     // Every pre-authentication miss answers the same 401 as a bad signature, so a
@@ -130,25 +133,23 @@ export function registerTriggerWebhooksRoutes(): void {
       return rejectRun((configurationError ?? webhookSecretConfigurationError('unavailable')).code);
     }
 
-    // Primary auth: HMAC-SHA256 signature over the raw body (GitHub-compatible).
+    // Primary auth: HMAC-SHA256 of `<X-Kortix-Timestamp>.<body>`. The timestamp
+    // is required, so a captured signature stops verifying once it ages out
+    // (KRTX-4098, CWE-294) instead of replaying forever.
     // Fallback, ONLY when no signature header is present: a static shared token in
     // X-Kortix-Token or Authorization, for sources that can't HMAC-sign their body
-    // (e.g. Better Stack error webhooks — custom headers / basic auth only). Both
-    // paths require knowing the trigger's secret, so security is equivalent to a
-    // shared bearer token; signed senders are unaffected.
+    // (e.g. Better Stack error webhooks — custom headers / basic auth only). It has
+    // no body binding to replay; the refusals answer a 401 like any other.
     const signatureHeader =
       c.req.header('x-kortix-signature') || c.req.header('x-hub-signature-256') || null;
-    // Optional replay guard: a sender that adds `X-Kortix-Timestamp` (epoch
-    // seconds) signs `<timestamp>.<body>`; a stale or future timestamp is refused.
-    const timestampHeader = c.req.header('x-kortix-timestamp');
-    if (signatureHeader && timestampHeader) {
-      const seconds = Number(timestampHeader);
-      if (!Number.isFinite(seconds) || Math.abs(Date.now() / 1000 - seconds) > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS) {
-        return rejectRun('timestamp_out_of_tolerance');
-      }
+    const timestampHeader = c.req.header('x-kortix-timestamp') ?? null;
+    if (signatureHeader) {
+      // 401 like every other miss before authentication, so no existence oracle.
+      if (!timestampHeader) return rejectRun('timestamp_missing');
+      if (!webhookTimestampFresh(timestampHeader)) return rejectRun('timestamp_out_of_tolerance');
     }
     const authed = signatureHeader
-      ? verifyWebhookSignature(timestampHeader ? `${timestampHeader}.${rawBody}` : rawBody, secret, signatureHeader)
+      ? verifyWebhookSignature(rawBody, timestampHeader, secret, signatureHeader)
       : verifyWebhookToken(
           extractWebhookToken(c.req.header('x-kortix-token'), c.req.header('authorization')),
           secret,

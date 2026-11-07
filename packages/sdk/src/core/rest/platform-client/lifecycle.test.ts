@@ -82,14 +82,14 @@ const existingSession: ProjectSession = {
   sandbox_provider: 'daytona',
   sandbox_id: 'sbx-1',
   sandbox_url: 'http://backend.local/v1/p/ext-1/8000',
-  opencode_session_id: 'oc-1',
+  runtime_session_id: 'oc-1',
   name: 'Session One',
   custom_name: null,
   agent_name: 'daytona',
   status: 'running',
   error: null,
   metadata: {},
-  opencode_sessions: [],
+  runtime_sessions: [],
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-02T00:00:00Z',
 };
@@ -112,14 +112,14 @@ const newSession: ProjectSession = {
   sandbox_provider: null,
   sandbox_id: 'sess-2',
   sandbox_url: null,
-  opencode_session_id: null,
+  runtime_session_id: null,
   name: null,
   custom_name: null,
   agent_name: 'daytona',
   status: 'queued',
   error: null,
   metadata: {},
-  opencode_sessions: [],
+  runtime_sessions: [],
   created_at: '2026-01-03T00:00:00Z',
   updated_at: '2026-01-03T00:00:00Z',
 };
@@ -145,7 +145,7 @@ const startResult: SessionStartResult = {
   agent_name: 'daytona',
   retriable: false,
   sandbox: runtimeSandbox,
-  opencode_session_id: 'oc-2',
+  runtime_session_id: 'oc-2',
   runtime_url: null,
 };
 
@@ -160,7 +160,7 @@ function notASessionId(url: string, method: string) {
 
 /** Every session-list read: `GET /projects` or `GET /projects/:id/sessions`. */
 const listCalls = () =>
-  calls.filter((c) => c.method === 'GET' && /\/projects(\/[^/?]+\/sessions)?(\?|$)/.test(c.url));
+  calls.filter((c) => c.method === 'GET' && /\/workspaces(\/[^/?]+\/sessions)?(\?|$)/.test(c.url));
 
 /** GET /projects -> [project1]; GET /projects/proj-1/sessions -> [existingSession]. Nothing else wired. */
 function wireExistingSandbox() {
@@ -168,7 +168,7 @@ function wireExistingSandbox() {
     const byId = notASessionId(url, method);
     if (byId) return byId;
     if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1] };
-    if (method === 'GET' && /\/projects\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
+    if (method === 'GET' && /\/workspaces\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
     throw new Error(`unmocked ${method} ${url}`);
   };
 }
@@ -177,9 +177,9 @@ function wireExistingSandbox() {
 function wireCreateFlow() {
   handler = (url, method) => {
     if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1] };
-    if (method === 'GET' && /\/projects\/proj-1\/sessions$/.test(url)) return { status: 200, body: [] };
-    if (method === 'POST' && /\/projects\/proj-1\/sessions$/.test(url)) return { status: 200, body: newSession };
-    if (method === 'POST' && /\/projects\/proj-1\/sessions\/sess-2\/start/.test(url)) {
+    if (method === 'GET' && /\/workspaces\/proj-1\/sessions$/.test(url)) return { status: 200, body: [] };
+    if (method === 'POST' && /\/workspaces\/proj-1\/sessions$/.test(url)) return { status: 200, body: newSession };
+    if (method === 'POST' && /\/workspaces\/proj-1\/sessions\/sess-2\/start/.test(url)) {
       return { status: 200, body: startResult };
     }
     throw new Error(`unmocked ${method} ${url}`);
@@ -235,8 +235,8 @@ test('ensureSandbox creates + starts a session when a project exists but has no 
   expect(result.created).toBe(true);
   expect(result.sandbox.sandbox_id).toBe('sbx-2');
   expect(result.sandbox.external_id).toBe('ext-2');
-  expect(callsMatching(/\/projects\/proj-1\/sessions$/).some((c) => c.method === 'POST')).toBe(true);
-  expect(callsMatching(/\/projects\/proj-1\/sessions\/sess-2\/start/).length).toBe(1);
+  expect(callsMatching(/\/workspaces\/proj-1\/sessions$/).some((c) => c.method === 'POST')).toBe(true);
+  expect(callsMatching(/\/workspaces\/proj-1\/sessions\/sess-2\/start/).length).toBe(1);
 });
 
 test('ensureSandbox sends an explicit Platinum selection in the provider field', async () => {
@@ -244,7 +244,7 @@ test('ensureSandbox sends an explicit Platinum selection in the provider field',
 
   await ensureSandbox({ provider: 'platinum' });
 
-  const create = callsMatching(/\/projects\/proj-1\/sessions$/).find(
+  const create = callsMatching(/\/workspaces\/proj-1\/sessions$/).find(
     (call) => call.method === 'POST',
   );
   expect(create?.body).toMatchObject({ provider: 'platinum' });
@@ -256,7 +256,7 @@ test('a session with no recorded provider reports the reference provider, platin
     const byId = notASessionId(url, method);
     if (byId) return byId;
     if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1] };
-    if (method === 'GET' && /\/projects\/proj-1\/sessions$/.test(url)) {
+    if (method === 'GET' && /\/workspaces\/proj-1\/sessions$/.test(url)) {
       return { status: 200, body: [{ ...existingSession, sandbox_provider: null }] };
     }
     throw new Error(`unmocked ${method} ${url}`);
@@ -336,8 +336,8 @@ test('renameSandbox throws "not found" when the sandbox does not resolve', async
 function wireTwoProjectsTwoSessions() {
   handler = (url, method) => {
     if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1, project2] };
-    if (method === 'GET' && /\/projects\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
-    if (method === 'GET' && /\/projects\/proj-2\/sessions$/.test(url)) return { status: 200, body: [secondProjectSession] };
+    if (method === 'GET' && /\/workspaces\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
+    if (method === 'GET' && /\/workspaces\/proj-2\/sessions$/.test(url)) return { status: 200, body: [secondProjectSession] };
     throw new Error(`unmocked ${method} ${url}`);
   };
 }
@@ -388,8 +388,8 @@ test('restartSandbox POSTs to the restart endpoint for the resolved project/sess
     const byId = notASessionId(url, method);
     if (byId) return byId;
     if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1] };
-    if (method === 'GET' && /\/projects\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
-    if (method === 'POST' && /\/projects\/proj-1\/sessions\/sess-1\/restart$/.test(url)) {
+    if (method === 'GET' && /\/workspaces\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
+    if (method === 'POST' && /\/workspaces\/proj-1\/sessions\/sess-1\/restart$/.test(url)) {
       return { status: 200, body: { ok: true, session_id: 'sess-1', status: 'provisioning' } };
     }
     throw new Error(`unmocked ${method} ${url}`);
@@ -399,7 +399,7 @@ test('restartSandbox POSTs to the restart endpoint for the resolved project/sess
 
   const restartCall = calls.find((c) => /\/restart$/.test(c.url));
   expect(restartCall?.method).toBe('POST');
-  expect(restartCall?.url).toContain('/projects/proj-1/sessions/sess-1/restart');
+  expect(restartCall?.url).toContain('/workspaces/proj-1/sessions/sess-1/restart');
 });
 
 test('stopSandbox throws when no sandboxId is given', async () => {
@@ -417,8 +417,8 @@ test('stopSandbox POSTs to the stop endpoint for the resolved project/session', 
     const byId = notASessionId(url, method);
     if (byId) return byId;
     if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1] };
-    if (method === 'GET' && /\/projects\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
-    if (method === 'POST' && /\/projects\/proj-1\/sessions\/sess-1\/stop$/.test(url)) {
+    if (method === 'GET' && /\/workspaces\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
+    if (method === 'POST' && /\/workspaces\/proj-1\/sessions\/sess-1\/stop$/.test(url)) {
       return { status: 200, body: { ok: true, session_id: 'sess-1', status: 'stopped' } };
     }
     throw new Error(`unmocked ${method} ${url}`);
@@ -428,7 +428,7 @@ test('stopSandbox POSTs to the stop endpoint for the resolved project/session', 
 
   const stopCall = calls.find((c) => /\/stop$/.test(c.url));
   expect(stopCall?.method).toBe('POST');
-  expect(stopCall?.url).toContain('/projects/proj-1/sessions/sess-1/stop');
+  expect(stopCall?.url).toContain('/workspaces/proj-1/sessions/sess-1/stop');
 });
 
 // ─── By id, past every first page (KRTX-2316) ────────────────────────────────
@@ -457,7 +457,7 @@ function wireSessionById(extra: (url: string, method: string) => { status: numbe
 
 test('restartSandbox(sessionId) reads the session by id and restarts it, with no list call', async () => {
   wireSessionById((url, method) =>
-    method === 'POST' && url.endsWith(`/projects/proj-2/sessions/${OLD_ID}/restart`)
+    method === 'POST' && url.endsWith(`/workspaces/proj-2/sessions/${OLD_ID}/restart`)
       ? { status: 200, body: { ok: true, session_id: OLD_ID, status: 'provisioning' } }
       : null,
   );
@@ -466,12 +466,12 @@ test('restartSandbox(sessionId) reads the session by id and restarts it, with no
 
   expect(listCalls()).toHaveLength(0);
   expect(callsMatching(/\/v1\/sessions\//).map((c) => c.method)).toEqual(['GET']);
-  expect(calls.find((c) => c.method === 'POST')?.url).toContain(`/projects/proj-2/sessions/${OLD_ID}/restart`);
+  expect(calls.find((c) => c.method === 'POST')?.url).toContain(`/workspaces/proj-2/sessions/${OLD_ID}/restart`);
 });
 
 test('stopSandbox(sessionId) reads the session by id and stops it, with no list call', async () => {
   wireSessionById((url, method) =>
-    method === 'POST' && url.endsWith(`/projects/proj-2/sessions/${OLD_ID}/stop`)
+    method === 'POST' && url.endsWith(`/workspaces/proj-2/sessions/${OLD_ID}/stop`)
       ? { status: 200, body: { ok: true, session_id: OLD_ID, status: 'stopped' } }
       : null,
   );
@@ -479,12 +479,12 @@ test('stopSandbox(sessionId) reads the session by id and stops it, with no list 
   await stopSandbox(OLD_ID);
 
   expect(listCalls()).toHaveLength(0);
-  expect(calls.find((c) => c.method === 'POST')?.url).toContain(`/projects/proj-2/sessions/${OLD_ID}/stop`);
+  expect(calls.find((c) => c.method === 'POST')?.url).toContain(`/workspaces/proj-2/sessions/${OLD_ID}/stop`);
 });
 
 test('getSandboxById(sessionId) reads the session and its project by id, with no list call', async () => {
   wireSessionById((url, method) =>
-    method === 'GET' && url.endsWith('/projects/proj-2') ? { status: 200, body: project2 } : null,
+    method === 'GET' && url.endsWith('/workspaces/proj-2') ? { status: 200, body: project2 } : null,
   );
 
   const sandbox = await getSandboxById(OLD_ID);
@@ -501,8 +501,8 @@ test('a provider external id still resolves through the first pages: the by-id r
     const byId = notASessionId(url, method);
     if (byId) return byId;
     if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1] };
-    if (method === 'GET' && /\/projects\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
-    if (method === 'POST' && /\/projects\/proj-1\/sessions\/sess-1\/restart$/.test(url)) {
+    if (method === 'GET' && /\/workspaces\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
+    if (method === 'POST' && /\/workspaces\/proj-1\/sessions\/sess-1\/restart$/.test(url)) {
       return { status: 200, body: { ok: true, session_id: 'sess-1', status: 'provisioning' } };
     }
     throw new Error(`unmocked ${method} ${url}`);
@@ -511,7 +511,7 @@ test('a provider external id still resolves through the first pages: the by-id r
   await restartSandbox('ext-1');
 
   expect(callsMatching(/\/v1\/sessions\/ext-1$/)).toHaveLength(1);
-  expect(calls.find((c) => c.method === 'POST')?.url).toContain('/projects/proj-1/sessions/sess-1/restart');
+  expect(calls.find((c) => c.method === 'POST')?.url).toContain('/workspaces/proj-1/sessions/sess-1/restart');
 });
 
 test('a by-id read that fails for another reason rejects, and lists nothing', async () => {

@@ -273,7 +273,7 @@ export const GUIDE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'ENABLE the connection itself: click the toggle at the top of the connection’s details panel so it turns blue. A saved-but-disabled connection provisions NOTHING even with an Active rule — this is the easiest step to miss.':
     'textea984f35d1fe',
   Edit: 'text464c4ffd019e',
-  'Either way a group confers NO access until you grant it a project role; changes in the IdP (add/remove from a group) apply on the user’s next sign-in.':
+  'Either way a group confers NO access until you grant it a workspace role; changes in the IdP (add/remove from a group) apply on the user’s next sign-in.':
     'text13b6db11e086',
   'Emit a group attribute (e.g. named groups) listing the user’s groups.': 'texted1d87390f65',
   Enable: 'text5342e09f2729',
@@ -378,7 +378,7 @@ export const GUIDE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Groups pushed via Push Groups are created in Kortix under their Okta names.': 'text437dee26bc75',
   'Groups pushed via SCIM are created in Kortix under their Entra display names.':
     'text284687df8e12',
-  'Groups: if you left “Auto-provision groups” ON at the connect step (the default), your IdP groups appear automatically under Groups — just grant each one a project role. If you turned it off, map them yourself on the Identity page → SAML SSO card → “Group mappings” (IdP group name/ID → Kortix group).':
+  'Groups: if you left “Auto-provision groups” ON at the connect step (the default), your IdP groups appear automatically under Groups — just grant each one a workspace role. If you turned it off, map them yourself on the Identity page → SAML SSO card → “Group mappings” (IdP group name/ID → Kortix group).':
     'textbef5c2e7cce8',
   'Groups: the default SAML2 Web App addon sends only email + name. To sync groups, add an Auth0 Action/Rule that emits a claim NAMED exactly "groups" (matching the connect-step claim). Auth0’s built-in group attribute URI "http://schemas.xmlsoap.org/claims/Group" will NOT match — map it to "groups". Then map those names in Kortix.':
     'textf01e66b8c61a',
@@ -553,7 +553,7 @@ export const GUIDE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'texte76b8dc1a636',
   'Okta sends the matching groups by NAME — those names are what you map in Kortix. The attribute name (groups) is what Kortix reads as the group claim.':
     'text1b10c2cfc647',
-  'On success the user lands in Kortix and appears under Members on the account’s Identity page.':
+  'On success the user lands in Kortix and appears under Members on the workspace’s Identity page.':
     'textee9f51217082',
   'On the "Attribute mapping" step, click "Add mapping" for each row: pick the Google Directory field on the LEFT, and type the App attribute name (primaryEmail / firstName / lastName) on the RIGHT. In the end it should look like this:':
     'textecff14af6cf4',
@@ -686,7 +686,7 @@ export const GUIDE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'textb20e428d9c27',
   'Push groups: still in the rule’s "Directory" tab, click the pencil next to "Groups" → "Search Group Name" → pick the internal groups → review under "Selected Groups" → Save. PingOne pushes those groups and their memberships to /Groups.':
     'texte53bfff585aa',
-  'Pushed groups appear under Groups — grant them project roles to confer access.':
+  'Pushed groups appear under Groups — grant them workspace roles to confer access.':
     'text9c5c537db3fe',
   'Pushed groups are created in Kortix under their displayName.': 'textbf8d3ae91a75',
   'Put the ACS URL in both "Recipient" and "ACS (Consumer) URL". The "ACS (Consumer) URL Validator" is a REGEX field, not a plain URL: take the ACS URL above, escape every dot (. becomes \\.), and anchor it with ^ … $. For example, if the ACS URL is https://api.kortix.com/auth/v1/sso/saml/acs, paste ^https:\\/\\/api\\.kortix\\.com\\/auth\\/v1\\/sso\\/saml\\/acs$ — a pattern that doesn’t match the exact ACS URL makes the sign-in fail with no clear error.':

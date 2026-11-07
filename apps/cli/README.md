@@ -2,34 +2,41 @@
 
 The command line for Kortix CompanyOS, the open-source operating system for your company.
 
-Create a new Kortix project.
+Create a workspace, the place your company works with Kortix: people,
+agents, sessions, secrets, connectors and billing.
 
 ```sh
-kortix init my-project
+kortix workspaces create "Acme"
 ```
 
-Makes `./my-project/`, runs `git init -b main`, and writes the Kortix
-project floor at the repo root (`kortix.yaml`, `README.md`, `agents/`,
+Scaffold a workspace's config repo locally:
+
+```sh
+kortix init my-workspace
+```
+
+Makes `./my-workspace/`, runs `git init -b main`, and writes the Kortix
+config floor at the repo root (`kortix.yaml`, `README.md`, `agents/`,
 `skills/`, `memory/MEMORY.md`), stages every file, and makes an initial commit.
 
 ## Usage
 
 ```sh
 kortix init                  # interactive flow: pick a name and wire local coding agents
-kortix init my-project       # use the given name
-kortix projects create my-project # create a remote project and print its id
-kortix projects use <project_id>  # select it without a local scaffold
-kortix ship                  # push to linked/default project; create when neither exists
+kortix init my-workspace     # use the given name
+kortix workspaces create Acme   # create a workspace and print its id
+kortix workspaces use <id>      # select it without a local scaffold
+kortix ship                  # push to the linked/default workspace; create when neither exists
 kortix self-host start       # run your own Kortix Cloud from Docker images
 ```
 
 Scaffolding is explicit-only: `kortix init` is the one command that creates
-a project directory. An unknown subcommand (`kortix use`, `kortix inti`, …)
+a config repo directory. An unknown subcommand (`kortix use`, `kortix inti`, …)
 errors with a suggestion — it never scaffolds. Init asks which local coding
 agents to wire through `--primary` and `--agents`.
 
 Run `kortix init --help` for the full flag list, or `kortix --help`
-for the full command list (project, auth, work, and resource subcommands —
+for the full command list (workspace, auth, work, and resource subcommands —
 sessions, triggers, connectors, secrets, sandboxes, marketplace, and more).
 
 ## Log out of a custom host
@@ -52,7 +59,7 @@ it otherwise uses the default cloud origin.
 
 ## Use Kortix from an MCP client
 
-Claude, ChatGPT, Cursor, VS Code and Codex reach the same projects and sessions
+Claude, ChatGPT, Cursor, VS Code and Codex reach the same workspaces and sessions
 as this CLI through one hosted MCP server. Nothing to install:
 
 ```sh
@@ -65,18 +72,18 @@ Setup for each client, sign-in and revocation (`kortix tokens apps ls|rm`):
 ## What gets written
 
 ```
-my-project/
+my-workspace/
 ├── .git/                              ← initialized on the `main` branch
 ├── .gitignore
 ├── README.md
 ├── kortix.yaml                        ← the manifest: registries + one block per agent
 ├── agents/*.md                        ← agent prompts, named by `prompt_file`
 ├── skills/<name>/SKILL.md             ← skills, registered under `skills:`
-└── memory/MEMORY.md                   ← project-wide memory for agents
+└── memory/MEMORY.md                   ← workspace-wide memory for agents
 ```
 
 `kortix.yaml` is the only manifest. It has one format and no version key. The
-project registers skills, tools, commands and extensions; each agent block
+workspace registers skills, tools, commands and extensions; each agent block
 enables them by name. Every starter agent sets
 `workspace: { project_repository: true }`, so its sessions get a checkout of
 the repository. A session reads no `harnesses/`, `.kortix/`, `.opencode/` or
@@ -103,10 +110,10 @@ Sessions in the cloud never read these links.
 
 A cloud session runs pi.
 
-Create a project with:
+Scaffold a config repo with:
 
 ```sh
-kortix init my-project --yes --no-git
+kortix init my-workspace --yes --no-git
 ```
 
 Agents can retrieve the deployed platform manual from inside a session, on either harness:
@@ -125,8 +132,22 @@ chore: init kortix project
 ```
 
 Then it's yours. Add a remote, push, open in your coding agent of choice —
-or run `kortix ship` to push to the linked project or saved host default. With neither,
-ship creates the cloud project and pushes in one step.
+or run `kortix ship` to push to the linked workspace or saved host default. With neither,
+ship creates the cloud workspace and pushes in one step.
+
+`kortix projects`, `--project <id>` and `KORTIX_PROJECT_ID` are the older names
+of `kortix workspaces`, `--workspace <id>` and `KORTIX_WORKSPACE_ID`. They keep
+working.
+
+## Minimum version
+
+The API refuses a CLI older than `0.14.13`: an older CLI reads OpenCode routes the
+API and the session box no longer serve. Every `/v1` request from such a CLI answers
+`426`, and the CLI prints `This Kortix CLI (<version>) is older than this server
+supports (minimum <version>). Update it: kortix update`. An API can raise the
+minimum with `CLI_MIN_VERSION` (`major.minor.patch`); a self-host operator sets it
+with `self-host env set CLI_MIN_VERSION=<version>`. A value below `0.14.13` is
+ignored. Development builds (`cli/dev`) always pass.
 
 ## Self-host
 

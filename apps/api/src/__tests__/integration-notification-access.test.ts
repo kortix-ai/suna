@@ -51,6 +51,7 @@ const users = [OWNER, CREATOR, MEMBER, GROUPED, PLAIN, MANAGER, ACCOUNT_ONLY, LO
 const GROUP = crypto.randomUUID();
 
 let project: SeededProject;
+let second: SeededProject;
 const ids = {
   private: crypto.randomUUID(),
   project: crypto.randomUUID(),
@@ -70,6 +71,8 @@ async function visibleTo(userId: string): Promise<string[]> {
 
 beforeAll(async () => {
   project = await seedProject('notify-access');
+  // A second active project makes the account a split_pending legacy account: there a member reaches a project only through a grant, which is what this suite tests (on a 1:1 workspace membership is access, design.md C3).
+  second = await seedProject('notify-access-second', { accountId: project.account_id });
   const user = (id: string) =>
     sql`(${id}::uuid, ${`notify-${id.slice(0, 8)}@example.test`}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')`;
   await db.execute(sql`
@@ -141,7 +144,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!project) return;
   await db.delete(accountGroups).where(eq(accountGroups.groupId, GROUP));
-  await removeSeeded([project]);
+  await removeSeeded([second, project]);
   await db.execute(sql`DELETE FROM auth.users WHERE id IN (${sql.join(users.map((id) => sql`${id}::uuid`), sql`, `)})`);
 });
 

@@ -143,7 +143,7 @@ const QUICK_FILTERS: Array<{
 
 const RESOURCE_TYPES = [
   { label: 'Any resource', value: '' },
-  { label: 'Project', value: 'project' },
+  { label: 'Workspace', value: 'project' },
   { label: 'Session', value: 'project_session' },
   { label: 'Connector action', value: 'connector_action' },
   { label: 'Connector approval', value: 'connector_approval' },
@@ -946,7 +946,7 @@ function AuditRow({
                 <Detail label={tI18nComplete.raw('textcb9ac5c561da')} value={event.session_id} />
                 <Detail
                   label={tI18nComplete.raw('text92fbc8484002')}
-                  value={event.runtime_session_id ?? event.opencode_session_id ?? null}
+                  value={event.runtime_session_id ?? null}
                 />
                 <Detail
                   label={tI18nComplete.raw('textef54a62ae880')}

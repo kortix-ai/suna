@@ -8,9 +8,8 @@ import { and, eq } from 'drizzle-orm';
 import { getProvider, type ProviderName } from '../../platform/providers';
 import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { readFileSync } from 'node:fs';
-import { RUNTIME_VERSIONS as runtimeVersions } from '@kortix/shared/runtime-versions';
 import { runtimeAssetsManifest, runtimeEntrypointPath, type RuntimeAssetsManifest } from '../../runtime-assets/manifest';
-import { projectSessions, projects } from '@kortix/db';
+import { projectSessions } from '@kortix/db';
 import { sql } from 'drizzle-orm';
 import { createAccountToken, revokeAccountToken } from '../../repositories/account-tokens';
 import { mintSessionToken } from '../../platform/services/session-sandbox';
@@ -31,6 +30,7 @@ import {
   type LegacyBootstrapRetrySummary,
   type RuntimeClassification,
 } from './legacy-runtime-bootstrap';
+import { projectsView } from '../../workspaces/rows';
 
 const HEALTH_TIMEOUT_MS = 8_000;
 
@@ -100,13 +100,13 @@ async function mintReplacementServiceKey(row: LegacyBootstrapRow): Promise<strin
   if (!session?.createdBy) return null;
   const [project] = await db
     .select({
-      projectId: projects.projectId,
-      repoUrl: projects.repoUrl,
-      defaultBranch: projects.defaultBranch,
-      manifestPath: projects.manifestPath,
+      projectId: projectsView.projectId,
+      repoUrl: projectsView.repoUrl,
+      defaultBranch: projectsView.defaultBranch,
+      manifestPath: projectsView.manifestPath,
     })
-    .from(projects)
-    .where(eq(projects.projectId, session.projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, session.projectId))
     .limit(1);
   if (!project) return null;
   return mintSessionToken({
@@ -272,7 +272,6 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
         return null;
       }
     },
-    pnpmVersion: () => (typeof (runtimeVersions as { pnpm?: unknown }).pnpm === 'string' ? ((runtimeVersions as { pnpm: string }).pnpm) : null),
     rotateKortixToken: () => mintReplacementServiceKey(row),
     commitKortixToken: (secret, rotatedOnBox) => commitReplacementServiceKey(row, secret, rotatedOnBox),
     exec: async (command, timeoutMs) => {

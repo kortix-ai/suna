@@ -261,9 +261,15 @@ export async function isModelServableForAccount(params: {
   if (claudeAgent.kind !== 'none') {
     if (claudeAgent.kind !== 'valid') return false;
     const resolution = await getProjectGatewayResolution(params.projectId).catch(() => null);
-    return modelAccessAllows(resolution?.access ?? { disabledProviders: [], disabledModels: [] }, claudeAgent.ref);
+    if (!modelAccessAllows(resolution?.access ?? { disabledProviders: [], disabledModels: [] }, claudeAgent.ref)) return false;
+    // A fallback moves back only once a Claude account has room again.
+    if (params.restingIsServable !== false) return true;
+    return hasClaudeCredential({
+      accountId: params.accountId, projectId: params.projectId, userId: params.userId, sessionId: params.sessionId ?? null,
+      personalUserId: params.personalUserId === undefined ? params.userId : params.personalUserId,
+    });
   }
-  // Accept either the opencode ref (`kortix/<id>`) or the bare wire id — the
+  // Accept either the session model ref (`kortix/<id>`) or the bare wire id — the
   // gateway resolves the bare id, so normalize before probing candidates.
   const wire = toWireModel(params.model);
   try {

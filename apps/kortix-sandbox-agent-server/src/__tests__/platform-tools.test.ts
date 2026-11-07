@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { KortixToolResult } from '@kortix/api-contract/kortix-tool-card'
 import { PLATFORM_TOOLS, loadTools, runTool } from '@/services/tools/host'
-import { runKortix } from '@/services/tools/platform/platform'
+import { adminHref, runKortix } from '@/services/tools/platform/platform'
+import { isWorkspaceSettingsSection, workspaceSettingsPath } from '@kortix/shared/workspace-settings'
 
 /**
  * The My Kortix platform tools (services/tools/platform/kortix_*.ts) at their
@@ -61,7 +62,7 @@ describe('kortix_agents', () => {
     const result = await run('kortix_agents', { action: 'list' })
     expect(result.ok).toBe(true)
     expect(result.card.title).toBe('2 agents')
-    expect(result.card.rows?.[0]).toEqual({ title: 'researcher', detail: 'Digs into a topic', href: '/projects/proj_1/customize/agents/researcher' })
+    expect(result.card.rows?.[0]).toEqual({ title: 'researcher', detail: 'Digs into a topic', href: '/workspaces/proj_1/customize/agents/researcher' })
     expect(result.card.rows?.[1]?.badge).toBe('built in')
     // My Kortix has no agent page (the project home starts it): its row links nowhere.
     expect(result.card.rows?.[1]?.href).toBeUndefined()
@@ -119,7 +120,7 @@ describe('kortix_agents', () => {
     expect(result.error?.kind).toBe('denied')
     expect(result.error?.message).toContain('project.agent.update')
     expect(result.error?.grantors).toEqual([
-      { name: 'Sam', role: 'project manager' },
+      { name: 'Sam', role: 'manager' },
       { name: 'ada@example.com', role: 'owner' },
     ])
     expect(result.card.subtitle).toBe('Sam, ada@example.com can grant it.')
@@ -311,6 +312,8 @@ describe('kortix_schedules follow-through', () => {
     const missing = await run('kortix_schedules', { at: '2026-11-04T08:00:00Z', id: 'sticker-quote-check', in: '4d', action: 'follow_up' })
     expect(missing.error?.kind).toBe('invalid')
     expect(missing.error?.message).toStartWith('Missing `text`')
+    // A model whose long field was dropped in transit retried 5 times on dev: the error names the way out.
+    expect(missing.error?.message).toContain('send this call from codemode')
     // The example is a whole call the model can copy.
     const example = missing.error!.message.slice(missing.error!.message.indexOf('{'))
     expect(JSON.parse(example)).toMatchObject({ action: 'follow_up', in: '4d' })
@@ -390,7 +393,7 @@ describe('kortix_schedules follow-through', () => {
     fakeKortix(`'loop ${TEXT} --every=4h --json') echo '✗ Loops is not enabled for this project. Enable it in Settings → Feature flags.' >&2; echo '  Turn it on: kortix projects features enable reminders' >&2; exit 1 ;;`)
     const result = await run('kortix_schedules', { action: 'follow_up', text: TEXT, every: '4h' })
     expect(result.ok).toBe(false)
-    expect(result.error?.message).toBe('Loops is not enabled for this project. Enable it in Settings → Feature flags. Ask the person or a project admin to turn it on.')
+    expect(result.error?.message).toBe('Loops is not enabled for this project. Enable it in Settings → Feature flags. Ask the person or a workspace admin to turn it on.')
   })
 })
 
@@ -407,6 +410,42 @@ describe('kortix_people and kortix_access', () => {
     fakeKortix(ROSTER)
     const result = await run('kortix_access', { action: 'who_can_grant' })
     expect(result.card.rows?.map((row) => row.title)).toEqual(['Sam', 'ada@example.com'])
+    expect(result.card.links).toEqual([{ label: 'Members', href: '/workspaces/proj_1/admin/members' }])
+  })
+
+  test('me: one workspace role row, the workspace title, the older JSON fields kept', async () => {
+    fakeKortix(`'whoami --json') echo '{"user_id":"u_ada","email":"ada@example.com","accounts":[{"account_id":"a_1","role":"owner"}]}' ;;
+  ${ROSTER}`)
+    const result = await run('kortix_access', { action: 'me' })
+    expect(result.card.title).toBe('You manage this workspace')
+    expect(result.card.rows).toEqual([
+      { title: 'Signed in as', detail: 'ada@example.com' },
+      { title: 'Workspace role', detail: 'owner' },
+    ])
+    expect(result.data).toMatchObject({ workspace_role: 'owner', account_role: 'owner', project_role: 'manager', workspace_id: 'proj_1', project_id: 'proj_1' })
+  })
+
+  test('me: a member reads as a member of this workspace', async () => {
+    fakeKortix(`'whoami --json') echo '{"user_id":"u_me","email":"lee@example.com","accounts":[{"account_id":"a_1","role":"member"}]}' ;;
+  ${ROSTER}`)
+    const result = await run('kortix_access', { action: 'me' })
+    expect(result.card.title).toBe('You are a member of this workspace')
+    expect(result.card.rows).toContainEqual({ title: 'Workspace role', detail: 'member' })
+    expect(JSON.stringify(result.card)).not.toMatch(/Account role|Project role/)
+  })
+
+  test('people list shows one workspace role per person', async () => {
+    fakeKortix(ROSTER)
+    const result = await run('kortix_people', { action: 'list' })
+    expect(result.card.rows?.map((row) => row.badge)).toEqual(['manager', 'owner', 'member'])
+  })
+
+  test('every Settings link a tool prints is the registry path (workspaceSettingsPath)', () => {
+    const env = { KORTIX_PROJECT_ID: 'proj_1' } as Parameters<typeof adminHref>[0]
+    for (const section of ['members', 'connectors', 'triggers', 'models', 'feature-flags', 'secrets', 'skills'] as const) {
+      expect(isWorkspaceSettingsSection(section)).toBe(true)
+      expect(adminHref(env, section)).toBe(workspaceSettingsPath('proj_1', section))
+    }
   })
 })
 
@@ -420,7 +459,7 @@ describe('kortix_change_requests', () => {
     const result = await run('kortix_change_requests', { action: 'list' })
     expect(result.ok).toBe(true)
     expect(result.card.title).toBe('1 open change request')
-    expect(result.card.rows).toEqual([{ title: '#3 Upgrade the manifest', detail: 'Sam', badge: 'open', href: '/projects/proj_1/review?id=cr%3Acr-uuid-3' }])
+    expect(result.card.rows).toEqual([{ title: '#3 Upgrade the manifest', detail: 'Sam', badge: 'open', href: '/workspaces/proj_1/review?id=cr%3Acr-uuid-3' }])
     expect(result.data).toEqual({
       change_requests: [{ number: 3, cr_id: 'cr-uuid-3', title: 'Upgrade the manifest', author: 'Sam', status: 'open', from: 'kortix/session-a', into: 'main', session_id: 'ses_9', opened_at: '2026-10-30T09:00:00.000Z' }],
     })
@@ -440,7 +479,7 @@ describe('kortix_change_requests', () => {
       { title: 'Status', badge: 'open' },
     ])
     expect(result.data).toMatchObject({ number: 3, files_changed: 2, additions: 3, deletions: 1, can_merge: true, conflicts: [] })
-    expect(result.card.links).toContainEqual({ label: 'Session that made it', href: '/projects/proj_1/sessions/ses_9' })
+    expect(result.card.links).toContainEqual({ label: 'Session that made it', href: '/workspaces/proj_1/sessions/ses_9' })
   })
 
   test('merge: an open one merges with its message as --message=<text>; a closed one is refused before any merge', async () => {
@@ -560,7 +599,8 @@ describe('kortix_schedules automations', () => {
   })
 
   test('test: a dry run reports the filter verdict, the session key and the rendered prompt, and fires nothing', async () => {
-    fakeKortix(`'triggers fire issue-triage --dry-run --payload={"event":{"data":{"number":7}}} --json') echo '{"filter_matches":true,"session_key":"7","rendered_prompt":"Label Login fails","payload":{}}' ;;
+    fakeKortix(`'triggers show issue-triage --json') echo '{"slug":"issue-triage","type":"event","app":null,"filter":null}' ;;
+  'triggers fire issue-triage --dry-run --payload={"event":{"data":{"number":7}}} --json') echo '{"filter_matches":true,"session_key":"7","rendered_prompt":"Label Login fails","payload":{}}' ;;
   'triggers fire issue-triage --dry-run --json') echo '{"filter_matches":false,"session_key":null,"rendered_prompt":"Label ","payload":{}}' ;;`)
     const hit = await run('kortix_schedules', { action: 'test', name: 'issue-triage', payload: { event: { data: { number: 7 } } } })
     expect(hit.ok).toBe(true)
@@ -569,6 +609,29 @@ describe('kortix_schedules automations', () => {
     const miss = await run('kortix_schedules', { action: 'test', id: 'issue-triage' })
     expect(miss.card.title).toBe('issue-triage would skip this event')
     expect((await run('kortix_schedules', { action: 'test', name: 'x', payload: 'nope' })).ok).toBe(false)
+  })
+
+  test('test: an App automation gets a real test event (a test- id, the real drain) and reports what the work did', async () => {
+    fakeKortix(`'triggers show status-alert --json') echo '{"slug":"status-alert","type":"app","app":"status-watch","filter":{"event.name":"status.changed"}}' ;;
+  'apps events emit status-watch status.changed --data={"status":"down"} --trigger=status-alert --wait --json') echo '{"triggers":1,"accepted":1,"ids":["test-1"],"events":[{"trigger":"status-alert","status":"fired","session_id":"ses_9","reason":null}],"fired":true,"pending":false}' ;;
+  'triggers show any-event --json') echo '{"slug":"any-event","type":"app","app":"status-watch","filter":null}' ;;
+  'apps events emit status-watch test.event --trigger=any-event --wait --json') echo '{"triggers":2,"accepted":2,"ids":["test-2"],"events":[{"trigger":"status-alert","status":"skipped","reason":"filter did not match"},{"trigger":"any-event","status":"skipped","reason":"throttled"}],"fired":false,"pending":false}'; exit 1 ;;`)
+    const hit = await run('kortix_schedules', { action: 'test', name: 'status-alert', payload: { event: { data: { status: 'down' } } } })
+    expect(hit.ok).toBe(true)
+    expect(hit.card.title).toBe('status-alert ran on a test event')
+    expect(hit.data).toMatchObject({ name: 'status-alert', app: 'status-watch', event: 'status.changed', test_id: 'test-1', outcome: 'fired', session_id: 'ses_9' })
+    // A "*" automation with no sample name: a neutral name; the CLI exits 1 when nothing fired, and the verdict still comes back.
+    const skip = await run('kortix_schedules', { action: 'test', name: 'any-event' })
+    expect(skip.ok).toBe(true)
+    expect(skip.card.title).toBe('any-event skipped the test event')
+    expect(skip.data).toMatchObject({ event: 'test.event', outcome: 'skipped', reason: 'throttled', session_id: null })
+    expect(argvs().some((argv) => argv.includes('--dry-run'))).toBe(false)
+    // An event name is an App event name, never a flag: "--trigger=other" cannot pick another automation.
+    const before = argvs().length
+    const flag = await run('kortix_schedules', { action: 'test', name: 'status-alert', payload: { event: { name: '--trigger=any-event' } } })
+    expect(flag.ok).toBe(false)
+    expect(flag.error?.kind).toBe('invalid')
+    expect(argvs().slice(before).some((argv) => argv.startsWith('apps events emit'))).toBe(false)
   })
 
   test('runs: the recent runs with a tally of what started, skipped and failed, and no cost', async () => {
@@ -624,6 +687,30 @@ describe('kortix_schedules automate: an App as the event source', () => {
       expect({ bad, kind: result.error?.kind }).toEqual({ bad, kind: 'invalid' })
     }
     expect(argvs()).toHaveLength(1)
+  })
+
+  test('the work on an App event takes expect_event_within: wake_on (this chat) and automate both pass it; any other source refuses it', async () => {
+    const TEXT = 'GitHub status changed: tell the person what changed; stop on 2026-12-05.'
+    const trigger = `{"id":"trigger.cccccccccccc","origin":"runtime","name":null,"prompt":"x","agent":"meta","state":"active","source":{"type":"app","app":"github-status"},"target":{"kind":"session","session_id":"ses_1","session_name":null},"next_fire_at":null,"last_fired_at":null,"last_status":null,"last_error":null}`
+    fakeKortix(`'triggers add ${TEXT} --on=app --app=github-status --expect-event-within=1h --json') echo '${trigger}' ;;
+  'triggers add status-work '*' --apply') printf 'Added status-work (live)\\n' ;;`)
+    const woken = await run('kortix_schedules', { action: 'wake_on', text: TEXT, on: 'app_event', app: 'github-status', expect_event_within: '1h' })
+    expect(woken.ok).toBe(true)
+    const work = await run('kortix_schedules', { action: 'automate', name: 'status-work', on: 'app_event', app: 'github-status', prompt: 'Status changed.', expect_event_within: '1h' })
+    expect(work.ok).toBe(true)
+    expect(argvs()).toEqual([
+      `triggers add ${TEXT} --on=app --app=github-status --expect-event-within=1h --json`,
+      'triggers add status-work --type=app --prompt=Status changed. --app=github-status --expect-event-within=1h --apply',
+    ])
+    for (const bad of [
+      { action: 'wake_on', text: TEXT, on: 'cr_merged', cr: '42', expect_event_within: '1h' },
+      { action: 'automate', name: 'x', on: 'schedule', every: '15m', target_app: 'github-status', expect_event_within: '1h' },
+      { action: 'wake_on', text: TEXT, on: 'app_event', app: 'github-status', expect_event_within: '--all' },
+    ]) {
+      const result = await run('kortix_schedules', bad)
+      expect({ bad, kind: result.error?.kind }).toEqual({ bad, kind: 'invalid' })
+    }
+    expect(argvs()).toHaveLength(2)
   })
 })
 

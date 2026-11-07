@@ -5,7 +5,7 @@
  *
  * THE PROBLEM (measured, 2026-09-28 sweep of 9 real sessions in one project):
  * 4/5 turn failures were a session pinned to a managed model id the runtime
- * lineup no longer serves — `project_sessions.metadata.opencode_model` is
+ * lineup no longer serves — `project_sessions.metadata.model` is
  * write-once at create and PUT /model, so a lineup rotation leaves it dead
  * forever. `resolveCandidates` (resolve-candidates.ts) already tells a live
  * turn apart with the distinct `model_retired` code; this module is what
@@ -14,15 +14,15 @@
  * THE DECISION. Re-point, at the SAME boot chokepoint config-releases uses
  * ("once per boot/converge"): `buildSessionSandboxEnvVars` is the one
  * function every provisioning path (create, restart, resume, open/ensure)
- * already funnels through to build `KORTIX_OPENCODE_MODEL` — so this is
+ * already funnels through to build `KORTIX_MODEL` — so this is
  * called from there, not from each of its three call sites separately, and
- * not again at turn start (a session that changes model mid-run restarts
- * opencode anyway; re-pointing there too would duplicate this exact write).
+ * not again at turn start (re-pointing there too would duplicate this exact
+ * write).
  * Idempotent: once the stored id is servable again, `isRetiredManagedModelId`
  * is false and this is a no-op.
  *
- * VISIBLE, NOT SILENT: the write records `opencode_model_source: 'repointed'`
- * and `opencode_model_repointed_from` in the session's own metadata (already
+ * VISIBLE, NOT SILENT: the write records `model_source: 'repointed'`
+ * and `model_repointed_from` in the session's own metadata (already
  * returned by the session read/open-bundle routes), plus an audit event —
  * mirroring repoint.ts's `SESSION_AGENT_REPOINTED`.
  */
@@ -34,7 +34,7 @@ import { logger } from '../../lib/logger';
 import { isRetiredManagedModelId } from '../models/managed-models';
 import { platformDefaultModelId } from '../models/served-managed-models';
 import { resolveEffectiveModel } from './default-model';
-import { toOpencodeModelRef, toWireModel } from './effective';
+import { toSessionModelRef, toWireModel } from './effective';
 import { resolveSessionManagedModel } from './session-model';
 
 export interface RepointModelSubject {
@@ -50,20 +50,20 @@ export interface RepointModelSubject {
 }
 
 /**
- * Returns the opencode model ref to boot with: `opencodeModelRef` unchanged,
+ * Returns the session model ref to boot with: `sessionModelRef` unchanged,
  * or a durably re-pointed replacement. Never throws — a resolution hiccup
  * just keeps the session on its current (possibly still-dead) pin, and the
  * turn's own `model_retired` error remains the fallback explanation.
  */
 export async function repointRetiredSessionModel(
-  opencodeModelRef: string,
+  sessionModelRef: string,
   subject: RepointModelSubject,
 ): Promise<string> {
   // The RAW bare id, not `toWireModel`'s canonicalized wire form: `toWireModel`
   // maps a retired id to the current lineup, which would hide from this check
   // that the STORED pin still needs its own durable, visible re-point.
-  const wire = opencodeModelRef.startsWith('kortix/') ? opencodeModelRef.slice('kortix/'.length) : opencodeModelRef;
-  if (!isRetiredManagedModelId(wire)) return opencodeModelRef; // the overwhelming common case, no IO at all
+  const wire = sessionModelRef.startsWith('kortix/') ? sessionModelRef.slice('kortix/'.length) : sessionModelRef;
+  if (!isRetiredManagedModelId(wire)) return sessionModelRef; // the overwhelming common case, no IO at all
 
   // The project's current default (same chain PUT /model and session create
   // use), then the PLATFORM default under it. A project that never set a
@@ -84,9 +84,9 @@ export async function repointRetiredSessionModel(
     projectDefault,
     subject.freeModelsOnly ? null : platformDefaultModelId(),
   );
-  if (decision.kind === 'kept') return opencodeModelRef; // nothing usable to move to; the turn error names the cause
+  if (decision.kind === 'kept') return sessionModelRef; // nothing usable to move to; the turn error names the cause
 
-  const nextRef = toOpencodeModelRef(decision.to);
+  const nextRef = toSessionModelRef(decision.to);
   let updated: { sessionId: string }[];
   try {
     updated = await db
@@ -94,9 +94,9 @@ export async function repointRetiredSessionModel(
       .set({
         metadata: {
           ...(subject.metadata ?? {}),
-          opencode_model: nextRef,
-          opencode_model_source: 'repointed',
-          opencode_model_repointed_from: wire,
+          model: nextRef,
+          model_source: 'repointed',
+          model_repointed_from: wire,
         },
         updatedAt: new Date(),
       })
@@ -109,9 +109,9 @@ export async function repointRetiredSessionModel(
       to: decision.to,
       error: error instanceof Error ? error.message : String(error),
     });
-    return opencodeModelRef;
+    return sessionModelRef;
   }
-  if (updated.length === 0) return opencodeModelRef;
+  if (updated.length === 0) return sessionModelRef;
 
   await recordAuditEvent({
     accountId: subject.accountId,
@@ -122,8 +122,8 @@ export async function repointRetiredSessionModel(
     resourceType: 'project_session',
     resourceId: subject.sessionId,
     outcome: 'success',
-    before: { opencode_model: wire },
-    after: { opencode_model: decision.to },
+    before: { model: wire },
+    after: { model: decision.to },
     metadata: { reason: decision.reason, retired_model: wire, repointed_to: decision.to },
   }).catch((error: Error) =>
     logger.warn('[llm-gateway] session model re-point audit failed', {

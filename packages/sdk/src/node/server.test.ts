@@ -52,7 +52,7 @@ test('runWithKortix isolates two concurrent, interleaved requests with different
   const p1 = runWithKortix(
     { backendUrl: 'http://backend.local/v1', getToken: async () => 'token-ONE' },
     async () => {
-      const res = await backendApi.get('/projects');
+      const res = await backendApi.get('/workspaces');
       results.push(`one:${res.success}`);
     },
   );
@@ -60,7 +60,7 @@ test('runWithKortix isolates two concurrent, interleaved requests with different
   const p2 = runWithKortix(
     { backendUrl: 'http://backend.local/v1', getToken: async () => 'token-TWO' },
     async () => {
-      const res = await backendApi.get('/projects');
+      const res = await backendApi.get('/workspaces');
       results.push(`two:${res.success}`);
     },
   );
@@ -138,7 +138,7 @@ test('createScopedKortix scopes calls reached through id-bound handles minted at
   const kortix = createScopedKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => 'scoped-tok' });
   await kortix.project('PID1').secrets.list();
 
-  expect(requests[0].url).toContain('/projects/PID1/secrets');
+  expect(requests[0].url).toContain('/workspaces/PID1/secrets');
   expect(requests[0].auth).toBe('Bearer scoped-tok');
 });
 
@@ -168,7 +168,7 @@ test('createScopedKortix runs every connector paginate page under the scoped con
   expect(pages).toHaveLength(3);
   expect(requests).toHaveLength(3);
   for (const request of requests) {
-    expect(request.url).toBe('http://tenant.local/v1/connectors/projects/p1/call');
+    expect(request.url).toBe('http://tenant.local/v1/connectors/workspaces/p1/call');
     expect(request.auth).toBe('Bearer TENANT_A');
   }
 });

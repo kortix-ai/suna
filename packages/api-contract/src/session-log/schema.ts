@@ -17,7 +17,7 @@ const count = z.number().int().nonnegative();
 const nonEmpty = str.min(1); // pass-through strings and lookup keys: any non-empty value
 const id = str.min(1); // F1: block id, unique within its message (checked on the message)
 
-export const ExtSchema = z.record(z.object({ version: str, native_id: str.optional(), data: z.unknown() }));
+export const ExtSchema = z.record(z.string(), z.object({ version: str, native_id: str.optional(), data: z.unknown().optional() }));
 export const ProducerSchema = z.object({ harness: nonEmpty, harness_version: str, adapter_version: str });
 export const ModelRefSchema = z.object({
   provider: str,
@@ -96,7 +96,7 @@ export const ToolCallBlockSchema = z.object({
   call_id: str,
   name: str,
   kind: ToolKindSchema,
-  input: z.unknown(),
+  input: z.unknown().optional(), // zod 4 rejects a missing z.unknown() key; zod 3 accepted it
   input_format: z.enum(['json', 'text']).optional(),
   status: z.enum(['pending', 'running', 'complete', 'error']),
   result: z
@@ -108,7 +108,7 @@ export const ToolCallBlockSchema = z.object({
       exit_code: z.number().optional(),
       synthetic: z.boolean().optional(),
       cleared_at: str.optional(),
-      details: z.unknown(),
+      details: z.unknown().optional(),
     })
     .optional(),
   title: str.optional(),
@@ -150,7 +150,7 @@ export const HarnessBlockSchema = z.object({
   id,
   harness: nonEmpty,
   kind: nonEmpty,
-  data: z.unknown(),
+  data: z.unknown().optional(),
   model_visible: z.boolean(),
   fallback_text: str.optional(),
 });

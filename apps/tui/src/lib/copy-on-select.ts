@@ -1,6 +1,6 @@
 /**
- * Select to copy, as OpenCode does: drag over any text, and the moment the mouse
- * goes up the selection is on the clipboard.
+ * Select to copy: drag over any text, and the moment the mouse goes up the
+ * selection is on the clipboard.
  *
  * The TUI takes the mouse (clicks on tabs, the sidebar, the symbol), so the
  * terminal's own selection never sees the drag. OpenTUI selects instead and

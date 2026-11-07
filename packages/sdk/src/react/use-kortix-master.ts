@@ -25,7 +25,7 @@
  * is already a host-agnostic part of this SDK — apps/web's
  * `@/stores/server-store` is already just a re-export of it. Hooks here use
  * it directly, exactly like the existing `./use-runtime-reconnect` and
- * `./use-opencode-events` SDK hooks do.
+ * `./use-runtime-events` SDK hooks do.
  *
  * Query keys below are copied VERBATIM from the pre-migration web hooks
  * (array literal contents, ordering, and types unchanged) — this is a hard
@@ -140,9 +140,8 @@ import type {
   SystemReloadMode,
 } from '../core/runtime/client';
 
-// Re-export the request/response types unchanged — hosts that today import
-// them from `@kortix/sdk/opencode-client` (via the web hook files) keep that
-// path working; hosts consuming this module directly get the same names.
+// Re-export the request/response types unchanged, so a host reads the hooks
+// and their types from one module.
 export type {
   CredentialItem,
   CredentialWithValue,
@@ -353,7 +352,7 @@ export function useKortixProjectForSession(
 
 /**
  * Fetch sessions linked to a specific project.
- * Returns OpenCode session objects enriched with title, time, etc.
+ * Returns runtime session objects enriched with title, time, etc.
  *
  * @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major.
  */
@@ -364,7 +363,7 @@ export function useKortixProjectSessions(
 ) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   // `listKortixProjectSessions` itself returns `unknown[]` (its enriched
-  // OpenCode-session shape isn't schema-typed at the source) — mirror that
+  // runtime-session shape isn't schema-typed at the source) — mirror that
   // here rather than lying about the element shape with `any`.
   return useQuery<unknown[]>({
     queryKey: ['kortix', 'projects', projectId, 'sessions', identity.userId ?? 'anonymous', serverUrl],
@@ -1351,7 +1350,7 @@ export function useRegisterSandboxService() {
   });
 }
 
-// Reload already has a home in the SDK (`systemReload` in `../opencode/client`,
+// Reload already has a home in the SDK (`systemReload` in `../core/runtime/client`,
 // backing `POST /kortix/services/system/reload`) — reused directly rather
 // than duplicated here. It resolves the active runtime URL itself (the same
 // zustand state `getActiveServerUrl()` above reads).

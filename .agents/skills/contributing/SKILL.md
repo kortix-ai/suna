@@ -182,9 +182,20 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 - Self-merge when the change is verified (`AGENTS.md` → "Default delivery", rule 5): the
   local checks passed and the PR is mergeable. Do not wait for the user's approval, and do
   not wait for a CI check: none runs. `gh pr merge <pr> --squash`.
+- A PR that adds a file under `packages/db/migrations/`: run
+  `sh scripts/check-migration-order.sh --pr <pr>` right before `gh pr merge`. It fetches
+  `origin/dev` and the PR head, and exits 1 when a new migration sorts at or before dev's
+  newest. The pre-push hook checked against `dev` as it was at your last push; `dev` can
+  have a newer migration by merge time, and `gh pr merge` runs no hook. On exit 1, rename
+  the file to a fresh timestamp, push, and check again. The "Migrations are sequential"
+  job on the push to `dev` is the backstop after the merge, and a missed one stops every
+  `migrate-db` on dev.
 - A push to `dev` does not deploy dev and does not run `Tests`. Deploy deliberately:
-  `gh workflow run deploy-dev.yml -f surface=changed` (`changed` ships every merge since
-  dev's live SHA; `all` forces every surface; `frontend` builds the web app only). Follow the
+  `gh workflow run deploy-dev.yml -f surface=changed` (`changed` diffs each surface against
+  the commit it serves, so it ships every merge since that surface's last deploy and retries
+  a surface whose last roll failed; `all` forces every surface; `frontend` builds the web app
+  only). A dispatch from a branch (`--ref <branch>`) never migrates the dev database and
+  never rolls the dev API. Follow the
   run to the "Live on dev" comment, then verify the change on dev.
 - Report the PR URL, the merge SHA, the local test commands and their results, the dev
   verification, and anything still unverified.
@@ -214,7 +225,7 @@ once per merge in parallel.
 | Label | Effect | Who can add it |
 | --- | --- | --- |
 | `test` | Runs the `Tests` lanes (~20 min) once, on the head SHA when the label is added. A push does not re-run it; remove and re-add the label to run again. | Triage access. |
-| `preview` | Builds one self-host environment for the branch on Platinum (~7 min), once, and runs no tests. A push does not redeploy; re-add the label. Removing the label tears it down. `gh workflow run deploy-preview.yml -f pr_number=<N>` redeploys and runs `pnpm test -- --target-full` (40–80 min). See [references/preview-environments.md](references/preview-environments.md). | Needs write access, and a PR from a branch of this repo (not a fork). |
+| `preview` | Builds one self-host environment for the branch on Platinum (~7 min), once, and runs no tests. A push does not redeploy. To deploy a newer head, dispatch: `gh workflow run deploy-preview.yml -f pr_number=<N> -f run_tests=false` (redeploy only), or without `run_tests=false` to also run `pnpm test -- --target-full` (40–80 min). **Never remove and re-add the label to redeploy:** removing it tears the environment down and deletes its Postgres volume. See [references/preview-environments.md](references/preview-environments.md). | Needs write access, and a PR from a branch of this repo (not a fork). |
 | `i18n-reorder` | Lets `i18n-catalogs.yml` accept an intentional key reorder in `apps/web/translations/*.json` on a release PR. On `dev`, the same reorder needs `I18N_REORDER=1` past `.githooks/pre-commit` and the commit trailer `I18n-Reorder: intentional`. | Triage access. |
 
 Both labels are explicit, rare requests. Never add one by default, from a template, or from

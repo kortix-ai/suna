@@ -1,5 +1,6 @@
 import { maintenanceIntervalMs, runProjectMaintenance } from '../../projects/maintenance';
 import { runWorkerTick } from '../../shared/audit-scope';
+import { inPlatinumBackgroundLane } from '../../shared/platinum-write-lane';
 
 type MaintenanceTimer = ReturnType<typeof setInterval>;
 
@@ -15,7 +16,8 @@ export function startProjectMaintenance(): void {
     clearInterval(globalForProjectMaintenance.__kortixProjectMaintenanceTimer);
   }
   maintenanceTimer = setInterval(() => {
-    runWorkerTick('project-maintenance', runProjectMaintenance).catch((err) => {
+    // The sweeps' Platinum writes are paced so a session start keeps its share of the org budget.
+    runWorkerTick('project-maintenance', () => inPlatinumBackgroundLane(runProjectMaintenance)).catch((err) => {
       console.error('[project-maintenance] run failed:', err);
     });
   }, maintenanceIntervalMs());

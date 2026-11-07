@@ -62,9 +62,10 @@ function detail(overrides: Partial<GoalDetail> = {}): GoalDetail {
     waitingOn: null,
     issues: [],
     nextWake: null,
+    wakes: '2/12 wakes today',
     criteria: [
-      { text: 'All reconciled', met: true, evidence: null },
-      { text: 'Signed off', met: false, evidence: null },
+      { text: 'All reconciled', met: true, verified: true, evidence: null },
+      { text: 'Signed off', met: false, verified: false, evidence: null },
     ],
     asks: [],
     sessions: [
@@ -75,6 +76,9 @@ function detail(overrides: Partial<GoalDetail> = {}): GoalDetail {
     folder: '/Company/Goals/close',
     canReply: true,
     canStop: true,
+    canPause: true,
+    canResume: false,
+    canRestart: false,
     files: { loading: false, verification: null, log: null },
     ...overrides,
   };
@@ -95,6 +99,9 @@ function props(overrides: Partial<GoalsViewProps> = {}): GoalsViewProps {
     onCreate: () => {},
     onReply: () => {},
     onStop: () => {},
+    onPause: () => {},
+    onResume: () => {},
+    onRestart: () => {},
     onOpenWeb: () => {},
     onRefresh: () => {},
     onBack: () => {},
@@ -266,6 +273,7 @@ describe('<GoalsView/> detail', () => {
       sessions: [] as string[],
       replies: [] as Array<[string, string]>,
       stops: [] as Array<[string, string]>,
+      controls: [] as Array<[string, string]>,
       web: [] as string[],
     };
     const view = await testRender(
@@ -277,6 +285,9 @@ describe('<GoalsView/> detail', () => {
           onOpenSession: (id) => calls.sessions.push(id),
           onReply: (id, text) => calls.replies.push([id, text]),
           onStop: (id, reason) => calls.stops.push([id, reason]),
+          onPause: (id) => calls.controls.push(['pause', id]),
+          onResume: (id) => calls.controls.push(['resume', id]),
+          onRestart: (id) => calls.controls.push(['restart', id]),
           onOpenWeb: (id) => calls.web.push(id),
           ...overrides,
         })}
@@ -293,7 +304,7 @@ describe('<GoalsView/> detail', () => {
     const { captureCharFrame, calls, renderer } = await openDetail();
     expect(calls.opened).toEqual(['company/close']);
     const frame = captureCharFrame();
-    expect(frame).toContain('Done when · 1/2');
+    expect(frame).toContain('Done when · 1/2 verified');
     expect(frame).toContain('[x] All reconciled');
     expect(frame).toContain('[ ] Signed off');
     expect(frame).toContain('owner    sess-new');
@@ -352,6 +363,38 @@ describe('<GoalsView/> detail', () => {
     expect(calls.replies).toEqual([]);
     expect(calls.stops).toEqual([]);
     renderer.destroy();
+  });
+
+  test('p pauses a goal the viewer may pause, resumes one it may resume, and R starts a stopped one again', async () => {
+    const paused = await openDetail();
+    expect(paused.captureCharFrame()).toContain('p pause');
+    await act(async () => paused.mockInput.pressKey('p'));
+    await paused.flush();
+    expect(paused.calls.controls).toEqual([['pause', 'company/close']]);
+    paused.renderer.destroy();
+
+    const resumed = await openDetail({ detail: detail({ canPause: false, canResume: true }) });
+    expect(resumed.captureCharFrame()).toContain('p resume');
+    await act(async () => resumed.mockInput.pressKey('p'));
+    await resumed.flush();
+    expect(resumed.calls.controls).toEqual([['resume', 'company/close']]);
+    resumed.renderer.destroy();
+
+    const restarted = await openDetail({ detail: detail({ canPause: false, canRestart: true }) });
+    await act(async () => restarted.mockInput.pressKey('R'));
+    await restarted.flush();
+    expect(restarted.calls.controls).toEqual([['restart', 'company/close']]);
+    restarted.renderer.destroy();
+  });
+
+  test('p and R are inert for a viewer the API gives no control', async () => {
+    const view = await openDetail({ detail: detail({ canPause: false, canResume: false, canRestart: false }) });
+    expect(view.captureCharFrame()).not.toContain('p pause');
+    await act(async () => view.mockInput.pressKey('p'));
+    await act(async () => view.mockInput.pressKey('R'));
+    await view.flush();
+    expect(view.calls.controls).toEqual([]);
+    view.renderer.destroy();
   });
 
   test('o opens the goal in the browser and Esc closes the pane', async () => {

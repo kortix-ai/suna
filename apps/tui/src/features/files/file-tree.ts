@@ -181,10 +181,10 @@ export function filterRows(rows: readonly TreeRow[], query: string): TreeRow[] {
 /**
  * Dot-prefixed names that are shown even when hidden entries are off.
  *
- * Same two `apps/web`'s explorer exempts (`use-file-list.ts`): they hold the
- * project's agents, skills and commands, so hiding them hides the product.
+ * The same name the web explorer exempts (`use-file-list.ts`): `.kortix` holds
+ * the project's config, so hiding it hides the product.
  */
-export const ALWAYS_VISIBLE_DOTFILES: ReadonlySet<string> = new Set(['.kortix', '.opencode']);
+export const ALWAYS_VISIBLE_DOTFILES: ReadonlySet<string> = new Set(['.kortix']);
 
 /**
  * Drop dot-prefixed rows, and every row beneath a dropped directory.

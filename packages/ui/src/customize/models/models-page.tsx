@@ -8,7 +8,7 @@ import type { ResourceScope } from '../shared/agent-resource-scope';
 import type { ReactNode } from 'react';
 
 /**
- * The page body for /projects/[id]/models — Models graduated out of the
+ * The page body for /workspaces/[id]/models — Models graduated out of the
  * project Settings sub-nav into its own top-level Customize tab, alongside
  * Connectors / Agents / Skills / Triggers. Picking a model is not
  * "configuration" the way Secrets or Channels are; it is a first-class

@@ -168,7 +168,9 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         authViolations.push(entry);
       if (cookie) cookieViolations.push(entry);
 
-      const p = url.pathname.replace(/^\/v1\//, '');
+      // The API serves `/v1/workspaces/:id/...` (canonical) and `/v1/projects/:id/...`
+      // (its alias) with one handler; the SDK calls the canonical name.
+      const p = url.pathname.replace(/^\/v1\//, '').replace(/^(connectors\/)?workspaces\//, '$1projects/');
 
       if (p === 'usage/session-costs' && method === 'GET') {
         const projectId = url.searchParams.get('project_id') ?? '';
@@ -257,7 +259,7 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
           retriable: true,
           runtime_transport: 'rest',
           runtime_url: `/p/${externalId}/8000`,
-          opencode_session_id: `runtime-${sessionId}`,
+          runtime_session_id: `runtime-${sessionId}`,
           sandbox: {
             sandbox_id: sessionId,
             session_id: sessionId,

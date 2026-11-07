@@ -122,12 +122,12 @@ describe('Slack channel reads (get_history)', () => {
   test("this project's channel is read; another project's is refused before the call", async () => {
     expect((await gate(rows, 'slack', 'get_history', { channel: 'C0MINE' })).refusal).toBeNull();
     expect(refusalOf(await gate(rows, 'slack', 'get_history', { channel: 'C0OTHER' }))).toBe(
-      "Slack conversation C0OTHER belongs to another Kortix project. This project's Slack connector reads only its own conversations.",
+      "Slack conversation C0OTHER belongs to another Kortix workspace. This workspace's Slack connector reads only its own conversations.",
     );
   });
 
   test('a lowercase id is looked up as the uppercase id Slack stores', async () => {
-    expect(refusalOf(await gate(rows, 'slack', 'get_history', { channel: 'c0other' }))).toContain('another Kortix project');
+    expect(refusalOf(await gate(rows, 'slack', 'get_history', { channel: 'c0other' }))).toContain('another Kortix workspace');
   });
 
   test('a conversation no project owns: read while alone in the workspace, refused once it is shared', async () => {
@@ -187,7 +187,7 @@ describe('Slack thread reads (get_thread)', () => {
   test("another project's thread is refused even inside this project's channel", async () => {
     const rows: Rows = { shared: true, channels: { C0MINE: [MINE] }, threads: { '100.1': OTHER } };
     expect(refusalOf(await gate(rows, 'slack', 'get_thread', { channel: 'C0MINE', ts: '100.1' }))).toBe(
-      "Slack thread 100.1 in C0MINE belongs to another Kortix project. This project's Slack connector reads only its own conversations.",
+      "Slack thread 100.1 in C0MINE belongs to another Kortix workspace. This workspace's Slack connector reads only its own conversations.",
     );
   });
 
@@ -195,7 +195,7 @@ describe('Slack thread reads (get_thread)', () => {
     const rows: Rows = { shared: true, channels: { C0MINE: [MINE], C0OTHER: [OTHER] } };
     expect((await gate(rows, 'slack', 'get_thread', { channel: 'C0MINE', ts: '100.1' })).refusal).toBeNull();
     expect(refusalOf(await gate(rows, 'slack', 'get_thread', { channel: 'C0OTHER', ts: '100.1' }))).toContain(
-      'another Kortix project',
+      'another Kortix workspace',
     );
     expect(refusalOf(await gate(rows, 'slack', 'get_thread', { channel: 'C0MINE', ts: 'latest' }))).toContain('`ts`');
   });
@@ -210,7 +210,7 @@ describe('Slack thread reads (get_thread)', () => {
         { ts: '150.5', thread_ts: '100.1', text: 'other reply' },
       ],
     });
-    expect(message).toContain('another Kortix project');
+    expect(message).toContain('another Kortix workspace');
   });
 
   test('the checked thread itself is not looked up again on the answer', async () => {
@@ -263,7 +263,7 @@ describe('Slack reads decided on the answer', () => {
     expect(await answered(await gate(rows, 'slack', 'channel_info', { channel: 'C0OTHER' }), publicInfo)).toEqual(publicInfo);
     const privateInfo = { ok: true, channel: { id: 'G0OTHER', is_private: true, name: 'secret' } };
     expect(await answerRefusal(await gate(rows, 'slack', 'channel_info', { channel: 'G0OTHER' }), privateInfo)).toContain(
-      'Slack conversation G0OTHER belongs to another Kortix project',
+      'Slack conversation G0OTHER belongs to another Kortix workspace',
     );
     const mineInfo = { ok: true, channel: { id: 'G0MINE', is_private: true } };
     expect(await answered(await gate(rows, 'slack', 'channel_info', { channel: 'G0MINE' }), mineInfo)).toEqual(mineInfo);
@@ -273,10 +273,10 @@ describe('Slack reads decided on the answer', () => {
     const file = (channels: string[], groups: string[] = []) => ({ ok: true, file: { id: 'F0FILE', channels, groups, ims: [] } });
     await answered(await gate(rows, 'slack', 'file_info', { file: 'F0FILE' }), file(['C0OTHER'], ['G0MINE']));
     expect(await answerRefusal(await gate(rows, 'slack', 'file_info', { file: 'F0FILE' }), file(['C0OTHER']))).toContain(
-      'Slack file F0FILE belongs to another Kortix project',
+      'Slack file F0FILE belongs to another Kortix workspace',
     );
     expect(await answerRefusal(await gate(rows, 'slack', 'file_info', { file: 'F0FILE' }), file([]))).toContain(
-      'connected to more than one Kortix project',
+      'connected to more than one Kortix workspace',
     );
     await answered(await gate({ shared: false }, 'slack', 'file_info', { file: 'F0FILE' }), file([]));
   });
@@ -300,18 +300,18 @@ describe('Slack reads decided on the answer', () => {
     );
     expect(
       await answerRefusal(await gate(threaded, 'slack', 'file_info', { file: 'F0FILE' }), file({ C0OTHER: [{ ts: '200.2' }] })),
-    ).toContain('belongs to another Kortix project');
+    ).toContain('belongs to another Kortix workspace');
     expect(
       await answerRefusal(
         await gate(threaded, 'slack', 'file_info', { file: 'F0FILE' }),
         file({ C0UNBOUND: [{ ts: '300.4', thread_ts: '300.3' }] }),
       ),
-    ).toContain('connected to more than one Kortix project');
+    ).toContain('connected to more than one Kortix workspace');
   });
 
   test('search_messages runs only while this project is alone in the workspace', async () => {
     expect(refusalOf(await gate({ shared: true }, 'slack', 'search_messages', { query: 'in:#secret' }))).toContain(
-      'a search cannot be limited to this project',
+      'a search cannot be limited to this workspace',
     );
     expect((await gate({ shared: false }, 'slack', 'search_messages', { query: 'hi' })).refusal).toBeNull();
     expect(refusalOf(await gate({ workspaces: [] }, 'slack', 'search_messages', { query: 'hi' }))).toContain('no Slack install');
@@ -342,7 +342,7 @@ describe('Teams reads', () => {
 
   test('a channel only other projects have conversations in is refused', async () => {
     expect(refusalOf(await gate(rows, 'teams', 'list_messages', { 'team-id': 't', 'channel-id': ONLY_OTHER }))).toBe(
-      "Teams channel 19:onlyother@thread.tacv2 belongs to another Kortix project. This project's Microsoft Teams connector reads only its own conversations.",
+      "Teams channel 19:onlyother@thread.tacv2 belongs to another Kortix workspace. This workspace's Microsoft Teams connector reads only its own conversations.",
     );
   });
 
@@ -354,7 +354,7 @@ describe('Teams reads', () => {
 
   test('ids compare lowercase on both sides; other shapes are refused', async () => {
     expect(refusalOf(await gate(rows, 'teams', 'list_messages', { 'channel-id': '19:ONLYOTHER@thread.tacv2' }))).toContain(
-      'another Kortix project',
+      'another Kortix workspace',
     );
     for (const id of [`${CH};messageid=1`, `${CH} `, '19:a/../b@thread.tacv2', 'chan', 42]) {
       expect(refusalOf(await gate(rows, 'teams', 'list_messages', { 'channel-id': id }))).toContain('`channel-id`');
@@ -371,7 +371,7 @@ describe('Teams reads', () => {
 
   test('a message answered from another project\'s thread is refused on the answer', async () => {
     const g = await gate(rows, 'teams', 'get_message', { 'team-id': 't', 'channel-id': CH, 'message-id': '3' });
-    expect(await answerRefusal(g, { id: '9', replyToId: '2', body: { content: 'reply' } })).toContain('another Kortix project');
+    expect(await answerRefusal(g, { id: '9', replyToId: '2', body: { content: 'reply' } })).toContain('another Kortix workspace');
   });
 
   test('channel metadata: standard channels are directory data, private ones follow their owner', async () => {
@@ -379,7 +379,7 @@ describe('Teams reads', () => {
     expect(await answered(await gate(rows, 'teams', 'get_channel', { 'channel-id': ONLY_OTHER }), standard)).toEqual(standard);
     const priv = { id: ONLY_OTHER, membershipType: 'private', displayName: 'Secret' };
     expect(await answerRefusal(await gate(rows, 'teams', 'get_channel', { 'channel-id': ONLY_OTHER }), priv)).toContain(
-      'another Kortix project',
+      'another Kortix workspace',
     );
     const list = await answered(await gate(rows, 'teams', 'list_channels', { 'team-id': 't' }), {
       value: [

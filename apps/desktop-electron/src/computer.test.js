@@ -209,7 +209,7 @@ describe('access control: the agent CLI applies it, this app asks (A1, A4, A5, X
         defaultApp: true,
         argv: ['/repo/node_modules/electron/dist/Electron', '.'],
         env: {
-          KORTIX_DESKTOP_URL: 'http://localhost:3000/projects',
+          KORTIX_DESKTOP_URL: 'http://localhost:3000/workspaces',
           KORTIX_DESKTOP_USER_DATA: '/tmp/profile',
           SECRET: 'x',
         },
@@ -221,7 +221,7 @@ describe('access control: the agent CLI applies it, this app asks (A1, A4, A5, X
       args: ['/repo/apps/desktop-electron'],
       pid: 8,
       // The profile must follow, or the woken app misses the single-instance lock.
-      env: { KORTIX_DESKTOP_URL: 'http://localhost:3000/projects', KORTIX_DESKTOP_USER_DATA: '/tmp/profile' },
+      env: { KORTIX_DESKTOP_URL: 'http://localhost:3000/workspaces', KORTIX_DESKTOP_USER_DATA: '/tmp/profile' },
     });
   });
 });

@@ -4,7 +4,7 @@ import { configureKortix } from '../../http/config';
 import type { CreateSessionReminderInput, SessionReminder } from './session-reminders';
 import {
   createSessionReminder,
-  listProjectReminders,
+  listWorkspaceReminders,
   deleteSessionReminder,
   deleteSessionReminders,
   listSessionReminders,
@@ -56,7 +56,7 @@ const REMINDER: SessionReminder = {
 test('listSessionReminders GETs the session reminders', async () => {
   nextBody = { reminders: [REMINDER] };
   const result = await listSessionReminders('p1', 's1');
-  expect(last()).toMatchObject({ method: 'GET', url: 'http://test.local/projects/p1/sessions/s1/reminders' });
+  expect(last()).toMatchObject({ method: 'GET', url: 'http://test.local/workspaces/p1/sessions/s1/reminders' });
   expect(result.reminders[0]?.id).toBe('reminder.0123456789ab');
 });
 
@@ -66,7 +66,7 @@ test('createSessionReminder POSTs the schedule and prompt', async () => {
   const reminder = await createSessionReminder('p1', 's1', input);
   expect(last()).toMatchObject({
     method: 'POST',
-    url: 'http://test.local/projects/p1/sessions/s1/reminders',
+    url: 'http://test.local/workspaces/p1/sessions/s1/reminders',
     body: { prompt: 'Did the email arrive?', in: '24h', every: '1h' },
   });
   expect(reminder.state).toBe('active');
@@ -77,14 +77,14 @@ test('updateSessionReminder PATCHes enabled; deleteSessionReminder DELETEs', asy
   await updateSessionReminder('p1', 's1', 'reminder.0123456789ab', { enabled: false });
   expect(last()).toMatchObject({
     method: 'PATCH',
-    url: 'http://test.local/projects/p1/sessions/s1/reminders/reminder.0123456789ab',
+    url: 'http://test.local/workspaces/p1/sessions/s1/reminders/reminder.0123456789ab',
     body: { enabled: false },
   });
   nextBody = { ok: true };
   await deleteSessionReminder('p1', 's1', 'reminder.0123456789ab');
   expect(last()).toMatchObject({
     method: 'DELETE',
-    url: 'http://test.local/projects/p1/sessions/s1/reminders/reminder.0123456789ab',
+    url: 'http://test.local/workspaces/p1/sessions/s1/reminders/reminder.0123456789ab',
   });
 });
 
@@ -93,7 +93,7 @@ test('the session handle binds its ids into reminders.*', async () => {
   const reminders = kortix.session('p1', 's1').reminders;
   nextBody = { reminders: [] };
   await reminders.list();
-  expect(last().url).toBe('http://test.local/projects/p1/sessions/s1/reminders');
+  expect(last().url).toBe('http://test.local/workspaces/p1/sessions/s1/reminders');
   nextBody = REMINDER;
   await reminders.create({ prompt: 'x', every: '30m' });
   expect(last()).toMatchObject({ method: 'POST', body: { prompt: 'x', every: '30m' } });
@@ -106,12 +106,12 @@ test('the session handle binds its ids into reminders.*', async () => {
 
 test('listProjectReminders GETs every reminder in the project; the facade binds the project id', async () => {
   nextBody = { reminders: [{ ...REMINDER, session_name: 'Vendor follow-up' }] };
-  const result = await listProjectReminders('p1');
-  expect(last()).toMatchObject({ method: 'GET', url: 'http://test.local/projects/p1/reminders' });
+  const result = await listWorkspaceReminders('p1');
+  expect(last()).toMatchObject({ method: 'GET', url: 'http://test.local/workspaces/p1/reminders' });
   expect(result.reminders[0]?.session_name).toBe('Vendor follow-up');
   const kortix = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   await kortix.project('p1').reminders.list();
-  expect(last().url).toBe('http://test.local/projects/p1/reminders');
+  expect(last().url).toBe('http://test.local/workspaces/p1/reminders');
 });
 
 describe('reminder batches', () => {
@@ -141,8 +141,8 @@ describe('reminder batches', () => {
     const net = heldFetch();
     const result = await updateSessionReminders('p1', refs, { enabled: false });
     expect(net.seen).toHaveLength(10);
-    expect(net.seen.every((call) => call.startsWith('PATCH http://test.local/projects/p1/sessions/s'))).toBe(true);
-    expect(net.seen).toContain('PATCH http://test.local/projects/p1/sessions/s1/reminders/reminder.4');
+    expect(net.seen.every((call) => call.startsWith('PATCH http://test.local/workspaces/p1/sessions/s'))).toBe(true);
+    expect(net.seen).toContain('PATCH http://test.local/workspaces/p1/sessions/s1/reminders/reminder.4');
     expect(net.peak()).toBe(4);
     expect(result.done).toEqual(refs);
     expect(result.failed).toEqual([]);
@@ -177,8 +177,8 @@ test('kortix.project(id).reminders batches a selection through the facade', asyn
     failed: [],
   });
   expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
-    'PATCH http://test.local/projects/p1/sessions/s1/reminders/reminder.a',
-    'PATCH http://test.local/projects/p1/sessions/s2/reminders/reminder.b',
+    'PATCH http://test.local/workspaces/p1/sessions/s1/reminders/reminder.a',
+    'PATCH http://test.local/workspaces/p1/sessions/s2/reminders/reminder.b',
   ]);
   expect(calls[0]!.body).toEqual({ enabled: false });
   calls = [];

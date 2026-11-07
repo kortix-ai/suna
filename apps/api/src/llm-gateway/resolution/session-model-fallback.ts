@@ -23,7 +23,7 @@
  * from `worker/jobs/session-model-fallback.ts`.
  *
  * No push to the box: each prompt carries its model, so the next one runs on
- * the fallback without an OpenCode restart.
+ * the fallback without a runtime restart.
  */
 import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { MAX_HOLD_SECONDS, SETUP_HOLD_SECONDS, type GatewayTrace } from '@kortix/llm-gateway';
@@ -32,21 +32,21 @@ import { logger } from '../../lib/logger';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { SESSION_CHANGED_CHANNEL } from '../../shared/pg-broadcast';
-import { toOpencodeModelRef } from './effective';
+import { toSessionModelRef } from './effective';
 
 /** `project_sessions.metadata` keys this switch writes. */
 export const FALLBACK_KEYS = {
-  from: 'opencode_model_fallback_from',
-  fromSource: 'opencode_model_fallback_from_source',
-  reason: 'opencode_model_fallback_reason',
-  at: 'opencode_model_fallback_at',
-  until: 'opencode_model_fallback_until',
+  from: 'model_fallback_from',
+  fromSource: 'model_fallback_from_source',
+  reason: 'model_fallback_reason',
+  at: 'model_fallback_at',
+  until: 'model_fallback_until',
 } as const;
 
 /** When a person last picked the session's model (`PUT …/model`), epoch ms. */
-export const PICKED_AT_KEY = 'opencode_model_picked_at';
+export const PICKED_AT_KEY = 'model_picked_at';
 /** The revert's marker (`projects/lib/session-model-fallback-revert.ts`). */
-export const RESTORED_KEY = 'opencode_model_restored';
+export const RESTORED_KEY = 'model_restored';
 
 /**
  * PURE. The session metadata after a person picks `model`. The pick ends any
@@ -56,7 +56,7 @@ export const RESTORED_KEY = 'opencode_model_restored';
 export function pickedModelMetadata(current: Record<string, unknown>, model: string, nowMs = Date.now()): Record<string, unknown> {
   const next: Record<string, unknown> = { ...current };
   for (const key of [...Object.values(FALLBACK_KEYS), RESTORED_KEY]) delete next[key];
-  return { ...next, opencode_model: model, opencode_model_source: 'explicit', [PICKED_AT_KEY]: nowMs };
+  return { ...next, model: model, model_source: 'explicit', [PICKED_AT_KEY]: nowMs };
 }
 
 /** Failure codes that mean the model cannot serve for a while (resting pool, sign-in, retired). */
@@ -72,7 +72,7 @@ export interface FallbackSwitch {
   sessionId: string;
   projectId: string;
   accountId: string;
-  /** Opencode refs (`kortix/<wire>`). */
+  /** Session model refs (`kortix/<wire>`). */
   from: string;
   to: string;
   reason: string;
@@ -90,12 +90,12 @@ export function fallbackSwitchOf(
   const first = trace.attemptFailures?.[0];
   if (first?.stage !== 'resolve') return null;
   if (!UNAVAILABLE_CODES.has(String(first.code))) return null;
-  const from = toOpencodeModelRef(trace.requestedModel);
-  const to = toOpencodeModelRef(trace.servedModel);
+  const from = toSessionModelRef(trace.requestedModel);
+  const to = toSessionModelRef(trace.servedModel);
   if (from === to) return null;
   // The route named another model than the request (the project's vision
   // reroute for an image): the session's own model did not fail.
-  if (toOpencodeModelRef(trace.fallbackFrom) !== from) return null;
+  if (toSessionModelRef(trace.fallbackFrom) !== from) return null;
   return {
     sessionId: trace.sessionId,
     projectId: trace.projectId,
@@ -109,7 +109,7 @@ export function fallbackSwitchOf(
   };
 }
 
-/** The model of the session's newest prompt, as an opencode ref, or null when it named none. */
+/** The model of the session's newest prompt, as a session model ref (`kortix/<wire>`), or null when it named none. */
 async function latestPromptModelRef(sessionId: string): Promise<string | null> {
   const [row] = await db
     .select({ model: sql<{ providerID?: unknown; modelID?: unknown } | null>`${sessionLifecycleCommands.payload}->'overrides'->'model'` })
@@ -138,9 +138,9 @@ export async function switchSessionToFallback(change: FallbackSwitch, nowMs = Da
     const promptRef = await latestPromptModelRef(change.sessionId);
     if (promptRef !== null && promptRef !== change.from) return false;
     const metadata = projectSessions.metadata;
-    const wasFallback = sql`${metadata}->>'opencode_model_source' = 'fallback'`;
+    const wasFallback = sql`${metadata}->>'model_source' = 'fallback'`;
     // Never NULL: `NOT already` must hold for a row with no pin or no source.
-    const already = sql`(${metadata}->>'opencode_model' IS NOT DISTINCT FROM ${change.to}::text AND ${metadata}->>'opencode_model_source' IS NOT DISTINCT FROM 'fallback')`;
+    const already = sql`(${metadata}->>'model' IS NOT DISTINCT FROM ${change.to}::text AND ${metadata}->>'model_source' IS NOT DISTINCT FROM 'fallback')`;
     const session = and(eq(projectSessions.sessionId, change.sessionId), eq(projectSessions.projectId, change.projectId));
     const until = nowMs + change.holdSeconds * 1000;
     const notify = { notified: sql`pg_notify(${SESSION_CHANGED_CHANNEL}, ${projectSessions.sessionId}::text)` };
@@ -162,12 +162,12 @@ export async function switchSessionToFallback(change: FallbackSwitch, nowMs = Da
       .update(projectSessions)
       .set({
         metadata: sql`coalesce(${metadata}, '{}'::jsonb) || jsonb_build_object(
-          'opencode_model', ${change.to}::text,
-          'opencode_model_source', 'fallback',
+          'model', ${change.to}::text,
+          'model_source', 'fallback',
           ${FALLBACK_KEYS.from}::text, CASE WHEN ${wasFallback} THEN ${metadata}->${FALLBACK_KEYS.from}::text ELSE to_jsonb(${change.from}::text) END,
           ${FALLBACK_KEYS.fromSource}::text, CASE
             WHEN ${wasFallback} THEN ${metadata}->${FALLBACK_KEYS.fromSource}::text
-            WHEN ${metadata}->>'opencode_model' IS NOT DISTINCT FROM ${change.from}::text THEN coalesce(${metadata}->'opencode_model_source', 'null'::jsonb)
+            WHEN ${metadata}->>'model' IS NOT DISTINCT FROM ${change.from}::text THEN coalesce(${metadata}->'model_source', 'null'::jsonb)
             -- The prompt named another model than the pin: a person picked it.
             ELSE to_jsonb('explicit'::text)
           END,
@@ -181,7 +181,7 @@ export async function switchSessionToFallback(change: FallbackSwitch, nowMs = Da
           session,
           sql`NOT ${already}`,
           // A prompt that named no model runs on the pin: switch only from it.
-          promptRef === null ? sql`${metadata}->>'opencode_model' = ${change.from}::text` : undefined,
+          promptRef === null ? sql`${metadata}->>'model' = ${change.from}::text` : undefined,
           // A person picked a model while the failing request ran: the pick wins.
           sql`(${metadata}->>${PICKED_AT_KEY}::text IS NULL OR (${metadata}->>${PICKED_AT_KEY}::text)::bigint < ${change.startedAtMs}::bigint)`,
         ),
@@ -197,8 +197,8 @@ export async function switchSessionToFallback(change: FallbackSwitch, nowMs = Da
       resourceType: 'project_session',
       resourceId: change.sessionId,
       outcome: 'success',
-      before: { opencode_model: change.from },
-      after: { opencode_model: change.to },
+      before: { model: change.from },
+      after: { model: change.to },
       metadata: { reason: change.reason },
     }).catch((error: Error) =>
       logger.warn('[llm-gateway] session model fallback audit failed', { session_id: change.sessionId, error: error.message }),

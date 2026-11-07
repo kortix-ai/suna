@@ -7,7 +7,7 @@ import { useTranslations as useI18nTranslations } from '../../../i18n';
  * `kortix.yaml` (agent-first spec §2.2), as three reusable parts
  * and no shell of its own.
  *
- * The shell is `/projects/[id]/agent/[name]`
+ * The shell is `/workspaces/[id]/agent/[name]`
  * (`capabilities/agents/agent-page.tsx`): a routed page, two columns, the
  * instructions on the left and everything else on the right. It used to be a
  * pane swapped into the agent detail MODAL, one level under the Agents grid.
@@ -132,8 +132,8 @@ export interface AgentDraft {
 }
 
 /**
- * A served block with its behavior under `behavior` only. The API answers the
- * pre-W4 `opencode` alias beside it; a draft that kept both would send two
+ * A served block with its behavior under `behavior` only. An older API answers
+ * the pre-W4 `opencode` alias beside it; a draft that kept both would send two
  * copies of every edit.
  */
 export function behaviorBlock(block: AgentConfigBlock): AgentConfigBlock {

@@ -11,7 +11,7 @@
  *
  * So v1 fills the store by PULLING: whenever the API is already talking to a
  * box (a stream attaches) or already answering about one (a bundle read finds
- * the row missing or stale), it reads `GET /kortix/opencode/state` in the
+ * the row missing or stale), it reads `GET /kortix/runtime/state` in the
  * BACKGROUND and stores the result. The document is etag-gated at the daemon,
  * so a repeat costs a 304 and no body.
  *

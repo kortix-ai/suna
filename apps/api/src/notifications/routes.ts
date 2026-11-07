@@ -12,7 +12,7 @@ import { createDeviceTokenReleaseRateLimitMiddleware } from '../middleware/rate-
 import { isUuid } from '../shared/validate';
 import { pushDeviceTokenStore, type PushDeviceTokenStore } from './device-tokens';
 import { isNotificationEmailAvailable } from './email-delivery';
-import { hiddenNotificationKinds, listInbox, markInboxRead, type InboxReadContext } from './inbox-read';
+import { listInbox, markInboxRead, type InboxReadContext } from './inbox-read';
 import { loadEffectivePreferences, updateNotificationPreferences, type NotificationPreferencesPatch } from './preferences';
 import { getVapidPublicKey } from './vapid-keys';
 import {
@@ -73,9 +73,6 @@ const InboxNotificationSchema = z
     project_name: z.string().nullable(),
     session_id: z.string().nullable(),
     trigger_slug: z.string().nullable(),
-    room_id: z.string().nullable().openapi({ description: 'The conversation, for `message`.' }),
-    artifact_id: z.string().nullable().openapi({ description: 'The Artifact, for `artifact_comment`.' }),
-    artifact_thread_id: z.string().nullable().openapi({ description: 'The comment thread, for `artifact_comment`.' }),
     actor_user_id: z.string().uuid().nullable().openapi({ description: 'Who caused it: the sharer or the prompter.' }),
     url: z.string().openapi({ description: 'Web path that opens the subject and marks the row read.' }),
     read: z.boolean(),
@@ -112,6 +109,12 @@ const MarkReadResponseSchema = z
   .object({ updated: z.number().int(), unread_count: z.number().int() })
   .openapi('MarkNotificationsReadResponse');
 
+/**
+ * Kinds no code emits any more. A preferences patch may still name one; sanitizePreferencesPatch drops it.
+ * `message`: Rooms, removed 2026-11. `artifact_comment`: artifact comments, removed 2026-11-06.
+ */
+const RETIRED_NOTIFICATION_KINDS = ['message', 'artifact_comment'] as const;
+
 const ChannelSchema = z.object({ push: z.boolean(), email: z.boolean() });
 const ChannelPatchSchema = z.object({ push: z.boolean().optional(), email: z.boolean().optional() }).strict();
 
@@ -128,7 +131,11 @@ const NotificationPreferencesSchema = z
 const NotificationPreferencesPatchSchema = z
   .object({
     kinds: z
-      .object(Object.fromEntries(NOTIFICATION_KINDS.map((kind) => [kind, ChannelPatchSchema.optional()])))
+      .object({
+        ...Object.fromEntries(NOTIFICATION_KINDS.map((kind) => [kind, ChannelPatchSchema.optional()])),
+        // Retired kinds: an older client may still send one; it is accepted and ignored.
+        ...Object.fromEntries(RETIRED_NOTIFICATION_KINDS.map((kind) => [kind, ChannelPatchSchema.optional()])),
+      })
       .strict()
       .openapi({ description: 'Per kind, the channels to change. Omitted kinds and channels keep their value.' }),
   })
@@ -186,7 +193,6 @@ export interface NotificationServices {
   loadPreferences(userId: string): Promise<NotificationKindPreferences>;
   updatePreferences(userId: string, patch: NotificationPreferencesPatch): Promise<NotificationKindPreferences>;
   emailAvailable(): boolean;
-  hiddenKinds(userId: string): Promise<NotificationKindName[]>;
   vapidPublicKey(): Promise<string>;
   validateWebPush: typeof validateWebPushSubscriptionInput;
   registerWebPush(input: Parameters<typeof registerWebPushSubscription>[0]): Promise<void>;
@@ -199,7 +205,6 @@ const LIVE_SERVICES: NotificationServices = {
   loadPreferences: async (userId) => (await loadEffectivePreferences([userId])).get(userId)!,
   updatePreferences: (userId, patch) => updateNotificationPreferences(userId, patch),
   emailAvailable: isNotificationEmailAvailable,
-  hiddenKinds: hiddenNotificationKinds,
   vapidPublicKey: getVapidPublicKey,
   validateWebPush: validateWebPushSubscriptionInput,
   registerWebPush: (input) => registerWebPushSubscription(input),
@@ -364,7 +369,8 @@ export function createNotificationsApp(deps: NotificationsAppDeps = {}) {
   const preferencesResponse = async (userId: string, kinds?: NotificationKindPreferences) => ({
     kinds: kinds ?? (await services.loadPreferences(userId)),
     email_available: services.emailAvailable(),
-    hidden_kinds: await services.hiddenKinds(userId),
+    // No kind is behind a feature flag today. Released clients read the field.
+    hidden_kinds: [],
   });
 
   app.openapi(

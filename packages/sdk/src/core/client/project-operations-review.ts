@@ -5,15 +5,15 @@ export function bindProjectOperationsReview(projectId: string) {
   return {
     sessions: {
       /** One page of sessions as a bare array. See `listPage` for `next_cursor`. */
-      list: (options?: Parameters<typeof P.listProjectSessions>[1]) =>
-        P.listProjectSessions(projectId, options),
+      list: (options?: Parameters<typeof P.listWorkspaceSessions>[1]) =>
+        P.listWorkspaceSessions(projectId, options),
       /** One keyset page plus its continuation token. The list is bounded —
        *  walk it with `next_cursor`, and use `get(sessionId)` to resolve one
        *  session rather than paging in search of it. */
-      listPage: (options?: Parameters<typeof P.listProjectSessionsPage>[1]) =>
-        P.listProjectSessionsPage(projectId, options),
-      create: (input?: Parameters<typeof P.createProjectSession>[1]) =>
-        P.createProjectSession(projectId, input),
+      listPage: (options?: Parameters<typeof P.listWorkspaceSessionsPage>[1]) =>
+        P.listWorkspaceSessionsPage(projectId, options),
+      create: (input?: Parameters<typeof P.createWorkspaceSession>[1]) =>
+        P.createWorkspaceSession(projectId, input),
       /** @deprecated Warm sessions were removed; always rejects with `ENDPOINT_RETIRED`. Use `create()`. Removed in the next major. */
       ensureWarm: () => P.ensureWarmProjectSession(projectId),
       /** @deprecated Warm sessions were removed; always rejects with `ENDPOINT_RETIRED`. Use `create()`. Removed in the next major. */
@@ -21,34 +21,41 @@ export function bindProjectOperationsReview(projectId: string) {
         P.claimWarmProjectSession(projectId, input),
     },
 
-    /** Channels and the caller's DMs (`project_channels` flag). A session joins one with `sessions.create({ space_id })`. */
+    /** Channels and the caller's DMs (`chat` flag). A session joins one with `sessions.create({ space_id })`. */
     spaces: {
-      list: () => P.listProjectSpaces(projectId),
-      create: (input: Parameters<typeof P.createProjectSpace>[1]) => P.createProjectSpace(projectId, input),
-      update: (...a: DropFirst<Parameters<typeof P.updateProjectSpace>>) => P.updateProjectSpace(projectId, ...a),
+      list: () => P.listWorkspaceSpaces(projectId),
+      create: (input: Parameters<typeof P.createWorkspaceSpace>[1]) => P.createWorkspaceSpace(projectId, input),
+      update: (...a: DropFirst<Parameters<typeof P.updateWorkspaceSpace>>) => P.updateWorkspaceSpace(projectId, ...a),
+      /** `setTabs(spaceId, tabs)`: replace the space's tabs after Chat, in order. */
+      setTabs: (...a: DropFirst<Parameters<typeof P.setWorkspaceSpaceTabs>>) => P.setWorkspaceSpaceTabs(projectId, ...a),
       /** The caller's DM with an agent, created on the first call. */
-      dm: (agentName: string) => P.getOrCreateProjectDm(projectId, agentName),
+      dm: (agentName: string) => P.getOrCreateWorkspaceDm(projectId, agentName),
+      /** A space's watcher settings (`spaces_proactive`): `proactive.get(spaceId)`, `proactive.set(spaceId, input)`. */
+      proactive: {
+        get: (spaceId: string) => P.getWorkspaceSpaceProactive(projectId, spaceId),
+        set: (...a: DropFirst<Parameters<typeof P.setWorkspaceSpaceProactive>>) => P.setWorkspaceSpaceProactive(projectId, ...a),
+      },
       /** The channel's Apps: deployed from one of its threads, only those the caller may open. */
-      apps: (spaceId: string) => P.listProjectSpaceApps(projectId, spaceId),
+      apps: (spaceId: string) => P.listWorkspaceSpaceApps(projectId, spaceId),
       /** A channel's links: added ("Add link", pinned) or shared in its threads. Agents read the pinned ones. Only the creator or a project manager may remove one. */
       links: {
-        list: (spaceId: string) => P.listProjectSpaceLinks(projectId, spaceId),
-        add: (...a: DropFirst<Parameters<typeof P.addProjectSpaceLink>>) => P.addProjectSpaceLink(projectId, ...a),
+        list: (spaceId: string) => P.listWorkspaceSpaceLinks(projectId, spaceId),
+        add: (...a: DropFirst<Parameters<typeof P.addWorkspaceSpaceLink>>) => P.addWorkspaceSpaceLink(projectId, ...a),
         /** `pin(spaceId, linkId, pinned)`: the link; unpinning never removes it (null only from an older server). */
-        pin: (...a: DropFirst<Parameters<typeof P.pinProjectSpaceLink>>) => P.pinProjectSpaceLink(projectId, ...a),
-        remove: (...a: DropFirst<Parameters<typeof P.removeProjectSpaceLink>>) => P.removeProjectSpaceLink(projectId, ...a),
+        pin: (...a: DropFirst<Parameters<typeof P.pinWorkspaceSpaceLink>>) => P.pinWorkspaceSpaceLink(projectId, ...a),
+        remove: (...a: DropFirst<Parameters<typeof P.removeWorkspaceSpaceLink>>) => P.removeWorkspaceSpaceLink(projectId, ...a),
       },
       /** A channel's people: the same list for every viewer. `#general` lists every project member. */
       members: {
-        list: (spaceId: string) => P.listProjectSpaceMembers(projectId, spaceId),
+        list: (spaceId: string) => P.listWorkspaceSpaceMembers(projectId, spaceId),
         /** `add(spaceId, userIds)`: in one request; only project members (else 400 `not_project_member`). */
-        add: (...a: DropFirst<Parameters<typeof P.addProjectSpaceMembers>>) => P.addProjectSpaceMembers(projectId, ...a),
-        remove: (...a: DropFirst<Parameters<typeof P.removeProjectSpaceMember>>) => P.removeProjectSpaceMember(projectId, ...a),
-        join: (spaceId: string) => P.joinProjectSpace(projectId, spaceId),
-        leave: (spaceId: string) => P.leaveProjectSpace(projectId, spaceId),
+        add: (...a: DropFirst<Parameters<typeof P.addWorkspaceSpaceMembers>>) => P.addWorkspaceSpaceMembers(projectId, ...a),
+        remove: (...a: DropFirst<Parameters<typeof P.removeWorkspaceSpaceMember>>) => P.removeWorkspaceSpaceMember(projectId, ...a),
+        join: (spaceId: string) => P.joinWorkspaceSpace(projectId, spaceId),
+        leave: (spaceId: string) => P.leaveWorkspaceSpace(projectId, spaceId),
       },
       /** `#general`'s "turned on again" line, or null. */
-      generalNotice: () => P.getProjectSpaceGeneralNotice(projectId),
+      generalNotice: () => P.getWorkspaceSpaceGeneralNotice(projectId),
       /** Whether this deployment allows private channels. */
       privateChannelsAvailable: () => P.getPrivateChannelsAvailable(projectId),
       /** Project managers: the private channels they are not in (name, member count, creator; no content). */
@@ -67,37 +74,37 @@ export function bindProjectOperationsReview(projectId: string) {
      * with `sessions.listPage({ group })` (`'none'`: the sessions in no group).
      */
     sessionGroups: {
-      list: () => P.listProjectSessionGroups(projectId),
+      list: () => P.listWorkspaceSessionGroups(projectId),
       /** Last in the order. A taken name (any case) rejects with 409 `group_name_taken`. */
-      create: (input: Parameters<typeof P.createProjectSessionGroup>[1]) => P.createProjectSessionGroup(projectId, input),
-      rename: (groupId: string, name: string) => P.renameProjectSessionGroup(projectId, groupId, name),
+      create: (input: Parameters<typeof P.createWorkspaceSessionGroup>[1]) => P.createWorkspaceSessionGroup(projectId, input),
+      rename: (groupId: string, name: string) => P.renameWorkspaceSessionGroup(projectId, groupId, name),
       /** Every group id, once, in the new order; an out-of-date list rejects with 409 `group_order_stale`. */
-      reorder: (groupIds: readonly string[]) => P.reorderProjectSessionGroups(projectId, groupIds),
+      reorder: (groupIds: readonly string[]) => P.reorderWorkspaceSessionGroups(projectId, groupIds),
       /** Its sessions stay, in no group. */
-      delete: (groupId: string) => P.deleteProjectSessionGroup(projectId, groupId),
+      delete: (groupId: string) => P.deleteWorkspaceSessionGroup(projectId, groupId),
       /** `file(sessionId, groupId)`: into that group; `null` takes it out. Keeps its `updated_at`. */
-      file: (sessionId: string, groupId: string | null) => P.setProjectSessionGroup(projectId, sessionId, groupId),
+      file: (sessionId: string, groupId: string | null) => P.setWorkspaceSessionGroup(projectId, sessionId, groupId),
     },
 
     /** Memory: the Markdown files of the project's Drive (`drives` flag). A layer key is `company` or a channel's or DM's space id. */
     memory: {
       /** One layer: its Drive folder and page counts. */
-      layer: (layerKey: string) => P.getProjectMemoryLayer(projectId, layerKey),
+      layer: (layerKey: string) => P.getWorkspaceMemoryLayer(projectId, layerKey),
       pages: {
         /** One page per Markdown file, newest first; `{ type }` filters. */
-        list: (...a: DropFirst<Parameters<typeof P.listProjectMemoryPages>>) => P.listProjectMemoryPages(projectId, ...a),
-        create: (...a: DropFirst<Parameters<typeof P.createProjectMemoryPage>>) => P.createProjectMemoryPage(projectId, ...a),
-        get: (pageId: string) => P.getProjectMemoryPage(projectId, pageId),
-        update: (...a: DropFirst<Parameters<typeof P.updateProjectMemoryPage>>) => P.updateProjectMemoryPage(projectId, ...a),
-        delete: (pageId: string) => P.deleteProjectMemoryPage(projectId, pageId),
-        history: (pageId: string) => P.listProjectMemoryHistory(projectId, pageId),
+        list: (...a: DropFirst<Parameters<typeof P.listWorkspaceMemoryPages>>) => P.listWorkspaceMemoryPages(projectId, ...a),
+        create: (...a: DropFirst<Parameters<typeof P.createWorkspaceMemoryPage>>) => P.createWorkspaceMemoryPage(projectId, ...a),
+        get: (pageId: string) => P.getWorkspaceMemoryPage(projectId, pageId),
+        update: (...a: DropFirst<Parameters<typeof P.updateWorkspaceMemoryPage>>) => P.updateWorkspaceMemoryPage(projectId, ...a),
+        delete: (pageId: string) => P.deleteWorkspaceMemoryPage(projectId, pageId),
+        history: (pageId: string) => P.listWorkspaceMemoryHistory(projectId, pageId),
       },
       /** Remember-box sentences, appended to the layer's `Notes.md`. */
       notes: {
-        add: (...a: DropFirst<Parameters<typeof P.addProjectMemoryNote>>) => P.addProjectMemoryNote(projectId, ...a),
+        add: (...a: DropFirst<Parameters<typeof P.addWorkspaceMemoryNote>>) => P.addWorkspaceMemoryNote(projectId, ...a),
       },
       /** Search the pages the caller can read: `{ q, layer?, type?, limit? }`, `q` at least 2 characters. */
-      search: (...a: DropFirst<Parameters<typeof P.searchProjectMemory>>) => P.searchProjectMemory(projectId, ...a),
+      search: (...a: DropFirst<Parameters<typeof P.searchWorkspaceMemory>>) => P.searchWorkspaceMemory(projectId, ...a),
       /** A thread's "Used memory": the files listed to its agent at the first turn. */
       usage: (sessionId: string) => P.getSessionMemoryUsage(projectId, sessionId),
     },

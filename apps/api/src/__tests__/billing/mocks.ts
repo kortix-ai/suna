@@ -51,6 +51,7 @@ export function resetMockRegistry() {
     (mockRegistry as any)[key] = null;
   }
   fakeWallet.restore();
+  latestSubscriptions.clear();
 }
 
 // ─── Register Global Mocks (once per process) ────────────────────────────────
@@ -75,6 +76,8 @@ export function registerGlobalMocks() {
   mock.module('../../shared/resolve-account', () => ({
     resolveAccountId: async (userId: string) =>
       mockRegistry.resolveAccountId ? mockRegistry.resolveAccountId(userId) : userId,
+    // project-access.ts and accounts/core/app.ts import it at load.
+    accountKeyForWorkspaceId: async (id: string) => id,
   }));
 
   mock.module('../../billing/repositories/credit-accounts', () => ({
@@ -119,6 +122,8 @@ export function registerGlobalMocks() {
       mockRegistry.upsertCustomer ? mockRegistry.upsertCustomer(data) : undefined,
     deleteCustomerByStripeId: async (id: string) =>
       mockRegistry.deleteCustomerByStripeId ? mockRegistry.deleteCustomerByStripeId(id) : undefined,
+    // Account closure lists every Stripe customer of the account.
+    listStripeCustomerIdsByAccountId: async () => ['cus_test_123'],
   }));
 
   // Webhook dedup + per-account advisory lock use the raw db (no DATABASE_URL in
@@ -200,14 +205,20 @@ export function registerGlobalMocks() {
   }));
 
   mock.module('../../billing/repositories/account-deletion', () => ({
+    hasRunningDeletionRequest: async () => false,
     getActiveDeletionRequest: async (id: string) =>
       mockRegistry.getActiveDeletionRequest ? mockRegistry.getActiveDeletionRequest(id) : null,
     createDeletionRequest: async (...args: any[]) =>
       mockRegistry.createDeletionRequest ? mockRegistry.createDeletionRequest(...args) : null,
-    cancelDeletionRequest: async (id: string) =>
-      mockRegistry.cancelDeletionRequest ? mockRegistry.cancelDeletionRequest(id) : undefined,
-    markDeletionCompleted: async (id: string) =>
-      mockRegistry.markDeletionCompleted ? mockRegistry.markDeletionCompleted(id) : undefined,
+    // The real writes are compare-and-set and return whether they applied.
+    cancelDeletionRequest: async (id: string) => {
+      if (mockRegistry.cancelDeletionRequest) await mockRegistry.cancelDeletionRequest(id);
+      return true;
+    },
+    markDeletionCompleted: async (id: string) => {
+      if (mockRegistry.markDeletionCompleted) await mockRegistry.markDeletionCompleted(id);
+      return true;
+    },
     countOverdueBacklog: async () => 0,
     getScheduledDeletions: async () =>
       mockRegistry.getScheduledDeletions ? mockRegistry.getScheduledDeletions() : [],
@@ -216,6 +227,13 @@ export function registerGlobalMocks() {
       (mockRegistry.getScheduledDeletions ? await mockRegistry.getScheduledDeletions() : []).find(
         (row: { id: string }) => row.id === id,
       ) ?? null,
+    // The immediate claim hands back the pending request it names.
+    claimDeletionRequestNow: async (id: string) =>
+      mockRegistry.getActiveDeletionRequest
+        ? ((await mockRegistry.getActiveDeletionRequest('')) as { id?: string } | null)?.id === id
+          ? { ...(await mockRegistry.getActiveDeletionRequest('')), status: 'processing' }
+          : null
+        : null,
     releaseDeletionRequest: async () => undefined,
   }));
 }
@@ -361,8 +379,17 @@ export function createMockStripeCheckoutSession(overrides: Record<string, any> =
 
 let stripeEventSequence = 0;
 
+/**
+ * The newest subscription object each test event carried, by id. Stripe's
+ * `subscriptions.retrieve` returns the subscription as it is now; the webhook
+ * handlers re-read it instead of trusting an event's snapshot, so the default
+ * mock answers with the state the test last sent.
+ */
+const latestSubscriptions = new Map<string, any>();
+
 export function createMockStripeEvent(type: string, object: any, overrides: Record<string, any> = {}) {
   stripeEventSequence += 1;
+  if (type.startsWith('customer.subscription.') && object?.id) latestSubscriptions.set(object.id, object);
   return {
     id: `evt_test_${Date.now()}_${stripeEventSequence}`,
     type,
@@ -382,7 +409,7 @@ export function createMockStripeClient(overrides: Record<string, any> = {}) {
       }),
     },
     subscriptions: {
-      retrieve: overrides.subscriptionsRetrieve ?? (async (id: string) => defaultSubscription),
+      retrieve: overrides.subscriptionsRetrieve ?? (async (id: string) => latestSubscriptions.get(id) ?? defaultSubscription),
       update: overrides.subscriptionsUpdate ?? (async (id: string, params: any) => ({
         ...defaultSubscription,
         ...params,

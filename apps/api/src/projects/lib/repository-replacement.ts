@@ -1,4 +1,4 @@
-import { changeRequests, projectGitConnections, projectGitCredentials, projectSessions, projects } from '@kortix/db';
+import { changeRequests, projectGitConnections, projectGitCredentials, projectSessions } from '@kortix/db';
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../../shared/db';
@@ -12,6 +12,8 @@ import {
   upsertProjectGitCredential,
 } from './project-git-write';
 import { resolveGitHubImportWithPat } from './git';
+import { metadataReplace, projectsView, updateProjectRowsReturning } from '../../workspaces/rows';
+import { ACTIVE_SESSION_STATUSES } from './session-status';
 
 export class RepositoryChangedError extends Error {}
 export class RepositoryManifestMissingError extends Error {}
@@ -54,8 +56,8 @@ export async function replaceProjectRepository(input: {
     throw new RepositoryValidationError(error instanceof Error ? error.message : 'Could not validate GitHub repository');
   }
   const owner = imported.repo.full_name.split('/')[0]!;
-  const manifestPath = await db.select({ manifestPath: projects.manifestPath })
-    .from(projects).where(eq(projects.projectId, input.projectId)).limit(1);
+  const manifestPath = await db.select({ manifestPath: projectsView.manifestPath })
+    .from(projectsView).where(eq(projectsView.projectId, input.projectId)).limit(1);
   if (!manifestPath[0]) throw new RepositoryChangedError('Project is no longer available');
   let manifestSha: string | null;
   try {
@@ -99,8 +101,8 @@ export async function persistProjectRepositoryReplacement(input: {
     ? { kind: 'github_app', installationId: input.installationId, projectGrant: true }
     : { kind: 'project_credential' };
   const result = await db.transaction(async (tx) => {
-    const [oldProject] = await tx.select().from(projects)
-      .where(eq(projects.projectId, input.projectId)).for('update');
+    const [oldProject] = await tx.select().from(projectsView)
+      .where(eq(projectsView.projectId, input.projectId)).for('update');
     if (!oldProject || oldProject.accountId !== input.accountId || oldProject.status !== 'active') {
       throw new RepositoryChangedError('Project is no longer available');
     }
@@ -113,7 +115,7 @@ export async function persistProjectRepositoryReplacement(input: {
     const [activeSession] = await tx.select({ sessionId: projectSessions.sessionId })
       .from(projectSessions).where(and(
         eq(projectSessions.projectId, input.projectId),
-        inArray(projectSessions.status, ['queued', 'branching', 'provisioning', 'running']),
+        inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
       )).limit(1);
     if (activeSession) throw new RepositoryChangedError('Stop active sessions before changing the repository');
     const [openChangeRequest] = await tx.select({ crId: changeRequests.crId })
@@ -183,12 +185,12 @@ export async function persistProjectRepositoryReplacement(input: {
       // histories, so Git itself refuses a push without a rebase.
       repository_generation: randomUUID(),
     };
-    const [project] = await tx.update(projects).set({
+    const [project] = await updateProjectRowsReturning(eq(projectsView.projectId, input.projectId), {
       repoUrl: input.repo.clone_url,
       defaultBranch: input.defaultBranch,
-      metadata,
+      metadata: metadataReplace(metadata),
       updatedAt: now,
-    }).where(eq(projects.projectId, input.projectId)).returning();
+    }, tx);
     if (!project) throw new Error('Project repository was not persisted');
     return { project, connection };
   });

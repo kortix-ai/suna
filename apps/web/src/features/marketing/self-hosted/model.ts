@@ -260,7 +260,7 @@ export const setupSteps = [
   { k: 'Sign up as the admin', v: 'With an address in the admin list.' },
   { k: 'Connect GitHub', v: 'At /admin/git, for new project repositories.' },
   { k: 'Create the team account', v: 'Invite your team and set up SSO there.' },
-  { k: 'Create a project', v: 'In the team account.' },
+  { k: 'Create a workspace', v: 'In the team account.' },
   { k: 'Add a model key', v: 'Each project connects its own provider.' },
   { k: 'Turn on email, close sign-up', v: 'EMAIL_URL, then DISABLE_SIGNUP=true.' },
 ] as const;

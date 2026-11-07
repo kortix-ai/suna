@@ -4,11 +4,9 @@ import { act, create } from 'react-test-renderer';
 import { readFileSync } from 'node:fs';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
-const artifactPath = `/projects/${projectId}/artifacts/22222222-2222-4222-8222-222222222222?thread=33333333-3333-4333-8333-333333333333`;
 let notification: Record<string, unknown>;
 const rowProps: Array<{ onPress(): void; accessibilityHint?: string }> = [];
 const reads: unknown[] = [];
-const opened: string[] = [];
 const native: unknown[] = [];
 const Empty = () => null;
 const Children = ({ children }: { children?: React.ReactNode }) => React.createElement(React.Fragment, null, children);
@@ -24,8 +22,6 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@/lib/utils/index': { cn: (...parts: string[]) => parts.join(' ') },
   '@/lib/utils/theme': { THEME: { dark: { mutedForeground: 'black' }, light: { mutedForeground: 'black' } } },
   '@/stores/push-store': { usePushStore: { getState: () => ({ requestOpen: (...target: unknown[]) => native.push(target) }) } },
-  '@/lib/kortix-web': { KORTIX_WEB_URL: 'https://configured-web.example.test' },
-  '@/lib/utils/open-link': { openLink: async (url: string) => { opened.push(url); } },
 };
 const real = new Set(['react', '@kortix/sdk', '@/lib/notifications/inbox', '@/lib/session/session-list']);
 const source = readFileSync(`${import.meta.dir}/InboxPage.tsx`, 'utf8');
@@ -45,8 +41,8 @@ beforeAll(async () => {
   Page = (await import('./InboxPage')).InboxPage;
 });
 beforeEach(() => {
-  rowProps.length = reads.length = opened.length = native.length = 0;
-  notification = { id: 'synthetic-note', kind: 'artifact_comment', title: 'Review source', body: 'Confirm it.', project_id: projectId, project_name: 'Synthetic project', session_id: null, trigger_slug: null, actor_user_id: null, url: artifactPath, read: false, created_at: '2026-10-29T00:00:00Z' };
+  rowProps.length = reads.length = native.length = 0;
+  notification = { id: 'synthetic-note', kind: 'question', title: 'Review source', body: 'Confirm it.', project_id: projectId, project_name: 'Synthetic project', session_id: 'synthetic-session', trigger_slug: null, actor_user_id: null, url: `/projects/${projectId}/sessions/synthetic-session`, read: false, created_at: '2026-10-29T00:00:00Z' };
 });
 afterEach(async () => { await act(async () => tree?.unmount()); });
 async function tapRow() {
@@ -55,24 +51,9 @@ async function tapRow() {
   await act(async () => { rowProps[0]!.onPress(); });
 }
 
-test('the actual inbox row tap marks read and opens the configured Artifact web URL', async () => {
+test('a session notification marks read and opens its session natively', async () => {
   await tapRow();
   expect(reads).toEqual([['synthetic-note']]);
-  expect(opened).toEqual([`https://configured-web.example.test${artifactPath}`]);
-  expect(native).toEqual([]);
-  expect(rowProps[0]!.accessibilityHint).toBe('Opens the Artifact');
-});
-
-test('a malformed Artifact URL cannot open externally or fall back to the native project', async () => {
-  notification.url = 'https://evil.example.test/';
-  await tapRow();
-  expect(opened).toEqual([]);
-  expect(native).toEqual([]);
-});
-
-test('an existing session notification keeps native session navigation', async () => {
-  notification = { ...notification, kind: 'question', session_id: 'synthetic-session', url: `/projects/${projectId}/sessions/synthetic-session` };
-  await tapRow();
   expect(native).toEqual([[projectId, 'synthetic-session']]);
-  expect(opened).toEqual([]);
+  expect(rowProps[0]!.accessibilityHint).toBe('Opens the session');
 });

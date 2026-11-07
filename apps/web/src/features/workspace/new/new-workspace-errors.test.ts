@@ -135,23 +135,6 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
     const bar = readFileSync(join(import.meta.dir, '../account-top-bar.tsx'), 'utf8');
     expect(bar).toContain('backPillClass(');
   });
-
-  test('the retry control does not appear when status !== "error" — every alert region is status-gated', () => {
-    // The page has two alert regions, each with its own gate: the post-submit
-    // error block on `status === 'error'` and the upfront plan-cap block on
-    // `capState && status === 'idle'` (KRTX-2495). Neither may render outside
-    // its status, and no alert may exist ungated — a new alert without a
-    // status condition fails here.
-    const gates = alertIndices().map((at) => {
-      const guardStart = page.lastIndexOf('{', at);
-      // The guard runs from the condition's `{` up to the element it opens;
-      // compare on the condition text itself.
-      return page.slice(guardStart + 1, at).replace(/\s+/g, ' ').trim();
-    });
-    expect(gates).toHaveLength(2);
-    expect(gates.some((g) => g.includes("capState && status === 'idle'"))).toBe(true);
-    expect(gates.some((g) => g.includes("status === 'error'"))).toBe(true);
-  });
 });
 
 describe('/new failure states: 503 gets its own message and no retry', () => {
@@ -223,17 +206,9 @@ describe('isRetryableError: classification by what can actually change, not "eve
   });
 });
 
-describe('/new failure states: the plan cap offers the upgrade dialog (dev, 2026-09-17)', () => {
-  // "Free accounts are limited to 1 project. Upgrade to a paid plan to create
-  // more." named a way out and offered none. The hook now reports the cap as
-  // its own flag and the page answers it with the upgrade dialog.
-  test('the hook exposes limitReached, derived from the shared isProjectLimitError', () => {
-    expect(hook).toContain("limitReached = status === 'error' && isProjectLimitError(lastError)");
-    // `phase` (KRTX-1543) returns beside it: the streamed provisioning phase
-    // the handoff renders.
-    expect(hook).toContain('canRetry, limitReached, phase };');
-  });
-
+describe('/new failure states: a legacy plan-cap error (dev, 2026-09-17)', () => {
+  // An older API answers 403 `project_limit_reached`; the current one answers
+  // 409 `workspace_has_project`. The page shows the server text and no retry.
   test('messageFor keeps the server text for the cap — it already says what to do', () => {
     expect(
       messageFor(
@@ -245,7 +220,7 @@ describe('/new failure states: the plan cap offers the upgrade dialog (dev, 2026
     ).toBe('Free accounts are limited to 1 project. Upgrade to a paid plan to create more.');
   });
 
-  test('the cap is not retryable, so the upgrade action never sits beside Try again', () => {
+  test('the cap is not retryable: Try again would resend the same refused create', () => {
     expect(
       isRetryableError(
         new ApiError('Free accounts are limited to 1 project.', {
@@ -254,22 +229,5 @@ describe('/new failure states: the plan cap offers the upgrade dialog (dev, 2026
         }),
       ),
     ).toBe(false);
-  });
-
-  test('the page renders the upgrade action inside the alert region, gated on limitReached and billing', () => {
-    const alertStart = page.indexOf('role="alert"');
-    const containerStart = page.lastIndexOf('<div', alertStart);
-    const region = page.slice(containerStart, page.indexOf('</form>', alertStart));
-    expect(region).toMatch(/limitReached && isBillingEnabled\(\)\s*\?/);
-    expect(region).toContain("t('actions.upgrade')");
-  });
-
-  test('the action opens the upgrade dialog for the account the create targeted', () => {
-    const alertStart = page.indexOf('role="alert"');
-    const region = page.slice(alertStart, page.indexOf('</form>', alertStart));
-    expect(region).toContain("reason: 'subscription_required'");
-    expect(region).toContain('accountId: effectiveAccountId ?? undefined');
-    // The dialog host is the one already mounted for the plan step.
-    expect(page).toContain('isBillingEnabled() && <GlobalUpgradeModal />');
   });
 });

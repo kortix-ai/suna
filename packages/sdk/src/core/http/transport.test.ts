@@ -65,7 +65,7 @@ const live = () => ({
 
 describe('send: header policy', () => {
   test('attaches the bearer and never a client surface', async () => {
-    await send('http://backend.test/v1/projects');
+    await send('http://backend.test/v1/workspaces');
     expect(seen[0].headers.get('authorization')).toBe('Bearer tok1');
     // The audit records the authenticated credential; the SDK reports no client.
     expect(seen[0].headers.has('x-kortix-client')).toBe(false);
@@ -304,7 +304,7 @@ describe('every adapter applies the same policy', () => {
   test('backendApi replays a 401 once with the fresh token (it used to fail)', async () => {
     tokens = ['tok1', 'tok2'];
     statuses = [401, 200];
-    const result = await backendApi.post('/projects', { name: 'n' }, { showErrors: false });
+    const result = await backendApi.post('/workspaces', { name: 'n' }, { showErrors: false });
     expect(result.success).toBe(true);
     expect(seen.map((s) => s.headers.get('authorization'))).toEqual(['Bearer tok1', 'Bearer tok2']);
     expect(seen[1].body).toBe('{"name":"n"}');
@@ -312,7 +312,7 @@ describe('every adapter applies the same policy', () => {
 
   test('backendApi without a token returns AuthError, sends nothing and does not retry', async () => {
     tokens = [null];
-    const result = await backendApi.get('/projects');
+    const result = await backendApi.get('/workspaces');
     expect(result.error).toBeInstanceOf(AuthError);
     expect(result.success).toBe(false);
     expect(seen).toHaveLength(0);
@@ -322,7 +322,7 @@ describe('every adapter applies the same policy', () => {
   test('a backendApi read retry after a 401 replay sends the fresh token, not the first one', async () => {
     tokens = ['tok1', 'tok2'];
     statuses = [401, 503, 200];
-    const result = await backendApi.get('/projects', { showErrors: false });
+    const result = await backendApi.get('/workspaces', { showErrors: false });
     expect(result.success).toBe(true);
     expect(seen.map((s) => s.headers.get('authorization'))).toEqual([
       'Bearer tok1',
@@ -333,9 +333,9 @@ describe('every adapter applies the same policy', () => {
 
   test('postStream sends through the same policy', async () => {
     setImpersonationSession(live());
-    const response = await backendApi.postStream('/projects/p/provision/stream', { a: 1 });
+    const response = await backendApi.postStream('/workspaces/p/provision/stream', { a: 1 });
     expect(response.status).toBe(200);
-    expect(seen[0].url).toBe('http://backend.test/v1/projects/p/provision/stream');
+    expect(seen[0].url).toBe('http://backend.test/v1/workspaces/p/provision/stream');
     expect(seen[0].headers.get('authorization')).toBe('Bearer tok1');
     expect(seen[0].headers.get('accept')).toBe('text/event-stream');
     expect(seen[0].headers.get('x-kortix-impersonate')).toBe('grant-1');
@@ -343,7 +343,7 @@ describe('every adapter applies the same policy', () => {
 
   test('postStream without a token answers 401 and sends nothing unauthenticated', async () => {
     tokens = [null];
-    const response = await backendApi.postStream('/projects/p/provision/stream', {});
+    const response = await backendApi.postStream('/workspaces/p/provision/stream', {});
     expect(response.status).toBe(401);
     expect(seen).toHaveLength(0);
   });

@@ -16,19 +16,21 @@ import {
   ToolRunningContext,
   useToolIndent,
 } from '../shared/infrastructure';
-import { FoldedSection, OutputBlock } from '../shared/output-block';
+import { OutputBlock } from '../shared/output-block';
 import { ToolRegistry } from '../shared/registry';
 import type { ToolProps } from '../shared/types';
-import { ToolError } from '../tool-error';
 import { useTranslations } from '../../../i18n';
-import { cn } from '../../../lib/utils';
-import { FlowArrowIcon } from '@phosphor-icons/react';
+import { ArrowUpRightIcon, TreeStructureIcon } from '@phosphor-icons/react';
+import { AgentFailure } from '../../agents/agent-surface';
+import { Button } from '../../../primitives/button';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { qk, useProjectSession, useSessionChildren } from '@kortix/sdk/react';
 import { stopProjectSession, type ProjectSession } from '@kortix/sdk';
 import { useSessionIds } from '../../../providers/session-ids';
-import { WorkflowLogs, WorkflowProgress, type AgentStopState } from './workflow-progress';
+import { RunProgressRing, type AgentStopState } from './workflow-progress';
+import { boardStateOf } from '../../agents/agent-model';
+import { WorkflowRunCard } from './workflow-run-card';
 import {
   isLargeRun,
   LargeRunBadge,
@@ -43,7 +45,6 @@ import {
   isWorkflowTool,
   parseWorkflowResult,
   parseWorkflowRun,
-  type WorkflowResult,
   type WorkflowRun,
   type WorkflowRunAgent,
 } from './workflow-run';
@@ -115,34 +116,6 @@ function RunChips({ run }: { run: WorkflowRun }) {
   );
 }
 
-/**
- * The way into a run's own session, at the right edge of the header. A `span
- * role="button"`: the header renders inside the row's own `role="button"`, and a
- * button inside a button is invalid HTML (the task row's "Full view" is the same).
- */
-function OpenRunAction({ onOpen }: { onOpen: () => void }) {
-  const t = useTranslations('tools.workflow');
-  return (
-    <span
-      role="button"
-      tabIndex={0}
-      aria-label={t('openRunLabel')}
-      onClick={(event) => {
-        event.stopPropagation();
-        onOpen();
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        event.stopPropagation();
-        onOpen();
-      }}
-      className="text-muted-foreground hover:text-foreground cursor-pointer text-xs whitespace-nowrap underline-offset-2 hover:underline"
-    >
-      {t('openRun')}
-    </span>
-  );
-}
 
 /** The current time, every second while `active`: a live run's elapsed labels tick. */
 function useNow(active: boolean): number {
@@ -214,8 +187,9 @@ export function WorkflowTool(props: ToolProps) {
   // A background run's progress lives on its runner's box: read it from there, so the card
   // keeps updating after this session's turn ended (the call settled long ago).
   const { run, controlSessionId, fromRunner } = useLiveWorkflowRun(ids.projectId, ids.sessionId, cardRun);
-  // A background run's own session: whether it still works says what the header reads.
-  const runner = useProjectSession(ids.projectId, run?.background?.sessionId, { enabled: !!run?.background && !fromRunner });
+  // A background run whose runner no longer answers its run list: the runner session's own state says how it ended.
+  const runnerRow = useProjectSession(ids.projectId, run?.background?.sessionId, { enabled: !!run?.background && !fromRunner });
+  const runnerEnded = runnerRow.data ? runnerOutcome(boardStateOf(runnerRow.data as ProjectSession)) : null;
   // Live: a foreground run while its call runs, or a background run its runner still runs.
   const live = !!run && run.status === 'running' && (fromRunner || (!settled && !run.background && running));
   const restart = useRestartAgent(ids.projectId, controlSessionId, live ? run : null);
@@ -268,7 +242,7 @@ export function WorkflowTool(props: ToolProps) {
     return <GenericTool call={call} defaultOpen={defaultOpen} forceOpen={forceOpen} locked={locked} />;
   }
 
-  const icon = <FlowArrowIcon className="size-4 shrink-0" />;
+  const icon = <TreeStructureIcon className="size-4 shrink-0" />;
 
   if (!run) {
     return (
@@ -283,6 +257,10 @@ export function WorkflowTool(props: ToolProps) {
   }
 
   const title = run.title || run.name || t('fallbackTitle');
+  // The run's progress leads the card: a ring once it has agents, the workflow glyph before.
+  const tally = countAgents(run.agents);
+  const runIcon =
+    tally.total > 0 ? <RunProgressRing done={tally.done} failed={tally.failed} total={tally.total} /> : icon;
   const modal = open && (
     <SubagentDialog
       open
@@ -297,17 +275,45 @@ export function WorkflowTool(props: ToolProps) {
   if (run.background && !fromRunner) {
     const runnerSession = run.background.sessionId;
     const openRunner = () => setOpen({ sessionId: runnerSession, title });
-    const subtitle = runner.data?.working?.state === 'idle' ? t('backgroundIdle') : t('background');
     return (
       <>
-        {/* The row is one way in: its progress and its result live in the run's own session. */}
-        <BasicTool
-          icon={icon}
-          trigger={<WorkflowTrigger title={title} subtitle={subtitle} chips={<RunChips run={run} />} live={false} />}
-          triggerAction={<OpenRunAction onOpen={openRunner} />}
-          onClick={openRunner}
-          locked={locked}
-        />
+        {/* The run card's header, alone: its progress and its result live in the run's own session. */}
+        <div
+          data-testid="workflow-run-link"
+          className="border-border bg-background mt-1.5 flex w-full min-w-0 items-start gap-2.5 rounded-lg border px-4 py-3 text-left text-xs"
+        >
+          <span className="flex h-5 shrink-0 items-center">
+            {runnerEnded === 'done' ? (
+              <RunProgressRing done={1} failed={0} total={1} ended="done" />
+            ) : runnerEnded === 'stopped' ? (
+              <RunProgressRing done={0} failed={0} total={1} ended="stopped" />
+            ) : runnerEnded === 'failed' ? (
+              <RunProgressRing done={0} failed={1} total={1} />
+            ) : (
+              <RunProgressRing done={tally.done} failed={tally.failed} total={Math.max(tally.total, 1)} />
+            )}
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="text-foreground min-w-0 truncate text-sm font-medium">{title}</span>
+              <RunChips run={run} />
+            </span>
+            <span className="text-muted-foreground min-w-0 truncate">
+              {runnerEnded === 'done'
+                ? t('status.done')
+                : runnerEnded === 'failed'
+                  ? t('didntFinish')
+                  : runnerEnded === 'stopped'
+                    ? t('status.stopped')
+                    : [t('status.running'), tally.total > 0 ? t('progress', { done: tally.done, total: tally.total }) : null].filter(Boolean).join(' · ')}
+            </span>
+          </span>
+          {/* The one way in: a secondary button, on the title's line. */}
+          <Button type="button" variant="secondary" size="xs" aria-label={t('openRunLabel')} onClick={openRunner} className="-my-1 shrink-0">
+            {t('openRun')}
+            <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0" />
+          </Button>
+        </div>
         {modal}
       </>
     );
@@ -334,103 +340,86 @@ export function WorkflowTool(props: ToolProps) {
               counts.total === 0 ? undefined : counts.failed > 0 ? t('failedCount', { failed: counts.failed, total: counts.total }) : t('agents', { count: counts.total }),
               elapsed,
             );
+  // The card's second line names the phase at work: "Research 2 of 5 done · 6:10".
+  const phase = run.phases.find((p) => p.status === 'running');
+  const phaseAgents = phase ? run.agents.filter((agent) => agent.phase === phase.title) : [];
+  const phaseCounts = countAgents(phaseAgents);
+  const phaseLine =
+    phase && phaseCounts.total > 0 ? t('phaseProgress', { phase: phase.title, done: phaseCounts.done, total: phaseCounts.total }) : undefined;
+  // Ended, the card is one line that says how it ended (Paper F2, F4, F5).
+  const cardSubtitle =
+    run.status === 'running'
+      ? join(paused ?? (settled || run.background ? t('background') : undefined), phaseLine ?? progress, failedPart, elapsed)
+      : run.status === 'done'
+        ? join(t('status.done'), counts.total > 0 ? t('agents', { count: counts.total }) : undefined, elapsed)
+        : run.status === 'failed'
+          ? join(t('didntFinish'), counts.total > 0 ? progress : undefined, failedPart, elapsed)
+          : join(t('status.stopped'), counts.total > 0 ? progress : undefined, elapsed);
   const callError = status === 'error' ? partError(call) : undefined;
   const runError = run.error ?? callError;
   const output = status === 'completed' ? partOutput(call) : '';
   const result = output && run.status === 'done' ? parseWorkflowResult(output) : null;
-  // A failed or stopped run's output is its error block, which the error row above already says.
-  const rawOutput = !result && output && !output.trimStart().startsWith('<workflow_error>') ? output : '';
-  const hasProgress = run.agents.length > 0 || run.phases.length > 0;
-  const facts = [
-    run.name && run.name !== title ? t('savedName', { name: run.name }) : undefined,
-    run.status === 'running' && run.maxAgents ? t('upTo', { count: run.maxAgents }) : undefined,
-  ].filter((fact): fact is string => !!fact);
 
   return (
     // A failed run leads with the shared failure triangle, as every failed call does. A
     // completed call whose run did not fail is not a failure, whatever its output says.
     <ToolOutcomeContext.Provider value={run.status === 'failed' || status === 'error' ? 'failed' : 'ok'}>
-      <BasicTool
-        icon={icon}
-        trigger={<WorkflowTrigger title={title} subtitle={subtitle} chips={<RunChips run={run} />} live={live} />}
-        defaultOpen={defaultOpen}
-        // A running run is the thing to watch, and a failure must not hide behind a closed
-        // row: either opens itself, so the rows say which agent is at work or broke.
-        forceOpen={forceOpen || (hasProgress && (run.status === 'running' || run.status === 'failed' || status === 'error'))}
-        locked={locked}
-      >
-        <>
-          <RunToolbar
-            facts={facts}
-            controls={
-              live || (!!run.runId && !run.name && !!ids.sessionId) ? (
-                <WorkflowRunControls
-                  projectId={ids.projectId}
-                  controlSessionId={live ? controlSessionId : undefined}
-                  ownerSessionId={ids.sessionId}
-                  run={run}
-                />
-              ) : null
-            }
-            onOpen={run.background ? () => setOpen({ sessionId: run.background!.sessionId, title }) : undefined}
-          />
-          <WorkflowLogs logs={run.logs} />
-          {hasProgress && <WorkflowProgress run={run} live={live} now={now} onOpen={onOpen} stop={stop} />}
-          {runError && run.status !== 'running' && <ToolError error={runError} toolName={call.name} />}
-          {result ? <WorkflowResultFold result={result} /> : rawOutput ? <WorkflowDetails output={rawOutput} /> : null}
-        </>
-      </BasicTool>
+      {/* Never a fold: the run is the thing the person watches, running or done (Paper C19). */}
+      <WorkflowRunCard
+        run={run}
+        title={title}
+        subtitle={cardSubtitle}
+        live={live}
+        now={now}
+        onOpen={onOpen}
+        stop={stop}
+        chips={<RunChips run={run} />}
+        result={result ? <OutputBlock text={result.text} markdown={result.kind === 'markdown'} /> : undefined}
+        actions={
+          <>
+            {(live || (!!run.runId && !run.name && !!ids.sessionId)) && (
+              <WorkflowRunControls
+                projectId={ids.projectId}
+                controlSessionId={live ? controlSessionId : undefined}
+                ownerSessionId={ids.sessionId}
+                run={run}
+                appearance="text"
+              />
+            )}
+            {run.background && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="xs"
+                aria-label={t('openRunLabel')}
+                onClick={() => setOpen({ sessionId: run.background!.sessionId, title })}
+                className="ml-1"
+              >
+                {t('openRun')}
+                <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0" />
+              </Button>
+            )}
+          </>
+        }
+      />
+      {runError && run.status !== 'running' && (
+        <div className="mt-2 px-4 text-sm">
+          {/* One sentence; the run's raw error (script or platform words) folds behind Details. */}
+          <AgentFailure sentence={t('failedSentence')} raw={runError} />
+        </div>
+      )}
       {modal}
     </ToolOutcomeContext.Provider>
   );
 }
 
-/** The facts line and the run's controls, above the progress. A background run opens its runner session here too. */
-function RunToolbar({ facts, controls, onOpen }: { facts: string[]; controls: React.ReactNode; onOpen?: () => void }) {
-  const t = useTranslations('tools.workflow');
-  const indent = useToolIndent();
-  if (facts.length === 0 && !controls && !onOpen) return null;
-  return (
-    <div className={cn('flex min-h-6 items-center gap-2 text-xs', indent && 'mt-1.5', indent)}>
-      <p className="text-muted-foreground min-w-0 flex-1 truncate">{facts.join(' · ')}</p>
-      {onOpen && (
-        <button
-          type="button"
-          aria-label={t('openRunLabel')}
-          onClick={onOpen}
-          className="text-muted-foreground hover:text-foreground cursor-pointer whitespace-nowrap underline-offset-2 transition-colors hover:underline"
-        >
-          {t('openRun')}
-        </button>
-      )}
-      {controls}
-    </div>
-  );
-}
 
-/** The script's return value, folded: pretty JSON in mono, anything else as Markdown. */
-function WorkflowResultFold({ result }: { result: WorkflowResult }) {
-  const t = useTranslations('tools.workflow');
-  const indent = useToolIndent();
-  return (
-    <div className={cn(indent && 'mt-1.5', indent)}>
-      <FoldedSection label={t('result')}>
-        <OutputBlock text={result.text} markdown={result.kind === 'markdown'} />
-      </FoldedSection>
-    </div>
-  );
-}
-
-function WorkflowDetails({ output }: { output: string }) {
-  const t = useTranslations('tools.workflow');
-  const indent = useToolIndent();
-  return (
-    <div className={cn(indent && 'mt-1.5', indent)}>
-      <FoldedSection label={t('showDetails')}>
-        <OutputBlock text={output.length > 8_000 ? `${output.slice(0, 8_000)}\n…` : output} />
-      </FoldedSection>
-    </div>
-  );
+/** How a background run ended, read from its runner session; null while it still runs. */
+function runnerOutcome(state: ReturnType<typeof boardStateOf>): 'done' | 'failed' | 'stopped' | null {
+  if (state === 'completed' || state === 'idle') return 'done';
+  if (state === 'failed') return 'failed';
+  if (state === 'stopped') return 'stopped';
+  return null;
 }
 
 ToolRegistry.register('workflow', WorkflowTool);

@@ -1,9 +1,11 @@
+import { asLegacyWorkspaceRoute } from '@kortix/shared/workspace-routes';
 import { config } from './config';
 import { getRequestUrl } from './lib/request-url';
 import { runInboundAudit } from './shared/audit-edge';
 import { annotateAuditEvent, setInboundAuditEntrypoint } from './shared/audit-scope';
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { isUuid } from './shared/validate';
+import { clientIpFromHeaders } from './shared/client-ip';
 import { schemaReady } from './bootstrap';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
 import { prepareAppWsUpgrade } from './apps/ws-proxy';
@@ -116,7 +118,7 @@ export async function dispatchInbound(
 
 // The per-request stream-timeout guards, moved verbatim.
 function applyStreamTimeouts(req: Request, url: URL, server: any): void {
-  // Sandbox preview traffic includes OpenCode long-poll and SSE routes. Let
+  // Sandbox preview traffic includes the runtime's long-poll and SSE routes. Let
   // the proxy's own upstream timeout decide instead of Bun closing the client
   // socket early with an empty reply.
   if (url.pathname.includes('/v1/p/')) {
@@ -128,7 +130,7 @@ function applyStreamTimeouts(req: Request, url: URL, server: any): void {
   // into a 502 with no CORS headers — the same shape as the gateway
   // idleTimeout incident. The global `idleTimeout: 0` above is necessary but
   // not sufficient: `server.timeout(req, …)` is the PER-REQUEST budget.
-  if (SECRET_RELAY_PATH.test(url.pathname)) {
+  if (SECRET_RELAY_PATH.test(asLegacyWorkspaceRoute(url.pathname))) {
     server.timeout(req, 0);
   }
 

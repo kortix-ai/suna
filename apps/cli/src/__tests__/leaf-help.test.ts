@@ -39,11 +39,9 @@ const GROUPS = [
   'members',
   'models',
   'permissions',
-  'projects',
   'providers',
   'review',
   'roles',
-  'rooms',
   'sandboxes',
   'secrets',
   'sessions',
@@ -51,6 +49,7 @@ const GROUPS = [
   'tokens',
   'tools',
   'triggers',
+  'workspaces',
 ] as const;
 
 let tmp: string;
@@ -143,6 +142,9 @@ describe('kortix <group> <subcommand> --help', () => {
     server = Bun.serve({
       port: 0,
       fetch: (req) => {
+        // A port probe from the dev box (PTXP sends HEAD / and GET / to every new
+        // listening port) is not the CLI: the CLI never requests the bare root.
+        if (new URL(req.url).pathname === '/') return new Response(null, { status: 404 });
         requests.push(`${req.method} ${new URL(req.url).pathname}`);
         return Response.json({ error: 'the help path must never reach the API' }, { status: 500 });
       },
@@ -157,12 +159,21 @@ describe('kortix <group> <subcommand> --help', () => {
     process.env = { ...ORIGINAL_ENV };
   });
 
-  test('projects help does not promise dedicated options pages for fallback subcommands', async () => {
-    for (const args of [['projects', '--help'], ['projects', 'use', '--help']]) {
+  test('workspaces help does not promise dedicated options pages for fallback subcommands', async () => {
+    for (const args of [['workspaces', '--help'], ['workspaces', 'use', '--help']]) {
       const result = await runCli(args);
       expect(result.code).toBe(0);
-      expect(result.stdout).toContain('Usage: kortix projects');
-      expect(result.stdout).not.toContain('Run kortix projects <subcommand> --help for options.');
+      expect(result.stdout).toContain('Usage: kortix workspaces');
+      expect(result.stdout).not.toContain('Run kortix workspaces <subcommand> --help for options.');
+    }
+  });
+
+  test('the older names projects, project and workspace route to workspaces, silently', async () => {
+    for (const name of ['projects', 'project', 'workspace']) {
+      const result = await runCli([name, '--help']);
+      expect(`${name} exit=${result.code}`).toBe(`${name} exit=0`);
+      expect(result.stdout).toContain('Usage: kortix workspaces');
+      expect(result.stderr).not.toContain('eprecated');
     }
   });
 
@@ -200,6 +211,7 @@ describe('kortix <group> <subcommand> --help', () => {
         // error forms that mean auth/project resolution ran before the help.
         expect(`${where} :: ${r.stderr}`).not.toContain('Not logged in');
         expect(`${where} :: ${r.stderr}`).not.toContain('No project');
+        expect(`${where} :: ${r.stderr}`).not.toContain('No workspace');
       }
 
       expect(requests.slice(before)).toEqual([]);

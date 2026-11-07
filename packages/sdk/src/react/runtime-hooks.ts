@@ -1,0 +1,200 @@
+'use client';
+
+/**
+ * @kortix/sdk/react — the session runtime React hook surface.
+ *
+ * Barrel re-exporting EVERY hook, query-key factory, provider, and type from
+ * the `use-runtime-*` / `use-*` hook modules. The web UI imports these
+ * by exact name + return shape, so this file is the public contract — keep it
+ * exhaustive and in parity with the source hooks.
+ *
+ * The cross-module duplicates (`McpStatus`, `ModelKey`, `useVisibleAgents`)
+ * are same-symbol re-exports (the secondary module re-exports the primary's
+ * binding), so the overlapping `export *` statements resolve to a single
+ * declaration with no ambiguity.
+ */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FINAL PUBLIC SURFACE (Phase 7). A new host should reach a session through ONE
+// hook — `useSession(projectId, sessionId)` — plus the pre-runtime capability
+// hooks (`useProjectModels` / `useVisibleAgents` / `useProjectConfig`) and the
+// primitives (`useSessionPicks` / `useRuntimePhase` / start-stash). The golden
+// reference (apps/white-label/lumen) imports ONLY that surface — no `server-store`,
+// no `RuntimeEventStreamProvider`, no `useCanonicalRuntimeSession`, no raw
+// stores, no `getClient`.
+//
+// The lower-level exports below (`RuntimeEventStreamProvider`,
+// `useCanonicalRuntimeSession`, the sandbox-connection / sync / pending stores,
+// the per-sandbox session hooks) are now INTERNAL plumbing that `useSession`
+// composes. They remain exported ONLY because apps/web still consumes them
+// directly through its not-yet-migrated file/terminal/git hooks; once that
+// migration lands they come out of the public surface. New hosts: do not import
+// them — use `useSession`.
+// ─────────────────────────────────────────────────────────────────────────────
+// Router-agnostic route scope: the host injects "the project the user is
+// looking at" here (Next hosts derive it from useParams once, near the root);
+// `useRuntimeProviders`/`useRuntimeLocal` resolve it via this context.
+export { KortixWorkspaceProvider, KortixProjectProvider, useKortixRouteWorkspaceId, useKortixRouteProjectId } from './route-project';
+export * from './use-runtime-sessions';
+export * from './use-runtime-events';
+export * from './use-runtime-local';
+export * from './use-model-defaults';
+export * from './use-model-enablement';
+export * from './use-session-model-selection';
+export * from './use-runtime-pty';
+export * from './use-runtime-config';
+export * from './use-model-store';
+export * from './use-session-sync';
+// Every hook above is exported under its neutral `Runtime` name; 0.15.0
+// removed the pre-W4 `OpenCode` names.
+// Runtime health has three independent layers, each covering a failure mode
+// the others can't see — do not collapse them:
+//   1. Boot readiness is server-truth: `useSession`'s /start resolves
+//      `stage==='ready'` only once the backend reached the daemon and the
+//      runtime answered, and seeds that straight into the connection store. No client
+//      poll is needed (or trustworthy) to *establish* the first connection.
+//   2. In-stream stalls are covered by the SSE heartbeat in
+//      `core/stream/event-stream.ts` (`openEventStream`) — a 15s watchdog that
+//      forces a reconnect if no event arrives, so a stream that goes quiet
+//      recovers on its own.
+//   3. Neither of those promptly detects the runtime dying *mid-session* or a
+//      network partition: a dead sandbox's SSE connection can hang rather than
+//      error, and the heartbeat only fires once its own timeout elapses. That
+//      gap is what `useRuntimeReconnect` (`./use-runtime-reconnect`) closes —
+//      an independent liveness probe (`getSessionHealth`/`isRuntimeReady`)
+//      polled on its own cadence and written into the same connection store,
+//      so the reconnect/offline UI reacts even when the SSE stream itself
+//      never surfaces an error. The tradeoff: while healthy it only polls
+//      every 30s (`POLL_CONNECTED`), so a mid-session death can take up to
+//      ~30s to surface — traded against not hammering a healthy sandbox with a
+//      tight poll forever.
+export * from './use-runtime-reconnect';
+// The live pending-request store. The SSE event stream writes agent QUESTIONS
+// and PERMISSION requests here (keyed by request id, each carrying sessionID);
+// `useSessionSync` does NOT surface them, so a host that renders interactive
+// prompts must read them from this store.
+export { useRuntimePendingStore } from '../browser/stores/runtime-pending-store';
+export {
+  useSandboxConnectionStore,
+  type SandboxConnectionStatus,
+} from '../browser/stores/sandbox-connection-store';
+export {
+  requestRuntimeReconnect,
+  useSandboxConnectionStore as useRuntimeConnectionStore,
+} from '../browser/stores/sandbox-connection-store';
+export { useServerStore as useRuntimeStore } from '../browser/stores/server-store';
+export { useSyncStore as useSessionStateStore } from '../browser/stores/sync-store';
+export * from './use-session-prefetch';
+// Relocated from `platform/projects-client/session-sandbox` — it types against
+// react-query's QueryClient, which the framework-free REST layer must not.
+export { prefetchSessionStart } from './prefetch-session-start';
+export { prefetchSessionOpen } from './prefetch-session-open';
+export * from './use-canonical-runtime-session';
+export * from './use-gateway-catalog-sync';
+export * from './use-visible-agents';
+export * from './provider-refresh';
+// Runtime-free model catalog → selectable model list. Lets a host build a model
+// picker BEFORE a session runtime exists (e.g. on a "new session" screen) by
+// feeding `project(id).llmCatalog()` through these, with correct provider/model
+// ids — no guessing the gateway-vs-BYOK key format.
+export { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
+export {
+  GATEWAY_PROVIDER_IDS,
+  LLM_PROVIDER_CREDENTIALS,
+  connectedGatewayProviderIdsFromSecretNames,
+  filterToGatewayProviders,
+  applyEnablementToProviderList,
+  filterToNativeProviders,
+  mergeWorkspaceSecretConnectedProviders, mergeProjectSecretConnectedProviders,
+  mergeProviderLists,
+  normalizeProviderList,
+  projectLlmCatalogToProviderList,
+  providerListHasGateway,
+  providerListHasModels,
+} from './provider-selection';
+export { useWorkspaceModelPickerCatalog, useProjectModelPickerCatalog, useWorkspaceModels, useProjectModels } from './use-project-models';
+export { useWorkspaceConfig, useProjectConfig } from './use-project-config';
+export type { ProjectConfigSummary, WorkspaceConfigSummary } from '../core/rest/projects-client';
+
+// ── The one-hook session surface ─────────────────────────────────────────────
+// `useSession(projectId, sessionId)` collapses the entire runtime dance (start →
+// switch → health → SSE → id-resolution → message sync) into a single hook so a
+// host never touches the sandbox. The primitives below are what it composes —
+// also exported standalone for hosts that want the pieces (a model picker, a boot
+// pill, the new-session hand-off) without a full session.
+export {
+  useSession,
+  type SessionPhase,
+  type UseSessionResult,
+  type UseSessionOptions,
+} from './use-session';
+export {
+  useSessionMessages,
+  type SessionMessagesOptions,
+  type SessionMessagesSource,
+} from './use-session-messages';
+// The session log (`kortix.session/2`) of a session `useSession` owns; null while it reads v1.
+export { useSessionLog, useSessionLogOlder, useSessionLogRecord, useSessionLogThread, type SessionLogThreadOptions } from './use-session-log';
+// A read-only view of any session from the API (its log and its stream): no `/start`, no runtime switch.
+export {
+  useSessionView,
+  type SessionViewStatus,
+  type UseSessionViewOptions,
+  type UseSessionViewResult,
+} from './use-session-view';
+export { useSessionPicks, type SessionPicks } from './use-session-picks';
+export {
+  useSessionPrompts,
+  sessionPromptsPollMs,
+  startSessionWithPrompt,
+  isOptimisticSessionPrompt,
+  optimisticSessionPrompt,
+  applyOptimisticPrompt,
+  settleOptimisticPrompt,
+  removeOptimisticPrompt,
+  reconcileOptimisticPrompts,
+  OPTIMISTIC_PROMPT_PREFIX,
+  SESSION_PROMPTS_POLL_MS,
+  SESSION_PROMPTS_IDLE_POLL_MS,
+  type StartSessionWithPromptAdapters,
+  type UseSessionPromptsResult,
+} from './use-session-prompts';
+export { readSessionAudit } from './use-session-audit';
+export { useSessionWorkingStore } from '../browser/stores/session-working-store';
+export {
+  useSessionTurnOutcome,
+  useSessionWorking,
+  workingPollMs,
+  buildWorkingInputs,
+  WORKING_POLL_ACTIVE_MS,
+  WORKING_POLL_IDLE_MS,
+  type SessionTurnObservation,
+  type UseSessionWorkingOptions,
+} from './use-session-working';
+export { useRuntimePhase, type RuntimePhase } from './use-runtime-phase';
+export { useRuntimeBootStalled, RUNTIME_BOOT_STALL_MS } from './use-runtime-boot-stalled';
+export {
+  useWakeEscalation,
+  type UseWakeEscalationInput,
+  type WakeEscalationView,
+} from './use-wake-escalation';
+export {
+  useQuestionSelfHeal,
+  hasRunningQuestionTool,
+  type UseQuestionSelfHealOptions,
+} from './use-question-self-heal';
+export {
+  usePermissionSelfHeal,
+  findPermissionBlockedCandidate,
+  hasActiveNonQuestionTool,
+  type UsePermissionSelfHealOptions,
+} from './use-permission-self-heal';
+export {
+  startStashKey,
+  writeStartStash,
+  readStartStash,
+  clearStartStash,
+  migrateStash,
+  migrateLegacyStash,
+  type StartStash,
+} from './session-start-stash';

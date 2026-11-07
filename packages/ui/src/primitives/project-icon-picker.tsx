@@ -1,6 +1,7 @@
 'use client';
 
 import { lazyClient } from '../lib/lazy-client';
+import { TrashIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import type { EmojiSelection } from './emoji-picker';
@@ -9,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';
 import { cn } from '../lib/utils';
 
 /**
- * Emoji and Icon side by side, one popover.
+ * Icons and Emojis side by side, one popover. Icons is the default tab.
  *
  * `EmojiPicker` is rendered exactly as `emoji-picker.tsx` exports it — no
  * extra props, no wrapper markup around it. frimousse owns its search field
@@ -34,7 +35,7 @@ import { cn } from '../lib/utils';
  * ProjectIconField, so static imports put frimousse and the 202-glyph
  * registry in the project home's largest chunk (338 KB decoded on dev,
  * 2026-09-27) for a popover almost nobody opens. The placeholder has both
- * panels' exact geometry (`h-[368px] w-full`), so the popover never resizes
+ * panels' exact geometry (`h-[388px] w-full`), so the popover never resizes
  * when a panel arrives; `preloadProjectIconPicker` fetches them before the
  * popover opens.
  */
@@ -42,7 +43,7 @@ const loadEmojiPicker = () => import('./emoji-picker');
 const loadGlyphPicker = () => import('./glyph-picker');
 
 function PanelPlaceholder() {
-  return <div aria-busy="true" className="h-[368px] w-full" />;
+  return <div aria-busy="true" className="h-[388px] w-full" />;
 }
 
 const EmojiPicker = lazyClient(() => loadEmojiPicker().then((m) => m.EmojiPicker), {
@@ -61,36 +62,74 @@ export function preloadProjectIconPicker(): void {
 export function ProjectIconPicker({
   onEmojiSelect,
   onGlyphSelect,
-  defaultTab = 'emoji',
+  defaultTab = 'icon',
   defaultColor = 'grey',
+  selectedGlyph,
+  onRemove,
+  removeLabel = 'Remove icon',
   className,
 }: {
   onEmojiSelect: (emoji: EmojiSelection) => void;
   onGlyphSelect: (glyph: GlyphSelection) => void;
   defaultTab?: 'emoji' | 'icon';
   defaultColor?: string;
+  /** The glyph the project wears now. A colour change re-commits it in the new
+   *  colour, so the trigger recolours live whichever you pick first. */
+  selectedGlyph?: string;
+  /** Present only when there is an icon to take off: draws the trash button
+   *  at the right end of the tab header. */
+  onRemove?: () => void;
+  removeLabel?: string;
   className?: string;
 }) {
   const [color, setColor] = useState(defaultColor);
+  const changeColor = (next: string) => {
+    setColor(next);
+    if (selectedGlyph) onGlyphSelect({ name: selectedGlyph, color: next });
+  };
 
+  // Icons first and open by default: a project icon is usually a coloured
+  // glyph, and the Kortix marks lead that grid.
   return (
     <Tabs defaultValue={defaultTab} className={cn('w-full gap-0', className)}>
-      <div className="border-border/60 border-b p-1">
-        <TabsList className="w-full">
-          <TabsTrigger value="emoji">Emoji</TabsTrigger>
-          <TabsTrigger value="icon">Icon</TabsTrigger>
+      <div className="relative">
+        <TabsList type="underline" className="h-10 w-full justify-start gap-5 px-4">
+          <TabsTrigger value="icon" className="flex-none px-0 text-sm font-medium">
+            Icons
+          </TabsTrigger>
+          <TabsTrigger value="emoji" className="flex-none px-0 text-sm font-medium">
+            Emojis
+          </TabsTrigger>
         </TabsList>
+        {onRemove ? (
+          <button
+            type="button"
+            aria-label={removeLabel}
+            title={removeLabel}
+            onClick={onRemove}
+            className={cn(
+              'text-muted-foreground hover:text-foreground hover:bg-foreground/6 absolute top-1/2 right-2 flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md',
+              'transition-[color,background-color,scale] duration-fast active:scale-[0.94]',
+              'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+            )}
+          >
+            <TrashIcon weight="fill" className="size-4" />
+          </button>
+        ) : null}
       </div>
 
-      {/* Both panels carry the emoji grid's exact geometry (GlyphPicker's own
-          h-[368px], 9-column grid) so the popover around this component never
-          resizes on tab switch — see project-icon-field.tsx's popover width
-          comment for the full width derivation. */}
+      {/* Both panels are the same fixed height (PANEL_HEIGHT in each file),
+          so the popover never resizes on a tab switch. */}
+      <TabsContent value="icon">
+        <GlyphPicker
+          color={color}
+          selected={selectedGlyph}
+          onColorChange={changeColor}
+          onGlyphSelect={onGlyphSelect}
+        />
+      </TabsContent>
       <TabsContent value="emoji">
         <EmojiPicker onEmojiSelect={onEmojiSelect} />
-      </TabsContent>
-      <TabsContent value="icon">
-        <GlyphPicker color={color} onColorChange={setColor} onGlyphSelect={onGlyphSelect} />
       </TabsContent>
     </Tabs>
   );

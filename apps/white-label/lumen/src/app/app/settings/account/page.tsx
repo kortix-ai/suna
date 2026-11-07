@@ -179,8 +179,9 @@ function TwoStepCard({ enabled, orgId }: { enabled: boolean; orgId: string }) {
   };
   const start = () =>
     run(async () => {
-      const { data, error } = await authClient.twoFactor.enable({ password });
+      const { data, error } = await authClient.twoFactor.enable({ password, method: 'totp' });
       if (error) throw new Error(error.message);
+      if (data.method !== 'totp') throw new Error('The server did not return an authenticator app secret.');
       setSetup({ uri: data.totpURI, backupCodes: data.backupCodes });
       setPassword('');
     });

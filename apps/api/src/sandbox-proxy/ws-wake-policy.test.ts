@@ -24,7 +24,7 @@ describe('shouldWakeStoppedSandboxForWsAttach', () => {
   });
 
   test('opencode-hosted pty attaches count too', () => {
-    expect(shouldWakeStoppedSandboxForWsAttach('stopped', '/pty/abc/connect', { wakeRequested: true })).toBe(true);
+    expect(shouldWakeStoppedSandboxForWsAttach('stopped', '/kortix/pty/abc/connect', { wakeRequested: true })).toBe(true);
   });
 
   test('a non-pty websocket (app preview, hmr) never wakes a box', () => {

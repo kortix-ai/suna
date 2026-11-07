@@ -351,7 +351,7 @@ export const DEFAULT_SECURITY_TAB_COPY: SecurityTabCopy = {
     'Your two-factor settings are unchanged — this is only the list failing to load.',
   noFactorEnrolled: 'No second factor enrolled',
   noFactorDescription:
-    'If your organization requires MFA, you’ll be blocked from gated actions until you enroll an authenticator here.',
+    'If a workspace you belong to requires MFA, you’ll be blocked from gated actions until you enroll an authenticator here.',
   scanTitle: 'Scan with your phone',
   scanDescription: 'Open any authenticator app and scan this code.',
   qrAlt: 'TOTP enrollment QR code',
@@ -362,7 +362,7 @@ export const DEFAULT_SECURITY_TAB_COPY: SecurityTabCopy = {
   cancel: 'Cancel',
   removeFactorTitle: 'Remove this factor?',
   removeFactorDescription:
-    'If your organization requires MFA and this is your only verified factor, you will be locked out of gated actions until you enroll again.',
+    'If a workspace you belong to requires MFA and this is your only verified factor, you will be locked out of gated actions until you enroll again.',
   removeFactor: 'Remove factor',
   devices: 'Devices',
   currentDevice: 'This browser',

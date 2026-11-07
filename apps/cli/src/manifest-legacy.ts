@@ -5,8 +5,8 @@
  * is `@kortix/manifest-schema` `convertLegacyManifest`; this module gives it
  * the filesystem.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, relative, resolve } from 'node:path';
 import {
   type LegacyConversion,
   convertLegacyManifest,
@@ -17,24 +17,7 @@ import {
   renderManifest,
   splitManifestByOrigin,
 } from '@kortix/manifest-schema';
-import { resolveLocalManifestImports } from './manifest-imports.ts';
-
-const SKIP = new Set(['.git', 'node_modules']);
-
-/** Every file under `root`, repo-relative, without `.git` and `node_modules`. */
-function repoPaths(root: string): string[] {
-  const out: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (SKIP.has(entry.name)) continue;
-      const abs = join(dir, entry.name);
-      if (entry.isDirectory()) walk(abs);
-      else if (entry.isFile()) out.push(relative(root, abs).split('\\').join('/'));
-    }
-  };
-  walk(root);
-  return out;
-}
+import { repoPaths, resolveLocalManifestImports } from './manifest-imports.ts';
 
 export interface LocalLegacyManifest {
   /** Absolute path of the legacy file: `kortix.yaml`/`kortix.yml` with `kortix_version` 1 or 2, or `kortix.toml`. */
@@ -112,5 +95,5 @@ export function applyLocalLegacy(root: string, legacy: LocalLegacyManifest, conv
 /** The message every CLI write gives a legacy project. */
 export function legacyWriteRefusal(path: string, from: 1 | 2): string {
   const what = from === 1 ? 'kortix.toml (kortix_version = 1)' : `${path} (kortix_version: 2)`;
-  return `This project's manifest is ${what}, an older format. Kortix still runs it, but the CLI edits only the current format. Run \`kortix validate --fix\` to convert it, then run this command again.`;
+  return `This workspace's manifest is ${what}, an older format. Kortix still runs it, but the CLI edits only the current format. Run \`kortix validate --fix\` to convert it, then run this command again.`;
 }

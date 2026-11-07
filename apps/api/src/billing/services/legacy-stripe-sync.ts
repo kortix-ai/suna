@@ -1,6 +1,28 @@
-import { eq } from 'drizzle-orm';
-import { creditAccounts } from '@kortix/db';
+import { and, eq, ne } from 'drizzle-orm';
+import { billingCustomers, creditAccounts } from '@kortix/db';
 import { db } from '../../shared/db';
+import { isUuid, listAccountWorkspaces } from '../../workspaces/surface';
+
+/**
+ * Legacy Stripe recovery: adopt a paid Credits subscription the account's
+ * `credit_accounts` row does not name yet (a subscription bought before the
+ * webhook mapped it, or after a Stripe account move).
+ *
+ * One workspace = one account = one Stripe customer, and one person's
+ * customers all carry the same email. So the sync never matches by email
+ * (design.md §3.1 finding 8). It adopts a subscription only when:
+ *
+ * - its customer is this account's own (a `billing_customers` row of this
+ *   account), or has no `billing_customers` row at all; and
+ * - its `metadata.account_id` is empty, names this account, or names an
+ *   account that no longer exists (a legacy id); and
+ * - no other `credit_accounts` row holds its id (invariant I11).
+ *
+ * Candidates: every `billing_customers` row of this account, plus the
+ * customers of subscriptions whose `metadata.account_id` names this account
+ * (Stripe search). It never rewrites a `metadata.account_id` that names
+ * another live account. Only `POST /v1/billing/sync-subscription` runs it.
+ */
 
 export type LegacyStripeSyncResult = {
   status:
@@ -59,18 +81,11 @@ export async function syncLegacyStripeSubscription(
       };
     }
 
-    const { getCustomerByAccountId, upsertCustomer } = await import('../repositories/customers');
+    const { getCustomerByAccountId, getCustomerByStripeId, upsertCustomer } = await import('../repositories/customers');
     const customer = await getCustomerByAccountId(accountId);
     const customerId = customer?.id ?? null;
     const customerEmail = customer?.email ?? null;
-
-    if (!customerId && !customerEmail) {
-      return {
-        status: 'no_customer',
-        accountId,
-        message: 'No Stripe customer mapping found for account',
-      };
-    }
+    const ownCustomerIds = await stripeCustomerIdsOf(accountId);
 
     const { getStripe } = await import('../../shared/stripe');
     const stripe = getStripe();
@@ -78,24 +93,27 @@ export async function syncLegacyStripeSubscription(
     const { applyStripeSync } = await import('./account-write-owner');
     const { wallet } = await import('../wallet');
 
-    const candidateCustomerIds = new Set<string>();
-    if (customerId) candidateCustomerIds.add(customerId);
+    const candidateCustomerIds = new Set<string>(ownCustomerIds);
+    // Subscriptions that name this account, on a customer that may not be
+    // mapped yet. Never an email match: a person's workspaces share one email.
+    for (const found of await subscriptionsNamingAccount(stripe, accountId)) {
+      if (typeof found.customer === 'string') candidateCustomerIds.add(found.customer);
+    }
 
-    if (customerEmail) {
-      const escapedCustomerEmail = customerEmail
-        .replace(/\\/g, '\\\\')
-        .replace(/'/g, "\\'");
-      const customers = await stripe.customers.search({
-        query: `email:'${escapedCustomerEmail}'`,
-        limit: 10,
-      });
-
-      for (const match of customers.data) {
-        candidateCustomerIds.add(match.id);
-      }
+    if (candidateCustomerIds.size === 0) {
+      return {
+        status: 'no_customer',
+        accountId,
+        message: 'No Stripe customer mapping found for account',
+      };
     }
 
     for (const candidateCustomerId of candidateCustomerIds) {
+      // A customer another account owns is that account's, whatever its email.
+      if (!ownCustomerIds.has(candidateCustomerId)) {
+        const mapped = await getCustomerByStripeId(candidateCustomerId);
+        if (mapped && mapped.accountId !== accountId) continue;
+      }
       try {
         const stripeCustomer = await stripe.customers.retrieve(candidateCustomerId);
         if ('deleted' in stripeCustomer && stripeCustomer.deleted) {
@@ -113,6 +131,8 @@ export async function syncLegacyStripeSubscription(
 
       for (const subscription of subscriptions.data) {
         if (planForSubscription(subscription) !== 'credits') continue;
+        if (await namesAnotherLiveAccount(subscription.metadata?.account_id, accountId)) continue;
+        if (await subscriptionHeldElsewhere(subscription.id, accountId)) continue;
         const tierConfig = { name: 'credits' };
         const monthlyUsd = monthlyCreditsForSubscription(subscription);
 
@@ -140,6 +160,7 @@ export async function syncLegacyStripeSubscription(
             billing_period: billingPeriod,
           };
 
+          // Only a dead (legacy) id reaches here: a live one was skipped above.
           if (subscription.metadata?.account_id && subscription.metadata.account_id !== accountId) {
             metadata.legacy_account_id = subscription.metadata.account_id;
           }
@@ -195,13 +216,15 @@ export async function syncLegacyStripeSubscription(
             });
           }
 
-          await upsertCustomer({
-            accountId,
-            id: candidateCustomerId,
-            email: customerEmail,
-            active: true,
-            provider: 'stripe',
-          });
+          if (!ownCustomerIds.has(candidateCustomerId)) {
+            await upsertCustomer({
+              accountId,
+              id: candidateCustomerId,
+              email: customerEmail,
+              active: true,
+              provider: 'stripe',
+            });
+          }
 
           console.log(
             `[legacy-stripe-sync] Synced Stripe sub ${subscription.id} → tier=${tierConfig.name} for ${accountId} (customer=${candidateCustomerId})`,
@@ -228,4 +251,51 @@ export async function syncLegacyStripeSubscription(
       message: 'Legacy Stripe sync failed',
     };
   }
+}
+
+/** Every Stripe customer id mapped to this account (`billing_customers`), not only the canonical one. */
+async function stripeCustomerIdsOf(accountId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ id: billingCustomers.id, provider: billingCustomers.provider })
+    .from(billingCustomers)
+    .where(eq(billingCustomers.accountId, accountId));
+  return new Set(rows.filter((row) => !row.provider || row.provider === 'stripe').map((row) => row.id));
+}
+
+type StripeLike = ReturnType<typeof import('../../shared/stripe').getStripe>;
+
+/** Active subscriptions whose `metadata.account_id` is this account. Search errors read as none. */
+async function subscriptionsNamingAccount(stripe: StripeLike, accountId: string): Promise<Array<{ customer: unknown }>> {
+  try {
+    const found = await stripe.subscriptions.search({
+      query: `status:'active' AND metadata['account_id']:'${accountId}'`,
+      limit: 10,
+    });
+    return found.data;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * True when `metadataAccountId` names a live account other than `accountId`:
+ * an account with a live workspace (active, dormant or closing). A legacy id
+ * with no account behind it is not live, so the sync may adopt it.
+ */
+async function namesAnotherLiveAccount(metadataAccountId: string | null | undefined, accountId: string): Promise<boolean> {
+  const named = metadataAccountId?.trim().toLowerCase();
+  if (!named || named === accountId.toLowerCase()) return false;
+  // Not a uuid: no account can carry it, but it is not ours either.
+  if (!isUuid(named)) return true;
+  return (await listAccountWorkspaces(named)).length > 0;
+}
+
+/** Invariant I11: one `credit_accounts` row per subscription id. */
+async function subscriptionHeldElsewhere(subscriptionId: string, accountId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ accountId: creditAccounts.accountId })
+    .from(creditAccounts)
+    .where(and(eq(creditAccounts.stripeSubscriptionId, subscriptionId), ne(creditAccounts.accountId, accountId)))
+    .limit(1);
+  return Boolean(row);
 }

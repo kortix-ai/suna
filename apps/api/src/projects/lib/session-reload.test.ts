@@ -152,7 +152,7 @@ describe('the reload never hard-resets the session branch', () => {
  * new config." — and it was measurably false on dev: the etag moved, opencode
  * kept reading the working tree's agent `.md`, and the reload reported success.
  * The rule these tests encode is that we may only claim the agent changed when
- * the files opencode actually reads were brought forward.
+ * the files the runtime actually reads were brought forward.
  */
 describe('classifyAgentFiles', () => {
   test('every daemon answer maps to exactly one outcome', () => {
@@ -193,7 +193,7 @@ describe('reloadDetail', () => {
     etag: 'bbbb',
     repo_refreshed: true,
     commit_sha: null,
-    opencode_reload: null,
+    runtime_reload: null,
     turn_ended: null,
   } as const;
 
@@ -252,7 +252,7 @@ describe('turn-ended notice', () => {
     etag: 'bbbb',
     repo_refreshed: true,
     commit_sha: null,
-    opencode_reload: 'restarted' as const,
+    runtime_reload: 'restarted' as const,
     agent_files: 'updated' as const,
   };
 

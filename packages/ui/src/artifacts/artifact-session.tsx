@@ -2,12 +2,13 @@
 
 import { getPublicArtifact, type ArtifactDetail } from '@kortix/sdk';
 import { useArtifact } from '@kortix/sdk/react';
-import { ArrowSquareOut, BrowserIcon, FileTextIcon, X } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon, BrowserIcon, FileTextIcon, XIcon } from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 
 import { useLocalizedUiCatalog } from '../i18n/ui-catalog/use-localized-ui-catalog';
 import { Button } from '../primitives/button';
 import Hint from '../primitives/hint';
+import { Skeleton } from '../primitives/skeleton';
 import { useUiComponents, useUiRouter } from '../providers/ui-provider';
 import { ArtifactFrame } from './artifact-frame';
 import { artifactFrameKey, parseArtifactUrl } from './frame-policy';
@@ -68,7 +69,7 @@ function useShownArtifact(url: string): { artifact: ShownArtifact | null; failed
       type: detail.type,
       src: detail.version.view_url,
       frameKey: artifactFrameKey(detail),
-      href: `/projects/${detail.project_id}/artifacts/${detail.artifact_id}`,
+      href: `/workspaces/${detail.project_id}/artifacts/${detail.artifact_id}`,
     },
     failed: false,
   };
@@ -110,8 +111,19 @@ export function ShowArtifactCard({ url, fallback }: { url: string; fallback: Rea
           <Icon className="text-muted-foreground size-4" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="text-foreground block truncate text-sm font-medium">{artifact?.title ?? ' '}</span>
-          <span className="text-muted-foreground block text-xs">{artifact ? (artifact.type === 'doc' ? copy.doc : copy.page) : ' '}</span>
+          {/* While the detail loads, lines in the shape of the title and the type: never a blank card. */}
+          {artifact ? (
+            <span className="text-foreground block truncate text-sm font-medium">{artifact.title}</span>
+          ) : (
+            <Skeleton className="my-0.5 h-4 w-40 max-w-full" />
+          )}
+          <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            {artifact ? (
+              <span>{artifact.type === 'doc' ? copy.doc : copy.page}</span>
+            ) : (
+              <Skeleton className="my-0.5 h-3 w-16" />
+            )}
+          </span>
         </span>
         <span className="text-muted-foreground group-hover:text-foreground shrink-0 text-xs font-medium transition-colors">{copy.open}</span>
       </span>
@@ -145,13 +157,13 @@ function ArtifactPagePreview({ url, onClose }: { url: string; onClose: () => voi
         {artifact?.href ? (
           <Hint label={copy.openArtifact} side="bottom">
             <Button size="icon-sm" variant="ghost" aria-label={copy.openArtifact} onClick={() => router.push(artifact.href!)}>
-              <ArrowSquareOut className="size-3.5" />
+              <ArrowSquareOutIcon className="size-3.5" />
             </Button>
           </Hint>
         ) : null}
         <Hint label={copy.close} side="bottom">
           <Button size="icon-sm" variant="ghost" aria-label={copy.close} onClick={onClose}>
-            <X className="size-3.5" />
+            <XIcon className="size-3.5" />
           </Button>
         </Hint>
       </div>

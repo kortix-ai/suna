@@ -5,10 +5,7 @@ import type { Context } from 'hono';
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { and, eq } from 'drizzle-orm';
-import {
-  accountMemberships,
-  projects,
-} from '@kortix/db';
+import { accountMemberships } from '@kortix/db';
 import { db } from '../../shared/db';
 import { membershipSuperAdminRow } from '../../iam/membership-read';
 import { groupIdsOfUser, groupNamesByIds } from '../../iam/group-read';
@@ -19,6 +16,7 @@ import {
   assertAuthorized,
   authorize,
   resourceTypeForAction,
+  toWorkspaceAction,
   type Obj,
 } from '../../iam';
 import { actorForUser, actorOf, type Actor } from '../../iam/actor';
@@ -42,6 +40,17 @@ import {
 } from './app';
 import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
+import { accountIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
+import { isUuid } from '../../shared/validate';
+
+/**
+ * A `{userId}` that is not a UUID reaches a `::uuid` cast in the membership
+ * reads and fails with SQLSTATE 22P02, which surfaces as a 500. Callers run
+ * this after their authorization check so the 400 reveals nothing.
+ */
+const badMemberId = (c: Context, userId: string) =>
+  isUuid(userId) ? null : c.json({ error: 'userId must be a UUID' }, 400);
 
 /**
  * WHICH principal `/effective` answers about, and with WHICH credential.
@@ -75,6 +84,7 @@ async function probeActor(
  */
 function probeObject(scope: unknown, id: unknown): Obj {
   if (scope === 'project' && typeof id === 'string' && id) return { type: 'project', id };
+  if (scope === 'workspace' && typeof id === 'string' && id) return { type: 'workspace', id };
   return { type: 'account' };
 }
 
@@ -91,7 +101,7 @@ export function registerIamMembersRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/iam/members/{userId}/super-admin',
+      path: '/{workspaceId}/iam/members/{userId}/super-admin',
       tags: ['iam'],
       summary: 'Grant or revoke super-admin',
       ...auth,
@@ -102,9 +112,11 @@ export function registerIamMembersRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const targetUserId = c.req.param('userId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT);
+    const badId = badMemberId(c, targetUserId);
+    if (badId) return badId;
 
     const body = await readJsonObject(c);
     // Accept camelCase or snake_case, but the field MUST be present and an
@@ -178,19 +190,19 @@ export function registerIamMembersRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/members/{userId}/groups',
+      path: '/{workspaceId}/iam/members/{userId}/groups',
       tags: ['iam'],
       summary: 'List group memberships for a member',
       ...auth,
       request: { params: MemberParams },
       responses: {
         200: json(z.object({ groups: z.array(GroupSchema) }), 'Groups the member belongs to'),
-        ...errors(401, 403),
+        ...errors(400, 401, 403),
       },
     }),
     async (c: any) => {
     const callerId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const targetUserId = c.req.param('userId');
 
     // Users can always see their own group memberships; otherwise gate on
@@ -198,6 +210,8 @@ export function registerIamMembersRoutes(): void {
     if (callerId !== targetUserId) {
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
     }
+    const badId = badMemberId(c, targetUserId);
+    if (badId) return badId;
 
     const rows = await listGroupsForMember(accountId, targetUserId);
     return c.json({
@@ -221,24 +235,26 @@ export function registerIamMembersRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/members/{userId}/project-access',
+      path: '/{workspaceId}/iam/members/{userId}/project-access',
       tags: ['iam'],
       summary: 'List effective project access for a member',
       ...auth,
       request: { params: MemberParams },
       responses: {
         200: json(z.object({ projects: z.array(ProjectAccessSchema) }), 'Projects the member can reach'),
-        ...errors(401, 403),
+        ...errors(400, 401, 403),
       },
     }),
     async (c: any) => {
     const callerId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const targetUserId = c.req.param('userId');
 
     if (callerId !== targetUserId) {
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
     }
+    const badId = badMemberId(c, targetUserId);
+    if (badId) return badId;
 
     type Role = 'manager' | 'member';
     const rank: Record<Role, number> = { member: 1, manager: 2 };
@@ -247,12 +263,12 @@ export function registerIamMembersRoutes(): void {
     // Project info we'll need for every row in the response.
     const allProjects = await db
       .select({
-        projectId: projects.projectId,
-        name: projects.name,
-        status: projects.status,
+        projectId: projectsView.projectId,
+        name: projectsView.name,
+        status: projectsView.status,
       })
-      .from(projects)
-      .where(eq(projects.accountId, accountId));
+      .from(projectsView)
+      .where(eq(projectsView.accountId, accountId));
     const projectMeta = new Map(allProjects.map((p) => [p.projectId, p] as const));
 
     // 1) implicit manager via the account-scope assignment. Membership IS that
@@ -391,7 +407,7 @@ export function registerIamMembersRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/members/{userId}/effective',
+      path: '/{workspaceId}/iam/members/{userId}/effective',
       tags: ['iam'],
       summary: 'Probe effective permission for a member',
       ...auth,
@@ -403,13 +419,15 @@ export function registerIamMembersRoutes(): void {
     }),
     async (c: any) => {
     const callerId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const targetUserId = c.req.param('userId');
 
     // Anyone with member.read can probe anyone; users can always probe themselves.
     if (callerId !== targetUserId) {
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
     }
+    const badId = badMemberId(c, targetUserId);
+    if (badId) return badId;
 
     const action = c.req.query('action');
     if (!action) {
@@ -429,6 +447,7 @@ export function registerIamMembersRoutes(): void {
       allowed: result.allowed,
       reason: result.reason ?? null,
       action,
+      workspace_action: toWorkspaceAction(action),
       resource_type: resourceTypeForAction(action),
     });
     },
@@ -437,7 +456,7 @@ export function registerIamMembersRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/members/{userId}/effective:batch',
+      path: '/{workspaceId}/iam/members/{userId}/effective:batch',
       tags: ['iam'],
       summary: 'Batch-probe effective permissions for a member',
       ...auth,
@@ -449,12 +468,14 @@ export function registerIamMembersRoutes(): void {
     }),
     async (c: any) => {
     const callerId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const targetUserId = c.req.param('userId');
 
     if (callerId !== targetUserId) {
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
     }
+    const badId = badMemberId(c, targetUserId);
+    if (badId) return badId;
 
     const body = await readJsonObject(c);
     const rawProbes = body.probes ?? body.queries;

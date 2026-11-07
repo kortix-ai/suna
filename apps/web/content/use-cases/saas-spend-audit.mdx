@@ -59,14 +59,14 @@ already flagged so the same unresolved item doesn't repeat every week.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the subscription-audit skill and the weekly
 trigger, and opens a change request for you to review. Prefer clicks? Choose
 **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a weekly SaaS spend audit agent in this project.
+  code={`Set up a weekly SaaS spend audit agent in this workspace.
 
 1. Create the agent agents/saas-spend-audit.md. Its job is to reconcile recurring charges against the subscription register and recommend where to cut. It may use the Plaid, Google Sheets and Slack connectors. Plaid and Google Sheets are read-only.
 
@@ -88,7 +88,7 @@ trigger, and opens a change request for you to review. Prefer clicks? Choose
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect your bank or card data, the
+Open **Connectors** in your workspace and connect your bank or card data, the
 sheet that holds your subscription register, and Slack. Credentials are
 brokered server-side and never enter the agent's machine.
 
@@ -128,7 +128,7 @@ let the schedule take over.
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every Monday at 09:00, each run on its own cloud computer. It reads its
 ledger first, so an open item from last week does not come back as new. To
-change the time, edit the cron line, or open **Triggers** in the project.
+change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

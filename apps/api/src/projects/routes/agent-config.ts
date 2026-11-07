@@ -17,8 +17,8 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { ignoredAgentSettings } from '@kortix/api-contract/runtime-relay';
-import { projects } from '@kortix/db';
 import {
+  EVERY_GRANT,
   type ManifestIssue,
   isManifestSyntaxError,
   SLUG_RE,
@@ -46,24 +46,26 @@ import {
   applyAgentConfigV3,
   applyDefaultAgentV2,
   normalizeRequiredConnectorAliases,
-  resolveBehaviorDraft,
   readAgentBlockV2,
   dropEmptyPolicySets,
 } from '../lib/agent-config-v2';
 import { projectsApp } from '../lib/app';
-import { OpencodeAgentConfigSchema } from '../lib/compile-agent-config';
+import { AgentBehaviorConfigSchema } from '../lib/compile-agent-config';
 import { withProjectGitAuth } from '../lib/git';
-import { metadataMerge } from '../lib/metadata-merge';
 import { loadManifestForEdit } from '../lib/triggers';
 import { allowStaleMirrorReads } from '../git/mirror';
 import { MANIFEST_FILENAME, manifestWrites } from '../triggers';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { workspaceIdParam } from '../../shared/route-params';
+import { metadataMerge, projectsView, updateProjectRows } from '../../workspaces/rows';
 
 // A grant set on the wire: an allowlist, or the "all"/"none" sentinels. The
 // deep per-entry validation (grantable kortix_permissions actions, etc.) happens in
 // validateManifest via applyAgentConfigV3 — this schema only guards the shape.
+// `"*"` is kortix.yaml's spelling of every name; `all` is the wire's (both accepted).
 const GrantSetSchema = z.union([
   z.literal('all'),
+  z.literal('*'),
   z.literal('none'),
   z.array(z.string().min(1).max(200)).max(500),
 ]);
@@ -75,10 +77,11 @@ const ExcludableGrantSetSchema = z.union([
   z.object({ exclude: z.array(z.string().min(1).max(200)).max(500) }).strict(),
 ]);
 
-// `agents.<name>.tools`: all/none, an allowlist, or an exclude list.
+// `agents.<name>.tools`: "*"/all, none, an allowlist, or an exclude list.
 // validateManifest checks the names.
 const AgentToolsSchema = z.union([
   z.literal('all'),
+  z.literal('*'),
   z.literal('none'),
   z.array(z.string().min(1).max(200)).max(500),
   z.object({ exclude: z.array(z.string().min(1).max(200)).max(500) }).strict(),
@@ -122,9 +125,7 @@ const AgentBlockSchema = z
     // value already in effect (the block's `prompt_file`) is allowed.
     file: z.string().max(1024).optional(),
     // The agent's behavior half: the behavior keys of its kortix.yaml block + its prompt.
-    behavior: OpencodeAgentConfigSchema.optional(),
-    // The pre-W4 name of `behavior`; see resolveBehaviorDraft.
-    opencode: OpencodeAgentConfigSchema.optional(),
+    behavior: AgentBehaviorConfigSchema.optional(),
     // Server-owned: the GET returns them, so a GET → PUT round trip carries
     // them back. The handler drops them and the declared
     // value stays. Strict-rejecting them made every save of such an agent 400.
@@ -183,15 +184,15 @@ export function registerAgentConfigRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/agents/{agentName}/config',
+      path: '/{workspaceId}/agents/{agentName}/config',
       tags: ['projects'],
       summary: 'Get an agent\'s configuration',
       ...auth,
-      request: { params: z.object({ projectId: z.string(), agentName: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), agentName: z.string() }) },
       responses: { 200: json(z.any(), 'The agent config block'), ...errors(400, 403, 404, 409) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const agentName = c.req.param('agentName');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -247,8 +248,7 @@ export function registerAgentConfigRoutes(): void {
       if (read.block) {
         const promptText = await readPromptFileV3(gitProject, loaded.row.defaultBranch, read.block).catch(() => null);
         const view = agentConfigViewV3(read.block, promptText);
-        // `opencode` is the pre-W4 name of `behavior`, served until clients move.
-        block = { ...view.governance, behavior: view.behavior, opencode: view.behavior };
+        block = { ...view.governance, behavior: view.behavior };
       }
 
       return c.json({
@@ -272,12 +272,12 @@ export function registerAgentConfigRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/default-agent',
+      path: '/{workspaceId}/default-agent',
       tags: ['projects'],
       summary: 'Set the project default agent',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: {
           content: {
             'application/json': { schema: DefaultAgentBodySchema },
@@ -290,7 +290,7 @@ export function registerAgentConfigRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
@@ -365,10 +365,7 @@ export function registerAgentConfigRoutes(): void {
       // sits above between this handler's metadata read and write — the widest lost-
       // update window — so a whole-object write here could revert a routing pin
       // activated in that gap. The merge reads the CURRENT row under its own lock.
-      await db
-        .update(projects)
-        .set({ metadata: metadataMerge({ default_agent: agentName }), updatedAt: new Date() })
-        .where(eq(projects.projectId, projectId));
+      await updateProjectRows(eq(projectsView.projectId, projectId), { metadata: metadataMerge({ default_agent: agentName }), updatedAt: new Date() });
 
       return c.json({ ok: true, default_agent: agentName });
     },
@@ -381,12 +378,12 @@ export function registerAgentConfigRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/agents/{agentName}/config',
+      path: '/{workspaceId}/agents/{agentName}/config',
       tags: ['projects'],
       summary: 'Set an agent\'s configuration',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), agentName: z.string() }),
+        params: z.object({ workspaceId: z.string(), agentName: z.string() }),
         body: { content: { 'application/json': { schema: AgentBlockSchema } } },
       },
       responses: {
@@ -395,7 +392,7 @@ export function registerAgentConfigRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const agentName = c.req.param('agentName');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -421,7 +418,6 @@ export function registerAgentConfigRoutes(): void {
       // `null`/`undefined` into the YAML block.
       const {
         behavior: behaviorName,
-        opencode: preW4BehaviorName,
         file: requestedFile,
         network_egress: _declaredEgress,
         harnesses: _declaredHarnesses,
@@ -482,7 +478,6 @@ export function registerAgentConfigRoutes(): void {
         governance: governanceBlock,
         requestedFile,
         behavior: behaviorName,
-        opencode: preW4BehaviorName,
       });
       if (!edit.ok) return c.json(edit.body, edit.status);
 
@@ -491,7 +486,7 @@ export function registerAgentConfigRoutes(): void {
       if (writtenBlock) dropEmptyPolicySets(writtenBlock);
       // `tools` omitted is every tool, the one grant that defaults open: write
       // it so the file says what the agent holds.
-      if (writtenBlock && writtenBlock.tools === undefined) writtenBlock.tools = 'all';
+      if (writtenBlock && writtenBlock.tools === undefined) writtenBlock.tools = EVERY_GRANT;
       // Re-parse through the runtime grant reader before committing.
       const parsedCheck = extractAgents({ ...manifest, raw: edit.raw });
       const parseProblem = parsedCheck.errors.find((e) => e.name === agentName);
@@ -574,8 +569,7 @@ export function registerAgentConfigRoutes(): void {
 type AgentConfigEditInput = {
   governance: AgentBlock;
   requestedFile: string | undefined;
-  behavior: z.infer<typeof OpencodeAgentConfigSchema> | undefined;
-  opencode: z.infer<typeof OpencodeAgentConfigSchema> | undefined;
+  behavior: z.infer<typeof AgentBehaviorConfigSchema> | undefined;
 };
 
 type ManifestForEdit = Awaited<ReturnType<typeof loadManifestForEdit>>;
@@ -606,13 +600,9 @@ async function prepareAgentConfigV3(
   } catch (err) {
     return { ok: false, status: 502, body: { error: `Failed to read the agent's prompt file: ${(err as Error).message || String(err)}` } };
   }
-  const stored = currentBlock ? agentConfigViewV3(currentBlock, promptText).behavior : {};
-  const resolved = resolveBehaviorDraft({ behavior: input.behavior, opencode: input.opencode }, stored);
-  if (!resolved.ok) return { ok: false, status: 400, body: { error: resolved.error, code: 'invalid_body' } };
-
   const applied = applyAgentConfigV3(manifest, agentName, {
     governance: { ...input.governance, ...(input.requestedFile !== undefined ? { file: input.requestedFile } : {}) },
-    behavior: resolved.draft,
+    behavior: input.behavior,
   });
   if (!applied.ok) return { ok: false, status: 400, body: { error: applied.error, code: 'invalid_config', ...boundedIssues(applied.issues) } };
 
@@ -626,7 +616,7 @@ async function prepareAgentConfigV3(
     responseBlock: (written) => {
       const read = readAgentBlockV2(written, agentName);
       const view = agentConfigViewV3((read.ok ? read.block : null) ?? {}, promptWrite?.content ?? promptText);
-      return { ...view.governance, behavior: view.behavior, opencode: view.behavior };
+      return { ...view.governance, behavior: view.behavior };
     },
   };
 }

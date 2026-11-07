@@ -39,7 +39,7 @@ digest stays readable.
                        (default 700).
   --all                Ignore --since and include every listable session.
   --json               Emit structured JSON for scripting.
-  --project <id>       Operate on this project id (default: linked).
+  --workspace <id>     Operate on this workspace id (default: linked).
   --host <name>        Operate against a non-default Kortix host.
   -h, --help           Show this help.
 
@@ -82,14 +82,10 @@ interface SessionDigest {
     created_at: string;
     updated_at: string;
     error: string | null;
-    /** The session's root conversation in its runtime (OpenCode or pi). */
+    /** The session's root conversation in its runtime. */
     runtime_session_id: string | null;
     /** Titles of the runtime's conversations. */
     runtime_titles: string[];
-    /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-    opencode_session_id: string | null;
-    /** @deprecated The pre-W4 name of `runtime_titles`. Same value. */
-    opencode_titles: string[];
   };
   transcript: {
     available: boolean;
@@ -101,8 +97,6 @@ interface SessionDigest {
      *  every row it holds. Never a guess — see `mirrorIsComplete`. */
     complete: boolean;
     runtime_session_id: string | null;
-    /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-    opencode_session_id: string | null;
     message_count: number;
     messages: CompactMessage[];
   };
@@ -123,7 +117,7 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
   let json = false;
   let all = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
     sinceRaw = takeFlagValue(rest, ['--since']);
     messageLimitRaw = takeFlagValue(rest, ['--messages', '--limit', '-n']);
@@ -154,7 +148,7 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
   let sessions: ProjectSession[];
   try {
     sessions = await ctx.client.get<ProjectSession[]>(
-      `/projects/${ctx.projectId}/sessions`,
+      `/workspaces/${ctx.projectId}/sessions`,
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -270,8 +264,6 @@ function baseDigest(s: ProjectSession): SessionDigest {
       error: s.error,
       runtime_session_id: runtimeSessionIdOf(s),
       runtime_titles: runtimeTitles(s),
-      opencode_session_id: runtimeSessionIdOf(s),
-      opencode_titles: runtimeTitles(s),
     },
     transcript: {
       available: false,
@@ -279,7 +271,6 @@ function baseDigest(s: ProjectSession): SessionDigest {
       source: 'none',
       complete: false,
       runtime_session_id: runtimeSessionIdOf(s),
-      opencode_session_id: runtimeSessionIdOf(s),
       message_count: 0,
       messages: [],
     },
@@ -358,13 +349,13 @@ function summarizeTools(tools: CompactToolCall[]): string {
   return parts.length > 12 ? `${parts.slice(0, 12).join(', ')}, … +${parts.length - 12}` : parts.join(', ');
 }
 
-/** The runtime root id: a W4 API serves `runtime_session_id`, an older one `opencode_session_id`. */
+/** The session's runtime root id. */
 function runtimeSessionIdOf(s: ProjectSession): string | null {
-  return s.runtime_session_id ?? s.opencode_session_id ?? null;
+  return s.runtime_session_id ?? null;
 }
 
 function runtimeTitles(s: ProjectSession): string[] {
-  const raw = s.runtime_sessions ?? s.metadata?.opencode_sessions;
+  const raw = s.runtime_sessions;
   if (!Array.isArray(raw)) return [];
   return raw
     .map((entry) => {

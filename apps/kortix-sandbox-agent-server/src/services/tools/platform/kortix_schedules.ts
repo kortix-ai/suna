@@ -30,6 +30,8 @@ const TOOL = 'kortix_schedules' as const
 const RUNTIME_ID = /^(?:reminder|trigger|automation)\.[0-9a-f]{12}$/
 /** A kortix.yaml trigger's slug, the manifest grammar (`@kortix/manifest-schema` `SLUG_RE`). */
 const TRIGGER_SLUG = /^[a-z0-9][a-z0-9_-]{0,127}$/
+/** An App event name, as the App events API accepts it. */
+const APP_EVENT_NAME = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/
 const ACTIONS = ['follow_up', 'wake_on', 'events', 'list', 'create', 'automate', 'test', 'runs', 'pause', 'resume', 'remove', 'delete', 'run_now'] as const
 const WAKE_ON = ['cr_merged', 'webhook', 'connector_event', 'app_event'] as const
 /** An automation's source (`automate` `on`) and the kortix.yaml trigger `--type` it becomes. */
@@ -139,10 +141,10 @@ const badge = (state: string | undefined, paused?: boolean) => (paused || state 
 async function runJson<T>(args: string[], context: PlatformToolContext): Promise<{ value: T } | { error: KortixToolError }> {
   const run = await runKortix(args, context)
   if (run.code !== 0) {
-    const off = run.stderr.split('\n').find((line) => /is not enabled for this project/.test(line))
+    const off = run.stderr.split('\n').find((line) => /is not enabled for this (project|workspace)/.test(line))
     if (off) {
       const sentence = off.replace(/^\W+/, '').trim()
-      return { error: { kind: 'failed', message: `${sentence} Ask the person or a project admin to turn it on.` } }
+      return { error: { kind: 'failed', message: `${sentence} Ask the person or a workspace admin to turn it on.` } }
     }
     return { error: cliError(run) }
   }
@@ -168,7 +170,7 @@ function wakeText(args: Record<string, any>, action: 'follow_up' | 'wake_on'): s
   const key = TEXT_KEYS.find((k) => typeof args[k] === 'string' && args[k].trim())
   const text = key ? String(args[key]).trim() : ''
   if (!text) {
-    return { error: `Missing \`text\`: what the woken turn reads (what was done, what to check, what to do on each outcome, an end date). Call again with it, e.g. ${TEXT_EXAMPLE[action]}` }
+    return { error: `Missing \`text\`: what the woken turn reads (what was done, what to check, what to do on each outcome, an end date). If you did send it, it did not arrive: send this call from codemode. Call again with it, e.g. ${TEXT_EXAMPLE[action]}` }
   }
   const problem = cliArgProblem('text', text, 'text')
   return problem ? { error: problem } : text
@@ -187,6 +189,18 @@ function word(args: Record<string, any>, field: string, hint: string): string | 
 }
 
 const isError = (value: unknown): value is { error: string } => typeof value === 'object' && value !== null && 'error' in value
+
+/**
+ * `expect_event_within` on the work of an App event: the watcher's silence alert. No App event for that long
+ * tells the person once; the next event clears it. Nothing when absent; only for on=app_event.
+ */
+function expectEventWithinFlags(args: Record<string, any>, on: string): string[] | { error: string } {
+  const raw = args.expect_event_within
+  if (raw === undefined || raw === null || raw === '') return []
+  if (on !== 'app_event') return { error: '`expect_event_within` is only for on=app_event: how long the App may stay quiet, e.g. "1h".' }
+  const value = word(args, 'expect_event_within', 'how long the App may stay quiet before the person hears, e.g. "1h" (5m to 30d)')
+  return isError(value) ? value : [`--expect-event-within=${value}`]
+}
 
 /**
  * A follow-up call without `text` is refused once. A model that repeats the
@@ -259,6 +273,8 @@ async function followUp(args: Record<string, any>, context: PlatformToolContext)
 /** The `--on …` flags of a wake-on, with the plain condition, or why there are none. */
 function wakeFlags(args: Record<string, any>): { flags: string[]; condition: string; extra?: string } | { error: string } {
   const on = String(args.on ?? '')
+  const within = expectEventWithinFlags(args, on)
+  if (isError(within)) return within
   if (on === 'cr_merged') {
     const cr = word(args, 'cr', 'the change request id or number, as kortix_change_requests shows it')
     if (isError(cr)) return cr
@@ -287,9 +303,10 @@ function wakeFlags(args: Record<string, any>): { flags: string[]; condition: str
     // The CLI wakes on every event the App emits (`--on app` has no event filter): the text names the one that matters.
     const event = args.event === undefined || args.event === '' ? null : word(args, 'event', 'the App event name')
     if (isError(event)) return event
+    const flags = ['--on=app', `--app=${app}`, ...within]
     return event
-      ? { flags: ['--on=app', `--app=${app}`], condition: `App ${app} sends ${event}`, extra: ` (This wakes on every event from App ${app}; act only on "${event}" and end the turn on any other.)` }
-      : { flags: ['--on=app', `--app=${app}`], condition: `App ${app} sends an event` }
+      ? { flags, condition: `App ${app} sends ${event}`, extra: ` (This wakes on every event from App ${app}; act only on "${event}" and end the turn on any other.)` }
+      : { flags, condition: `App ${app} sends an event` }
   }
   return { error: `\`on\` must be one of: ${WAKE_ON.join(', ')}.` }
 }
@@ -557,6 +574,9 @@ async function automate(args: Record<string, any>, context: PlatformToolContext)
     wordFlag('model', 'model', 'a model id, as kortix_agents models lists it', false),
   ].find(Boolean)
   if (problems) return invalid('Check the automation', problems.error)
+  const within = expectEventWithinFlags(args, on)
+  if (isError(within)) return invalid('Check the silence alert', within.error)
+  flags.push(...within)
   if (targetApp) flags.push(`--target-app=${targetApp}`, `--target-path=${targetPath}`)
   if (on === 'schedule') {
     const schedule = scheduleFlags({ every: args.every, cron: args.cron, timezone: args.timezone })
@@ -617,12 +637,22 @@ async function automate(args: Record<string, any>, context: PlatformToolContext)
   )
 }
 
-/** `test`: a dry run of an automation with a sample payload: the filter verdict, the session key and the prompt a run would get. Fires nothing. */
+/**
+ * `test`: prove an automation before the person relies on it. An App event
+ * automation gets a real test event (`testAppAutomation`). Every other kind
+ * gets a dry run with a sample payload: the filter verdict, the session key
+ * and the prompt a run would get; it fires nothing.
+ */
 async function testAutomation(args: Record<string, any>, context: PlatformToolContext) {
   const name = typeof args.name === 'string' ? args.name.trim() : typeof args.id === 'string' ? args.id.trim() : ''
   if (!TRIGGER_SLUG.test(name)) return fail(TOOL, 'test', 'Which automation?', { kind: 'invalid', message: '`name` is the automation\'s name, as list shows it.' }, context)
   if (args.payload !== undefined && (!args.payload || typeof args.payload !== 'object' || Array.isArray(args.payload))) {
     return fail(TOOL, 'test', 'Check the sample', { kind: 'invalid', message: '`payload` is a JSON object merged over the sample event, e.g. { "body": { "action": "opened" } }.' }, context)
+  }
+  const shown = await runJson<{ type?: string; app?: string | null; filter?: Record<string, unknown> | null }>(['triggers', 'show', name, '--json'], context)
+  if ('error' in shown) return fail(TOOL, 'test', `Could not test ${name}`, shown.error, context)
+  if (shown.value.type === 'app' && typeof shown.value.app === 'string' && shown.value.app) {
+    return testAppAutomation(name, shown.value.app, shown.value.filter ?? null, args.payload, context)
   }
   const read = await runJson<{ filter_matches?: boolean; session_key?: string | null; rendered_prompt?: string }>(
     ['triggers', 'fire', name, '--dry-run', ...(args.payload ? [`--payload=${JSON.stringify(args.payload)}`] : []), '--json'],
@@ -642,6 +672,62 @@ async function testAutomation(args: Record<string, any>, context: PlatformToolCo
       ],
     },
     { name, filter_matches: !!r.filter_matches, session_key: r.session_key ?? null, prompt: r.rendered_prompt ?? '' },
+  )
+}
+
+type EmitAnswer = {
+  triggers?: number
+  hint?: string
+  ids?: string[]
+  events?: Array<{ trigger?: string | null; status?: string; session_id?: string | null; reason?: string | null }>
+  pending?: boolean
+}
+
+/**
+ * An App event automation is tested the way the App would fire it: a test
+ * event through the App's log, limits and drain (`kortix apps events emit
+ * --wait`). Its id starts with `test-`, so the App's real event still fires
+ * later; the prompt starts with a TEST line. A fired test starts the work for
+ * real: the session is the proof.
+ */
+async function testAppAutomation(name: string, app: string, filter: Record<string, unknown> | null, payload: unknown, context: PlatformToolContext) {
+  const sample = (payload && typeof payload === 'object' ? (payload as { event?: unknown }).event : undefined) as { name?: unknown; data?: unknown } | undefined
+  const listened = typeof filter?.['event.name'] === 'string' ? (filter['event.name'] as string) : null
+  const event = typeof sample?.name === 'string' && sample.name.trim() ? sample.name.trim() : listened ?? 'test.event'
+  // An App event name (the API's rule): letters, digits, . _ : / -, starting with a letter or digit, so it is
+  // never read as a CLI flag (`--trigger=…` would pick another automation).
+  if (!APP_EVENT_NAME.test(event)) {
+    return fail(TOOL, 'test', 'Check the event name', { kind: 'invalid', message: '`payload.event.name` is 1-128 letters, digits and . _ : / -, starting with a letter or digit, e.g. "status.changed".' }, context)
+  }
+  const data = sample?.data && typeof sample.data === 'object' && !Array.isArray(sample.data) ? sample.data : null
+  // The CLI exits 1 when nothing fired; its JSON still says why.
+  // --trigger: only this automation gets the test; another on the same event starts nothing.
+  const run = await runKortix(['apps', 'events', 'emit', app, event, ...(data ? [`--data=${JSON.stringify(data)}`] : []), `--trigger=${name}`, '--wait', '--json'], context)
+  const answer = parseJson<EmitAnswer>(run.stdout)
+  if (!answer) return fail(TOOL, 'test', `Could not test ${name}`, cliError(run), context)
+  const row = answer.events?.find((entry) => entry.trigger === name) ?? null
+  const outcome = row?.status ?? (answer.pending ? 'pending' : 'not reached')
+  const title =
+    outcome === 'fired' ? `${name} ran on a test event`
+      : outcome === 'pending' ? `${name}: the test event is still waiting`
+        : outcome === 'skipped' ? `${name} skipped the test event`
+          : `${name} did not get the test event`
+  return ok(
+    TOOL,
+    'test',
+    {
+      title,
+      rows: [
+        { title: 'Event', detail: `${event} to ${app} (a test id)` },
+        { title: 'Outcome', detail: row?.reason ? `${outcome}: ${short(row.reason, 120)}` : outcome },
+        ...(row?.session_id ? [{ title: 'Session', detail: row.session_id }] : []),
+        ...(answer.hint ? [{ title: 'Fix', detail: short(answer.hint, 160) }] : []),
+      ],
+    },
+    {
+      name, app, event, test_id: answer.ids?.[0] ?? null, outcome,
+      reason: row?.reason ?? null, session_id: row?.session_id ?? null, ...(answer.hint ? { hint: answer.hint } : {}),
+    },
   )
 }
 
@@ -708,23 +794,23 @@ export default {
   description:
     'Follow-through and work that starts by itself. ' +
     'FOLLOW-THROUGH RULE: after any action whose result arrives later (an email or message sent and a reply expected, an order or form submitted, a change request opened, a deploy started, a question asked of a person, a page or vendor to watch), set your own wake-up BEFORE you end the turn, without being asked. ' +
-    '1) Prefer an event: `wake_on` with on=cr_merged (cr), connector_event (connector + event; run `events` first to pick a real event type), webhook (secret_env; give the outside system the returned URL) or app_event (app). ' +
+    '1) Prefer an event: `wake_on` with on=cr_merged (cr), connector_event (connector + event; run `events` first to pick a real event type), webhook (secret_env; give the outside system the returned URL) or app_event (app, + expect_event_within such as "1h": the person hears when the App goes quiet). ' +
     '2) Add a fallback `follow_up` when the event might never come: replies first in 2-4h during the recipient\'s working hours, then 2-4 times a day; deploys/CI every 10-30m; slow vendors daily. ' +
     '3) Write `text` for the woken turn: what was sent, to whom, what to check, what to do on each outcome, and when to stop, with an end date (default 14 days). ' +
     '4) Tell the person in one line, e.g. "I\'ll check for replies every 3 hours until 14 Nov." ' +
     '5) On each fire: check, act, report what changed; widen the cadence after repeated empty checks (remove, then a slower follow_up); `remove` every follow-up and wake-on the moment the work is done or the end date passes. ' +
     'No follow-up for work that finishes this turn, for background hand-offs, teammates and workflows (they report back by themselves), or when the person said not to track it. ' +
-    'If it answers that Loops are not enabled, tell the person and ask them or a project admin to turn Loops on in Settings → Feature flags. ' +
+    'If it answers that Loops are not enabled, tell the person and ask them or a workspace admin to turn Loops on in Workspace settings → Feature flags. ' +
     'Actions: `follow_up` (text + ONE of in "3h", at ISO time, every "4h" (min 5m), cron "0 9 * * 1-5" + timezone; with several, the first of at, in, cron, every is used); ' +
     '`wake_on` (text + on); `events` (connector); `list` (this session\'s follow-ups and wake-ons, and the project schedules, with ids); ' +
     '`create` (prompt + agent + one schedule: each run starts a new session of that agent); `pause`, `resume`, `run_now`, `remove` (each needs `id` as list shows it; `delete` = remove). ' +
     'AUTOMATIONS (work that starts by itself whenever something happens, with no one asking: each new email from a customer, each new issue, each form submission, each failed build, every weekday at 9): `automate` (name + on + agent + prompt; on=connector_event: connector + event (+ config), run `events` first; webhook: secret_env, give the outside system the returned URL; app_event: app (+ event); schedule: every or cron + timezone). ' +
-    'No event fits (none, or too coarse): have a colleague build a watcher App that posts App events, then `automate` its check (on=schedule + every + target_app + target_path "/tick": calls the App, no session, no model) and its work (on=app_event). ' +
+    'No event fits (none, or too coarse): have a colleague build a watcher App that posts App events, then `automate` its check (on=schedule + every + target_app + target_path "/tick": calls the App, no session, no model) and its work (on=app_event, with expect_event_within of a few check intervals). To tell the person in this chat instead, the work is `wake_on` on=app_event with expect_event_within. ' +
     'Do it well: 1) `filter` at the source so noise never starts a run (skip bots and Kortix itself, keep only the actions that matter: { "body.action": ["opened"], "body.sender.login": { "not": "kortix-bot" } }); ' +
     '2) `session_key` per thing ("{{ event.data.thread_id }}", "{{ body.issue.number }}", "{{ body.email }}") so a follow-up about the same thing lands in the same session; ' +
     '3) a prompt that judges first: "If this is not <what matters>, stop: do nothing and send no message. Otherwise …", with the event fields it needs; ' +
     '4) cap it (`max_runs_per_day`, e.g. 20) and pick the agent with the least access, and a fast model for triage; ' +
-    '5) ask the person before you create it (it runs unattended and uses credits), then call automate directly: it checks the secret, the connector and the Event triggers feature itself, and its error says what is missing (never check with the shell); then `test` with a sample payload (fires nothing: the filter verdict, the session key and the prompt) and fix it until it is right; ' +
+    '5) ask the person before you create it (it runs unattended and uses credits), then call automate directly: it checks the secret, the connector and the Event triggers feature itself, and its error says what is missing (never check with the shell); then `test` with a sample payload (an App event automation gets a real test event and reports the run it started; any other fires nothing: the filter verdict, the session key and the prompt) and fix it until it is right; ' +
     '6) tell them in one line what it does, set a `follow_up` in 2-3 days to read its `runs` and tune it, and `remove` it (by name) when it is no longer wanted.',
   parameters: {
     type: 'object',
@@ -738,7 +824,7 @@ export default {
       max_runs_per_day: { type: 'number', description: 'For automate: the most runs it may start in a day.' },
       max_runs_per_hour: { type: 'number', description: 'For automate: the most runs it may start in an hour (default 60).' },
       model: { type: 'string', description: 'For automate: the model each run uses, as kortix_agents models lists it. Omit for the agent\'s own.' },
-      payload: { type: 'object', description: 'For test: a sample event, merged over the default one, e.g. { "body": { "action": "opened" } }.' },
+      payload: { type: 'object', description: 'For test: a sample event, merged over the default one, e.g. { "body": { "action": "opened" } }; for an App event automation { "event": { "name": …, "data": { … } } }.' },
       target_app: { type: 'string', description: 'For automate: each run calls this App instead of an agent (the check of a watcher App: no session, no model). No prompt needed.' },
       target_path: { type: 'string', description: 'With target_app: the App path each run calls, e.g. "/tick" (default "/").' },
       cr: { type: 'string', description: 'For wake_on cr_merged: the change request id or number.' },
@@ -747,6 +833,7 @@ export default {
       event: { type: 'string', description: 'For wake_on connector_event: the event type, as `events` lists it. For app_event: the App event that matters (optional).' },
       config: { type: 'object', description: 'For wake_on connector_event: the event\'s config fields, as `events` lists them (only when it has required ones).' },
       app: { type: 'string', description: 'For wake_on app_event: the App slug.' },
+      expect_event_within: { type: 'string', description: 'For wake_on and automate with on=app_event: the silence alert, e.g. "1h" (5m to 30d, a few check intervals). No App event for that long tells the person once; the next event clears it.' },
       prompt: { type: 'string', description: 'For create and automate: the message each run starts with. In automate, read the event with {{ event.data.<field> }} or {{ body.<field> }}.' },
       agent: { type: 'string', description: 'For create and automate: the agent each run starts a session of. Without it, create is a reminder to this session (prefer follow_up), and automate runs the project default agent.' },
       every: { type: 'string', description: 'For follow_up, create and automate (schedule): repeat interval, e.g. "4h", "1d".' },

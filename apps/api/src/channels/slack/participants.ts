@@ -23,7 +23,7 @@ export function normalizeConversationPolicy(value: unknown): SlackConversationPo
 }
 
 export function conversationPolicyLabel(policy: SlackConversationPolicy): string {
-  if (policy === 'project_open') return 'Project members can join';
+  if (policy === 'project_open') return 'Workspace members can join';
   if (policy === 'owner_only') return 'Owner only';
   return 'Owner approval';
 }
@@ -59,7 +59,7 @@ async function approvedParticipantExists(input: {
     .from(chatThreadParticipants)
     .where(and(
       eq(chatThreadParticipants.platform, PLATFORM),
-      eq(chatThreadParticipants.workspaceId, input.teamId),
+      eq(chatThreadParticipants.platformTeamId, input.teamId),
       eq(chatThreadParticipants.threadId, input.threadId),
       eq(chatThreadParticipants.platformUserId, input.slackUserId),
       eq(chatThreadParticipants.userId, input.actorUserId),
@@ -86,7 +86,7 @@ async function loadParticipant(input: {
     .from(chatThreadParticipants)
     .where(and(
       eq(chatThreadParticipants.platform, PLATFORM),
-      eq(chatThreadParticipants.workspaceId, input.teamId),
+      eq(chatThreadParticipants.platformTeamId, input.teamId),
       eq(chatThreadParticipants.threadId, input.threadId),
       eq(chatThreadParticipants.platformUserId, input.slackUserId),
     ))
@@ -296,7 +296,7 @@ export async function ensureSlackThreadParticipant(input: {
       })
       .where(and(
         eq(chatThreadParticipants.platform, PLATFORM),
-        eq(chatThreadParticipants.workspaceId, input.teamId),
+        eq(chatThreadParticipants.platformTeamId, input.teamId),
         eq(chatThreadParticipants.threadId, input.threadId),
         eq(chatThreadParticipants.platformUserId, input.slackUserId),
       ));
@@ -306,7 +306,7 @@ export async function ensureSlackThreadParticipant(input: {
       .insert(chatThreadParticipants)
       .values({
         platform: PLATFORM,
-        workspaceId: input.teamId,
+        platformTeamId: input.teamId,
         threadId: input.threadId,
         sessionId: input.sessionId,
         platformUserId: input.slackUserId,
@@ -316,7 +316,7 @@ export async function ensureSlackThreadParticipant(input: {
       .onConflictDoNothing({
         target: [
           chatThreadParticipants.platform,
-          chatThreadParticipants.workspaceId,
+          chatThreadParticipants.platformTeamId,
           chatThreadParticipants.threadId,
           chatThreadParticipants.platformUserId,
         ],
@@ -350,7 +350,7 @@ export async function rememberSlackThreadOwner(input: {
     .insert(chatThreadParticipants)
     .values({
       platform: PLATFORM,
-      workspaceId: input.teamId,
+      platformTeamId: input.teamId,
       threadId: input.threadId,
       sessionId: input.sessionId,
       platformUserId: input.slackUserId,
@@ -362,7 +362,7 @@ export async function rememberSlackThreadOwner(input: {
     .onConflictDoUpdate({
       target: [
         chatThreadParticipants.platform,
-        chatThreadParticipants.workspaceId,
+        chatThreadParticipants.platformTeamId,
         chatThreadParticipants.threadId,
         chatThreadParticipants.platformUserId,
       ],
@@ -416,7 +416,7 @@ export async function decideSlackThreadJoin(input: {
     return { ok: false, text: 'Only the session owner can approve people for this thread.' };
   }
   if (!('userId' in (await resolveProjectChatActor(deciderUser, session.projectId)))) {
-    return { ok: false, text: 'Your Kortix account no longer has access to this project, so you cannot approve people for it.' };
+    return { ok: false, text: 'Your Kortix account no longer has access to this Kortix workspace, so you cannot approve people for it.' };
   }
 
   const now = new Date();

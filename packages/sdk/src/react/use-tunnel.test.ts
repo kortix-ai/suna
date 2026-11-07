@@ -60,34 +60,6 @@ type Config = {
   refetchInterval?: unknown;
 };
 
-const RETIRED_HOOKS: Array<[name: string, hook: () => unknown]> = [
-  ['useCreateTunnelConnection', () => tunnel.useCreateTunnelConnection()],
-  ['useTunnelPermissions', () => tunnel.useTunnelPermissions('tunnel-1')],
-  ['useGrantTunnelPermission', () => tunnel.useGrantTunnelPermission()],
-  ['useRevokeTunnelPermission', () => tunnel.useRevokeTunnelPermission()],
-  ['useTunnelPermissionRequests', () => tunnel.useTunnelPermissionRequests()],
-  ['useApprovePermissionRequest', () => tunnel.useApprovePermissionRequest()],
-  ['useDenyPermissionRequest', () => tunnel.useDenyPermissionRequest()],
-  ['useTunnelAuditLogs', () => tunnel.useTunnelAuditLogs('tunnel-1')],
-];
-
-test.each(RETIRED_HOOKS)('%s fails with ENDPOINT_RETIRED and sends no request', async (name, hook) => {
-  const config = hook() as Config;
-  const run = config.queryFn ? config.queryFn() : config.mutationFn!({});
-  const error = await run.then(
-    () => null,
-    (e: unknown) => e,
-  );
-
-  expect((error as { code?: string } | null)?.code).toBe('ENDPOINT_RETIRED');
-  expect((error as Error).message).toContain(name);
-  expect(requests).toEqual([]);
-  if (config.queryFn) {
-    expect(config.retry).toBe(false);
-    expect(config.refetchInterval).toBeUndefined();
-  }
-});
-
 test('useTunnelConnections rethrows the API error with its status intact', async () => {
   // The web QueryClient's default retry guard reads `error.status` and stops
   // on 4xx. A re-thrown status-less `new Error(message)` defeats it: with a
@@ -158,11 +130,11 @@ test('useApproveDeviceAuth leaves project_id and share out when the caller omits
 });
 
 test('useAddComputerToProject POSTs the machine to the project and refreshes connections', async () => {
-  const config = tunnel.useAddComputerToProject() as unknown as Config;
+  const config = tunnel.useAddComputerToWorkspace() as unknown as Config;
   const vars = { projectId: 'project-1', tunnelId: 'tunnel-1', share: 'me' as const };
   await config.mutationFn!(vars);
   expect(requests).toEqual([
-    { method: 'POST', path: '/projects/project-1/computers', body: { tunnel_id: 'tunnel-1', share: 'me' } },
+    { method: 'POST', path: '/workspaces/project-1/computers', body: { tunnel_id: 'tunnel-1', share: 'me' } },
   ]);
   config.onSuccess!({}, vars);
   expect(invalidated).toContainEqual(['connections', 'project-1']);

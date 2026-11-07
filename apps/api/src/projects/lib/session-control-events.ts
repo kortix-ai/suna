@@ -41,6 +41,7 @@
  * instance serving them. Losing it degrades a client from "skip the snapshot I
  * already have" to "apply the snapshot again", which is idempotent.
  */
+import type { SessionControlFrameType } from '@kortix/api-contract';
 import { decideTurnStop } from '../../shared/turn-stop-refusal';
 
 /**
@@ -60,31 +61,11 @@ export const CONTROL_RING_IDLE_MS = 5 * 60_000;
  * subsystem's COMPLETE state.
  *
  * `kortix.control.*` rather than a bare name so a client's reducer can route on
- * the prefix and can never confuse one of these with an OpenCode event type
- * (which arrives verbatim on the runtime channel).
+ * the prefix and can never confuse one of these with a runtime event type
+ * (which arrives verbatim on the runtime channel). The set and each member's
+ * meaning live in `SESSION_CONTROL_FRAME_TYPES` (`@kortix/api-contract`).
  */
-export type ControlEventType =
-  /** The whole turn verdict — the same object `GET .../turn` serves. */
-  | 'kortix.control.turn'
-  /** The whole prompt queue — the same rows `GET .../prompts` serves. */
-  | 'kortix.control.queue'
-  /** Runtime reachability + wake/boot progress, as the CONTROL plane sees it. */
-  | 'kortix.control.runtime'
-  /**
-   * The session's audit/approval WATERMARK — a change-detection signal for the
-   * per-session audit surface (`GET .../audit`). It carries the count of
-   * unresolved connector-gated approvals plus the newest create/resolve
-   * instants, so a client can tell "a gated action appeared or was resolved"
-   * without polling. It is deliberately NOT the audit ROWS: the rows are a
-   * heavier read a human opens on demand, while liveness only needs to know
-   * WHEN they changed. The client invalidates its audit query on a new
-   * watermark and stands its poll down while the stream is connected.
-   */
-  | 'kortix.control.audit'
-  /** The daemon's `/kortix/opencode/state` projection, when the stream has one. */
-  | 'kortix.control.runtime_state'
-  /** The session's title and the project's secrets version (R5.2). */
-  | 'kortix.control.session';
+export type ControlEventType = SessionControlFrameType;
 
 /**
  * Internal field of a `kortix.control.turn` payload: who prompted the newest

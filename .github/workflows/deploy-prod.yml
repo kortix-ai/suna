@@ -7,7 +7,9 @@ name: Deploy Prod
 # The root VERSION on `prod` is the clean version `X.Y.Z`.
 #
 #   1. Retag the promoted staging images (kortix/kortix-*:staging-<sha8>)
-#      → :X.Y.Z + :latest (multi-arch manifest copy, zero rebuilds). The
+#      → :X.Y.Z (multi-arch manifest copy, zero rebuilds). ECS rolls :X.Y.Z.
+#      The moving channels `:latest` and `:prod` move only after
+#      verify-live-version proves prod serves X.Y.Z (promote-prod-channel). The
 #      self-host `:stable` channel is promoted SEPARATELY and manually via
 #      promote-self-host-stable.yml — a prod release is not auto-shipped to self-hosts.
 #   2. Deploy the production backend on ECS Fargate (the ACTIVE backend behind
@@ -297,17 +299,20 @@ jobs:
               echo "::error::$IMAGE: no image tagged for the exact release commit ${SOURCE_SHA} (looked for :$STAGING_TAG). Refusing to fall back to :dev-latest or any other tag — that has shipped a stale/unrelated image before. Build+push the staging image for this commit, then re-run this job."
               exit 1
             fi
-            # A prod release publishes :X.Y.Z + :latest only. The self-host
+            # This job publishes :X.Y.Z only: ECS rolls that immutable tag.
+            # :latest and :prod are moving channels that self-hosts pull; they
+            # move in promote-prod-channel, after verify-live-version proves
+            # prod serves X.Y.Z. Before 2026-11-06 :latest moved here, so a
+            # failed roll left :latest on a version that never served. The self-host
             # `:stable` channel — the tag self-hosted boxes auto-update to — is
             # CURATED, not automatic: a human promotes a proven version to
             # :stable via the "Promote Self-Host Stable" workflow (promote-self-host-stable.yml).
             # Released != auto-shipped to every self-hosted customer overnight.
             SRC_DIGEST="$(docker buildx imagetools inspect "$IMAGE:$SRC_TAG" --format '{{json .Manifest}}' | jq -r '.digest // empty')"
             [ -n "$SRC_DIGEST" ] || { echo "::error::$IMAGE:$SRC_TAG has no resolvable manifest digest."; exit 1; }
-            echo "Re-tagging $IMAGE:$SRC_TAG (digest $SRC_DIGEST) → $IMAGE:${VERSION} + :latest"
+            echo "Re-tagging $IMAGE:$SRC_TAG (digest $SRC_DIGEST) → $IMAGE:${VERSION}"
             docker buildx imagetools create \
               --tag "$IMAGE:${VERSION}" \
-              --tag "$IMAGE:latest" \
               "$IMAGE:$SRC_TAG"
             # Integrity check: the freshly-created :VERSION tag must be
             # byte-identical (same digest) to the exact-commit source tag we
@@ -755,7 +760,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     env:
-      DESKTOP_URL: https://kortix.com/projects
+      DESKTOP_URL: https://kortix.com/workspaces
     strategy:
       fail-fast: false
       matrix:
@@ -2027,7 +2032,7 @@ jobs:
   # so there is nothing to re-tag it from. (This is a pre-existing gap: even
   # promote-self-host-stable.yml's `:stable` channel has never covered it.)
   promote-prod-channel:
-    name: Move :prod → v${{ needs.version.outputs.version }}
+    name: Move :prod + :latest → v${{ needs.version.outputs.version }}
     needs: [version, retag-images, verify-live-version]
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 15
@@ -2050,14 +2055,17 @@ jobs:
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
-      - name: Re-tag api/gateway/frontend → :prod
+      - name: Re-tag api/gateway/frontend → :prod + :latest
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
+          # needs verify-live-version: the public endpoints serve VERSION, so
+          # both moving channels name a version that runs in prod.
           for IMAGE in kortix/kortix-api kortix/kortix-gateway kortix/kortix-frontend; do
             docker buildx imagetools create \
               --tag "$IMAGE:prod" \
+              --tag "$IMAGE:latest" \
               "$IMAGE:${VERSION}"
-            echo "✓ $IMAGE:prod → ${VERSION}"
+            echo "✓ $IMAGE:prod + :latest → ${VERSION}"
           done

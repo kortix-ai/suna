@@ -51,15 +51,15 @@ describe('CAPABILITY_TABS', () => {
   });
 
   test('channelsHref names the Connectors page and the scope that shows Channels', () => {
-    // The one URL. `/projects/<id>/channels` redirects to it, `GRADUATED`
+    // The one URL. `/workspaces/<id>/channels` redirects to it, `GRADUATED`
     // points at it, and the project-home Slack tile opens it — all through
     // this function, so none of them can drift from the param the page parses.
-    expect(channelsHref('p1')).toBe('/projects/p1/admin/connectors?scope=channels');
+    expect(channelsHref('p1')).toBe('/workspaces/p1/admin/connectors?scope=channels');
   });
 
 
   test('the Agents tab keeps a singular key and a plural label', () => {
-    // The key IS the URL segment (`/projects/<id>/agent`); pluralizing it here
+    // The key IS the URL segment (`/workspaces/<id>/agent`); pluralizing it here
     // would 404 the route while the tab still rendered.
     const agents = CAPABILITY_TABS.find((t) => t.label === 'Agents');
     expect(agents?.key).toBe('agent');
@@ -95,7 +95,7 @@ describe('customizeNavTabs', () => {
 
 describe('the Settings tab', () => {
   test('keys on `config`, never on `settings`', () => {
-    // `/projects/<id>/settings` is the settings OVERLAY's deep-link route. Two
+    // `/workspaces/<id>/settings` is the settings OVERLAY's deep-link route. Two
     // routes cannot share one segment, so the tab that holds project
     // configuration takes `config` and keeps the label a person reads.
     const settings = CAPABILITY_TABS.find((t) => t.label === 'Settings');
@@ -106,85 +106,86 @@ describe('the Settings tab', () => {
 
 describe('capabilityTabHref', () => {
   test('builds a project-scoped path', () => {
-    expect(capabilityTabHref('p1', 'skills')).toBe('/projects/p1/admin/skills');
-    expect(capabilityTabHref('p1', 'agent')).toBe('/projects/p1/customize/agents');
-    expect(capabilityTabHref('p1', 'triggers')).toBe('/projects/p1/admin/triggers');
+    expect(capabilityTabHref('p1', 'skills')).toBe('/workspaces/p1/admin/skills');
+    expect(capabilityTabHref('p1', 'agent')).toBe('/workspaces/p1/customize/agents');
+    expect(capabilityTabHref('p1', 'triggers')).toBe('/workspaces/p1/admin/triggers');
   });
 });
 
 describe('reviewHref', () => {
-  test('Review is a Customize tab', () => {
-    expect(reviewHref('p1')).toBe('/projects/p1/customize/review');
-    expect(activeCapabilityTab('/projects/p1/customize/review')).toBe('review');
-    // The sidebar-era address only redirects; it lights no tab.
-    expect(activeCapabilityTab('/projects/p1/review')).toBeNull();
+  test('Review is its own page, outside Customize', () => {
+    // Since 2026-11-04 Review is a top-level page; `/customize/review` redirects to it.
+    expect(reviewHref('p1')).toBe('/workspaces/p1/review');
+    expect(capabilityTabHref('p1', 'review')).toBe('/workspaces/p1/review');
+    // The page draws no Customize bar, so it lights no Customize tab.
+    expect(activeCapabilityTab('/workspaces/p1/review')).toBeNull();
   });
 });
 
 describe('agentHref', () => {
   test('nests one agent under the Agents tab and encodes the manifest key', () => {
-    expect(agentHref('p1', 'churn')).toBe('/projects/p1/customize/agents/churn');
-    expect(agentHref('p1', 'a b/c')).toBe('/projects/p1/customize/agents/a%20b%2Fc');
+    expect(agentHref('p1', 'churn')).toBe('/workspaces/p1/customize/agents/churn');
+    expect(agentHref('p1', 'a b/c')).toBe('/workspaces/p1/customize/agents/a%20b%2Fc');
   });
 });
 
 describe('activeCapabilityTab', () => {
   test("lights Agents on one agent's page, and only there among deeper paths", () => {
     expect(activeCapabilityTab(agentHref('p1', 'churn'))).toBe('agent');
-    expect(activeCapabilityTab('/projects/p1/customize/agents/churn/')).toBe('agent');
+    expect(activeCapabilityTab('/workspaces/p1/customize/agents/churn/')).toBe('agent');
     // Only the third segment `agent` earns the deeper match — a skill or a
     // trigger one level down is not a route and must not light a tab.
-    expect(activeCapabilityTab('/projects/p1/admin/skills/foo')).toBeNull();
-    expect(activeCapabilityTab('/projects/p1/customize/agents/a/b')).toBeNull();
+    expect(activeCapabilityTab('/workspaces/p1/admin/skills/foo')).toBeNull();
+    expect(activeCapabilityTab('/workspaces/p1/customize/agents/a/b')).toBeNull();
   });
   test('lights Connectors on an app page and a connector page, and no deeper', () => {
-    expect(activeCapabilityTab('/projects/p1/admin/connectors/resend')).toBe('connectors');
-    expect(activeCapabilityTab('/projects/p1/admin/connectors/connected/resend-abc123')).toBe(
+    expect(activeCapabilityTab('/workspaces/p1/admin/connectors/resend')).toBe('connectors');
+    expect(activeCapabilityTab('/workspaces/p1/admin/connectors/connected/resend-abc123')).toBe(
       'connectors',
     );
-    expect(activeCapabilityTab('/projects/p1/admin/connectors/connected/resend-abc123/')).toBe(
+    expect(activeCapabilityTab('/workspaces/p1/admin/connectors/connected/resend-abc123/')).toBe(
       'connectors',
     );
     expect(
-      activeCapabilityTab('/projects/p1/admin/connectors/connected/resend-abc123/x'),
+      activeCapabilityTab('/workspaces/p1/admin/connectors/connected/resend-abc123/x'),
     ).toBeNull();
     // Only `connectors` earns the six-segment match.
-    expect(activeCapabilityTab('/projects/p1/admin/skills/a/b')).toBeNull();
+    expect(activeCapabilityTab('/workspaces/p1/admin/skills/a/b')).toBeNull();
   });
   test('matches the tab segment', () => {
-    expect(activeCapabilityTab('/projects/p1/customize/agents')).toBe('agent');
-    expect(activeCapabilityTab('/projects/p1/admin/connectors')).toBe('connectors');
-    expect(activeCapabilityTab('/projects/p1/admin/skills')).toBe('skills');
-    expect(activeCapabilityTab('/projects/p1/admin/triggers')).toBe('triggers');
+    expect(activeCapabilityTab('/workspaces/p1/customize/agents')).toBe('agent');
+    expect(activeCapabilityTab('/workspaces/p1/admin/connectors')).toBe('connectors');
+    expect(activeCapabilityTab('/workspaces/p1/admin/skills')).toBe('skills');
+    expect(activeCapabilityTab('/workspaces/p1/admin/triggers')).toBe('triggers');
   });
   test('tolerates a leading locale segment the host may not strip', () => {
-    expect(activeCapabilityTab('/en/projects/p1/customize/agents')).toBe('agent');
-    expect(activeCapabilityTab('/de/projects/p1/admin/connectors/resend')).toBe('connectors');
-    expect(activeCapabilityTab('/en/projects/p1/customize/agents/churn')).toBe('agent');
+    expect(activeCapabilityTab('/en/workspaces/p1/customize/agents')).toBe('agent');
+    expect(activeCapabilityTab('/de/workspaces/p1/admin/connectors/resend')).toBe('connectors');
+    expect(activeCapabilityTab('/en/workspaces/p1/customize/agents/churn')).toBe('agent');
   });
   test('ignores a trailing slash', () => {
-    expect(activeCapabilityTab('/projects/p1/admin/skills/')).toBe('skills');
-    expect(activeCapabilityTab('/projects/p1/customize/agents/')).toBe('agent');
+    expect(activeCapabilityTab('/workspaces/p1/admin/skills/')).toBe('skills');
+    expect(activeCapabilityTab('/workspaces/p1/customize/agents/')).toBe('agent');
   });
   test('returns null off the capability routes', () => {
-    expect(activeCapabilityTab('/projects/p1/files')).toBeNull();
-    expect(activeCapabilityTab('/projects/p1')).toBeNull();
+    expect(activeCapabilityTab('/workspaces/p1/files')).toBeNull();
+    expect(activeCapabilityTab('/workspaces/p1')).toBeNull();
     // `agents` is the OLD Customize section name, not this route.
-    expect(activeCapabilityTab('/projects/p1/agents')).toBeNull();
+    expect(activeCapabilityTab('/workspaces/p1/agents')).toBeNull();
   });
   test('does not match a deeper path that merely ends in a tab key', () => {
-    // The Settings overlay is routable at /projects/<id>/settings/<tab>, and
+    // The Settings overlay is routable at /workspaces/<id>/settings/<tab>, and
     // its former schedules/webhooks tab ids still redirect through
     // `legacySectionRedirect`. Matching on the last segment alone reported
     // Settings as the capability tab and lit the sidebar's Customize row from
     // inside Settings.
-    expect(activeCapabilityTab('/projects/p1/settings/schedules')).toBeNull();
-    expect(activeCapabilityTab('/projects/p1/settings/webhooks')).toBeNull();
+    expect(activeCapabilityTab('/workspaces/p1/settings/schedules')).toBeNull();
+    expect(activeCapabilityTab('/workspaces/p1/settings/webhooks')).toBeNull();
     // A tab key one level deeper under the overlay route is the overlay's
     // redirect, not this bar's tab.
-    expect(activeCapabilityTab('/projects/p1/settings/review')).toBeNull();
+    expect(activeCapabilityTab('/workspaces/p1/settings/review')).toBeNull();
     // The Settings tab's own path IS its tab; one level deeper is not.
-    expect(activeCapabilityTab('/projects/p1/admin/general')).toBe('config');
-    expect(activeCapabilityTab('/projects/p1/admin/general/general')).toBeNull();
+    expect(activeCapabilityTab('/workspaces/p1/admin/general')).toBe('config');
+    expect(activeCapabilityTab('/workspaces/p1/admin/general/general')).toBeNull();
   });
 });

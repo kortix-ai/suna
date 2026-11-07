@@ -12,7 +12,6 @@
  * show through its tint. Hidden at 0, `99+` above 99.
  */
 
-import * as React from 'react';
 import { View } from 'react-native';
 
 import { HEADER_BUTTON_SIZE, HEADER_ICON_SIZE } from '@/components/kortix/header-button';

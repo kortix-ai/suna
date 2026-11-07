@@ -37,6 +37,7 @@ import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runReminders } from './commands/reminders.ts';
 import { runGoals } from './commands/goals.ts';
+import { runSpaces } from './commands/spaces.ts';
 import { runTasks } from './commands/tasks.ts';
 import { runArtifacts } from './commands/artifacts.ts';
 import { runReview } from './commands/review.ts';
@@ -50,10 +51,10 @@ import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
 import { runSystemSkills } from './commands/system-skills.ts';
 import { runTokens } from './commands/tokens.ts';
+import { runKeys } from './commands/keys.ts';
 import { runTools } from './commands/tools.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runChrome } from './commands/chrome.ts';
-import { runPeers, runRooms } from './commands/rooms.ts';
 import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
@@ -114,13 +115,17 @@ function renderHelp(flags: Set<string> | null): string {
     `  ${C.dim}Run${C.reset} ${C.cyan}kortix <subcommand> --help${C.reset} ${C.dim}for command-specific options.${C.reset}`,
   );
   lines.push(
-    '  --debug  Print resolved host, account and credential source to stderr (also KORTIX_DEBUG=1).',
+    '  --debug  Print resolved host, workspace and credential source to stderr (also KORTIX_DEBUG=1).',
   );
   lines.push('');
   lines.push('  Inside a Kortix sandbox, plain commands use the delegated session identity,');
   lines.push('  not stored host credentials. KORTIX_DISABLE_SANDBOX_ENV_FILE=1 disables the');
   lines.push('  sandbox env-file fallback. To use stored credentials, also unset exported KORTIX_TOKEN,');
   lines.push('  KORTIX_API_URL, KORTIX_FRONTEND_URL and KORTIX_PROJECT_ID for that invocation.');
+  lines.push('');
+  lines.push(
+    `  ${C.dim}Older names still work: projects → workspaces, --project → --workspace, KORTIX_PROJECT_ID → KORTIX_WORKSPACE_ID.${C.reset}`,
+  );
   lines.push('');
   return lines.join('\n');
 }
@@ -129,7 +134,7 @@ function printVersion(): void {
   process.stdout.write(`${header('Kortix CLI', VERSION)}\n`);
 }
 
-// The landing screen: ASCII banner → host/account/project context → update
+// The landing screen: ASCII banner → host/workspace context → update
 // notice → the grouped command list. `kortix`, `kortix help`, and
 // `kortix --help` all render EXACTLY this, so there's no "which one shows the
 // banner/context" surprise. The one difference is that BARE `kortix` may stop
@@ -137,7 +142,7 @@ function printVersion(): void {
 // request stays a pure, non-blocking render.
 async function printLanding(opts: { offerUpdate: boolean; argv?: readonly string[] }): Promise<void> {
   printBanner();
-  // Always surface what host/account/project commands will act on.
+  // Always surface what host/workspace commands will act on.
   process.stdout.write(`${renderContext()}\n`);
   if (opts.offerUpdate) {
     if (await offerInteractiveUpdate()) return; // binary replaced — this help is stale
@@ -205,7 +210,7 @@ async function offerInteractiveUpdate(): Promise<boolean> {
 /**
  * argv[0] → handler for every routed command. Aliases point at the same
  * handler (`deploy`→ship, `t`→tui, `perms`→permissions,
- * `session`→sessions); the token-only, remind and
+ * `session`→sessions, `workspace`/`projects`/`project`→workspaces); the token-only, remind and
  * skills adapters keep their extra arguments; `registry` keeps its stderr
  * warning. `help`, `version`, `git-credential` and bare `kortix` stay
  * special-cased in main() — they are landing-screen or protocol verbs, not
@@ -236,7 +241,11 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   groups: (rest) => runGroups(rest),
   tokens: (rest) => runTokens(rest),
   billing: (rest) => runBilling(rest),
-  projects: (rest) => runProjects(rest),
+  workspaces: (rest) => runProjects(rest),
+  workspace: (rest) => runProjects(rest),
+  // Older names of `workspaces`, kept working for scripts. Not listed in help.
+  projects: (rest) => runProjects(rest, { olderName: true }),
+  project: (rest) => runProjects(rest, { olderName: true }),
   sessions: (rest) => runSessions(rest),
   session: (rest) => runSessions(rest),
   chat: (rest) => runSessionsChat(rest),
@@ -256,6 +265,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   goals: (rest) => runGoals(rest),
   artifacts: (rest) => runArtifacts(rest),
   capture: (rest) => runCapture(rest),
+  spaces: (rest) => runSpaces(rest),
   loop: (rest) => runReminders(rest, true),
   remind: (rest) => runReminders(rest, true),
   connectors: (rest) => runConnectors(rest),
@@ -287,9 +297,10 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   grants: (rest) => runGrants(rest),
   update: (rest) => runUpdate(rest),
   uninstall: (rest) => runUninstall(rest),
-  rooms: (rest) => runRooms(rest),
-  peers: (rest) => runPeers(rest),
   tasks: (rest) => runTasks(rest),
+  // Last: a newer command never wins an edit-distance tie over an older one
+  // (`kortix les` still suggests `files`).
+  keys: (rest) => runKeys(rest),
 };
 
 async function main(rawArgv: string[]): Promise<number> {
@@ -401,7 +412,7 @@ async function main(rawArgv: string[]): Promise<number> {
   if (argv[0].startsWith('-')) {
     const lines = [
       `${C.red}kortix:${C.reset} unknown option \`${argv[0]}\` in command position`,
-      '       Global flags (--host <name>, --project <id>) work before the command too.',
+      '       Global flags (--host <name>, --workspace <id>) work before the command too.',
       `       Run ${C.cyan}kortix --help${C.reset} for the command list.`,
     ];
     process.stderr.write(`${lines.join('\n')}\n`);
@@ -435,7 +446,7 @@ async function main(rawArgv: string[]): Promise<number> {
   const lines = [`${C.red}kortix:${C.reset} unknown command \`${argv[0]}\``];
   if (suggestion) lines.push(`       Did you mean ${C.cyan}kortix ${suggestion}${C.reset}?`);
   lines.push(
-    `       Run ${C.cyan}kortix --help${C.reset} for the full list, or ${C.cyan}kortix init <name>${C.reset} to start a new project.`,
+    `       Run ${C.cyan}kortix --help${C.reset} for the full list, or ${C.cyan}kortix workspaces create <name>${C.reset} to create a workspace.`,
   );
   process.stderr.write(`${lines.join('\n')}\n`);
   return 2;

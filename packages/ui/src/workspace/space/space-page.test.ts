@@ -5,8 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import type { App, ProjectGoal, ManifestSpace } from '@kortix/sdk';
 
-// The space page is a channel: the room tab first, then the configured tabs
-// (or the defaults), with `?tab=` picking one. Hooks are mocked by resolved module.
+// The space page is a channel: the configured tabs (or the defaults), the
+// first one open, with `?tab=` picking another. Hooks are mocked by resolved module.
 
 let spaces: ManifestSpace[] = [];
 let tabParam: string | null = null;
@@ -34,8 +34,6 @@ mock.module('@kortix/sdk/react', () => ({
   useProjectApps: () => ({ data: [app('crm', { space: 'sales' }), app('ci', { agent: 'builder' })], isLoading: false }),
   useProjectGoals: () => ({ data: [goal('q4', { agent: 'closer' }), goal('ship', { space: 'engineering' })], isLoading: false }),
   useArtifacts: () => ({ data: [], isLoading: false }),
-  useSpaceRoom: () => ({ data: null }),
-  useRoom: () => ({ data: undefined }),
   useSessionsNeedingInput: () => ({ data: { total: 0, sessions: {} } }),
   useProjectSessions: () => ({ sessions: [] }),
 }));
@@ -47,16 +45,14 @@ mock.module('../../providers/ui-provider', () => ({
   ...provider,
   useUiSearchParams: () => new URLSearchParams(tabParam ? { tab: tabParam } : {}),
   useUiRouter: () => ({ push: () => {}, replace: () => {} }),
-  useUiPathname: () => '/projects/p1/spaces/sales',
+  useUiPathname: () => '/workspaces/p1/spaces/sales',
 }));
 
 const { SpacePage, visibleSpaceTabs } = await import('./space-page');
 const Host = provider.UiProvider as unknown as FC<{ components: Parameters<typeof provider.UiProvider>[0]['components'] }>;
-const RoomPanel = (props: { roomName: string; fill?: boolean }) =>
-  createElement('div', { 'data-testid': 'room-panel', 'data-room': props.roomName, 'data-fill': String(!!props.fill) });
 
 function render(slug = 'sales') {
-  const page = createElement(Host, { components: { RoomPanel } }, createElement(SpacePage, { projectId: 'p1', slug }));
+  const page = createElement(Host, { components: {} }, createElement(SpacePage, { projectId: 'p1', slug }));
   return renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient() }, page));
 }
 
@@ -66,14 +62,20 @@ beforeEach(() => {
   flags = {};
 });
 
-test('the header names the space once, and the room is the first tab, filling the page', () => {
+test('the header names the space once, and the first tab is open', () => {
   const html = render();
   expect(html.match(/<h1[^>]*>.*?<\/h1>/)?.[0]).toContain('>Sales<');
   expect(html.split('>Sales<').length - 1).toBe(1);
   expect(html).toContain('Pipeline and deals');
-  expect(html).toContain('data-room="sales"');
-  expect(html).toContain('data-fill="true"');
-  expect(html.indexOf('>Room<')).toBeLessThan(html.indexOf('>Goals<'));
+  expect(html).not.toContain('>Room<');
+  expect(html).toContain('Objective q4');
+});
+
+test('a space with an empty tab list shows its intro and how to add a tab', () => {
+  spaces = [{ name: 'sales', label: 'Sales', tabs: [] }];
+  const html = render();
+  expect(html).toContain('This is the start of #Sales');
+  expect(html).toContain('Add a tab with +');
 });
 
 test('a space with no tabs shows the default views; configured tabs replace them', () => {
@@ -89,12 +91,11 @@ test('?tab= opens a tab, and Goals lists what is bound to the space through its 
   const html = render();
   expect(html).toContain('Objective q4');
   expect(html).not.toContain('Objective ship');
-  expect(html).not.toContain('data-testid="room-panel"');
 });
 
-test('an unknown ?tab= falls back to the room', () => {
+test('an unknown ?tab= falls back to the first tab', () => {
   tabParam = 'board-9';
-  expect(render()).toContain('data-testid="room-panel"');
+  expect(render()).toContain('Objective q4');
 });
 
 test('a tab of a feature that is off is hidden', () => {

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ProjectRuntimeSession, ProjectSession } from '../rest/projects-client/sessions';
 import {
   directSubsessions,
-  projectSessionForRuntimeId,
+  workspaceSessionForRuntimeId,
   rootRuntimeSession,
   runtimeSessionsOf,
 } from './runtime-sessions';
@@ -19,13 +19,12 @@ const conv = (id: string, extra: Partial<ProjectRuntimeSession> = {}): ProjectRu
 });
 
 const session = (fields: Partial<ProjectSession>): ProjectSession =>
-  ({ session_id: 's1', opencode_session_id: null, opencode_sessions: [], ...fields }) as ProjectSession;
+  ({ session_id: 's1', runtime_session_id: null, runtime_sessions: [], ...fields }) as ProjectSession;
 
 describe('runtimeSessionsOf', () => {
-  test('reads runtime_sessions first, then the pre-W4 opencode_sessions', () => {
-    expect(runtimeSessionsOf(session({ runtime_sessions: [conv('new')], opencode_sessions: [conv('old')] })).map((s) => s.id)).toEqual(['new']);
-    expect(runtimeSessionsOf(session({ opencode_sessions: [conv('old')] })).map((s) => s.id)).toEqual(['old']);
-    expect(runtimeSessionsOf(session({ opencode_sessions: undefined as never }))).toEqual([]);
+  test('reads runtime_sessions, and an empty list when it is missing', () => {
+    expect(runtimeSessionsOf(session({ runtime_sessions: [conv('new')] })).map((s) => s.id)).toEqual(['new']);
+    expect(runtimeSessionsOf(session({ runtime_sessions: undefined as never }))).toEqual([]);
   });
 });
 
@@ -33,11 +32,10 @@ describe('rootRuntimeSession', () => {
   test('the pinned root, by runtime_session_id first', () => {
     const s = session({
       runtime_session_id: 'r2',
-      opencode_session_id: 'r1',
       runtime_sessions: [conv('r1'), conv('r2')],
     });
     expect(rootRuntimeSession(s)?.id).toBe('r2');
-    expect(rootRuntimeSession(session({ opencode_session_id: 'r1', opencode_sessions: [conv('r1')] }))?.id).toBe('r1');
+    expect(rootRuntimeSession(session({ runtime_session_id: 'r1', runtime_sessions: [conv('r1')] }))?.id).toBe('r1');
   });
 
   test('a pin missing from the list is null; no pin takes the first parentless entry', () => {
@@ -84,16 +82,16 @@ describe('directSubsessions', () => {
 
 describe('projectSessionForRuntimeId', () => {
   const a = session({ session_id: 'A', runtime_session_id: 'rootA', runtime_sessions: [conv('rootA'), conv('childA', { parent_id: 'rootA' })] });
-  const b = session({ session_id: 'B', opencode_session_id: 'rootB', opencode_sessions: [conv('rootB')] });
+  const b = session({ session_id: 'B', runtime_session_id: 'rootB', runtime_sessions: [conv('rootB')] });
 
   test('a session id or root pin, then any conversation of a row', () => {
-    expect(projectSessionForRuntimeId([a, b], 'A')?.session_id).toBe('A');
-    expect(projectSessionForRuntimeId([a, b], 'rootB')?.session_id).toBe('B');
-    expect(projectSessionForRuntimeId([a, b], 'childA')?.session_id).toBe('A');
+    expect(workspaceSessionForRuntimeId([a, b], 'A')?.session_id).toBe('A');
+    expect(workspaceSessionForRuntimeId([a, b], 'rootB')?.session_id).toBe('B');
+    expect(workspaceSessionForRuntimeId([a, b], 'childA')?.session_id).toBe('A');
   });
 
   test('null for null or an unknown id', () => {
-    expect(projectSessionForRuntimeId([a, b], null)).toBeNull();
-    expect(projectSessionForRuntimeId([a, b], 'nope')).toBeNull();
+    expect(workspaceSessionForRuntimeId([a, b], null)).toBeNull();
+    expect(workspaceSessionForRuntimeId([a, b], 'nope')).toBeNull();
   });
 });

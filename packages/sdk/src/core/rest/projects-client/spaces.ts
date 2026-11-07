@@ -2,13 +2,17 @@
 // A space is a channel of the project or the caller's DM with one agent. A
 // session filed into a space carries its `space_id` (`createProjectSession`,
 // `listProjectSessions({ spaceId })`). Every route answers 403
-// `feature_disabled` while the project's `project_channels` flag is off.
+// `feature_disabled` while the project's `chat` flag is off.
 
 import { backendApi } from '../../http/api-client';
 import type { App } from './apps';
 import { unwrap } from './shared';
 
-/** A channel of the project, or the caller's DM with one agent. Same fields as the API's `Space`. */
+/**
+ * A channel of the project, or the caller's DM with one agent. Same fields as the API's `Space`.
+ *
+ * @deprecated Use `WorkspaceSpace`. Kept permanently.
+ */
 export interface ProjectSpace {
   space_id: string;
   kind: 'channel' | 'dm';
@@ -43,8 +47,53 @@ export interface ProjectSpace {
    * `public`. Absent on older APIs (read it as `public`).
    */
   visibility?: 'public' | 'private';
+  /**
+   * The space's tabs after Chat, in order. Chat is always the first tab and
+   * is never listed. Absent on older APIs (read it as `[]`).
+   */
+  tabs?: ProjectSpaceTab[];
 }
 
+/** The workspace name of {@link ProjectSpace}: the same type. */
+export type WorkspaceSpace = ProjectSpace;
+
+/**
+ * What a space tab shows. Same values as the API's `SPACE_TAB_KINDS`.
+ *
+ * @deprecated Use `WorkspaceSpaceTabKind`. Kept permanently.
+ */
+export type ProjectSpaceTabKind = 'file' | 'folder' | 'artifact' | 'app' | 'link';
+
+/** The workspace name of {@link ProjectSpaceTabKind}: the same type. */
+export type WorkspaceSpaceTabKind = ProjectSpaceTabKind;
+
+/**
+ * One tab of a space after Chat. `ref` names its target: a Drive file path
+ * (`file`; any file, an `.html` page renders as the page), a Drive folder path
+ * (`folder`), an artifact id (`artifact`), an App slug (`app`) or an https URL
+ * (`link`).
+ *
+ * @deprecated Use `WorkspaceSpaceTab`. Kept permanently.
+ */
+export interface ProjectSpaceTab {
+  /** Stable; 1–64 of `A-Za-z0-9_-`. */
+  id: string;
+  /** 1–60 characters. */
+  title: string;
+  kind: ProjectSpaceTabKind;
+  ref: string;
+  /**
+   * A `link` tab: the server fetched the page on save and it allows framing.
+   * False: show a link card, not a frame. Set by the server; a value sent in
+   * `setProjectSpaceTabs` is ignored. Absent on other kinds.
+   */
+  embeddable?: boolean;
+}
+
+/** The workspace name of {@link ProjectSpaceTab}: the same type. */
+export type WorkspaceSpaceTab = ProjectSpaceTab;
+
+/** @deprecated Use `CreateWorkspaceSpaceInput`. Kept permanently. */
 export interface CreateProjectSpaceInput {
   /** 1–80 characters. The slug is derived from it. */
   name: string;
@@ -56,6 +105,10 @@ export interface CreateProjectSpaceInput {
   visibility?: 'public' | 'private';
 }
 
+/** The workspace name of {@link CreateProjectSpaceInput}: the same type. */
+export type CreateWorkspaceSpaceInput = CreateProjectSpaceInput;
+
+/** @deprecated Use `UpdateWorkspaceSpaceInput`. Kept permanently. */
 export interface UpdateProjectSpaceInput {
   name?: string;
   /** `null` clears the description. */
@@ -75,21 +128,29 @@ export interface UpdateProjectSpaceInput {
   visibility?: 'private';
 }
 
+/** The workspace name of {@link UpdateProjectSpaceInput}: the same type. */
+export type UpdateWorkspaceSpaceInput = UpdateProjectSpaceInput;
+
 /**
  * The project's live channels (`#general` first, then oldest first), then the
  * caller's DMs. The first call creates `#general`. A background read: a
  * failure reaches the caller's query state, not the host error handler.
  */
-export async function listProjectSpaces(projectId: string): Promise<ProjectSpace[]> {
+export async function listWorkspaceSpaces(projectId: string): Promise<ProjectSpace[]> {
   const body = unwrap(
-    await backendApi.get<{ spaces: ProjectSpace[] }>(`/projects/${projectId}/spaces`, { showErrors: false }),
+    await backendApi.get<{ spaces: ProjectSpace[] }>(`/workspaces/${projectId}/spaces`, { showErrors: false }),
   );
   return body.spaces;
 }
 
+/** @deprecated Use `listWorkspaceSpaces`. Kept permanently. */
+export const listProjectSpaces = listWorkspaceSpaces;
+
 /**
  * `#general`'s "turned on again" line: `count` sessions started while Channels
  * was off were filed into `#general` at `at`. Present for 7 days after the switch.
+ *
+ * @deprecated Use `WorkspaceSpaceGeneralNotice`. Kept permanently.
  */
 export interface ProjectSpaceGeneralNotice {
   kind: 'reenabled';
@@ -97,18 +158,24 @@ export interface ProjectSpaceGeneralNotice {
   count: number;
 }
 
+/** The workspace name of {@link ProjectSpaceGeneralNotice}: the same type. */
+export type WorkspaceSpaceGeneralNotice = ProjectSpaceGeneralNotice;
+
 /**
  * `#general`'s "turned on again" line, or null when there is none. Read from
  * the spaces list (`GET /spaces`), so it costs the same request. A background read.
  */
-export async function getProjectSpaceGeneralNotice(projectId: string): Promise<ProjectSpaceGeneralNotice | null> {
+export async function getWorkspaceSpaceGeneralNotice(projectId: string): Promise<ProjectSpaceGeneralNotice | null> {
   const body = unwrap(
-    await backendApi.get<{ general_notice?: ProjectSpaceGeneralNotice }>(`/projects/${projectId}/spaces`, {
+    await backendApi.get<{ general_notice?: ProjectSpaceGeneralNotice }>(`/workspaces/${projectId}/spaces`, {
       showErrors: false,
     }),
   );
   return body.general_notice ?? null;
 }
+
+/** @deprecated Use `getWorkspaceSpaceGeneralNotice`. Kept permanently. */
+export const getProjectSpaceGeneralNotice = getWorkspaceSpaceGeneralNotice;
 
 /**
  * Whether this deployment lets a channel be private (create with `visibility:
@@ -117,7 +184,7 @@ export async function getProjectSpaceGeneralNotice(projectId: string): Promise<P
  */
 export async function getPrivateChannelsAvailable(projectId: string): Promise<boolean> {
   const body = unwrap(
-    await backendApi.get<{ private_channels_available?: boolean }>(`/projects/${projectId}/spaces`, {
+    await backendApi.get<{ private_channels_available?: boolean }>(`/workspaces/${projectId}/spaces`, {
       showErrors: false,
     }),
   );
@@ -132,11 +199,14 @@ export async function getPrivateChannelsAvailable(projectId: string): Promise<bo
  * with no slug characters rejects with 400 `invalid_name`. The caller shows
  * both, so neither reaches the host error handler.
  */
-export async function createProjectSpace(projectId: string, input: CreateProjectSpaceInput) {
+export async function createWorkspaceSpace(projectId: string, input: CreateProjectSpaceInput) {
   return unwrap(
-    await backendApi.post<ProjectSpace>(`/projects/${projectId}/spaces`, input, { showErrors: false }),
+    await backendApi.post<ProjectSpace>(`/workspaces/${projectId}/spaces`, input, { showErrors: false }),
   );
 }
+
+/** @deprecated Use `createWorkspaceSpace`. Kept permanently. */
+export const createProjectSpace = createWorkspaceSpace;
 
 /**
  * Rename, describe, archive or unarchive a channel, or replace its agent list. Only its creator or a
@@ -145,24 +215,111 @@ export async function createProjectSpace(projectId: string, input: CreateProject
  * `createProjectSpace`). The caller shows the error, so it never reaches the
  * host error handler.
  */
-export async function updateProjectSpace(projectId: string, spaceId: string, input: UpdateProjectSpaceInput) {
+export async function updateWorkspaceSpace(projectId: string, spaceId: string, input: UpdateProjectSpaceInput) {
   return unwrap(
-    await backendApi.patch<ProjectSpace>(`/projects/${projectId}/spaces/${spaceId}`, input, { showErrors: false }),
+    await backendApi.patch<ProjectSpace>(`/workspaces/${projectId}/spaces/${spaceId}`, input, { showErrors: false }),
   );
 }
+
+/** @deprecated Use `updateWorkspaceSpace`. Kept permanently. */
+export const updateProjectSpace = updateWorkspaceSpace;
+
+/**
+ * Replace a space's tabs after Chat with `tabs`, in order: add, remove,
+ * rename and reorder in one call. At most 20; every tab needs a `ref` (else
+ * 400). The server sets each link tab's `embeddable`. A channel's editor (`can_edit`), a DM's
+ * owner, or a session token of a thread in the space may; anyone else rejects
+ * with 403 `forbidden`. The caller shows the error, so it never reaches the
+ * host error handler. Resolves the space with its new tabs.
+ */
+export async function setWorkspaceSpaceTabs(projectId: string, spaceId: string, tabs: ProjectSpaceTab[]) {
+  return unwrap(
+    await backendApi.put<ProjectSpace>(`/workspaces/${projectId}/spaces/${spaceId}/tabs`, { tabs }, { showErrors: false }),
+  );
+}
+
+/** @deprecated Use `setWorkspaceSpaceTabs`. Kept permanently. */
+export const setProjectSpaceTabs = setWorkspaceSpaceTabs;
+
+/**
+ * A space's Proactive settings (flag `spaces_proactive`, with `chat`): its
+ * watcher reads what happens in the space and writes only when it matters.
+ * Same fields as the API's `GET /spaces/:spaceId/proactive`.
+ *
+ * @deprecated Use `WorkspaceSpaceProactive`. Kept permanently.
+ */
+export interface ProjectSpaceProactive {
+  space_id: string;
+  /** The watcher is on. Off until someone turns it on. */
+  enabled: boolean;
+  /** A short brief at 09:00 in `brief_timezone`, on days with events. */
+  daily_brief: boolean;
+  /** IANA zone of the daily brief, such as `Europe/Berlin`. */
+  brief_timezone: string;
+  /** The caller may change these: the channel's creator, a project manager or the DM's owner. Never a session token. */
+  can_edit: boolean;
+}
+
+/** The workspace name of {@link ProjectSpaceProactive}: the same type. */
+export type WorkspaceSpaceProactive = ProjectSpaceProactive;
+
+/**
+ * A change to {@link ProjectSpaceProactive}: only the fields given change.
+ *
+ * @deprecated Use `WorkspaceSpaceProactiveInput`. Kept permanently.
+ */
+export interface ProjectSpaceProactiveInput {
+  enabled?: boolean;
+  daily_brief?: boolean;
+  /** An IANA zone; an unknown one rejects with 400 `invalid_timezone`. */
+  brief_timezone?: string;
+}
+
+/** The workspace name of {@link ProjectSpaceProactiveInput}: the same type. */
+export type WorkspaceSpaceProactiveInput = ProjectSpaceProactiveInput;
+
+/** A space's Proactive settings. 403 `feature_disabled` while `spaces_proactive` is off. */
+export async function getWorkspaceSpaceProactive(projectId: string, spaceId: string) {
+  return unwrap(await backendApi.get<ProjectSpaceProactive>(`/workspaces/${projectId}/spaces/${spaceId}/proactive`, { showErrors: false }));
+}
+
+/** @deprecated Use `getWorkspaceSpaceProactive`. Kept permanently. */
+export const getProjectSpaceProactive = getWorkspaceSpaceProactive;
+
+/**
+ * Turn a space's watcher or its daily brief on or off. Anyone but the
+ * channel's creator, a project manager or the DM's owner rejects with 403
+ * `forbidden`. The caller shows the error, so it never reaches the host
+ * error handler. Resolves the stored settings.
+ */
+export async function setWorkspaceSpaceProactive(projectId: string, spaceId: string, input: ProjectSpaceProactiveInput) {
+  return unwrap(
+    await backendApi.put<ProjectSpaceProactive>(`/workspaces/${projectId}/spaces/${spaceId}/proactive`, input, { showErrors: false }),
+  );
+}
+
+/** @deprecated Use `setWorkspaceSpaceProactive`. Kept permanently. */
+export const setProjectSpaceProactive = setWorkspaceSpaceProactive;
 
 /**
  * The caller's DM with `agentName`, created on the first call. An agent the
  * project does not declare rejects with 404 `agent_not_found`. The caller
  * shows the error, so it never reaches the host error handler.
  */
-export async function getOrCreateProjectDm(projectId: string, agentName: string) {
+export async function getOrCreateWorkspaceDm(projectId: string, agentName: string) {
   return unwrap(
-    await backendApi.post<ProjectSpace>(`/projects/${projectId}/spaces/dm`, { agent_name: agentName }, { showErrors: false }),
+    await backendApi.post<ProjectSpace>(`/workspaces/${projectId}/spaces/dm`, { agent_name: agentName }, { showErrors: false }),
   );
 }
 
-/** A person in a channel. Same fields as the API's `SpaceMember`. */
+/** @deprecated Use `getOrCreateWorkspaceDm`. Kept permanently. */
+export const getOrCreateProjectDm = getOrCreateWorkspaceDm;
+
+/**
+ * A person in a channel. Same fields as the API's `SpaceMember`.
+ *
+ * @deprecated Use `WorkspaceSpaceMember`. Kept permanently.
+ */
 export interface ProjectSpaceMember {
   user_id: string;
   /** The display name, else the email's local part. Never an email. */
@@ -177,7 +334,14 @@ export interface ProjectSpaceMember {
   can_remove: boolean;
 }
 
-/** A channel's people: the same list for every viewer, the caller first. */
+/** The workspace name of {@link ProjectSpaceMember}: the same type. */
+export type WorkspaceSpaceMember = ProjectSpaceMember;
+
+/**
+ * A channel's people: the same list for every viewer, the caller first.
+ *
+ * @deprecated Use `WorkspaceSpaceMemberList`. Kept permanently.
+ */
 export interface ProjectSpaceMemberList {
   members: ProjectSpaceMember[];
   /** `#general`: every project member is in it; nobody is added and nobody leaves. */
@@ -186,12 +350,18 @@ export interface ProjectSpaceMemberList {
   can_add: boolean;
 }
 
+/** The workspace name of {@link ProjectSpaceMemberList}: the same type. */
+export type WorkspaceSpaceMemberList = ProjectSpaceMemberList;
+
 /** A channel's people. `#general` lists every project member. A background read. */
-export async function listProjectSpaceMembers(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
+export async function listWorkspaceSpaceMembers(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
   return unwrap(
-    await backendApi.get<ProjectSpaceMemberList>(`/projects/${projectId}/spaces/${spaceId}/members`, { showErrors: false }),
+    await backendApi.get<ProjectSpaceMemberList>(`/workspaces/${projectId}/spaces/${spaceId}/members`, { showErrors: false }),
   );
 }
+
+/** @deprecated Use `listWorkspaceSpaceMembers`. Kept permanently. */
+export const listProjectSpaceMembers = listWorkspaceSpaceMembers;
 
 /**
  * Add people to a channel in one request; resolves to the list after the add.
@@ -201,19 +371,22 @@ export async function listProjectSpaceMembers(projectId: string, spaceId: string
  * rejects with 403 `forbidden`. `#general` rejects with 400 `default_channel`.
  * The caller shows the error.
  */
-export async function addProjectSpaceMembers(
+export async function addWorkspaceSpaceMembers(
   projectId: string,
   spaceId: string,
   userIds: string[],
 ): Promise<ProjectSpaceMemberList> {
   return unwrap(
     await backendApi.post<ProjectSpaceMemberList>(
-      `/projects/${projectId}/spaces/${spaceId}/members`,
+      `/workspaces/${projectId}/spaces/${spaceId}/members`,
       { user_ids: userIds },
       { showErrors: false },
     ),
   );
 }
+
+/** @deprecated Use `addWorkspaceSpaceMembers`. Kept permanently. */
+export const addProjectSpaceMembers = addWorkspaceSpaceMembers;
 
 /**
  * Remove someone from a channel; resolves to the list after. A manager
@@ -221,17 +394,20 @@ export async function addProjectSpaceMembers(
  * The creator rejects with 403 `creator_not_removable` unless a manager
  * removes them; another refusal is 403 `forbidden`.
  */
-export async function removeProjectSpaceMember(
+export async function removeWorkspaceSpaceMember(
   projectId: string,
   spaceId: string,
   userId: string,
 ): Promise<ProjectSpaceMemberList> {
   return unwrap(
-    await backendApi.delete<ProjectSpaceMemberList>(`/projects/${projectId}/spaces/${spaceId}/members/${userId}`, {
+    await backendApi.delete<ProjectSpaceMemberList>(`/workspaces/${projectId}/spaces/${spaceId}/members/${userId}`, {
       showErrors: false,
     }),
   );
 }
+
+/** @deprecated Use `removeWorkspaceSpaceMember`. Kept permanently. */
+export const removeProjectSpaceMember = removeWorkspaceSpaceMember;
 
 /** A private channel the caller is not in, as a project manager sees it: no content (`GET /spaces/private`). */
 export interface PrivateChannelSummary {
@@ -256,25 +432,35 @@ export interface PrivateChannelSummary {
  */
 export async function listPrivateChannelsNotIn(projectId: string): Promise<PrivateChannelSummary[]> {
   return unwrap(
-    await backendApi.get<{ channels: PrivateChannelSummary[] }>(`/projects/${projectId}/spaces/private`, { showErrors: false }),
+    await backendApi.get<{ channels: PrivateChannelSummary[] }>(`/workspaces/${projectId}/spaces/private`, { showErrors: false }),
   ).channels;
 }
 
 /** The caller joins a public channel. Idempotent. `#general` rejects with 400 `default_channel`. */
-export async function joinProjectSpace(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
+export async function joinWorkspaceSpace(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
   return unwrap(
-    await backendApi.post<ProjectSpaceMemberList>(`/projects/${projectId}/spaces/${spaceId}/join`, undefined, {
+    await backendApi.post<ProjectSpaceMemberList>(`/workspaces/${projectId}/spaces/${spaceId}/join`, undefined, {
       showErrors: false,
     }),
   );
 }
 
+/** @deprecated Use `joinWorkspaceSpace`. Kept permanently. */
+export const joinProjectSpace = joinWorkspaceSpace;
+
 /** The caller leaves a channel. Its creator rejects with 403 `creator_not_removable` (only a manager removes them). */
-export async function leaveProjectSpace(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
-  return removeProjectSpaceMember(projectId, spaceId, 'me');
+export async function leaveWorkspaceSpace(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
+  return removeWorkspaceSpaceMember(projectId, spaceId, 'me');
 }
 
-/** A link of a channel (its Links tab): added with "Add link" or shared in a thread. Same fields as the API's `SpaceLink`. */
+/** @deprecated Use `leaveWorkspaceSpace`. Kept permanently. */
+export const leaveProjectSpace = leaveWorkspaceSpace;
+
+/**
+ * A link of a channel (its Links tab): added with "Add link" or shared in a thread. Same fields as the API's `SpaceLink`.
+ *
+ * @deprecated Use `WorkspaceSpaceLink`. Kept permanently.
+ */
 export interface ProjectSpaceLink {
   link_id: string;
   space_id: string;
@@ -305,6 +491,10 @@ export interface ProjectSpaceLink {
   icon_url?: string | null;
 }
 
+/** The workspace name of {@link ProjectSpaceLink}: the same type. */
+export type WorkspaceSpaceLink = ProjectSpaceLink;
+
+/** @deprecated Use `AddWorkspaceSpaceLinkInput`. Kept permanently. */
 export interface AddProjectSpaceLinkInput {
   /** An http(s) URL, at most 2,048 characters. */
   url: string;
@@ -312,26 +502,35 @@ export interface AddProjectSpaceLinkInput {
   title?: string;
 }
 
+/** The workspace name of {@link AddProjectSpaceLinkInput}: the same type. */
+export type AddWorkspaceSpaceLinkInput = AddProjectSpaceLinkInput;
+
 /**
  * The channel's Apps: the project's Apps with a deployment made from one of
  * its threads, only those the caller may open. A background read.
  */
-export async function listProjectSpaceApps(projectId: string, spaceId: string): Promise<App[]> {
+export async function listWorkspaceSpaceApps(projectId: string, spaceId: string): Promise<App[]> {
   const body = unwrap(
-    await backendApi.get<{ apps: App[] }>(`/projects/${projectId}/spaces/${spaceId}/apps`, { showErrors: false }),
+    await backendApi.get<{ apps: App[] }>(`/workspaces/${projectId}/spaces/${spaceId}/apps`, { showErrors: false }),
   );
   return body.apps;
 }
 
+/** @deprecated Use `listWorkspaceSpaceApps`. Kept permanently. */
+export const listProjectSpaceApps = listWorkspaceSpaceApps;
+
 /** The channel's links, newest first. A background read. */
-export async function listProjectSpaceLinks(projectId: string, spaceId: string): Promise<ProjectSpaceLink[]> {
+export async function listWorkspaceSpaceLinks(projectId: string, spaceId: string): Promise<ProjectSpaceLink[]> {
   const body = unwrap(
-    await backendApi.get<{ links: ProjectSpaceLink[] }>(`/projects/${projectId}/spaces/${spaceId}/links`, {
+    await backendApi.get<{ links: ProjectSpaceLink[] }>(`/workspaces/${projectId}/spaces/${spaceId}/links`, {
       showErrors: false,
     }),
   );
   return body.links;
 }
+
+/** @deprecated Use `listWorkspaceSpaceLinks`. Kept permanently. */
+export const listProjectSpaceLinks = listWorkspaceSpaceLinks;
 
 /**
  * Add a link to a channel, unpinned, with the caller as its adder. A URL that
@@ -340,22 +539,28 @@ export async function listProjectSpaceLinks(projectId: string, spaceId: string):
  * `link_limit`. The caller shows both. The
  * stored `url` is the parsed form (`new URL(url).href`).
  */
-export async function addProjectSpaceLink(projectId: string, spaceId: string, input: AddProjectSpaceLinkInput) {
+export async function addWorkspaceSpaceLink(projectId: string, spaceId: string, input: AddProjectSpaceLinkInput) {
   return unwrap(
-    await backendApi.post<ProjectSpaceLink>(`/projects/${projectId}/spaces/${spaceId}/links`, input, {
+    await backendApi.post<ProjectSpaceLink>(`/workspaces/${projectId}/spaces/${spaceId}/links`, input, {
       showErrors: false,
     }),
   );
 }
 
+/** @deprecated Use `addWorkspaceSpaceLink`. Kept permanently. */
+export const addProjectSpaceLink = addWorkspaceSpaceLink;
+
 /** Remove a link. Only its creator or a project manager may: anyone else gets 403 `forbidden`. */
-export async function removeProjectSpaceLink(projectId: string, spaceId: string, linkId: string): Promise<void> {
+export async function removeWorkspaceSpaceLink(projectId: string, spaceId: string, linkId: string): Promise<void> {
   unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/spaces/${spaceId}/links/${linkId}`, {
+    await backendApi.delete<{ ok: boolean }>(`/workspaces/${projectId}/spaces/${spaceId}/links/${linkId}`, {
       showErrors: false,
     }),
   );
 }
+
+/** @deprecated Use `removeWorkspaceSpaceLink`. Kept permanently. */
+export const removeProjectSpaceLink = removeWorkspaceSpaceLink;
 
 /**
  * Pin or unpin a link. Agents in the channel read the pinned ones. Unpinning
@@ -364,7 +569,7 @@ export async function removeProjectSpaceLink(projectId: string, spaceId: string,
  * added link removed it. A channel that already pins 200 links rejects pinning
  * with 409 `link_limit`.
  */
-export async function pinProjectSpaceLink(
+export async function pinWorkspaceSpaceLink(
   projectId: string,
   spaceId: string,
   linkId: string,
@@ -372,13 +577,16 @@ export async function pinProjectSpaceLink(
 ): Promise<ProjectSpaceLink | null> {
   const body = unwrap(
     await backendApi.patch<{ link: ProjectSpaceLink | null }>(
-      `/projects/${projectId}/spaces/${spaceId}/links/${linkId}`,
+      `/workspaces/${projectId}/spaces/${spaceId}/links/${linkId}`,
       { pinned },
       { showErrors: false },
     ),
   );
   return body.link;
 }
+
+/** @deprecated Use `pinWorkspaceSpaceLink`. Kept permanently. */
+export const pinProjectSpaceLink = pinWorkspaceSpaceLink;
 
 /** A mark a member leaves once per project: the intro dialog seen, or a "Get started" row done or dismissed. */
 export type ChannelsOnboardingMark =
@@ -408,13 +616,13 @@ export interface ChannelsOnboarding {
 /** The caller's Channels onboarding state. A background read. */
 export async function getChannelsOnboarding(projectId: string): Promise<ChannelsOnboarding> {
   return unwrap(
-    await backendApi.get<ChannelsOnboarding>(`/projects/${projectId}/onboarding/channels`, { showErrors: false }),
+    await backendApi.get<ChannelsOnboarding>(`/workspaces/${projectId}/onboarding/channels`, { showErrors: false }),
   );
 }
 
 /** Record one onboarding mark for the caller. Idempotent. An unknown mark rejects with 400; the caller shows it. */
 export async function markChannelsOnboarding(projectId: string, mark: ChannelsOnboardingMark): Promise<void> {
   unwrap(
-    await backendApi.post<unknown>(`/projects/${projectId}/onboarding/channels/marks`, { mark }, { showErrors: false }),
+    await backendApi.post<unknown>(`/workspaces/${projectId}/onboarding/channels/marks`, { mark }, { showErrors: false }),
   );
 }

@@ -8,7 +8,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { sandboxEnvValue } from '../api/sandbox-env.ts';
+import { envWorkspaceId } from '../project-link.ts';
 import { C, help, pad, status } from '../style.ts';
 
 // `kortix review` — the CLI face of the Review Center, the per-project
@@ -60,10 +60,10 @@ interface ReviewItem {
 
 const HELP = help`Usage: kortix review <subcommand> [options]
 
-The project's review inbox — everything waiting on a human decision: change
+The workspace's review inbox — everything waiting on a human decision: change
 requests, connector tool calls a policy gated for approval, and the outputs,
 decisions and batches agents submit for sign-off. Mirrors the dashboard's
-Review Center. On for every project.
+Review Center. On for every workspace.
 
 Subcommands:
   ls [--segment <s>] [--kind <k>]   List inbox items. Default: every segment.
@@ -103,11 +103,11 @@ Submit options:
                      /drives and lists the rest.
   --agent <name>     Which agent produced it.
   --session <id>     Originating session; it must be one of this
-                     project's sessions. Inside a session it defaults to
-                     $KORTIX_SESSION_ID when that session is in this project.
+                     workspace's sessions. Inside a session it defaults to
+                     $KORTIX_SESSION_ID when that session is in this workspace.
 
 Global options:
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>   Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -133,7 +133,7 @@ export async function runReview(argv: string[]): Promise<number> {
   let json = false;
   try {
     json = takeFlagBool(rest, ['--json']);
-    f.project = takeFlagValue(rest, ['--project']);
+    f.project = takeFlagValue(rest, ['--project', '--workspace']);
     f.host = takeFlagValue(rest, ['--host']);
     f.segment = takeFlagValue(rest, ['--segment']);
     f.kind = takeFlagValue(rest, ['--kind']);
@@ -199,7 +199,7 @@ async function reviewLs(f: Record<string, string | undefined>, json: boolean): P
       }
       const qs = query.toString();
       const page = await ctx.client.get<{ review_items: ReviewItem[]; next_cursor?: string | null }>(
-        `/projects/${ctx.projectId}/review/items${qs ? `?${qs}` : ''}`,
+        `/workspaces/${ctx.projectId}/review/items${qs ? `?${qs}` : ''}`,
       );
       for (const item of page.review_items) {
         byId.delete(item.review_item_id);
@@ -254,7 +254,7 @@ async function reviewShow(
     // The per-item GET reads `cr:` and `call:` rows too (KRTX-2316), so an
     // item is found off every page of the inbox.
     const resp = await ctx.client.get<{ review_item: ReviewItem }>(
-      `/projects/${ctx.projectId}/review/items/${encodeURIComponent(id)}`,
+      `/workspaces/${ctx.projectId}/review/items/${encodeURIComponent(id)}`,
     );
     item = resp.review_item;
   } catch (err) {
@@ -263,7 +263,7 @@ async function reviewShow(
     // adapters fold the others in, and it returned the whole inbox.
     try {
       const { review_items } = await ctx.client.get<{ review_items: ReviewItem[] }>(
-        `/projects/${ctx.projectId}/review/items`,
+        `/workspaces/${ctx.projectId}/review/items`,
       );
       item = review_items.find((row) => row.review_item_id === id) ?? null;
     } catch (listErr) {
@@ -332,7 +332,7 @@ async function reviewAct(
   }
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}`;
+  const base = `/workspaces/${ctx.projectId}`;
 
   try {
     // ── A connector approval: one live question to the agent. Approve lets the
@@ -455,7 +455,7 @@ async function reviewBulk(
   if (plan.native.length > 0) {
     try {
       const resp = await ctx.client.post<{ updated: number; review_items: ReviewItem[] }>(
-        `/projects/${ctx.projectId}/review/bulk`,
+        `/workspaces/${ctx.projectId}/review/bulk`,
         { ids: plan.native, verdict },
       );
       updated = resp.updated;
@@ -527,17 +527,17 @@ async function reviewSubmit(f: Record<string, string | undefined>, json: boolean
   let sessionId = f.session;
   const ambientSession = process.env.KORTIX_SESSION_ID;
   if (!sessionId && ambientSession) {
-    const ambientProject = sandboxEnvValue('KORTIX_PROJECT_ID');
+    const ambientProject = envWorkspaceId();
     if (!ambientProject || ambientProject === ctx.projectId) sessionId = ambientSession;
     else
       process.stderr.write(
-        `  ${C.dim}$KORTIX_SESSION_ID is a session of another project; submitting without an origin session. Pass --session <id> to link one.${C.reset}\n`,
+        `  ${C.dim}$KORTIX_SESSION_ID is a session of another workspace; submitting without an origin session. Pass --session <id> to link one.${C.reset}\n`,
       );
   }
 
   let item: ReviewItem;
   try {
-    item = await ctx.client.post<ReviewItem>(`/projects/${ctx.projectId}/review/items`, {
+    item = await ctx.client.post<ReviewItem>(`/workspaces/${ctx.projectId}/review/items`, {
       kind: f.kind,
       title: f.title,
       ...(f.summary ? { summary: f.summary } : {}),

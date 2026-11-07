@@ -1,4 +1,5 @@
 import { cors } from 'hono/cors';
+import { KORTIX_EXTENSION_ORIGIN } from '../shared/kortix-extension';
 
 const CLOUD_ORIGINS = [
   'https://www.kortix.com',
@@ -7,7 +8,6 @@ const CLOUD_ORIGINS = [
   'https://staging.kortix.com',
   'https://kortix.cloud',
   'https://www.kortix.cloud',
-  'https://new.kortix.com',
 ];
 
 const LOCAL_ORIGINS = [
@@ -18,18 +18,48 @@ const LOCAL_ORIGINS = [
 ];
 
 const PREVIEW_ORIGIN = /^https:\/\/[a-z0-9-]+\.(vercel\.app|preview\.kortix\.com)$/i;
+/** `PREVIEW_ORIGIN` as CSP source expressions. */
+const PREVIEW_ORIGIN_SOURCES = ['https://*.vercel.app', 'https://*.preview.kortix.com'];
 
 interface CorsMiddlewareOptions {
   internalEnvironment: string;
   extraOrigins: string[];
 }
 
+/** The web app origins the API trusts: the cloud and local hosts, and `extraOrigins`. */
+export function trustedWebOrigins(extraOrigins: readonly string[]): Set<string> {
+  return new Set([...CLOUD_ORIGINS, ...LOCAL_ORIGINS, ...extraOrigins.map((origin) => origin.trim()).filter(Boolean)]);
+}
+
+/** The http(s) origin of `value`, or null when it is not an http(s) URL. */
+function httpOrigin(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `frame-ancestors` for a page that only the Kortix web app may frame: every origin CORS
+ * trusts, as an exact origin; the preview hosts on a preview; and the Kortix in Chrome side
+ * panel, which frames the web app. A value that is not an http(s) URL is left out, and no
+ * other wildcard is added: user apps and sandbox previews live under `*.kortix.com`.
+ */
+export function webAppFrameAncestors(options: CorsMiddlewareOptions): string {
+  const sources = new Set<string>();
+  for (const value of trustedWebOrigins(options.extraOrigins)) {
+    const origin = httpOrigin(value);
+    if (origin) sources.add(origin);
+  }
+  if (options.internalEnvironment === 'preview') for (const source of PREVIEW_ORIGIN_SOURCES) sources.add(source);
+  sources.add(KORTIX_EXTENSION_ORIGIN);
+  return `frame-ancestors ${[...sources].join(' ')}`;
+}
+
 export function createCorsMiddleware(options: CorsMiddlewareOptions) {
-  const allowedOrigins = new Set([
-    ...CLOUD_ORIGINS,
-    ...LOCAL_ORIGINS,
-    ...options.extraOrigins.map((origin) => origin.trim()).filter(Boolean),
-  ]);
+  const allowedOrigins = trustedWebOrigins(options.extraOrigins);
   const allowPreviewOrigins = options.internalEnvironment === 'preview';
 
   return cors({

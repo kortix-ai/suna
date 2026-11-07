@@ -36,6 +36,7 @@ import { computeDesiredRuntime } from '../../runtime-convergence/desired';
 import { diffRuntime } from '../../runtime-convergence/diff';
 import { toRuntimeBlockWire, type RuntimeBlockWire } from '../../runtime-convergence/wire';
 import type { SandboxConfigState } from '../lib/session-reload';
+import { workspaceIdParam } from '../../shared/route-params';
 
 /**
  * The `runtime` block (spec §3, the runtime-convergence contract (PR #7785)): desired vs
@@ -86,15 +87,15 @@ export function registerSessionConfigRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/config',
+      path: '/{workspaceId}/sessions/{sessionId}/config',
       tags: ['sessions'],
       summary: "Whether a session's agent config is the latest",
       ...auth,
-      request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), sessionId: z.string() }) },
       responses: { 200: json(z.any(), 'Config freshness'), ...errors(400, 403, 404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       // The mirror-work budget is spent across this whole request: the later
       // stages get only what the earlier ones left (see `budgetLeft`).
@@ -253,18 +254,18 @@ export function registerSessionConfigRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/reload',
+      path: '/{workspaceId}/sessions/{sessionId}/reload',
       tags: ['sessions'],
       summary: "Reload a running session's agent config from git",
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } }, required: false },
       },
       responses: { 200: json(z.any(), 'Reload result'), ...errors(400, 403, 404, 409) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
       if (binding.kind === 'error') return binding.response as never;
@@ -283,7 +284,7 @@ export function registerSessionConfigRoutes(): void {
       // permission to restart the runtime underneath someone else's work.
       if (!mayChangeSessionModel(visible)) {
         return c.json(
-          { error: 'Only the session owner or a project manager can reload this session' },
+          { error: 'Only the session owner or a workspace manager can reload this session' },
           403,
         );
       }
@@ -301,7 +302,7 @@ export function registerSessionConfigRoutes(): void {
         refreshRepo: body.refresh_repo !== false,
         force: body.force === true,
       });
-      // A reload restarts opencode, which ENDS the turn in flight. Refused by
+      // A reload restarts the runtime, which ENDS the turn in flight. Refused by
       // default rather than discarding someone's work without saying so.
       if (
         result.reason === 'session is mid-turn' ||
@@ -332,12 +333,12 @@ export function registerSessionConfigRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/reload-stream',
+      path: '/{workspaceId}/sessions/{sessionId}/reload-stream',
       tags: ['sessions'],
       summary: "Reload a running session's agent config with live progress",
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } }, required: false },
       },
       responses: {
@@ -349,7 +350,7 @@ export function registerSessionConfigRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
       if (binding.kind === 'error') return binding.response as never;
@@ -366,7 +367,7 @@ export function registerSessionConfigRoutes(): void {
       if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
       if (!mayChangeSessionModel(visible)) {
         return c.json(
-          { error: 'Only the session owner or a project manager can reload this session' },
+          { error: 'Only the session owner or a workspace manager can reload this session' },
           403,
         );
       }

@@ -92,7 +92,8 @@ Rules, in order:
 1. Policy: IT turns updates off (`auto_update`) or pins the channel (`update_channel`).
 2. No release version baked in (a local build), or no public key compiled in:
    no update; `update.json` says which.
-3. Check at start (60 s to 5 min after, random) and every 6 h, jittered 10 %. A failed
+3. Check at start (60 s to 5 min after, random) and every 6 h, jittered 10 %. A check
+   that came due during sleep waits 10 min after the wake (a tick gap over 120 s). A failed
    check retries after 30 min, doubling, up to 6 h.
 4. GET the manifest and `.sig` over https (redirects stay on https; manifest at most
    1 MiB). The signature must verify against a compiled-in key.
@@ -107,22 +108,45 @@ Rules, in order:
    `submit` job, detached process) installs it silently: `msiexec /i … /qn /norestart`
    (the MSI keeps IT's URL and token), `installer -pkg … -target /`, `apt-get install`
    (`dpkg -i` without apt). The installer restarts the service.
-8. The new service must prove health: for every signed-in person the recorder runs
-   and, while it says "recording", saves a frame newer than the install; two good
-   probes in a row, within 15 min. Then the installer is kept in `updates/kept/`.
+8. The new service must prove health (`update::judge`): two good probes in a row,
+   within 15 min. A probe runs `kortix-capture --json status` as each signed-in person.
+   It counts only an active session (a disconnected Windows session never counts) and
+   only a person whose recorder ran when the update started (`job.json` `required`,
+   recorded by the old service). For each of them the recorder runs and, while it says
+   "recording", saves a frame newer than the install. Nobody to check is healthy: the
+   new service itself runs. Each probe writes `probe.json`. Then the installer is kept
+   in `updates/kept/`.
 9. Not healthy, or the installer failed: the installer of the previous version goes
-   back (the one it kept, else `previous` from the manifest). A release that ran and
-   failed is marked bad (`update.json` `bad`) and never retried. An installer that
-   could not run is retried at the next check.
+   back (the one it kept, else `previous` from the manifest). No previous installer:
+   the new version stays installed and the result is `failed`. A release that ran and
+   failed is marked bad (`update.json` `bad`, with the time in `bad_at`). An installer
+   that could not run (`install_failed`) is retried at the next check. Three
+   `install_failed` in a row for one version (`INSTALL_FAILS_BEFORE_BAD`, counted in
+   `install_failures`) mark it bad too, so a broken installer is not re-downloaded
+   every hour.
+10. A bad version is skipped for 7 days (`BAD_RETRY_AFTER`), then tried once more; a
+   failure again restarts the wait. A newer release is always tried. A bad version not
+   newer than the installed one is dropped. So no computer is stuck on a version.
+
+The failure reason (`lastResult.detail`) names the step and the person. Examples:
+`0.14.19 did not report healthy in 900 s: session 2: no_new_frame (state recording,
+last frame 41 s before the install)`, `…: uid 501: not_running (state not_recording,
+reason not_running)`, `…: session 3: status_command_failed (…)`, `…: no health probe
+ran: the new machine service did not start or never reached the check`,
+`the installer failed: msiexec exited 1603`.
 
 Files in `updates/` (macOS, Linux: `<machine dir>/updates`; Windows:
 `%ProgramData%\Kortix\CaptureUpdate`, outside the MSI's folder): `update.json`
 (state, readable by everyone, no secrets), `update.log`, `job.json`, `result.json`,
-`verified.json`, `staging/`, `kept/`.
+`verified.json`, `probe.json`, `staging/`, `kept/`.
 
 The device reports `update` in `status.json`: `{status, installed, channel, latest,
-lastCheckMs, lastResult, badVersions}`. `status` is `current`, `behind`, `updating`,
-`failed` or `disabled`. Kortix shows "behind" and "update failed" from it.
+lastCheckMs, lastCheck, updatingTo, lastResult, badVersions, skipped}`. `status` is
+`current`, `behind`, `updating`, `failed` or `disabled`. `skipped` is
+`[{version, failedAtMs, retryAtMs}]`. Kortix shows both states: the health reasons
+`behind_version` and `update_failed` (`apps/api/src/capture/health.ts`), the
+**Version** column on **Devices**, and **Device details** (the reason, the last check,
+the versions skipped).
 
 IT controls:
 

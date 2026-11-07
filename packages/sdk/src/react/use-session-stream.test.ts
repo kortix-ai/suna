@@ -2,14 +2,18 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { act, create } from 'react-test-renderer';
-import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
+import {
+  __resetSandboxConnectionOwnerForTests,
+  claimSandboxConnection,
+  useSandboxConnectionStore,
+} from '../browser/stores/sandbox-connection-store';
 import { configureKortix } from '../core/http/config';
 import type { RuntimeEventMessage } from '../core/runtime/runtime-rest-client';
 import { __resetSessionControlStreamsForTests, openSessionStream } from '../core/session/control-stream';
 import { onSessionStopped } from '../core/http/session-stopped';
 import { sessionStartKey } from '../core/rest/projects-client';
 import { qk } from './query-keys';
-import { applySessionControlFrame, patchCachedSessionTitle, useSessionStream } from './use-session-stream';
+import { applySessionControlFrame, patchCachedSessionTitle, useSessionStream, useSessionStreamEnded } from './use-session-stream';
 
 const P = 'p1';
 const S = 's1';
@@ -179,5 +183,132 @@ describe('useSessionStream', () => {
     await act(async () => renderer.unmount());
     expect(useSandboxConnectionStore.getState().streamDriven).toBe(false);
     watch.close();
+  });
+});
+
+describe('useSessionStream with two sessions mounted', () => {
+  afterEach(() => {
+    __resetSessionControlStreamsForTests();
+    __resetSandboxConnectionOwnerForTests();
+  });
+
+  test('the store follows the session that owns it: another session cannot change it, and its unmount does not stop the stream driving it', async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const pushers = new Map<string, (frame: Record<string, unknown>) => void>();
+    configureKortix({
+      backendUrl: 'http://kortix.invalid/v1',
+      getToken: async () => 'token',
+      eventStreamTransport: async function* (request: { url: string; signal: AbortSignal }) {
+        const session = new URL(request.url).pathname.split('/')[5]!;
+        const pending: RuntimeEventMessage[] = [];
+        let wake: () => void = () => {};
+        pushers.set(session, (frame) => {
+          pending.push({ data: JSON.stringify(frame) });
+          wake();
+        });
+        let ended = false;
+        request.signal.addEventListener('abort', () => {
+          ended = true;
+          wake();
+        });
+        while (!ended) {
+          if (pending.length === 0) await new Promise<void>((resolve) => (wake = resolve));
+          while (pending.length > 0) yield pending.shift()!;
+        }
+      },
+    });
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
+    const sessionFrame = { channel: 'control', cepoch: 'capi_t', cseq: 1, type: 'kortix.control.session', at: 1, payload: { known: true } };
+    const healthy = { channel: 'stream', type: 'kortix.runtime.health', health: { status: 'ok', harness: { ready: true } } };
+    const down = { channel: 'stream', type: 'kortix.runtime.status', state: 'down', reason: 'daemon_503' };
+
+    const client = new QueryClient();
+    function Session({ id }: { id: string }) {
+      useSessionStream('P1', id);
+      return null;
+    }
+    const tree = (ids: string[]) =>
+      createElement(QueryClientProvider, { client }, ...ids.map((id) => createElement(Session, { id, key: id })));
+    const release = claimSandboxConnection('P1/A');
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(tree(['A', 'B']));
+      await settle();
+    });
+    await act(async () => {
+      pushers.get('A')!(sessionFrame);
+      pushers.get('A')!(healthy);
+      pushers.get('B')!(sessionFrame);
+      await settle();
+    });
+    expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connected', healthy: true, streamDriven: true });
+
+    // B's box goes down: A's runtime did not.
+    await act(async () => {
+      pushers.get('B')!(down);
+      await settle();
+    });
+    expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connected', healthy: true });
+
+    // B leaves: A's stream still drives the store, so the probe stays off.
+    await act(async () => {
+      renderer.update(tree(['A']));
+      await settle();
+    });
+    expect(useSandboxConnectionStore.getState().streamDriven).toBe(true);
+
+    // A's own frame still applies.
+    await act(async () => {
+      pushers.get('A')!(down);
+      await settle();
+    });
+    expect(useSandboxConnectionStore.getState().healthy).toBe(false);
+
+    await act(async () => renderer.unmount());
+    expect(useSandboxConnectionStore.getState().streamDriven).toBe(false);
+    release();
+  });
+});
+
+describe('useSessionStreamEnded', () => {
+  afterEach(() => __resetSessionControlStreamsForTests());
+
+  test('a stream the server refuses with 403 is reported to the host once, and not retried', async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    let attempts = 0;
+    configureKortix({
+      backendUrl: 'http://kortix.invalid/v1',
+      getToken: async () => 'token',
+      // eslint-disable-next-line require-yield
+      eventStreamTransport: async function* () {
+        attempts += 1;
+        throw Object.assign(new Error('SSE failed: 403'), { status: 403 });
+      },
+    });
+    const seen: Array<string | null> = [];
+    function Page() {
+      useSessionStream('P1', 'S1');
+      seen.push(useSessionStreamEnded('P1', 'S1')?.reason ?? null);
+      return null;
+    }
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(createElement(QueryClientProvider, { client: new QueryClient() }, createElement(Page)));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(attempts).toBe(1);
+    expect(seen[0]).toBeNull();
+    expect(seen.at(-1)).toBe('forbidden');
+    await act(async () => renderer.unmount());
+  });
+});
+
+describe('applySessionControlFrame — a replayed frame keeps its age', () => {
+  test('a turn frame handed to a late joiner is stamped when it ARRIVED, not when it was replayed', () => {
+    const client = new QueryClient();
+    const working = { state: 'working', since: null, turn_token: 't1', pending_delivery: false };
+    const replayed = { ...frame('kortix.control.turn', { known: true, turns: [], working }), receivedAtMs: 10 };
+    applySessionControlFrame(client, P, S, replayed, {}, 70_000);
+    expect(client.getQueryData<{ atMs: number }>(qk.project.sessionTurn(P, S))?.atMs).toBe(10);
   });
 });

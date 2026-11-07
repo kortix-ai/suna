@@ -9,8 +9,6 @@ import {
   ChatIcon as MessageSquare,
   GithubLogoIcon as Github,
   SlackLogoIcon as Slack,
-  ClockIcon as Clock,
-  LightningIcon as Zap,
   HashIcon as Hash,
   GlobeIcon as Globe,
   SparkleIcon as Sparkles,

@@ -62,14 +62,14 @@ emails the subject back.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the dsar-fulfillment skill and the
 daily trigger, and opens a change request for you to review.
 Prefer clicks? Choose **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a daily GDPR data subject request agent in this project.
+  code={`Set up a daily GDPR data subject request agent in this workspace.
 
 1. Create the agent agents/gdpr-dsar.md. Its job is to turn each data subject access or deletion request into a verified report for legal review. It may use the Gmail, PostgreSQL and Google Docs connectors and the legal review email channel.
 
@@ -90,7 +90,7 @@ Prefer clicks? Choose **Use this template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect Gmail, PostgreSQL and Google
+Open **Connectors** in your workspace and connect Gmail, PostgreSQL and Google
 Docs, then connect the legal review inbox under **Channels**. Use a read-only
 database user for PostgreSQL. Credentials are brokered server-side and never
 enter the agent's machine.
@@ -130,7 +130,7 @@ you let the schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every day at 07:00, each run in a new session on its own cloud computer.
-To change the time, edit the cron line, or open **Triggers** in the project.
+To change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

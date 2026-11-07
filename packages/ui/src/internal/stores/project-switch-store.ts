@@ -42,17 +42,17 @@ export const useProjectSwitchStore = create<ProjectSwitchState>((set) => ({
 }));
 
 /**
- * The workspace id a pathname is inside, or `null`. `/projects/<id>` and every
- * route below it (`/projects/<id>/sessions/<sid>`, `/files`, …) all count as
+ * The workspace id a pathname is inside, or `null`. `/workspaces/<id>` and every
+ * route below it (`/workspaces/<id>/sessions/<sid>`, `/files`, …) all count as
  * being in that workspace — arriving anywhere inside the target completes the
  * switch.
  */
 export function projectIdFromPathname(pathname: string | null | undefined): string | null {
   if (!pathname) return null;
-  const match = /^\/projects\/([^/?#]+)/.exec(pathname);
+  const match = /^\/(?:workspaces|projects)\/([^/?#]+)/.exec(pathname);
   const id = match?.[1];
   if (!id) return null;
-  // `/projects/start` and `/projects/new` are pages, not workspaces.
+  // `/workspaces/start` and `/workspaces/new` are pages, not workspaces.
   return id === 'start' || id === 'new' ? null : id;
 }
 

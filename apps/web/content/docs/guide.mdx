@@ -13,8 +13,8 @@ This guide explains each part of Kortix in the order you meet it, and how to set
 ## How it works
 
 <Steps>
-<Step title="A project holds everything">
-A project is one git repository. Its agents, skills, memory and connector settings are files in it. Kortix hosts the repository for you, or you connect your own on GitHub.
+<Step title="A workspace holds everything">
+A workspace is backed by one git repository. Its agents, skills, memory and connector settings are files in it. Kortix hosts the repository for you, or you connect your own on GitHub.
 </Step>
 <Step title="You start a session">
 A session is one piece of agent work. You describe a task, and an agent picks it up. The session runs on its own cloud computer, so it never touches your own computer or another session.
@@ -22,8 +22,8 @@ A session is one piece of agent work. You describe a task, and an agent picks it
 <Step title="The agent does the work">
 The agent follows its instructions and skills, uses its tools and connectors, and produces the result. When it needs a decision, it asks you.
 </Step>
-<Step title="A person approves changes to the project">
-When an agent changes the project itself, for example a skill or its memory, it opens a change request. A person reviews it on the **Review** page and merges it.
+<Step title="A person approves changes to the workspace">
+When an agent changes the workspace itself, for example a skill or its memory, it opens a change request. A person reviews it on the **Review** page and merges it.
 </Step>
 </Steps>
 
@@ -33,7 +33,7 @@ Around that loop:
 - **Agents start without you.** A schedule, a webhook or an event in another app starts a session with nobody at the keyboard. See [Triggers](#triggers).
 - **Agents run in parallel.** Each session has its own cloud computer, so many agents work at once without getting in each other's way. See [Several agents at once](#several-agents-at-once).
 - **Long jobs keep their details.** When a session's context fills up, the agent continues in a fresh context and looks up the exact earlier lines it needs in the session's full record. Nothing is summarized away.
-- **People stay in control.** A change to the project waits on the **Review** page until a person merges it. A connector rule set to **Ask** holds an action until a person approves it.
+- **People stay in control.** A change to the workspace waits on the **Review** page until a person merges it. A connector rule set to **Ask** holds an action until a person approves it.
 
 ## How the pieces fit
 
@@ -43,6 +43,7 @@ Around that loop:
 | Skills | A written procedure an agent loads for one kind of task. | [Skills](/docs/guide#skills) |
 | Apps | Websites, internal tools and backends that agents build and Kortix hosts. | [Apps](/docs/guide#apps) |
 | Drive | Files that outlive a session, including what agents remember about you. | [Drive](/docs/guide#drive) |
+| Artifacts | Docs and web pages shared from Drive, with one link and a version history. | [Artifacts](/docs/guide#artifacts) |
 | Connectors | Governed access to the apps and APIs your team uses. | [Connectors](/docs/guide#connectors) |
 | Triggers | Schedules, webhooks, events and merged change requests that start an agent or wake a session. | [Triggers](/docs/guide#triggers) |
 | Computers | The cloud computer each session runs on, and your own computer if you connect it. | [Computers](/docs/guide#computers) |
@@ -50,37 +51,37 @@ Around that loop:
 | Outcomes | A goal an agent works on until a separate check confirms that it is done. | [Outcomes](/docs/guide#outcomes) |
 | Channels | Slack, Microsoft Teams, Telegram and Discord, where people start work by messaging the Kortix bot. | [Channels](/docs/guide#channels) |
 | Everywhere | The web, desktop and mobile apps, the terminal, and other AI tools. | [Everywhere](/docs/guide#everywhere) |
-| People and access | Accounts, members, roles, and who may run which agent. | [People and access](/docs/guide#teams) |
+| People and access | Members, roles, and who may run which agent. | [People and access](/docs/guide#teams) |
 | Security | Isolation, secrets, the audit log and single sign-on. | [Security](/docs/guide#security) |
 | Billing | Plans, credits and what uses them. | [Billing](/docs/guide#billing) |
 
 ## Get started
 
-<video src="/media/guide/get-started.mp4" aria-label="Getting started in Kortix: open a project and start its first session" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
+<video src="/media/guide/get-started.mp4" aria-label="Getting started in Kortix: open a workspace and start its first session" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
-Create a project, run a session, connect an app and invite your team. You do all of it in the web app.
+Create a workspace, run a session, connect an app and invite your team. You do all of it in the web app.
 
 ### What you need
 
 - A Kortix account. Sign up at [kortix.com](https://kortix.com).
-- Nothing else. Kortix can host your project's repository, so you do not need a GitHub account.
+- Nothing else. Kortix can host your workspace's repository, so you do not need a GitHub account.
 
-### Create your first project
+### Create your first workspace
 
-A project is one git repository. It holds your agents, skills, memory and connector settings. A new account has no projects, and Kortix does not create one for you.
+A workspace is backed by one git repository. It holds your agents, skills, memory and connector settings. Kortix does not create one for you.
 
 <Steps>
-<Step title="Open Create a project">
-On the projects page, select **Create a new project**. From inside a project, open the project menu at the top of the sidebar and select **Switch Project** → **Create a project…**.
+<Step title="Open Create a workspace">
+On the workspaces page, select **Create workspace**. From inside a workspace, open the workspace menu at the top of the sidebar and select **Create workspace**.
 </Step>
 <Step title="Name it">
-Type a **Project name**. If you belong to more than one account, pick the **Account** too.
+Type a **Workspace name**.
 </Step>
 <Step title="Choose where the repository lives">
 Under **Git account**, choose **Kortix managed** for the simplest start: Kortix creates and manages a private repository for you. If your company uses GitHub, pick your GitHub account instead.
 </Step>
 <Step title="Create it">
-Click **Create project**. The project starts with My Kortix, a general-purpose agent called `worker`, and a set of ready-made skills.
+Click **Create workspace**. The workspace starts with My Kortix, a general-purpose agent called `worker`, and a set of ready-made skills.
 </Step>
 </Steps>
 
@@ -90,7 +91,7 @@ Click **Create project**. The project starts with My Kortix, a general-purpose a
 
 <Steps>
 <Step title="Start a new session">
-Select **New session** in the sidebar. The project home opens with an empty message box, the composer.
+Select **New session** in the sidebar. The workspace home opens with an empty message box, the composer.
 </Step>
 <Step title="Ask for something real">
 Describe a task the way you would brief a colleague. Attach files if they help: select the attach button, paste a file, or drop it on the page.
@@ -99,7 +100,7 @@ Describe a task the way you would brief a colleague. Attach files if they help: 
 The agent works on its own cloud computer, and you see its progress in the session. You can send another message while it works to steer it.
 </Step>
 <Step title="Review the result">
-The side panel shows the agent's plan and outputs. If the agent changed files in your project, **Changes** in the header shows what changed.
+The side panel shows the agent's plan and outputs. If the agent changed files in your workspace, **Changes** in the header shows what changed.
 </Step>
 </Steps>
 
@@ -127,17 +128,17 @@ Find the app, select **Install**, and sign in to it.
 
 ### Invite your team
 
-You manage project members in the account settings.
+You manage workspace members in the workspace settings.
 
 <Steps>
 <Step title="Open the members list">
-Open **Account settings** → **Projects**, or type "members" in the command palette.
+Open **Workspace settings** → **Workspaces**, or type "members" in the command palette.
 </Step>
 <Step title="Invite people">
-Invite your teammates to the project. They see the invitation in their project list, or under **Invites** in the mobile app.
+Invite your teammates to the workspace. They see the invitation in their workspace list, or under **Invites** in the mobile app.
 </Step>
 <Step title="Let them run an agent">
-A member can start sessions only with an agent assigned to them, to one of their groups, or to the whole project. Assign an agent on its **People** page under **Customize** → **Agents**, or open **Account settings** → **Projects** → the project → **Grant access**.
+A member can start sessions only with an agent assigned to them, to one of their groups, or to the whole workspace. Assign an agent on its **People** page under **Customize** → **Agents**, or open **Workspace settings** → **Workspaces** → the workspace → **Grant access**.
 </Step>
 </Steps>
 
@@ -148,16 +149,36 @@ Roles and groups are described in [People and access](/docs/guide#teams).
 | Where | What is there |
 | --- | --- |
 | **New session** | Starts a session. |
-| **Customize** | Your agents and what they use: **Agents**, **Skills**, **Connectors**, **Triggers**, **Loops**, **Models**, **Secrets**, **Repo**, **Review** and **Settings**. **Settings** opens **Project admin**, which holds the project's settings, including **Feature flags**. |
+| **Inbox** | Your notifications from every workspace. The number is how many you have not read. |
+| **Customize** | Your agents and what they use: **Agents**, **Skills**, **Connectors**, **Triggers**, **Loops**, **Models**, **Secrets**, **Repo**, **Review** and **Settings**. **Settings** opens **Workspace admin**, which holds the workspace's settings, including **Feature flags**. |
 | **Drive** | **My files**: your own files and what agents remember about you. |
-| **Apps** | The project's Apps. |
+| **Apps** | The workspace's Apps. |
+| **Artifacts** | The docs and web pages shared in the workspace. |
 | **Sessions** | Your sessions. |
 | Search | The command palette: `Cmd+K` on a Mac, `Ctrl+K` on Windows and Linux. |
-| Project menu (top left) | **Switch Project**, **Account settings**, your personal **Settings** and **Log out**. |
+| Workspace menu (top left) | **Invite people**, **Workspace settings**, **Switch workspace**, **Create workspace**, your personal **Preferences** and **Log out**. |
+
+<a id="notifications" />
+
+### Notifications
+
+Kortix tells you when something needs you or is done:
+
+- A session you started, prompted or follow finishes, fails, asks you a question or asks for a permission.
+- Someone shares a session with you.
+- A trigger or loop you follow starts failing, is paused, or works again.
+- Someone comments on an Artifact you follow.
+- Your capture computer stops recording, or records again.
+
+Every notification lands in your **Inbox**: select **Inbox** in the sidebar, or search for it with `Cmd+K`. **Needs you** lists what waits for your answer; **Done** lists the rest. Select a notification to open it. **Mark all as read** clears the count.
+
+Kortix also sends a push to your phone and to this browser. Select **Turn on** in the Inbox to get them while every Kortix tab is closed. When you have the session open, its notifications arrive already read.
+
+Email is off for most kinds until you turn it on. A failing App, a paused trigger and a capture computer that stopped are emailed by default. Choose push and email per kind in **Settings** → **Notifications**.
 
 <a id="desktop-and-mobile-apps" />
 
-The desktop app (macOS, Windows, Linux) and the mobile app (iPhone, iPad, Android) open the same projects and sessions. See [Everywhere](/docs/guide#everywhere).
+The desktop app (macOS, Windows, Linux) and the mobile app (iPhone, iPad, Android) open the same workspaces and sessions. See [Everywhere](/docs/guide#everywhere).
 
 ## Agents
 
@@ -170,23 +191,23 @@ An agent is a set of instructions, a model and a list of what it may use. The in
 An agent has two halves:
 
 - **Behavior.** Its instructions, its model, and its rules for which tools it may use freely, use after asking, or never use.
-- **Access.** The connectors, secrets, skills, Apps, Kortix permissions and project repository it may use.
+- **Access.** The connectors, secrets, skills, Apps, Kortix permissions and workspace repository it may use.
 
-Access is denied by default. An agent gets no connector, secret, skill, App or project repository until you grant it.
+Access is denied by default. An agent gets no connector, secret, skill, App or workspace repository until you grant it.
 
 ### The built-in agent
 
-**My Kortix** is the agent you talk to. A session that names no agent runs it. My Kortix hands each task to the project agent made for it and acts with your permissions.
+**My Kortix** is the agent you talk to. A session that names no agent runs it. My Kortix hands each task to the workspace agent made for it and acts with your permissions.
 
-- **It has your rights and no more.** In this project, My Kortix can do what your role allows: create and change agents, connectors, schedules and people. When your role does not allow something, it says so and names the people who can grant it.
+- **It has your rights and no more.** In this workspace, My Kortix can do what your role allows: create and change agents, connectors, schedules and people. When your role does not allow something, it says so and names the people who can grant it.
 - **It asks first** before an action that affects other people (an invitation, a role change), deletes something, or gives an agent more access. It shows what changes, before and after.
 - **It hands off the work.** Writing, research, code and anything that uses a connected app go to the agent made for the job, each in its own session. Open that session from its card in your session.
 - **Each action is a card** that shows what it did, what changed, and a link to the page where you see the change.
-- **Account settings stay with you.** Billing, the account's members and other projects are out of its reach. It tells you where to click.
+- **Workspace settings stay with you.** Billing, the workspace's members and other workspaces are out of its reach. It tells you where to click.
 
-Every new project also has one project agent, `worker`. It is the general-purpose agent that My Kortix hands work to when no other agent fits. It may use every connector, secret, skill and Kortix permission in the project, and it works on a copy of the project's repository. Edit its instructions to fit your company. A project created before `worker` existed has an agent called `kortix` instead.
+Every new workspace also has one workspace agent, `worker`. It is the general-purpose agent that My Kortix hands work to when no other agent fits. It may use every connector, secret, skill and Kortix permission in the workspace, and it works on a copy of the workspace's repository. Edit its instructions to fit your company. A workspace created before `worker` existed has an agent called `kortix` instead.
 
-My Kortix is on when the project's `kortix.yaml` sets `builtin_agents.my_kortix: true`, as every new project does.
+My Kortix is on when the workspace's `kortix.yaml` sets `builtin_agents.my_kortix: true`, as every new workspace does.
 
 ### Several agents at once
 
@@ -209,9 +230,9 @@ When work waits on someone else, such as replies to emails an agent sent, the ag
 
 **Workflows.** For a big job, such as checking every page of a website, My Kortix proposes a workflow: a plan that runs many agents at once. You approve it first. Its card shows each agent's progress and has **Pause**, **Restart**, **Stop** and **Save**. To ask for a workflow, write `ultracode` in your message. One workflow runs at most 50 agents, 8 at a time, for at most 2 hours. A workflow with more than 25 agents shows **Large workflow**.
 
-**Helpers for one job.** You can ask for a helper with its own instructions, a faster or a stronger model, or read-only access: "have a fast model read these 40 pages, and the strongest one write the summary." My Kortix sets it up for this job only and changes no agent. A new tool or extension is a change to the project: an agent proposes it, and it works after you approve it.
+**Helpers for one job.** You can ask for a helper with its own instructions, a faster or a stronger model, or read-only access: "have a fast model read these 40 pages, and the strongest one write the summary." My Kortix sets it up for this job only and changes no agent. A new tool or extension is a change to the workspace: an agent proposes it, and it works after you approve it.
 
-**Agent teams.** A team is a group of agents that share one to-do list and talk to each other. Ask for one: "Start a team of three: one researches, one writes, one checks the facts." The lead splits the work into items, each teammate takes the next free item, and the lead puts the answers together for you. Each teammate runs one of your agents, and its role applies to its own session only: no agent is created or changed, and the team is not saved. Agent teams are experimental and off by default. Turn them on in **Project admin** → **Feature flags** → **Agent teams**.
+**Agent teams.** A team is a group of agents that share one to-do list and talk to each other. Ask for one: "Start a team of three: one researches, one writes, one checks the facts." The lead splits the work into items, each teammate takes the next free item, and the lead puts the answers together for you. Each teammate runs one of your agents, and its role applies to its own session only: no agent is created or changed, and the team is not saved. Agent teams are experimental and off by default. Turn them on in **Workspace admin** → **Feature flags** → **Agent teams**.
 
 **The board view.** The board view of the session list groups every session by state: working, needs you, idle, done, failed and stopped. A session that needs you shows what it waits for: a question or an approval.
 
@@ -222,20 +243,20 @@ When work waits on someone else, such as replies to emails an agent sent, the ag
 Select **Customize** in the sidebar, then **Agents** → **New**.
 </Step>
 <Step title="Choose how to create it">
-**Create in chat** starts a session in which an agent writes the new agent with you: describe the job and answer its questions. **Set up manually** opens the project files instead.
+**Create in chat** starts a session in which an agent writes the new agent with you: describe the job and answer its questions. **Set up manually** opens the workspace files instead.
 </Step>
 <Step title="Set its basics and model">
 Open the agent and edit its **Basics** and **Model**. The instructions say what the agent does, how, and what it must never do.
 </Step>
 <Step title="Give it access">
-Under **Access**, turn on what the job needs: **Skills**, **Connectors**, **Secrets**, **Apps** and **Kortix permissions**. If the agent works on the project's files, also turn on **Project repository access** on its **Workspace** page.
+Under **Access**, turn on what the job needs: **Skills**, **Connectors**, **Secrets**, **Apps** and **Kortix permissions**. If the agent works on the workspace's files, also turn on **Workspace repository access** on its **Workspace** page.
 </Step>
 <Step title="Assign it to people">
 On the agent's **People** page, choose who may run it.
 </Step>
 </Steps>
 
-A change to an agent takes effect when it lands in the project. New sessions start with it, and running sessions pick it up.
+A change to an agent takes effect when it lands in the workspace. New sessions start with it, and running sessions pick it up.
 
 ### What an agent can access
 
@@ -244,12 +265,12 @@ A change to an agent takes effect when it lands in the project. New sessions sta
 | **Connectors** | Calls to the apps you connected, such as your help desk or CRM. |
 | **Secrets** | Encrypted credentials, such as an API key. |
 | **Skills** | The procedures the agent may load. |
-| **Apps** | The project's Apps whose access is restricted or private. |
+| **Apps** | The workspace's Apps whose access is restricted or private. |
 | **Kortix permissions** | Actions in Kortix itself, such as starting sessions or merging changes. |
-| **Project repository access** | A copy of the project's repository in `/workspace` on the session's computer, on the session's own branch. `worker` has it. In `kortix.yaml` this is `workspace.project_repository: true`. |
-| **Tools** | Built-in abilities such as web search, image search, image generation, reading web pages and project memory. See [Kortix tools](/docs/developers#kortix-tools). |
+| **Workspace repository access** | A copy of the workspace's repository in `/workspace` on the session's computer, on the session's own branch. `worker` has it. In `kortix.yaml` this is `workspace.project_repository: true`. |
+| **Tools** | Built-in abilities such as web search, image search, image generation, reading web pages and workspace memory. See [Kortix tools](/docs/developers#kortix-tools). |
 
-**An agent acts as itself, not as you.** Kortix gives each agent its own identity in each project, so the agent does the same thing whoever runs it. Your role does not lend it extra power.
+**An agent acts as itself, not as you.** Kortix gives each agent its own identity in each workspace, so the agent does the same thing whoever runs it. Your role does not lend it extra power.
 
 **Your personal accounts stay personal.** A personal connector account, a personal secret or your own computer reaches a session only when the session is private and runs on your behalf. A shared session or a scheduled run reaches none of them.
 
@@ -267,7 +288,7 @@ You decide what an agent may do without a person. Each of its tools follows one 
 
 Connectors can hold actions for approval too. A connector rule can hold an action, such as sending an email, until a person approves it. Held actions appear under **Approvals** in the session header and on the **Review** page, where you approve or deny each one.
 
-Changes to the project itself go through review as well. When an agent changes a skill, its memory or another agent, it opens a change request. A person reviews it on the **Review** page and selects **Ship it** to merge it.
+Changes to the workspace itself go through review as well. When an agent changes a skill, its memory or another agent, it opens a change request. A person reviews it on the **Review** page and selects **Ship it** to merge it.
 
 <Callout type="warning">
 `worker` holds every Kortix permission, so it is allowed to merge its own change requests. Its standing instructions tell it to merge only when you ask. To require a person every time, remove the merge permission from the agent's **Kortix permissions**.
@@ -275,9 +296,9 @@ Changes to the project itself go through review as well. When an agent changes a
 
 ### When kortix.yaml has a problem
 
-`kortix.yaml` can contain a mistake, such as a misspelled key or a skill that is not registered. The project then shows a banner that lists the problems. Select **Fix with My Kortix**: My Kortix fixes the file and opens a change request for you to review. If My Kortix is off, the button reads **Fix in a new session**. Every session's agent also gets the list, so you can ask any agent to fix it.
+`kortix.yaml` can contain a mistake, such as a misspelled key or a skill that is not registered. The workspace then shows a banner that lists the problems. Select **Fix with My Kortix**: My Kortix fixes the file and opens a change request for you to review. If My Kortix is off, the button reads **Fix in a new session**. Every session's agent also gets the list, so you can ask any agent to fix it.
 
-The project keeps running while the file has a mistake. Kortix turns off only the broken part, such as one agent or one trigger, and never gives an agent more access than the file grants. When the mistake is in a part that the whole project depends on, only My Kortix runs until the file is fixed. The rules are in the [kortix.yaml reference](/docs/developers#when-kortixyaml-has-a-problem).
+The workspace keeps running while the file has a mistake. Kortix turns off only the broken part, such as one agent or one trigger, and never gives an agent more access than the file grants. When the mistake is in a part that the whole workspace depends on, only My Kortix runs until the file is fixed. The rules are in the [kortix.yaml reference](/docs/developers#when-kortixyaml-has-a-problem).
 
 ## Skills
 
@@ -287,18 +308,18 @@ A skill is a Markdown file that tells an agent how to do one task, step by step.
 
 ### What a skill is
 
-- **A short document in your project.** It has a name, a description and the steps. Reference files, such as a template or a checklist, can sit beside it.
+- **A short document in your workspace.** It has a name, a description and the steps. Reference files, such as a template or a checklist, can sit beside it.
 - **Loaded on demand.** The agent reads each skill's description and decides when to load the skill. Write the description as "when to use this", not only "what this is".
 - **Shared.** One skill can serve many agents. You choose which agents may load it.
-- **Versioned.** Skills are files in your project's git repository, so every change is recorded with who made it.
+- **Versioned.** Skills are files in your workspace's git repository, so every change is recorded with who made it.
 
 ### Built-in skills
 
-A new project includes ready-made skills for documents, spreadsheets, PDFs, presentations, design, websites, web apps, publishing, browsing the web, and converting documents to Markdown.
+A new workspace includes ready-made skills for documents, spreadsheets, PDFs, presentations, design, websites, web apps, publishing, browsing the web, and converting documents to Markdown.
 
-Kortix also adds system skills to every project. They teach agents how to use Kortix itself, for example its memory, connectors and Apps. You cannot change or remove them. An agent loads them only when it has access to them, like any other skill.
+Kortix also adds system skills to every workspace. They teach agents how to use Kortix itself, for example its memory, connectors and Apps. You cannot change or remove them. An agent loads them only when it has access to them, like any other skill.
 
-More skills are in the [marketplace](https://kortix.com/marketplace). Installing one starts a session that adds the skill to your project and opens a change request for you to review.
+More skills are in the [marketplace](https://kortix.com/marketplace). Installing one starts a session that adds the skill to your workspace and opens a change request for you to review.
 
 ### Add a skill
 
@@ -338,17 +359,17 @@ After the merge, new sessions use the improved skill, and running sessions pick 
 </Step>
 </Steps>
 
-You can also add a reflection agent: an agent that a schedule runs to review recent sessions and improve skills, instructions, tools and memory, all in one change request that it never merges itself. A new project has none. The `kortix-harness-refinement` system skill describes how it works.
+You can also add a reflection agent: an agent that a schedule runs to review recent sessions and improve skills, instructions, tools and memory, all in one change request that it never merges itself. A new workspace has none. The `kortix-harness-refinement` system skill describes how it works.
 
 ## Apps
 
 <video src="/media/guide/apps.mp4" aria-label="Apps in Kortix: the Apps page and adding an App" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
-An App is a website, an internal tool or a backend that your project hosts on Kortix. An agent builds and deploys it from a session. Each App has one stable URL, a setting for who may open it, and numbered releases. Kortix signs people in before your App runs, so a private App needs no login code of its own.
+An App is a website, an internal tool or a backend that your workspace hosts on Kortix. An agent builds and deploys it from a session. Each App has one stable URL, a setting for who may open it, and numbered releases. Kortix signs people in before your App runs, so a private App needs no login code of its own.
 
 ### How it works
 
-**Apps** in the project sidebar lists every App you may open, with its live state, a preview and its access settings. Open an App to see its releases.
+**Apps** in the workspace sidebar lists every App you may open, with its live state, a preview and its access settings. Open an App to see its releases.
 
 You create and deploy Apps from a session, the command line or code. Most people describe the App to an agent, and the agent builds it on its [cloud computer](/docs/guide#computers) and deploys it.
 
@@ -357,12 +378,12 @@ You create and deploy Apps from a session, the command line or code. Most people
 | Access | Who can open the App |
 | --- | --- |
 | Private (the default) | Only the person who created it |
-| Project | Everyone who can read the project |
+| Workspace | Everyone who can read the workspace |
 | Restricted | The members and groups you list |
 | Password | Anyone with the password |
 | Public | Anyone, without signing in |
 
-Project managers, account owners and account admins can open every App in the project, so a private App stays manageable after its creator leaves. When you change who can open an App, everyone signs in to it again.
+Workspace managers, workspace owners and workspace admins can open every App in the workspace, so a private App stays manageable after its creator leaves. When you change who can open an App, everyone signs in to it again.
 
 #### Always on or on demand
 
@@ -387,10 +408,10 @@ Start a session and say what you need: who uses it, what it shows, and what data
 The agent builds the App on its cloud computer and deploys it. A new App is private: only you can open it.
 </Step>
 <Step title="Open it and check it">
-Open the App from **Apps** in the project sidebar, in a browser where you are signed in to Kortix.
+Open the App from **Apps** in the workspace sidebar, in a browser where you are signed in to Kortix.
 </Step>
 <Step title="Share it">
-Set who may open it, for example the whole project or a group, and send people the link.
+Set who may open it, for example the whole workspace or a group, and send people the link.
 </Step>
 </Steps>
 
@@ -405,12 +426,12 @@ Drive holds files that outlive a session. Every person has their own folder, **M
 ### Folders
 
 - **My files.** Your own folder. Only you see it. In a private session that you started, it opens as `/drives/me` and as `~/Desktop`, so the agent reads your context and saves its work where you look.
-- **Shared Drives.** With shared Drives on, a project admin creates a Drive and adds agents to it. Every session of those agents opens the Drive, and everyone who may use one of those agents can open it in Drive. Admins also see **All files**, the whole folder tree. Shared Drives are experimental and off by default. Turn them on in **Project admin** → **Feature flags** → **Shared drives**.
+- **Shared Drives.** With shared Drives on, a workspace admin creates a Drive and adds agents to it. Every session of those agents opens the Drive, and everyone who may use one of those agents can open it in Drive. Admins also see **All files**, the whole folder tree. Shared Drives are experimental and off by default. Turn them on in **Workspace admin** → **Feature flags** → **Shared drives**.
 - **What a session opens.** A private session that you started opens **My files**. A session in a private channel's thread also opens that channel's folder. With shared Drives on, a session also opens the Drives of its agent. The file `/drives/README.md` in the session lists what is open.
 - **Search.** `kortix search <words>` finds files by name and by text in every folder you may open, including folders a session did not open. In a session, it searches the folders that session may use.
-- **Large files.** Drive takes a file of any size, up to the project's storage limit: in the web app, with `kortix drive put <local> <path>`, or through the API. A file over 64 MiB uploads in 1 MiB blocks, and only the blocks that Drive does not have yet are sent. The file appears when its last block arrives.
+- **Large files.** Drive takes a file of any size, up to the workspace's storage limit: in the web app, with `kortix drive put <local> <path>`, or through the API. A file over 64 MiB uploads in 1 MiB blocks, and only the blocks that Drive does not have yet are sent. The file appears when its last block arrives.
 
-Every project has a Drive. Its files are stored on Platinum, where sessions run.
+Every workspace has a Drive. Its files are stored on Platinum, where sessions run.
 
 ### Memory
 
@@ -423,12 +444,12 @@ Memory is Markdown files in Drive: facts about you, your work, your conventions 
 
 Agents read and write Memory files through the folders their session opens. Kortix does not paste memory into every prompt: a system skill tells each agent to read memory at the start of a task.
 
-**My Kortix remembers you.** Tell My Kortix "remember that I like short replies", or correct how it works, and it saves one short page about it. Say "forget that I work on the launch", and it deletes the page. It confirms in one line, for example "Noted: you like replies short." My Kortix reads these pages at the start of every session in this project. They are in **My files**, under `Memory/mykortix`, and only you see them. Ask "what do you remember about me?" to see them.
+**My Kortix remembers you.** Tell My Kortix "remember that I like short replies", or correct how it works, and it saves one short page about it. Say "forget that I work on the launch", and it deletes the page. It confirms in one line, for example "Noted: you like replies short." My Kortix reads these pages at the start of every session in this workspace. They are in **My files**, under `Memory/mykortix`, and only you see them. Ask "what do you remember about me?" to see them.
 
-The project repository can hold memory too: a `memory/` folder with `MEMORY.md` as its index, for what the project is and how it works. Agents edit it with their file tools, and every edit lands through a change request.
+The workspace repository can hold memory too: a `memory/` folder with `MEMORY.md` as its index, for what the workspace is and how it works. Agents edit it with their file tools, and every edit lands through a change request.
 
 <Callout type="warning">
-Never put passwords, API keys or personal data in memory. Store credentials as project secrets instead.
+Never put passwords, API keys or personal data in memory. Store credentials as workspace secrets instead.
 </Callout>
 
 ### Where else your files live
@@ -437,12 +458,37 @@ Besides Drive, two places hold a session's files:
 
 | Place | What it holds |
 | --- | --- |
-| Your project's repository | What the agent committed. Open it from **Customize** → **Repo**. |
+| Your workspace's repository | What the agent committed. Open it from **Customize** → **Repo**. |
 | Session attachments | Files people attached, and copies of files the agent showed you. Kortix saves them at the end of every turn, so you can download them while the session sleeps. |
 
 On the session's own computer, only `/workspace` and `/drives` are kept. See [What is kept](#what-is-kept).
 
 When you delete a session, Kortix keeps its messages and its stored files for 30 days, so you can restore it.
+
+## Artifacts
+
+An Artifact is a doc or a web page that people and agents share from Drive: a report, a plan, a deck, a dashboard. It has one link, a version history and its own sharing. People read it and edit a doc in place. Agents publish it and save new versions.
+
+Artifacts are on in every project.
+
+### What an Artifact is
+
+- **A doc** is a folder in Drive with an `index.md`. It opens in an editor. It saves itself 2 seconds after you stop typing, and every save is a version. When someone else saves the doc while you edit it, autosave stops and you pick **Reload** or **Keep mine**. **Export as PDF** prints it.
+- **A page** is a folder with an `index.html` and its files: styles, scripts, images. It opens in a sandbox: its scripts run, but they cannot reach Kortix or your account.
+- **Where it lives.** A new Artifact is a folder under `Artifacts` in **My files**. An agent can also share a folder that is already in Drive. **Stop sharing** removes the Artifact and its links. Its files stay in Drive.
+- **Who sees it.** **Private** (only you and the people you add), **Workspace** (everyone in the workspace) or **Public** (anyone with the link, without signing in). Its creator and workspace managers change it with **Share**. To edit an Artifact, you need write access to its folder in Drive.
+- **Versions.** **History**, the clock button in the header, lists the saves by day. Saves less than 5 minutes apart show as one row. Open a save to read it. **Restore** writes it back as a new save.
+- **Ask AI** in the header opens a chat beside the Artifact. Your first message starts a session that edits it, and you see the edits as they land.
+
+Open **Artifacts** in the sidebar to see every Artifact you can open. Filter by **All**, **Yours**, **Shared with you** or **Pinned**, search by title and description, and select **New doc** to start a doc.
+
+Agents publish and save Artifacts from the command line. The full list is in [Artifact commands](/docs/developers#artifact-commands).
+
+| Command | What it does |
+| --- | --- |
+| `kortix artifacts publish <file\|dir>` | Upload and share a doc or a page. |
+| `kortix artifacts pull <id> <dir>` | Download the files to edit them. |
+| `kortix artifacts versions <id>` | List the saves. |
 
 ## Connectors
 
@@ -465,10 +511,10 @@ An agent can use a connector only when it has been given access to it. The perso
 #### Who can use an account
 
 - **Only you.** A private account. Only you can use it, and only in your own private sessions. This is the default.
-- **Everyone in the project.** A shared account that every member and every allowed agent can use.
+- **Everyone in the workspace.** A shared account that every member and every allowed agent can use.
 - **Specific people, groups, or agents.** A shared account for an audience you choose.
 
-Triggers never use a private account. They need an account shared with the whole project. See [Triggers](/docs/guide#triggers).
+Triggers never use a private account. They need an account shared with the whole workspace. See [Triggers](/docs/guide#triggers).
 
 ### Set it up
 
@@ -499,7 +545,7 @@ Every action follows one of three rules:
 - **Ask** holds the action until a person approves it.
 - **Block** never runs it.
 
-You can also mark a whole connector as sensitive. Then every action without its own rule needs approval, reads included. A project can also use a careful default: reads run, and writes or deletions wait for approval.
+You can also mark a whole connector as sensitive. Then every action without its own rule needs approval, reads included. A workspace can also use a careful default: reads run, and writes or deletions wait for approval.
 
 #### Approving a held action
 
@@ -516,11 +562,11 @@ Choose **Approve** or **Deny**, with an optional note to the agent. **Approve** 
 </Steps>
 
 - An approval covers one exact action. If a detail changes, the action needs a new approval.
-- An approved action runs once, and the agent does not send it again. Kortix checks the project's rules again when it runs the action, so a **Block** rule still wins.
-- A project manager, or the person who started the session, decides.
-- A held action expires when nobody decides within 24 hours, unless your project sets another time.
+- An approved action runs once, and the agent does not send it again. Kortix checks the workspace's rules again when it runs the action, so a **Block** rule still wins.
+- A workspace manager, or the person who started the session, decides.
+- A held action expires when nobody decides within 24 hours, unless your workspace sets another time.
 - There is no "approve everything in this session". An action that must run unattended needs an **Allow** rule.
-- A script that signs in with a project token gets the same treatment: **Approve** runs its call, and the script reads the outcome. A script with any other token must send the same call again within 15 minutes after the approval.
+- A script that signs in with a workspace token gets the same treatment: **Approve** runs its call, and the script reads the outcome. A script with any other token must send the same call again within 15 minutes after the approval.
 
 ### Use Kortix from Claude, ChatGPT or Cursor
 
@@ -541,9 +587,9 @@ A trigger starts agent work with nobody at the keyboard. It has two parts: a **s
 | **App event** | One of your own Kortix Apps reports something. | Sources that fit none of the others. See [Apps](/docs/guide#apps). |
 | **Connector event** | Something happens in a connected app. | New issues, new messages, new orders. |
 | **Webhook** | Another system sends a signed request to the trigger's address. | Form tools, payment systems, code hosts. |
-| **Change request merged** | A change request of the project merges, into one branch or any branch. | Release notes, a check after a deploy. |
+| **Change request merged** | A change request of the workspace merges, into one branch or any branch. | Release notes, a check after a deploy. |
 
-Connector events are experimental and off by default. Turn them on in **Project admin** → **Feature flags** → **Composio event triggers**.
+Connector events are experimental and off by default. Turn them on in **Workspace admin** → **Feature flags** → **Composio event triggers**.
 
 | Target | A fire | Called |
 | --- | --- | --- |
@@ -569,19 +615,19 @@ A trigger lives in one of two places:
 Some rules keep this safe:
 
 - **App events are marked.** A session that an App event starts opens with a line that says the content is automated, not input from a person. The agent treats it as data, not as instructions.
-- **Shared accounts only.** A private connector account never serves a trigger. Use an account shared with the whole project.
+- **Shared accounts only.** A private connector account never serves a trigger. Use an account shared with the whole workspace.
 - **Nobody to ask.** If a session that a trigger started waits on a person, it waits at most 30 minutes, then stops. Set connector rules that let the needed actions run. See [Connectors](/docs/guide#connectors).
-- **Who can see the runs.** By default, only people who manage triggers, plus account owners and admins, can open the sessions. You can choose **Selected teammates** or **Whole project** instead.
+- **Who can see the runs.** By default, only people who manage triggers, plus workspace owners and admins, can open the sessions. You can choose **Selected teammates** or **Whole workspace** instead.
 - **One run at a time.** A schedule skips a run while its previous run is still going.
 
 ### Set it up
 
 <Steps>
 <Step title="Open Triggers">
-Open **Customize** → **Triggers**. The tabs are **All**, **Schedules**, **Webhooks**, and one for each other source the project uses. Runtime triggers are listed under **Created at runtime**.
+Open **Customize** → **Triggers**. The tabs are **All**, **Schedules**, **Webhooks**, and one for each other source the workspace uses. Runtime triggers are listed under **Created at runtime**.
 </Step>
 <Step title="Create the trigger">
-Select **New trigger**, then **Set up manually**. Under **When**, choose **Schedule**, **App event**, **Connector event**, **Webhook** or **Change request merged**. A source the project cannot use yet says why and links to the fix: **Apps** when no App sends events, **Feature flags** while connector events are off. The trigger is added to `kortix.yaml`.
+Select **New trigger**, then **Set up manually**. Under **When**, choose **Schedule**, **App event**, **Connector event**, **Webhook** or **Change request merged**. A source the workspace cannot use yet says why and links to the fix: **Apps** when no App sends events, **Feature flags** while connector events are off. The trigger is added to `kortix.yaml`.
 </Step>
 <Step title="Write the instruction">
 Under **Then**, write what the agent should do, and pick the agent and the model.
@@ -591,7 +637,7 @@ Choose **Create**, then select **Run now** to try it once.
 </Step>
 </Steps>
 
-A webhook also needs a signing secret, stored as a project secret. A **Change request merged** trigger takes an optional branch; without one, it fires on every merge. In `kortix.yaml` it reads:
+A webhook also needs a signing secret, stored as a workspace secret. A **Change request merged** trigger takes an optional branch; without one, it fires on every merge. In `kortix.yaml` it reads:
 
 ```yaml
 triggers:
@@ -632,26 +678,26 @@ To watch something around the clock, such as a status page or a price, an agent 
 
 - **Run limits.** A trigger starts at most 60 runs an hour unless you set another limit under **Options** → **Run limits**. You can add a daily limit too.
 - **Auto-pause.** A trigger that hits its hourly limit 2 hours in a row pauses itself. It shows **Paused** until you select **Resume**.
-- **Failures.** A failed run shows **Last run didn’t finish**. When a trigger's runs start to fail, an account owner's phone gets one notification.
-- **Pause everything.** **Account settings** → **Settings** → **Triggers** → **Pause all triggers** stops every schedule, webhook, event and loop in every project of the account.
+- **Failures.** A failed run shows **Last run didn’t finish**. When a trigger's runs start to fail, a workspace owner's phone gets one notification.
+- **Pause everything.** **Workspace settings** → **Settings** → **Triggers** → **Pause all triggers** stops every schedule, webhook, event and loop in the workspace.
 
 ## Computers
 
 <video src="/media/guide/computers.mp4" aria-label="Computers in Kortix: connecting your own computer" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
-Every session runs on its own isolated cloud computer with the project's files, a terminal, a browser, Python, Node.js and document tools. You can also connect your own computer, for work that needs it. Your computer itself decides what agents may do on it.
+Every session runs on its own isolated cloud computer with the workspace's files, a terminal, a browser, Python, Node.js and document tools. You can also connect your own computer, for work that needs it. Your computer itself decides what agents may do on it.
 
 ### How the cloud computer works
 
 <Steps>
 <Step title="You start a session">
-Kortix gives the session its own branch of your project and starts a cloud computer for it. An agent with **Project repository access**, such as `worker`, gets a copy of the repository in `/workspace`.
+Kortix gives the session its own branch of your workspace and starts a cloud computer for it. An agent with **Workspace repository access**, such as `worker`, gets a copy of the repository in `/workspace`.
 </Step>
 <Step title="The agent works on its computer">
-The agent reads your project, runs commands, browses the web and writes files. It saves its work to the session's own branch.
+The agent reads your workspace, runs commands, browses the web and writes files. It saves its work to the session's own branch.
 </Step>
 <Step title="A person approves the change">
-When the agent changes the project, it opens a change request. A person reviews it and merges it.
+When the agent changes the workspace, it opens a change request. A person reviews it and merges it.
 </Step>
 <Step title="The computer sleeps when idle">
 About 15 to 20 minutes after the last turn, Kortix stops the computer. It keeps `/workspace`, the branch and the session's messages. A new message or a preview request wakes it.
@@ -666,9 +712,9 @@ A sleeping computer uses no compute. Its `/workspace` files count as [storage](/
 - `/drives` holds your Drive files, shared across sessions and kept until you delete them. See [Drive](/docs/guide#drive).
 - Anything else (the home directory, `/tmp`, installed packages) can be gone when the session wakes. Put tools in a sandbox template.
 
-A sandbox template sets what is installed on the cloud computer and how large it is. Set it once for the whole project in **Project admin** → **Sandbox templates**. The keys are in the [kortix.yaml reference](/docs/developers#kortixyaml-reference).
+A sandbox template sets what is installed on the cloud computer and how large it is. Set it once for the whole workspace in **Workspace admin** → **Sandbox templates**. The keys are in the [kortix.yaml reference](/docs/developers#kortixyaml-reference).
 
-An agent can set this up for you. Ask it to install a program for good: it installs the program in the current session, adds it to the project's sandbox template in `kortix.yaml`, and opens a change request. Sessions that start after you merge it, and after the new image is built, have the program.
+An agent can set this up for you. Ask it to install a program for good: it installs the program in the current session, adds it to the workspace's sandbox template in `kortix.yaml`, and opens a change request. Sessions that start after you merge it, and after the new image is built, have the program.
 
 #### Previews
 
@@ -676,9 +722,9 @@ Any website or tool that the agent starts on its computer can be opened from out
 
 #### Desktop
 
-Sessions of your project's agents run on a computer with a desktop. Select **Desktop** in the session header to watch it live. My Kortix runs on a smaller computer without a desktop, so its sessions have no **Desktop** button: it hands browsing to your agents' sessions.
+Sessions of your workspace's agents run on a computer with a desktop. Select **Desktop** in the session header to watch it live. My Kortix runs on a smaller computer without a desktop, so its sessions have no **Desktop** button: it hands browsing to your agents' sessions.
 
-The desktop has one browser, and you share it with the agent. You see each page the agent visits, and the browser on the dock opens that same window with the same tabs and logins. The agent has control by default. Select **Take over** to click and type yourself, for example to sign in to a site for the agent, or to use the terminal or the file manager on the dock. Select **Return control** to hand control back. The desktop resizes to fit the panel.
+The desktop has one browser, and you share it with the agent. You see each page the agent visits, and the browser on the dock opens that same window with the same tabs and logins. The agent has control by default. Select **Take over** to click and type yourself, for example to sign in to a site for the agent, or to use the terminal or the file manager on the dock. Select **Return control** to hand control back. The desktop resizes to fit the panel. When it is open in more than one window, it fits the window where someone last clicked or typed, and the other windows show it scaled.
 
 You can ask the agent to put an app on its desktop, for example "install QGIS and open it on your desktop", and watch it in the panel. When you say "my desktop", the agent puts files in **My files**, which every session you start opens at `~/Desktop`, and puts programs on the session's desktop. When your own computer is connected to Kortix, the agent first asks which one you mean.
 
@@ -686,7 +732,7 @@ A session on a custom sandbox template gets the desktop when the template's base
 
 #### Residential IP address
 
-Some websites block or limit traffic from data centers. A sandbox template can send its web traffic through a residential IP address instead of the cloud computer's own address. Set `residential_proxy: true` on the template in `kortix.yaml`, or check **Residential IP** on a template in **Project admin** → **Sandbox templates**. Sessions on that template then use it.
+Some websites block or limit traffic from data centers. A sandbox template can send its web traffic through a residential IP address instead of the cloud computer's own address. Set `residential_proxy: true` on the template in `kortix.yaml`, or check **Residential IP** on a template in **Workspace admin** → **Sandbox templates**. Sessions on that template then use it.
 
 ```yaml
 sandbox:
@@ -718,7 +764,7 @@ When you connect it, you choose up to three capabilities:
 | **Shell** | Run programs. |
 | **Computer Use** | See the screen and use the apps. |
 
-Your computer is private by default. Only you use it, from your private sessions, in every project you belong to.
+Your computer is private by default. Only you use it, from your private sessions, in every workspace you belong to.
 
 #### Set it up
 
@@ -730,7 +776,7 @@ In the Kortix desktop app, select **Connect this computer** in the sidebar. A br
 Check that the code on the page matches the code on the computer. Give the computer a name, for example "Work laptop".
 </Step>
 <Step title="Choose who can use it">
-Keep **Only you**, or choose **Also share with** the current project.
+Keep **Only you**, or choose **Also share with** the current workspace.
 </Step>
 <Step title="Choose the capabilities and approve">
 Select **Filesystem**, **Shell**, **Computer Use**, or a mix. On macOS, select **Allow all** when asked, and give Kortix the permissions macOS requests.
@@ -743,7 +789,7 @@ The computer stays connected after you quit the app.
 
 <a id="access-is-set-on-the-machine" />
 
-The computer itself decides whether an agent may use it, whatever the project allows. Its **Access** setting has three modes:
+The computer itself decides whether an agent may use it, whatever the workspace allows. Its **Access** setting has three modes:
 
 - **Ask each time.** The first call shows a prompt on your computer: **Allow for 1 hour**, **Allow for 24 hours** or **Deny**. This is the default when the desktop app runs.
 - **Always allowed.** Every call runs without a prompt.
@@ -753,13 +799,13 @@ Only you, at the computer, can widen access. Narrowing it works from anywhere an
 
 #### Share it with your team
 
-Open **Customize** → **Connectors** → **Computers** → **Accounts** and select **Share** on your computer's row. Pick people, groups or the whole project. A computer shared with the whole project also serves triggers that run with nobody present. Your **Access** setting still applies: in **Ask each time**, every approval is yours to give.
+Open **Customize** → **Connectors** → **Computers** → **Accounts** and select **Share** on your computer's row. Pick people, groups or the whole workspace. A computer shared with the whole workspace also serves triggers that run with nobody present. Your **Access** setting still applies: in **Ask each time**, every approval is yours to give.
 
 ## Models
 
 <video src="/media/guide/models.mp4" aria-label="Models in Kortix: providers, a custom endpoint and costs" controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)' }} />
 
-A model is the AI an agent runs on. You can use Kortix-managed models, your own provider keys, a ChatGPT subscription or a Claude subscription. Set a default for the project, pin a model to an agent, or pick one for a single session. Every model request goes through the Kortix LLM gateway, which applies budgets, access rules and cost reports.
+A model is the AI an agent runs on. You can use Kortix-managed models, your own provider keys, a ChatGPT subscription or a Claude subscription. Set a default for the workspace, pin a model to an agent, or pick one for a single session. Every model request goes through the Kortix LLM gateway, which applies budgets, access rules and cost reports.
 
 ### How it works
 
@@ -768,7 +814,7 @@ A model is the AI an agent runs on. You can use Kortix-managed models, your own 
 Kortix-managed models need no key. They are the models that Platinum Inference offers. The model picker lists them under **Kortix**, with each model's context size and image support.
 
 - Managed models need the Credits plan or Enterprise. They are not available on Free.
-- Managed requests use credits from your account's wallet. See [Billing](/docs/guide#billing).
+- Managed requests use credits from your workspace's wallet. See [Billing](/docs/guide#billing).
 - Managed models run only through inference providers with zero data retention.
 - The managed lineup has no OpenAI or Anthropic models. Use your own key or subscription for those.
 - A self-hosted Kortix has no managed models. Connect your own providers there.
@@ -777,7 +823,7 @@ Kortix-managed models need no key. They are the models that Platinum Inference o
 
 When a request runs on your own key or subscription, your provider bills it. Every plan, Free included, can use your own key or a ChatGPT subscription. For the Kortix fee on your own keys, see [What uses credits](/docs/guide#what-uses-credits).
 
-A provider key belongs to the whole project.
+A provider key belongs to the whole workspace.
 
 #### Your Claude subscription
 
@@ -786,8 +832,8 @@ Connect a Claude Pro or Max plan, and Claude models run on it: **Claude Opus 5.5
 - Each turn runs through Claude Code, Anthropic's own program, on the session's computer. Claude Code sends each model request to the Kortix LLM gateway, which adds the Claude account's login and forwards the request to Anthropic unchanged. The login never enters the session's computer. Claude requests use no credits.
 - Everything else works as with any other model: the agent's tools, permissions, questions, subagents, skills and pi extensions, and the messages and tool calls the session shows.
 - You can switch between a Claude subscription model and any other model in the same session. The new model sees the whole session.
-- A Claude account works like a ChatGPT account. It is private to you until you share it with the project or with chosen members. A session uses the accounts selected for it, then your own, then one shared with the project. Triggers and channels use the shared ones. Kortix stores the login encrypted and never shows it again.
-- Your Claude plan sets the limits. When you reach one, the turn ends with "Your Claude subscription limit is reached" and the time it resets.
+- A Claude account works like a ChatGPT account. It is private to you until you share it with the workspace or with chosen members. A session uses the accounts selected for it, then your own, then one shared with the workspace. Triggers and channels use the shared ones. Kortix stores the login encrypted and never shows it again.
+- Your Claude plan sets the limits. When every Claude account the session may use reaches its limit, the workspace's [fallback models](/docs/guide#fallback-models) take over the turn, and the session moves to the model that answered. It moves back to Claude once an account has room again. A fallback model with a smaller context window than the session needs cannot take over. A workspace without fallback models ends the turn with "Your Claude subscription limit is reached" and the time it resets.
 - Claude Code features that Kortix has no version of do not apply: plan usage (`/usage`), auto mode and Claude Code's own skills.
 
 **A ChatGPT subscription also generates images.** With a connected ChatGPT account, the `image_gen` tool can use `gpt-image-2` on your plan. ChatGPT sets its own image limit, separate from the chat limit, and reaching it does not pause the account for chat. An OpenAI, Google, xAI or OpenRouter key also generates images. Kortix-managed models do not generate images. See [Generate images](/docs/developers#generate-images).
@@ -798,9 +844,8 @@ A session uses the first of these that is set:
 
 1. The model chosen for the session, the [channel](/docs/guide#channels) or the [trigger](/docs/guide#triggers).
 2. The model pinned to the agent.
-3. The project default.
-4. The account default, for every project without a default of its own.
-5. The platform default.
+3. The workspace default.
+4. The platform default.
 
 A default that cannot run, for example after its key was removed, falls back to another connected provider, then to the platform default. A stale default never fails a session.
 
@@ -823,7 +868,7 @@ Open **Customize** → **Models** → **Costs**. Set a limit per day, week or mo
 </Step>
 </Steps>
 
-Account owners, admins and project managers get an email at 80% and at 100% of a budget.
+Workspace owners, admins and workspace managers get an email at 80% and at 100% of a budget.
 
 #### Charges and estimated usage value
 
@@ -837,13 +882,13 @@ Account owners, admins and project managers get an email at 80% and at 100% of a
 
 Open **Customize** → **Models** → **Routing** to list up to 8 models that the gateway tries in order when a model fails. When a fallback model answers, the composer shows **Running on** and its name. A request on your own key moves to a Kortix-billed model only when your own fallback list names that model.
 
-The fallback list also takes over when the requested model is unknown or retired. Every successful gateway answer names the model you asked for (`x-kortix-requested-model`) and the model that answered (`x-kortix-model`). When they differ, a fallback model answered.
+The fallback list also takes over when the requested model is unknown or retired, and when every Claude account of a session is at its plan limit. Every successful gateway answer names the model you asked for (`x-kortix-requested-model`) and the model that answered (`x-kortix-model`). When they differ, a fallback model answered.
 
 ## Outcomes
 
 An outcome in Kortix is a **goal**: what you want, plus a definition of done. The agent assigned to it works on it, wake after wake, until a separate verifier session confirms that it is done.
 
-Goals are experimental and off by default. Turn them on in **Project admin** → **Feature flags** → **Goals**. Goals also need loops, which are on by default.
+Goals are experimental and off by default. Turn them on in **Workspace admin** → **Feature flags** → **Goals**. Goals also need loops, which are on by default.
 
 Three things work together:
 
@@ -851,46 +896,73 @@ Three things work together:
 | --- | --- |
 | Agent | Who works on the goal. The agent's grants decide what the goal may touch. |
 | Loop or trigger | When work starts: the heartbeat, your answer, a merged change request. |
-| Goal | What done means, written in a folder in Drive. |
+| Goal | What done means. Kortix keeps the goal's state; the brief and the proof sit in a folder in Drive. |
 
 ### How it works
 
-#### The goal folder
+#### Where a goal lives
 
-Each goal is a folder in Drive, by default `Goals/<slug>/` in **My files** of the person who started it. The folder is the goal's memory: every session that works on the goal reads it and adds to it. It holds:
+Kortix keeps each goal as a record: its state, the pause, the owner and verifier sessions, the limits, and which criteria the verifier passed. Only Kortix changes that record, so an agent cannot mark its own goal done, pause it, or raise its own limits.
 
-- `GOAL.md`: the goal, its done criteria, the person it is for, the assigned agent, the state, the limits, and links to related files, Apps, change requests and sessions.
+Each goal also has a folder in Drive, `Goals/<slug>/` in **My files** of the person who started it:
+
+- `GOAL.md`: the brief: the outcome, the context, and the done criteria as the agent reads them.
 - `log.md`: one line per action, each handover and each verifier finding.
 - `evidence/`: the proof for each criterion and the verifier's report.
 
-You can open and edit these files. Your edits win.
+You can open and edit these files. Editing the brief changes what the agent reads. Editing a state, a pause or a limit in `GOAL.md` changes nothing: the goal's page and its controls are the place for that.
 
 #### States
 
-A goal moves through draft, active, waiting on you, verifying, and done. A person can stop it from any state. It never ends because it is hard, slow or blocked.
+A goal moves through draft, active, waiting on you, verifying, and done. A person can stop it from any open state and start a stopped goal again. It never ends because it is hard, slow or blocked.
+
+#### Who can do what
+
+| Who | Can |
+| --- | --- |
+| The person who started the goal, the person it is for, a project admin | See it, pause, resume, stop, start it again, answer it, change its criteria. |
+| Someone the goal's folder is shared with | See it. The page shows them no controls. |
+| The goal's owner session | Write the criteria while the goal is a draft, report progress, ask you a question, hand over to a fresh session, ask for verification. |
+| The goal's verifier session | Give the verdict. |
+
+The goal's page shows each person only the controls they may use.
+
+#### Pause and stop
+
+- **Pause** keeps the goal's state and starts no new turn until a person resumes it. A turn that is already running finishes, but Kortix refuses any change it tries to make to the goal.
+- **Resume** starts the heartbeat again and wakes the owner once.
+- **Stop** closes the goal: the heartbeat goes, and the owner's running turn is stopped. **Start again** reopens it in the same folder.
+
+If a control fails, the page says what failed and offers **Try again**. Trying again never applies a control twice. If the goal changed while you looked at it (someone else paused it, or it finished), the page shows the goal as it is now and tells you.
 
 #### Work and wake
 
 One owner session works on the goal at a time, and nothing runs between turns. These wake it:
 
-- the heartbeat loop, every 4 hours while the goal is open;
+- the heartbeat, every 4 hours while the goal is active;
 - your answer to a question it asked you;
 - the merge of a change request it opened;
 - the verifier's verdict.
 
-When the owner session's context is full, it writes a handover to `log.md` and a fresh session continues.
+When the owner session's context is full, it writes a handover to `log.md` and a fresh session continues. If the owner session fails, a successor session takes the goal over.
 
 #### Questions to you
 
 <a id="ask" />
 
-When only you can unblock the goal, it asks you and waits in **Waiting on you**. Answer on the goal's page or in the channel it used. Your answer wakes it.
+When only you can unblock the goal, it asks you and waits in **Waiting on you**. While it waits, the heartbeat is off: waiting costs no turns. It wakes when you answer on the goal's page, or at a follow-up time it set. Your answer reaches the agent under your name, once, even if you send it again after an error.
 
 #### The independent check
 
 <a id="check" />
 
-The agent never judges its own work. When every criterion has its proof, the goal starts a separate verifier session that did none of the work. The verifier checks each criterion, writes PASS or FAIL for each one to `evidence/verification.md`, and gives the verdict. Only a PASS on every criterion makes the goal done. A FAIL sends it back to work, with the findings in `log.md`.
+The agent never judges its own work. When every criterion has its proof, Kortix starts a separate verifier session that did none of the work. The verifier checks each criterion and gives one result per criterion: pass, fail or inconclusive. Kortix accepts the verdict only from that session and only when it covers every current criterion. A pass on every criterion makes the goal done. Anything else sends it back to work, with the findings in `log.md`.
+
+On the goal's page a criterion shows as:
+
+- a green check: the verifier passed it;
+- a grey check, **Reported met, not verified yet**: the agent says it is done, and nobody has checked it;
+- an empty circle: not met.
 
 #### Permissions
 
@@ -898,32 +970,39 @@ A goal grants no access of its own. An email, a Slack message or a connector cal
 
 #### Limits
 
-`GOAL.md` caps the work, so a stuck goal does not use up your credits: at most 12 wakes per UTC day (then the heartbeat waits for the next day) and at most 10 sessions in total. You can change `heartbeat`, `max_wakes_per_day` and `max_sessions` in `GOAL.md`.
+Kortix checks a goal's limits before each turn starts, so a stuck goal does not use up your credits: at most 12 wakes per UTC day and at most 10 sessions in total, by default. The goal's page shows the wakes used today and the sessions used. The agent cannot change these limits.
+
+When a goal cannot go on by itself, its page says **Blocked**, why, and the next step:
+
+| Reason | What happens |
+| --- | --- |
+| Out of credits | No wake starts. Add credits, then resume the goal. |
+| Wakes for today used | It goes on by itself after midnight UTC. |
+| Sessions used | Stop it, or ask a project admin to raise its session limit. |
+| Owner session lost | Start it again to give it a new session. |
+| Folder unreadable | Check the folder in Drive, then resume the goal. |
+| Goals turned off | Nothing runs. Turn Goals on, then resume the goal. |
 
 ### Set it up
 
 <Steps>
 <Step title="Turn on Goals">
-Turn on **Goals** in **Project admin** → **Feature flags**.
+Turn on **Goals** in **Workspace admin** → **Feature flags**.
 </Step>
 <Step title="State the outcome">
-In a session, describe the outcome, for example "make sure…" or "keep at it until…". In a session that is already under way, say "make this a goal". On the **Goals** page, **New goal** starts one from the outcome.
+On the **Goals** page, **New goal** starts one from the outcome, or from a template. In a session that is already under way, say "make this a goal".
 </Step>
 <Step title="Read the plan">
-The agent replies with the outcome, the done criteria, the first thing it needs from you, and where to follow it.
+The agent writes the done criteria, starts the work, and asks you for what only you can give.
 </Step>
 <Step title="Follow it">
-Open **Goals** in the project sidebar: the state, the assigned person and agent, and the last and next wake. **Assigned to me** shows the goals that are for you. A goal's page shows its definition, log, evidence, links and sessions, and the buttons to answer, share or stop it.
+Open **Goals** in the workspace sidebar. It lists every goal you can see: your own, the ones for you, the ones shared with you, and every goal for a workspace admin. **Assigned to me** shows the goals that are for you. A goal's page shows its brief, criteria, activity, the next and last wake, the wakes used today, and the sessions, with the controls you may use.
 </Step>
 </Steps>
 
-<Callout type="warning">
-Do not delete the owner session of an open goal. If you delete it, the goal stops waking.
-</Callout>
-
 ## Channels
 
-Channels connect a project to Slack, Microsoft Teams, Telegram and Discord. People mention the Kortix bot with a task, and the agent replies in the same place, with live progress. Each channel decides who may talk to the bot: in Slack and Teams, each person links their Kortix account; in Telegram and Discord, the project keeps a list of allowed people.
+Channels connect a workspace to Slack, Microsoft Teams, Telegram and Discord. People mention the Kortix bot with a task, and the agent replies in the same place, with live progress. Each channel decides who may talk to the bot: in Slack and Teams, each person links their Kortix account; in Telegram and Discord, the workspace keeps a list of allowed people.
 
 ### Slack and Microsoft Teams
 
@@ -944,10 +1023,10 @@ A Slack or Teams message carries no Kortix login, so each person links their Kor
 
 After that:
 
-- Kortix checks that the sender is a project member who may start sessions.
+- Kortix checks that the sender is a workspace member who may start sessions.
 - The agent acts with its own permissions, not with the sender's role.
 - Your private connector accounts reach only your direct messages with the bot, never a shared channel.
-- A person who is not in the project gets a card to request access. The account owners and admins receive the request.
+- A person who is not in the workspace gets a card to request access. The workspace owners and admins receive the request.
 
 <a id="who-may-join-a-conversation" />
 
@@ -957,7 +1036,7 @@ Each channel has a join policy. It decides who may join a session that started t
 
 | Policy | Who may join |
 | --- | --- |
-| Open (the default) | Any linked project member |
+| Open (the default) | Any linked workspace member |
 | Approval | The session owner approves or denies each new person |
 | Owner only | Only the person who started the session |
 
@@ -966,7 +1045,7 @@ Each channel has a join policy. It decides who may join a session that started t
 <a id="approvals-in-the-thread" />
 <a id="questions-in-the-thread" />
 
-When an agent asks for a decision, the card shows a title, a summary, a risk note and buttons such as **Approve** and **Deny**. Every card also has **View in Kortix**. When the agent wants to use a connector action that needs approval, the card shows what it will do. A project manager, or the person who started the session, selects **Approve** or **Deny**.
+When an agent asks for a decision, the card shows a title, a summary, a risk note and buttons such as **Approve** and **Deny**. Every card also has **View in Kortix**. When the agent wants to use a connector action that needs approval, the card shows what it will do. A workspace manager, or the person who started the session, selects **Approve** or **Deny**.
 
 When the agent asks a question, Kortix posts it with one button per option. In Teams, several questions, or a question with several answers, arrive as one form. You can also reply with an answer of your own.
 
@@ -992,9 +1071,9 @@ The agent replies in the thread, with live progress.
 </Step>
 </Steps>
 
-When one Slack workspace or Teams tenant serves several projects, the first message in a new channel shows a project picker. The choice binds the channel to that project.
+When one Slack workspace or Teams tenant serves several workspaces, the first message in a new channel shows a workspace picker. The choice binds the channel to that workspace.
 
-Deleting a project disconnects Slack and Teams from it. Its channels move to the one project that is still connected, or show the picker again. A reply in one of the deleted project's Slack threads gets no answer.
+Deleting a workspace disconnects Slack and Teams from it. Its channels move to the one workspace that is still connected, or show the picker again. A reply in one of the deleted workspace's Slack threads gets no answer.
 
 ### Telegram
 
@@ -1008,24 +1087,24 @@ In Telegram, message **@BotFather**, send `/newbot`, and copy the token it gives
 Open **Customize** → **Connectors**, select the **Channels** scope, and select **Connect** on Telegram. Paste the **Bot token** and the **Allowed Telegram user ids**. Kortix keeps the token on the server.
 </Step>
 <Step title="Message the bot">
-A message from an allowed person starts a session. Anyone else gets a reply that shows their Telegram user ID. When they write to the bot in a private chat, they also appear under **Allowed users** → **Wants access**, where a project manager allows them with one click or dismisses the request. You can also add a person by user ID.
+A message from an allowed person starts a session. Anyone else gets a reply that shows their Telegram user ID. When they write to the bot in a private chat, they also appear under **Allowed users** → **Wants access**, where a workspace manager allows them with one click or dismisses the request. You can also add a person by user ID.
 </Step>
 </Steps>
 
-**Who may use the bot.** Telegram has no account link: the allowed-user list decides who may talk to the bot, and only an allowed person's taps count. Every allowed person can run every command. In a group, every member sees the bot's replies, also members who are not allowed. A reply can show the project name, model IDs and a link to the session; the link opens only for people with access to the project.
+**Who may use the bot.** Telegram has no account link: the allowed-user list decides who may talk to the bot, and only an allowed person's taps count. Every allowed person can run every command. In a group, every member sees the bot's replies, also members who are not allowed. A reply can show the workspace name, model IDs and a link to the session; the link opens only for people with access to the workspace.
 
 **Commands.** Commands run in Kortix, not in the agent:
 
 | Command | What it does |
 | --- | --- |
 | `/help` (also `/start`) | Lists the commands, with buttons that run them. |
-| `/status` | Shows the Telegram chat's project, agent, model and session. |
+| `/status` | Shows the Telegram chat's workspace, agent, model and session. |
 | `/stop` | Stops the agent's current run. |
 | `/new` | Stops the run and starts a new session. |
-| `/model`, `/model <id>`, `/model default` | Lists the models as buttons, switches the Telegram chat to one, or goes back to the project default. |
-| `/agent`, `/agent <name>`, `/agent default` | Lists the agents, switches the Telegram chat to one, or goes back to the project default. A new agent applies to the next session: send `/new`. |
+| `/model`, `/model <id>`, `/model default` | Lists the models as buttons, switches the Telegram chat to one, or goes back to the workspace default. |
+| `/agent`, `/agent <name>`, `/agent default` | Lists the agents, switches the Telegram chat to one, or goes back to the workspace default. A new agent applies to the next session: send `/new`. |
 
-**Photos, files and voice notes reach the agent**, up to 8 MB of files per message. The agent sees a photo when the project has a model that reads images. No speech-to-text tool is preinstalled, so the agent takes about a minute on a voice note: it installs one to transcribe the recording.
+**Photos, files and voice notes reach the agent**, up to 8 MB of files per message. The agent sees a photo when the workspace has a model that reads images. No speech-to-text tool is preinstalled, so the agent takes about a minute on a voice note: it installs one to transcribe the recording.
 
 **Questions come with buttons.** One question shows one button per option. Several questions arrive in one message, one at a time (**Question 1 of 3**), and the agent gets all the answers after the last tap. In a question where you can pick several options, each tap adds or removes a ✓, and **Done ›** sends them. When the message ends with "or type your own answer", a message you type answers the question on screen.
 
@@ -1034,15 +1113,15 @@ A message from an allowed person starts a session. Anyone else gets a reply that
 - **Order.** Kortix hands one Telegram chat's messages and taps to the agent one at a time, in Telegram's order. A tap on a button waits for the messages you sent before it. A message that fails holds the next ones for one retry, usually 10 to 30 seconds; then they go on without it.
 - **Files.** Each photo and file shows above the message text in the session, as a file you attach in Kortix does. A file over the 8 MB limit does not arrive, and the agent tells you. Each photo of an album arrives as its own message, and a sticker arrives as its emoji.
 - **Command words.** Kortix answers 11 words as commands: `new`, `reset`, `stop`, `cancel`, `status`, `model`, `models`, `agent`, `agents`, `help` and `start`. Every other message goes to the agent, including one that starts with `/` and a command for another bot, such as `/status@other_bot`. A command in a photo's caption runs the command and does not send the photo: send the photo again without the command.
-- **Menus.** `/model` and `/agent` list 8 choices per page, after **Project default** on the first page, with **More ›** and **‹ Back**. A tap changes the menu message to the result. A menu works once: a pick, **Stop** or **New conversation** removes its buttons. A tap on a used menu, on one whose option or session is gone, on a copy forwarded into another chat, or on a menu older than 30 days answers "This menu is out of date": send the command again.
+- **Menus.** `/model` and `/agent` list 8 choices per page, after **Workspace default** on the first page, with **More ›** and **‹ Back**. A tap changes the menu message to the result. A menu works once: a pick, **Stop** or **New conversation** removes its buttons. A tap on a used menu, on one whose option or session is gone, on a copy forwarded into another chat, or on a menu older than 30 days answers "This menu is out of date": send the command again.
 - **`/stop` and `/new`** stop the run of the Telegram chat's session only when that chat started the run. A run started anywhere else (the web app, the API, a trigger) keeps going, and the reply links to it. `/new` while the session is still starting does not stop it: it still answers your earlier message.
-- **Model and agent.** `/model` and `/agent` apply to the whole Telegram chat, including every topic of a forum group. A Telegram chat uses only models and provider keys that the whole project shares, never one person's key or subscription.
+- **Model and agent.** `/model` and `/agent` apply to the whole Telegram chat, including every topic of a forum group. A Telegram chat uses only models and provider keys that the whole workspace shares, never one person's key or subscription.
 - **Questions.** Kortix posts a question with buttons only where the agent may send a Telegram message without approval. Otherwise the agent asks in its own words, and that message waits for approval or is refused. More than 6 options turn pages with **More ›** and **‹ Back**. A tap on a question that is already answered changes nothing.
 - **Where the agent writes.** A session that a Telegram chat started or continues sends, edits and deletes messages only in that chat and its topics, and quotes only messages from there. So does every session it starts. A session started from the web app or a trigger can send to any chat of the bot.
 - **The bot's menu.** Connecting the bot adds the Kortix commands at the top of its menu and keeps every entry you set in @BotFather. Kortix leaves out its own entry when one of yours has the same name, or when the menu would pass Telegram's limit of 100 commands. Disconnecting removes only the entries Kortix added.
 - **Groups.** In a group, the bot reads only commands, replies to it and mentions. To let it read every message, send `/setprivacy` to @BotFather, or make the bot a group admin.
 - **Access requests** keep only who asked: the user ID, the username, the name and when they last wrote, never the message. Kortix keeps the newest 20 requests for 30 days. Disconnecting the bot deletes them.
-- **Deleting the project** disconnects the bot. Kortix deletes its token, and removes its webhook unless the webhook now points at another project.
+- **Deleting the workspace** disconnects the bot. Kortix deletes its token, and removes its webhook unless the webhook now points at another workspace.
 
 </Expandable>
 
@@ -1058,7 +1137,7 @@ Open **Customize** → **Connectors**, select the **Channels** scope, and select
 In a text channel, mention the app: `@Kortix what changed in the release?`. Kortix starts a thread on your message, and the agent answers in the thread. Mention the app in the thread to continue.
 </Step>
 <Step title="Allow the people">
-A mention or a direct message from an allowed person starts a session. Anyone else gets a reply that shows their user ID and appears under **Allowed users** → **Wants access**, where a project manager allows them with one click or dismisses the request. You can also add a person by user ID.
+A mention or a direct message from an allowed person starts a session. Anyone else gets a reply that shows their user ID and appears under **Allowed users** → **Wants access**, where a workspace manager allows them with one click or dismisses the request. You can also add a person by user ID.
 </Step>
 </Steps>
 
@@ -1076,22 +1155,22 @@ A mention or a direct message from an allowed person starts a session. Anyone el
 - **What the agent can read.** Without the Message Content intent, Discord shows the agent only the messages that mention it, direct messages and its own messages. To ask about a discussion, paste the part you mean.
 - **Menus.** `/model` and `/agent` list the choices with **More ›** and **‹ Back**. A pick, **Stop** or **New conversation** works once. A press on an old menu answers "This menu is out of date": use the command again. A notice that only you see confirms a tap, or says why it changed nothing.
 - **Order.** One thread's messages and taps reach the agent one at a time, in Discord's order. When Kortix cannot take a message after several tries, it asks you to send it again.
-- **Projects.** A server can serve several projects. A channel goes to the first project that answered there; `/connect` lists the projects and binds the channel to the one you pick. A direct message goes to the one project that allows you; otherwise `/connect` picks.
-- **Where the agent writes.** The `kortix_discord` connector reads and writes only in the project's own server, threads and direct messages. In a server that several projects share, it acts only in its own threads, direct messages and bound channels. A session that a Discord thread started reads and writes only there. A direct message moved to another project with `/connect` keeps its earlier messages from the new project. One project makes at most 60 Discord calls a minute.
+- **Workspaces.** A server can serve several workspaces. A channel goes to the first workspace that answered there; `/connect` lists the workspaces and binds the channel to the one you pick. A direct message goes to the one workspace that allows you; otherwise `/connect` picks.
+- **Where the agent writes.** The `kortix_discord` connector reads and writes only in the workspace's own server, threads and direct messages. In a server that several workspaces share, it acts only in its own threads, direct messages and bound channels. A session that a Discord thread started reads and writes only there. A direct message moved to another workspace with `/connect` keeps its earlier messages from the new workspace. One workspace makes at most 60 Discord calls a minute.
 - **Permissions.** Discord asks for them when you add the app: view channels, send messages, send messages in threads, create public threads, read message history, attach files, add reactions and embed links. When a channel denies one, Kortix says so. A slash command where the app cannot post answers, to you only, with the permission to grant. In a private thread, mention the app or add it first.
 - **Archiving.** Kortix threads archive after a day without messages, and a new message opens the thread again. When a server reaches Discord's limit of active threads, Kortix says so instead of starting one.
-- **Disconnecting** removes the server from the project. When no other project uses the server, the app leaves it. Removing the app from the server disconnects it from every project.
+- **Disconnecting** removes the server from the workspace. When no other workspace uses the server, the app leaves it. Removing the app from the server disconnects it from every workspace.
 - **Access requests** keep only who asked: the user ID, the username, the display name and when they last wrote, never the message.
 
 </Expandable>
 
 ## Everywhere
 
-Kortix runs in the web app, the desktop app, the mobile app, the terminal, and other AI tools through MCP. All of them open the same projects and sessions.
+Kortix runs in the web app, the desktop app, the mobile app, the terminal, and other AI tools through MCP. All of them open the same workspaces and sessions.
 
 ### The web app
 
-The web app is the main place to work. It runs at [kortix.com](https://kortix.com), and after you sign in it opens the project you had open last. In a session, you pick the agent and the model for the next turn, attach files or drop them on the page, and send messages while the agent works: it reads them at its next step. [Find your way around the web app](#find-your-way-around-the-web-app) lists what is where.
+The web app is the main place to work. It runs at [kortix.com](https://kortix.com), and after you sign in it opens the workspace you had open last. In a session, you pick the agent and the model for the next turn, attach files or drop them on the page, and send messages while the agent works: it reads them at its next step. [Find your way around the web app](#find-your-way-around-the-web-app) lists what is where.
 
 ### The desktop app
 
@@ -1106,15 +1185,15 @@ The desktop app is the web app in a native window, for macOS, Windows and Linux.
 
 The mobile app runs on iPhone, iPad and Android. Get it from the App Store or Google Play. With it you can:
 
-- open projects and start sessions;
+- open workspaces and start sessions;
 - follow and continue sessions, with photos, files and dictation;
-- accept or decline an invitation to a project;
+- accept or decline an invitation to a workspace;
 - browse your files;
 - get a notification when your session finishes, fails or asks you something.
 
 ### The terminal
 
-The `kortix` command line does from a terminal what the web app does: it creates and clones projects, runs sessions, reviews change requests, and configures agents, connectors and secrets. It runs on macOS and Linux; on Windows, use WSL.
+The `kortix` command line does from a terminal what the web app does: it creates and clones workspaces, runs sessions, reviews change requests, and configures agents, connectors and secrets. It runs on macOS and Linux; on Windows, use WSL.
 
 ```sh
 curl -fsSL https://kortix.com/install | bash
@@ -1122,7 +1201,7 @@ curl -fsSL https://kortix.com/install | bash
 
 Then run `kortix login`. Your browser opens, and you approve the sign-in there. The [CLI reference](/docs/developers#cli) lists every command.
 
-`kortix tui` opens a full Kortix client inside your terminal. One session fills the screen, and you do everything from its input: type `/` to list every command, `/sessions` to open another session, `/new` to start one, and `/drive` or `/approvals` to open that screen. With no session open, the first prompt you type starts one. `/sidebar` shows your projects and sessions in a sidebar, and the TUI remembers that choice. The TUI is experimental, so its commands and keys can change between releases.
+`kortix tui` opens a full Kortix client inside your terminal. One session fills the screen, and you do everything from its input: type `/` to list every command, `/sessions` to open another session, `/new` to start one, and `/drive` or `/approvals` to open that screen. With no session open, the first prompt you type starts one. `/sidebar` shows your workspaces and sessions in a sidebar, and the TUI remembers that choice. The TUI is experimental, so its commands and keys can change between releases.
 
 ### Other AI tools (MCP)
 
@@ -1133,11 +1212,11 @@ The Kortix MCP server lets another AI tool, such as Claude, ChatGPT, Cursor or C
 - run commands on a session's cloud computer;
 - call your connectors.
 
-The tool acts as you, with your permissions, and reaches every account and project you can open.
+The tool acts as you, with your permissions, and reaches every workspace you can open.
 
 <Steps>
 <Step title="Copy the URL">
-In the web app, open the project menu at the top left and select **Connect MCP**. The dialog shows the URL of your Kortix (on Kortix Cloud, `https://api.kortix.com/v1/mcp`) and an install action for Claude, Claude Code, Cursor, Codex and other MCP clients.
+In the web app, open the workspace menu at the top left and select **Connect MCP**. The dialog shows the URL of your Kortix (on Kortix Cloud, `https://api.kortix.com/v1/mcp`) and an install action for Claude, Claude Code, Cursor, Codex and other MCP clients.
 </Step>
 <Step title="Add it to your tool">
 In Claude, open **Settings** → **Connectors** → **Add custom connector** and paste the URL. ChatGPT needs developer mode and **OAuth** sign-in. In Cursor, select **Add** on the Cursor row of the dialog.
@@ -1153,63 +1232,62 @@ To disconnect a tool, open **Settings** → **Personal access keys** → **Conne
 
 <a id="teams" />
 
-An account holds projects and the people in them. You decide who can open each project, which agents each person may run, and who sees each session.
+A workspace holds your company's people, agents, sessions and files. You decide who belongs, which agents each person may run, and who sees each session.
 
 ### How it works
 
-- **Account.** Your company's home in Kortix. It holds projects, members and settings. One login can belong to several accounts.
-- **Project.** One git repository with its own agents, skills, connectors and files.
-- **Account role.** Each person has one: owner, admin or member.
-- **Project role.** Each person has a role in each project they work in: manager or member.
+- **Workspace.** Your company's place in Kortix: its members, agents, skills, connectors, files, settings and billing. A git repository backs it. One login can belong to several workspaces.
+- **Workspace role.** Each person has one: owner, admin or member.
+- **Access role.** What a person may do with the workspace's sessions, agents and settings: manager or member.
 - **Group.** A named set of people. Give a group access, and every person in it gets it.
 
-#### Account roles
+#### Workspace roles
 
 | Role | What they can do |
 | --- | --- |
-| Owner | Everything an admin can do. They can also delete the account and make other people owners. |
-| Admin | Invite and remove members, change roles, manage groups, create projects and change the plan. They act as manager on every project. |
-| Member | Work in the projects they are given. They see the plan, but they cannot create projects or change billing. |
+| Owner | Everything an admin can do. They can also delete the workspace and make other people owners. |
+| Admin | Invite and remove members, change roles, manage groups and change the plan. They act as manager. |
+| Member | Work in the workspaces they are given. They see the plan, but they cannot create workspaces or change billing. |
 
-#### Project roles
+#### Access roles
 
 | Role | What they can do |
 | --- | --- |
-| Manager | Everything in the project: edit agents, skills, connectors, secrets and triggers, merge work, and manage access. |
-| Member | Open the project, start and follow sessions, and send work for review. They cannot change settings or merge changes. |
+| Manager | Everything in the workspace: edit agents, skills, connectors, secrets and triggers, merge work, and manage access. |
+| Member | Open the workspace, start and follow sessions, and send work for review. They cannot change settings or merge changes. |
 
 Members are unlimited and cost nothing extra. See [Billing](/docs/guide#billing).
 
 ### Set it up
 
 <Steps>
-  <Step title="Create a team account first">
-    The account Kortix creates when you sign up is personal. It cannot use single sign-on, and a project cannot move to another account later. Open the project menu, select **Switch Project**, then **Create an account…**, and create your team's projects there.
+  <Step title="Create a team workspace first">
+    Open the workspace menu, select **Create workspace**, and create your team's workspace there. A personal workspace that an older version of Kortix created at sign-up cannot use single sign-on.
   </Step>
   <Step title="Invite your teammates">
-    Open **Account settings** → **Members** and select **Invite**. Type their email addresses and pick a role. A person who already has a Kortix login joins at once. Everyone else gets an email invitation that stays valid for 14 days.
+    Open **Workspace settings** → **Members** and select **Invite**. Type their email addresses and pick a role. A person who already has a Kortix login joins at once. Everyone else gets an email invitation that stays valid for 14 days.
   </Step>
-  <Step title="Give them a project">
-    Open **Account settings** → **Projects**, pick the project, and select **Grant access**. Pick **Manager** or **Member**. You can also set a date when the access ends.
+  <Step title="Give them access">
+    Open **Workspace settings** → **Workspaces**, pick the workspace, and select **Grant access**. Pick **Manager** or **Member**. You can also set a date when the access ends.
   </Step>
   <Step title="Choose their agents">
     In the same dialog, set **Agents** to **All agents** or **Only these…**. A member without any agent cannot start a session.
   </Step>
 </Steps>
 
-Owners and admins reach every project without a grant.
+Owners and admins reach every workspace without a grant.
 
 ### Groups
 
-A group saves you from granting access one person at a time. Create an "Engineering" group, give it a project, and everyone in it gets that project. A group only adds access; it never takes away access that a person already has.
+A group saves you from granting access one person at a time. Create an "Engineering" group, give it a workspace, and everyone in it gets that workspace. A group only adds access; it never takes away access that a person already has.
 
 Creating groups and adding people to them is an Enterprise feature. If your company uses an identity provider, it can keep your groups in sync. See [Single sign-on and directory sync](/docs/guide#single-sign-on-and-directory-sync).
 
 ### Who sees what
 
-A member sees only themselves in the member list, not other members or groups. Owners and admins see everyone. In a project, people still appear where their work shows, for example as the owner of a session.
+A member sees only themselves in the member list, not other members or groups. Owners and admins see everyone. In a workspace, people still appear where their work shows, for example as the owner of a session.
 
-A person who opens a project they cannot read sees **Request access**. Kortix tells the project's managers, who approve or reject the request.
+A person who opens a workspace they cannot read sees **Request access**. Kortix tells the workspace's managers, who approve or reject the request.
 
 ### Share a session
 
@@ -1219,17 +1297,17 @@ A session is private to the person who started it. The owner chooses who else ca
 | --- | --- |
 | **Only you** | The owner. This is the default. |
 | **Specific people** | The owner, plus the members and groups they pick. |
-| **Whole project** | Every member of the project. |
+| **Whole workspace** | Every member of the workspace. |
 
 Everyone with access can read the session and continue it. Only the owner can change who has access.
 
 You can also create a **Public link**. It shows the session, read-only, to anyone with the link, without signing in. You can revoke it at any time.
 
-### How agents' work reaches the project repository
+### How agents' work reaches the workspace repository
 
 <a id="how-agents-work-reaches-the-company-repository" />
 
-Your agents, skills and settings live in the project's shared repository. Kortix keeps it safe from unreviewed changes:
+Your agents, skills and settings live in the workspace's shared repository. Kortix keeps it safe from unreviewed changes:
 
 1. Each session works on its own branch, a private copy of the repository.
 2. When the agent finishes, it opens a change request: a request to merge that branch into the shared one.
@@ -1249,9 +1327,9 @@ Each session runs in its own isolated sandbox. Secrets and connector logins are 
 
 <a id="each-session-has-its-own-machine" />
 
-Every session starts its own isolated cloud computer, called a sandbox. The agent works there on its own branch of the project's repository. By default, a session can push only to its own branch, and its work reaches the shared repository only when a person merges its change request. See [How agents' work reaches the project repository](#how-agents-work-reaches-the-project-repository).
+Every session starts its own isolated cloud computer, called a sandbox. The agent works there on its own branch of the workspace's repository. By default, a session can push only to its own branch, and its work reaches the shared repository only when a person merges its change request. See [How agents' work reaches the workspace repository](#how-agents-work-reaches-the-project-repository).
 
-An agent without **Project repository access** gets no copy of the repository. Its session cannot read the repository, push to it or merge into it.
+An agent without **Workspace repository access** gets no copy of the repository. Its session cannot read the repository, push to it or merge into it.
 
 #### Agents have their own limits
 
@@ -1267,7 +1345,7 @@ Each secret has an audience:
 
 | Choice | Who can use it |
 | --- | --- |
-| Everyone in the project | Every session in the project. This is the default. |
+| Everyone in the workspace | Every session in the workspace. This is the default. |
 | **Only you** | You, in your own private sessions. |
 | **Specific people, groups, or agents** | Only the people, groups and agents you pick. |
 
@@ -1293,15 +1371,15 @@ When you connect an app such as Gmail or Linear, Kortix stores the login, and it
 
 ### Audit log
 
-The audit log records who did what in the account, when, how they signed in, and whether it was allowed. Recording is always on, and refused requests are recorded too. When an agent acts, the log also names the person it acted for. The log never stores a key.
+The audit log records who did what in the workspace, when, how they signed in, and whether it was allowed. Recording is always on, and refused requests are recorded too. When an agent acts, the log also names the person it acted for. The log never stores a key.
 
-Owners and admins read the log under **Account settings** → **Audit log**. Events stay readable there for 90 days. Events from 90 to 365 days old stay in a locked archive that nobody can shorten or delete, and you can export them. You can also stream every new event to your own security tools.
+Owners and admins read the log under **Workspace settings** → **Audit log**. Events stay readable there for 90 days. Events from 90 to 365 days old stay in a locked archive that nobody can shorten or delete, and you can export them. You can also stream every new event to your own security tools.
 
 Reading, exporting and streaming the log are Enterprise features.
 
 ### Sign-in controls
 
-Owners and admins set the account's sign-in rules under **Account settings** → **Settings** → **Security**:
+Owners and admins set the workspace's sign-in rules under **Workspace settings** → **Settings** → **Security**:
 
 - **Require two-factor authentication** for every member.
 - **Maximum session length** and **Idle timeout** sign people out after a set time.
@@ -1309,13 +1387,23 @@ Owners and admins set the account's sign-in rules under **Account settings** →
 
 Each person can see and sign out their own devices under **Settings** → **Security**.
 
+### API keys
+
+Scripts, CI jobs and integrations use API keys. **Workspace settings** → **API keys** lists every key of the workspace in one place. **New key** asks who the key acts as:
+
+- **You**: your role in this workspace. The key stops working when you leave.
+- **An agent**: one of the workspace's agents, with exactly what it may do. Its actions are audited as the agent, and the key keeps working when the person who created it leaves.
+- **A bot**: an identity for CI or an integration, with its own role (Member when Kortix creates it).
+
+Every member creates and revokes their own keys. Keys that act as an agent or a bot need the permission to manage credentials. A key can be narrowed to **Read only** or to a custom list of permissions, never beyond the rights of who it acts as. It expires after 90 days unless you pick another date. The CLI is `kortix keys`; the API is in [Get an API key](/docs/developers#get-an-api-key).
+
 ### Single sign-on and directory sync
 
 With single sign-on (SAML), your team signs in through your company's identity provider. Turn on **Enforce SSO for this domain**, and other ways to sign in stop working for that email domain.
 
 Directory sync (SCIM) lets your identity provider add, update and remove members and groups in Kortix. When someone leaves your company, they lose access to Kortix too. Set up single sign-on first.
 
-Both are Enterprise features. Set them up under **Account settings** → **Identity & directory**. They need a team account, not the personal account Kortix creates at sign-up.
+Both are Enterprise features. Set them up under **Workspace settings** → **Identity & directory**. They need a team workspace, not the personal workspace Kortix creates at sign-up.
 
 ### Run Kortix on your own infrastructure
 
@@ -1324,46 +1412,46 @@ You can run the whole Kortix platform on a server you control. This is called se
 - Sessions still run on cloud sandboxes from Platinum, not on your server.
 - Your server must be reachable from the internet, so that those sandboxes can call back.
 
-A self-hosted instance has billing off by default. A Kortix Enterprise license turns on the Enterprise features for every account on it. The installation guide is in [Self-hosting](/docs/developers#self-hosting).
+A self-hosted instance has billing off by default. A Kortix Enterprise license turns on the Enterprise features for every workspace on it. The installation guide is in [Self-hosting](/docs/developers#self-hosting).
 
 #### Brand your instance
 
 With an Enterprise license, your instance can show your company's name and logo instead of Kortix, including on the sign-in page.
 
-1. Sign in as an owner or admin of your company account.
-2. Open **Account settings** → **Branding**.
+1. Sign in as an owner or admin of your company workspace.
+2. Open **Workspace settings** → **Branding**.
 3. Enter the product name, then upload the logo, the square icon and the favicon. Each image can have a dark version.
 
-The sign-in page then shows your logo and "Welcome to" followed by your product name, and the browser tab shows your name and icon. Every account on the instance without its own branding shows the same. A change reaches the sign-in page within 30 seconds.
+The sign-in page then shows your logo and "Welcome to" followed by your product name, and the browser tab shows your name and icon. Every workspace on the instance without its own branding shows the same. A change reaches the sign-in page within 30 seconds.
 
-The sign-in page uses the oldest branded account among the company accounts and the personal accounts of the instance's admins. The admins are the addresses in `KORTIX_PLATFORM_ADMIN_EMAILS`, which holds the admin email you gave at setup. Branding that another person sets on their own personal account never changes the sign-in page.
+The sign-in page uses the oldest branded workspace among the company workspaces and the personal workspaces of the instance's admins. The admins are the addresses in `KORTIX_PLATFORM_ADMIN_EMAILS`, which holds the admin email you gave at setup. Branding that another person sets on their own personal workspace never changes the sign-in page.
 
 ### Set it up
 
 <Steps>
   <Step title="Turn on two-factor authentication">
-    Require two-factor authentication for the whole account under **Account settings** → **Settings** → **Security**.
+    Require two-factor authentication for the whole workspace under **Workspace settings** → **Settings** → **Security**.
   </Step>
   <Step title="Limit each secret">
-    On the project's **Secrets** page, give each secret the smallest audience that works.
+    On the workspace's **Secrets** page, give each secret the smallest audience that works.
   </Step>
   <Step title="Set connector rules">
     Block actions that agents should never take, and ask for approval on risky ones.
   </Step>
   <Step title="Connect your identity provider">
-    With Enterprise, set up single sign-on and directory sync under **Account settings** → **Identity & directory**.
+    With Enterprise, set up single sign-on and directory sync under **Workspace settings** → **Identity & directory**.
   </Step>
 </Steps>
 
 ## Billing
 
-Kortix bills an account in credits. One credit is $0.01. Credits sit in one wallet for the whole account, and every project spends from it. Members are free and unlimited.
+Kortix bills a workspace in credits. One credit is $0.01. Credits sit in one wallet for the whole workspace. Members are free and unlimited.
 
-To see your balance, open **Account settings** → **Billing** → **Plan**.
+To see your balance, open **Workspace settings** → **Billing** → **Plan**.
 
 ### Plans
 
-An account is on one of two plans: Free or Credits. See [kortix.com/pricing](https://kortix.com/pricing) for current prices.
+A workspace is on one of two plans: Free or Credits. See [kortix.com/pricing](https://kortix.com/pricing) for current prices.
 
 | | Free | Credits |
 | --- | --- | --- |
@@ -1373,7 +1461,7 @@ An account is on one of two plans: Free or Credits. See [kortix.com/pricing](htt
 | Kortix-managed models | None | All |
 | Buy extra credits | Yes | Yes |
 | Auto top-up | No | Yes |
-| Projects | 1 | 200 |
+| Workspaces | 1 | 200 |
 
 - Every plan can use models on your own provider key or a ChatGPT subscription. See [Models](/docs/guide#models).
 - On Free, credits pay for compute, storage and the fee on your own models only.
@@ -1381,7 +1469,7 @@ An account is on one of two plans: Free or Credits. See [kortix.com/pricing](htt
 
 #### Enterprise
 
-Enterprise is not a plan. It turns on extra features on either plan: single sign-on, directory sync, groups and custom roles, the audit log, and branding. With Enterprise, an account has no project limit. To get it, select **Talk to sales** in the app, or email [support@kortix.com](mailto:support@kortix.com). See [Security](/docs/guide#security).
+Enterprise is not a plan. It turns on extra features on either plan: single sign-on, directory sync, groups and custom roles, the audit log, and branding. With Enterprise, there is no limit on workspaces. To get it, select **Talk to sales** in the app, or email [support@kortix.com](mailto:support@kortix.com). See [Security](/docs/guide#security).
 
 ### What uses credits
 
@@ -1435,7 +1523,7 @@ Manage the payment method and invoices under **Manage billing**. Only owners and
 
 ### Running out
 
-When the balance reaches zero, agents pause and triggers stop starting sessions. The account's Apps stop too, and their visitors see an **App paused** page.
+When the balance reaches zero, agents pause and triggers stop starting sessions. The workspace's Apps stop too, and their visitors see an **App paused** page.
 
 To continue, add credits or update the payment method. On Free, you can also subscribe to Credits or wait for the next monthly grant. A member who cannot add credits can select **Ask an owner**, and every owner and admin then gets an email with the balance.
 
@@ -1445,4 +1533,4 @@ To continue, add credits or update the payment method. On Free, you can also sub
 | --- | --- |
 | **Billing** → **Plan** | The plan, the wallet, spend this period (compute, storage, models) and auto top-up |
 | **Billing** → **Usage** | Kortix charges and the credit history |
-| **Customize** → **Models** → **Costs**, in a project | Model spend and budgets for that project |
+| **Customize** → **Models** → **Costs**, in a workspace | Model spend and budgets for that workspace |

@@ -184,17 +184,14 @@ const ignoredPathParts = [
   '/src/components/home/product-menu.tsx',
   '/src/features/marketing/enterprise/summary.ts',
   '/src/features/marketing/how-it-work/step/step-models.tsx',
-  '/src/features/marketing/kit/closing-cta.tsx',
   '/src/features/marketing/kit/copy-row.tsx',
-  '/src/features/marketing/landing-hero/landing-hero.tsx',
   '/src/features/marketing/landing-hero/sand-band-hero.tsx',
   '/src/features/marketing/landing-hero/session-window.tsx',
-  '/src/features/marketing/landing-sections/config-as-code.tsx',
   '/src/features/marketing/landing-sections/content.ts',
   '/src/features/marketing/landing-sections/faq-section.tsx',
   '/src/features/marketing/landing-sections/how-it-works-tabs.tsx',
+  // Stashed from the home page by founder call (2026-10-27); the component stays.
   '/src/features/marketing/landing-sections/problem-solution.tsx',
-  '/src/features/marketing/landing-sections/stack-section.tsx',
   '/src/features/marketing/landing-sections/trust-band.tsx',
   '/src/features/marketing/landing-sections/use-case-teams.ts',
   '/src/features/marketing/landing-sections/works-with-strip.tsx',
@@ -263,6 +260,8 @@ const allowedLiteralValues = new Set([
   'Plain',
   'Slack',
   'GitHub',
+  // The ChatGPT plan's product name on the subscription usage card (#11816).
+  'ChatGPT (Codex)',
   'Linear',
   // Framework names in the design-system Select demos: proper nouns, like the
   // product names above.
@@ -1085,7 +1084,13 @@ function scanFile(file) {
           catalogRoot === 'MODIFIER_OPTIONS') ||
         (file.includes(`${path.sep}i18n${path.sep}`) && file.endsWith('.generated.ts')) ||
         (file === path.join(uiSrcDir, 'internal/lib/codemirror-pierre-theme.ts') &&
-          ['dark', 'light'].includes(catalogRoot));
+          ['dark', 'light'].includes(catalogRoot)) ||
+        // Attribute value kinds ('string?', 'number?') of the doc editor's schema check: code, never shown.
+        (file === path.join(uiSrcDir, 'markdown/doc-editor/doc-attrs.ts') &&
+          ['NODE_ATTRS', 'MARK_ATTRS'].includes(catalogRoot)) ||
+        // Section id ↔ old account-hub tab id maps (`help: 'help'`): route ids, never shown.
+        (file === path.join(uiSrcDir, 'customize/project-settings/project-admin-sections.ts') &&
+          ['ACCOUNT_TAB_FOR_SECTION', 'SECTION_FOR_ACCOUNT_TAB'].includes(catalogRoot));
       const coveredPresentationCatalog =
         (file === path.join(srcDir, 'app/[locale]/presentations/decks/security.tsx') &&
           catalogRoot === 'ANSWERS') ||
@@ -1094,6 +1099,9 @@ function scanFile(file) {
       const coveredLocalizedLeafCatalog =
         (file === path.join(srcDir, 'features/billing/billing-return.tsx') &&
           catalogRoot === 'RETURNS') ||
+        // Message keys of spaces.view.tabEdit, read through t(copy.title) and friends.
+        (file === path.join(uiSrcDir, 'workspace/spaces/space-tabs.tsx') &&
+          catalogRoot === 'TARGET_COPY') ||
         (file === path.join(uiSrcDir, 'session/header/session-config-indicator.tsx') &&
           catalogRoot === 'BUSY_COPY') ||
         (file === path.join(uiSrcDir, 'session/panel/mobile-tool-drawer.tsx') &&
@@ -1112,7 +1120,7 @@ function scanFile(file) {
         (file ===
           path.join(uiSrcDir, 'customize/sections/view/gateway/gateway-overview.tsx') &&
           catalogRoot === 'METRICS') ||
-        (file === path.join(srcDir, 'app/[locale]/admin/projects/page.tsx') &&
+        (file === path.join(srcDir, 'app/[locale]/admin/workspaces/page.tsx') &&
           catalogRoot === 'STATUS_OPTIONS') ||
         (file === path.join(srcDir, 'components/iam/api-keys-card.tsx') &&
           catalogRoot === 'STATUS_BADGE') ||

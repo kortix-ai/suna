@@ -50,7 +50,7 @@ const PROJECT_ID = '00000000-0000-4000-a000-000000009922';
 const CONNECTOR_ID = '00000000-0000-4000-a000-000000009923';
 const CONNECTION_ID = '00000000-0000-4000-a000-000000009924';
 const OWNER_ID = '00000000-0000-4000-a000-000000009925';
-const FLAGS = { event_triggers: true, notification_center: true };
+const FLAGS = { event_triggers: true };
 
 // The loopback MCP server: `list_items` answers `items`, newest first.
 let items: Array<Record<string, unknown>> = [];

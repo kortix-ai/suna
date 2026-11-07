@@ -50,6 +50,7 @@ let releaseWrite: (() => void) | null = null;
 let rejectWrite = false;
 
 mock.module('../../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: true,
   db: {
     update: () => ({

@@ -24,6 +24,8 @@ import {
   stripReplyContexts,
 } from './message-parsing';
 import { TranscriptRowsContext, type TranscriptRows } from './transcript-rows';
+import { TypingIndicator } from './typing-indicator';
+import { useTranslations } from '../../i18n';
 
 /** The sentence a person typed, without the ref blocks the composer folds in. */
 function promptSentence(text: string): string {
@@ -56,7 +58,7 @@ export function PendingPromptRows({
   return (
     <>
       <MessageRow
-        avatar={<UserAvatar email={author?.email ?? ''} name={name} avatarUrl={author?.avatarUrl} size="lg" />}
+        avatar={<UserAvatar email={author?.email ?? ''} name={name} avatarUrl={author?.avatarUrl} colorKey={author?.id} size="lg" />}
         name={name || rows?.unknownAuthor}
       >
         <p className={cn(MESSAGE_TEXT_CLASS, 'text-pretty whitespace-pre-wrap wrap-anywhere')}>{promptSentence(text)}</p>
@@ -68,13 +70,15 @@ export function PendingPromptRows({
 
 /**
  * The agent's answer row while it has drawn nothing yet: its pixel mark, its
- * name and the Thinking line, where a working turn's answer row draws them
+ * name and the Thinking line ("Kortix is typing…" in a messages-only thread),
+ * where a working turn's answer row draws them
  * (`SessionTurn` in rows mode: the body opens `mt-0.5`). Every waiting row of
  * a channel thread is this row, so none sits outside the row grid. Null
  * outside a channel thread.
  */
 export function AgentBusyRow({ sessionId }: { sessionId: string }) {
   const rows = useContext(TranscriptRowsContext);
+  const tTurn = useTranslations('sessionUi.turn');
   if (!rows) return null;
   return (
     <MessageRow
@@ -82,7 +86,12 @@ export function AgentBusyRow({ sessionId }: { sessionId: string }) {
       name={rows.agent}
     >
       <div className="mt-0.5">
-        <SessionBusyIndicator sessionId={sessionId} />
+        {/* The thread's computer is still coming up: after 2 s the dots say so. */}
+        {rows.messagesOnly ? (
+          <TypingIndicator name={rows.agent} detail={tTurn('starting')} detailDelayMs={2000} />
+        ) : (
+          <SessionBusyIndicator sessionId={sessionId} />
+        )}
       </div>
     </MessageRow>
   );

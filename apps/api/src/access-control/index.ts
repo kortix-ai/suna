@@ -1,31 +1,15 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { accessRequests } from '@kortix/db';
-import { sql } from 'drizzle-orm';
 import { EffectiveBrandingSchema } from '../accounts/core/app';
 import { instanceBranding } from '../accounts/instance-branding';
-import { config } from '../config';
 import { errors, json, makeOpenApiApp } from '../openapi';
 import { ssoEnforcedForEmail } from '../repositories/sso';
 import { areSignupsEnabled, canSignUp } from '../shared/access-control-cache';
 import { db } from '../shared/db';
 import { createCheckEmailRateLimitMiddleware } from '../middleware/rate-limit';
+import { authEmailState } from '../auth/email-cooldown';
 
 export const accessControlApp = makeOpenApiApp();
-
-async function userExistsInAuth(email: string): Promise<boolean> {
-  if (!config.DATABASE_URL) return false;
-  // The shared pool: a public, rate-limited route must not open and close a
-  // Postgres connection per request.
-  try {
-    const result = await db.execute(
-      sql`SELECT 1 AS found FROM auth.users WHERE email = ${email.trim().toLowerCase()} LIMIT 1`,
-    );
-    const rows = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? []);
-    return rows.length > 0;
-  } catch {
-    return false;
-  }
-}
 
 // ─── Public endpoints (no auth) ───────────────────────────────────────────────
 
@@ -84,7 +68,16 @@ accessControlApp.openapi(
     },
     responses: {
       200: json(
-        z.object({ allowed: z.boolean(), mode: z.enum(['signin', 'signup', 'closed', 'sso']) }),
+        z.object({
+          allowed: z.boolean(),
+          mode: z.enum(['signin', 'signup', 'closed', 'sso']),
+          email_retry_after_seconds: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe('Present when an auth email went to this address less than a minute ago: seconds until another may be sent.'),
+        }),
         'Whether the email may sign up, and which auth-flow mode applies',
       ),
       ...errors(400, 429),
@@ -104,7 +97,18 @@ accessControlApp.openapi(
     if (await ssoEnforcedForEmail(email).catch(() => null)) {
       return c.json({ allowed: true, mode: 'sso' as const });
     }
-    if (await userExistsInAuth(email)) return c.json({ allowed: true, mode: 'signin' as const });
+    // Shared pool: a public, rate-limited route must not open a Postgres
+    // connection per request.
+    const account = await authEmailState(email);
+    if (account.exists) {
+      // The sign-in form uses the cooldown to answer "already sent" instead of
+      // asking GoTrue for another email (auth/email-cooldown.ts).
+      return c.json({
+        allowed: true,
+        mode: 'signin' as const,
+        ...(account.retryAfterSeconds ? { email_retry_after_seconds: account.retryAfterSeconds } : {}),
+      });
+    }
     if (canSignUp(email)) return c.json({ allowed: true, mode: 'signup' as const });
     return c.json({ allowed: false, mode: 'closed' as const });
   },

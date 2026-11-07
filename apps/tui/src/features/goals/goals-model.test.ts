@@ -47,6 +47,17 @@ function goal(
     heartbeat: null,
     coordinatorSessionId: 'sess-new',
     health: { state: 'healthy', issues: [] },
+    goalId: 'g-1',
+    revision: 3,
+    capabilities: { read: true, edit: true, pause: true, resume: false, stop: true, restart: false, answer: true, edit_criteria: true },
+    blockedReason: null,
+    verification: null,
+    criteria: [
+      { id: 'c1', text: 'All accounts reconciled', reported_met: true, evidence: 'evidence/rec.md', verified: true },
+      { id: 'c2', text: 'Sign-off recorded', reported_met: true, evidence: null, verified: false },
+      { id: 'c3', text: 'Filed', reported_met: false, evidence: null, verified: false },
+    ],
+    record: { wakes_today: 3, max_wakes_per_day: 12, paused_at: null, waiting_on: null, next_wake_at: null },
     ...rest,
   } as ProjectGoal;
 }
@@ -89,7 +100,7 @@ describe('toGoalRow', () => {
   test('carries title, progress, status and the first issue as the line', () => {
     const row = toGoalRow(goal({ health: { state: 'attention', issues: ['missed_wake'] } }));
     expect(row).toMatchObject({
-      id: 'company/bank-close',
+      id: 'g-1',
       title: 'Close the books by Friday',
       progress: '1/2',
       status: 'Active',
@@ -112,27 +123,21 @@ describe('toGoalRow', () => {
 describe('toGoalDetail', () => {
   const files = { loading: false, verification: null, log: null };
 
-  test('lists the newest owner session first and allows reply and stop on an open goal', () => {
+  test('lists the newest owner session first; the controls are the capabilities the API returned', () => {
     const detail = toGoalDetail(goal(), files);
     expect(detail.sessions.map((s) => s.id)).toEqual(['sess-new', 'sess-old']);
-    expect(detail.canReply).toBe(true);
-    expect(detail.canStop).toBe(true);
+    expect([detail.canReply, detail.canStop, detail.canPause, detail.canResume, detail.canRestart]).toEqual([true, true, true, false, false]);
   });
 
-  test('a closed goal can be neither answered nor stopped', () => {
-    const detail = toGoalDetail(
-      goal({ health: { state: 'closed', issues: [] }, doc: { status: 'done' } }),
-      files,
-    );
-    expect([detail.canReply, detail.canStop]).toEqual([false, false]);
+  test('a read-only viewer gets no control at all', () => {
+    const none = { read: true, edit: false, pause: false, resume: false, stop: false, restart: false, answer: false, edit_criteria: false };
+    const detail = toGoalDetail(goal({ capabilities: none }), files);
+    expect([detail.canReply, detail.canStop, detail.canPause, detail.canResume, detail.canRestart]).toEqual([false, false, false, false, false]);
   });
 
-  test('a legacy goal.json folder cannot be stopped (stopProjectGoal throws)', () => {
-    expect(toGoalDetail(goal({ doc: { format: 'goal.json' } }), files).canStop).toBe(false);
-  });
-
-  test('no owner session means no reply', () => {
-    expect(toGoalDetail(goal({ coordinatorSessionId: null }), files).canReply).toBe(false);
+  test('a blocked goal says why and what to do next', () => {
+    const detail = toGoalDetail(goal({ blockedReason: 'credits', health: { state: 'attention', issues: ['blocked'] } }), files);
+    expect(detail.issues).toEqual(['Out of credits: no wake can start. Add credits, then resume it (p).']);
   });
 });
 
@@ -145,9 +150,12 @@ describe('detailLines', () => {
     });
     const lines = detailLines(detail, 60, NOW);
     const text = lines.map((l) => l.text);
+    // [x] verified by the independent check, [~] only reported met by the agent, [ ] open.
     expect(text).toContain('[x] All accounts reconciled');
-    expect(text).toContain('[ ] Sign-off recorded');
-    expect(text).toContain('Done when · 1/2');
+    expect(text).toContain('[~] Sign-off recorded');
+    expect(text).toContain('[ ] Filed');
+    expect(text).toContain('Done when · 1/3 verified · 2 reported');
+    expect(text).toContain('3/12 wakes today');
     expect(text.some((t) => t.startsWith('owner    sess-new'))).toBe(true);
     expect(lines.filter((l) => l.sessionId).map((l) => l.sessionId)).toEqual([
       'sess-new',
@@ -180,9 +188,12 @@ describe('helpers', () => {
     expect(tailLines(null, 2)).toEqual([]);
   });
 
-  test('webGoalUrl joins origin, project, scope and an encoded slug', () => {
+  test('webGoalUrl opens the goal by its id; without one, the legacy scope/slug link', () => {
+    expect(webGoalUrl('https://dev.kortix.com/', 'p1', { goalId: 'g 1', scope: 'company', slug: 'a b' })).toBe(
+      'https://dev.kortix.com/workspaces/p1/goals/g%201',
+    );
     expect(webGoalUrl('https://dev.kortix.com/', 'p1', { scope: 'company', slug: 'a b' })).toBe(
-      'https://dev.kortix.com/projects/p1/goals/company/a%20b',
+      'https://dev.kortix.com/workspaces/p1/goals/company/a%20b',
     );
   });
 });

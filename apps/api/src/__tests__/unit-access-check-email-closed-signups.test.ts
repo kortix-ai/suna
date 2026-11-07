@@ -15,6 +15,7 @@ mock.module('../config', () => ({
 // userExistsInAuth reads auth.users through the shared pool: answer from the
 // email value interpolated into the query.
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: {
     insert: () => ({ values: async () => {} }),
     execute: async (query: { queryChunks?: unknown[] }) => {

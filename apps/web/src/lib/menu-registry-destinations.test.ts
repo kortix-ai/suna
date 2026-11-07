@@ -12,7 +12,6 @@ import {
   SETTINGS_TAB_SUBMENU_PAGE,
   SUBMENU_PAGE_BY_ID,
 } from '@/features/workspace/command-palette';
-import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
 import { getItemsForSurface } from '@/lib/menu-registry';
 
 /**
@@ -26,7 +25,7 @@ import { getItemsForSurface } from '@/lib/menu-registry';
  *
  * The reported symptom: typing "model" opened project Settings and the
  * settings overlay, never the Models page. Models had graduated out of the
- * Settings overlay into `/projects/<id>/models` months earlier and simply
+ * Settings overlay into `/workspaces/<id>/models` months earlier and simply
  * never got a registry row; the only row that owned the word was
  * `proj-customize`, whose keyword bag was the concatenated vocabulary of
  * thirteen pages and whose href went to `/config`. Secrets, Channels and
@@ -108,9 +107,7 @@ function isLiveRoute(href: string): boolean {
   return ROUTES.some((route) => routeMatches(route, path));
 }
 
-const paletteRows = getItemsForSurface('commandPalette').filter(
-  (item) => !LEGACY_PALETTE_HIDDEN.has(item.id),
-);
+const paletteRows = getItemsForSurface('commandPalette');
 
 /** Every href the palette can offer, unresolved. */
 const paletteHrefs = new Set(
@@ -190,10 +187,6 @@ describe('every account section has a palette row', () => {
     });
   }
 
-  test('the account picker itself is reachable, as the row with no section', () => {
-    expect(paletteAccountTabs.has('')).toBe(true);
-  });
-
   // The other direction, and the one a deleted section walks through: a row
   // naming a section the hub does not have renders an empty pane.
   test('no account row names a section the hub cannot render', () => {
@@ -250,7 +243,7 @@ describe('the two rows that answer in-palette instead of navigating', () => {
 
 describe('the destinations that need a resolved id at runtime', () => {
   test('"Workspace members" is an action, because its account id is a network read', () => {
-    // `/projects/<id>/members` only redirects; the real destination is the
+    // `/workspaces/<id>/members` only redirects; the real destination is the
     // OWNING account's Access pane scoped back to the workspace, and that
     // account id lives on the project detail. A `kind: 'navigate'` row cannot
     // express that, so this row is an action — see `openProjectMembers` in
@@ -277,7 +270,7 @@ describe('the destinations that need a resolved id at runtime', () => {
  * ============================================================================
  *
  * Everything above pins that each destination HAS a row. Nothing pinned the
- * reverse, and that is the half a real defect walked through: `/projects/<id>/
+ * reverse, and that is the half a real defect walked through: `/workspaces/<id>/
  * config` was deleted on 2026-09-02, and `proj-config-feature-flags` kept
  * pointing at it until 2026-09-03. Typing "feature flag" offered that row
  * first, under Navigation, and selecting it navigated to a 404 instead of
@@ -291,13 +284,13 @@ describe('every palette row points at a live route', () => {
   test('the route table was actually found', () => {
     // A wrong `APP_DIR` would make every assertion below vacuously pass.
     expect(ROUTES.length).toBeGreaterThan(50);
-    expect(ROUTES.some((r) => r.join('/') === 'projects/[id]/files')).toBe(true);
+    expect(ROUTES.some((r) => r.join('/') === 'workspaces/[id]/files')).toBe(true);
   });
 
-  test('/projects/[id]/admin/general is live again, so its row may point at it', () => {
+  test('/workspaces/[id]/admin/general is live again, so its row may point at it', () => {
     // The route this test exists because of. It was deleted on 2026-09-02
     // and brought back on 2026-09-03 with the Customize bar's Settings tab.
-    expect(isLiveRoute('/projects/{projectId}/admin/general')).toBe(true);
+    expect(isLiveRoute('/workspaces/{projectId}/admin/general')).toBe(true);
   });
 
   for (const row of paletteRows.filter((item) => item.kind === 'navigate' && item.href)) {
