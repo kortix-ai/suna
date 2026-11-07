@@ -108,8 +108,9 @@ export async function surfaceSessionIdOf(sessionId: string, first?: AskSessionFa
   return current;
 }
 
-const notExpired = (column: typeof sessionPendingQuestions.expiresAt | typeof sessionPendingPermissions.expiresAt) =>
-  or(isNull(column), gt(column, sql`NOW()`));
+export const pendingAskNotExpired = (
+  column: typeof sessionPendingQuestions.expiresAt | typeof sessionPendingPermissions.expiresAt | typeof connectorCalls.expiresAt,
+) => or(isNull(column), gt(column, sql`NOW()`));
 
 function questionTitle(questions: unknown): string {
   const first = Array.isArray(questions) ? (questions[0] as { header?: unknown; question?: unknown } | undefined) : undefined;
@@ -158,7 +159,7 @@ export async function listOpenAsks(input: {
         and(
           eq(sessionPendingQuestions.projectId, input.projectId),
           isNull(sessionPendingQuestions.answeredAt),
-          notExpired(sessionPendingQuestions.expiresAt),
+          pendingAskNotExpired(sessionPendingQuestions.expiresAt),
           qSurface,
           input.sessionIds ? inArray(sessionPendingQuestions.sessionId, [...input.sessionIds]) : undefined,
         ),
@@ -183,7 +184,7 @@ export async function listOpenAsks(input: {
         and(
           eq(sessionPendingPermissions.projectId, input.projectId),
           isNull(sessionPendingPermissions.decidedAt),
-          notExpired(sessionPendingPermissions.expiresAt),
+          pendingAskNotExpired(sessionPendingPermissions.expiresAt),
           pSurface,
           input.sessionIds ? inArray(sessionPendingPermissions.sessionId, [...input.sessionIds]) : undefined,
         ),
@@ -203,7 +204,7 @@ export async function listOpenAsks(input: {
         and(
           eq(connectorCalls.projectId, input.projectId),
           eq(connectorCalls.status, 'pending_approval'),
-          or(isNull(connectorCalls.expiresAt), gt(connectorCalls.expiresAt, sql`NOW()`)),
+          pendingAskNotExpired(connectorCalls.expiresAt),
           input.sessionIds ? inArray(connectorCalls.sessionId, [...input.sessionIds]) : undefined,
         ),
       )

@@ -121,3 +121,50 @@ test("removeProject stops with an error when a folder does not empty", async () 
   const store = createSessionAttachmentStore(stuck as never);
   await expect(store.removeProject("p1")).rejects.toThrow("Could not delete the files under p1/s1");
 });
+
+test("removeSession stops with an error when its folder does not empty", async () => {
+  const stuck = {
+    from: () => ({
+      list: async () => ({ data: [{ name: "a1" }], error: null }),
+      remove: async () => ({ error: null }),
+    }),
+  };
+  const store = createSessionAttachmentStore(stuck as never);
+  await expect(store.removeSession(scope.projectId, scope.sessionId)).rejects.toThrow(
+    `Could not delete the files under ${scope.projectId}/${scope.sessionId}`,
+  );
+});
+
+test("removeProject stops with an error when the project keeps listing the same session folder", async () => {
+  const stuck = {
+    from: () => ({
+      list: async (prefix: string) => ({ data: prefix === "p1" ? [{ name: "s1" }] : [], error: null }),
+      remove: async () => ({ error: null }),
+    }),
+  };
+  const store = createSessionAttachmentStore(stuck as never);
+  await expect(store.removeProject("p1")).rejects.toThrow("Could not delete the session files of project p1");
+});
+
+test("a missing listing is already deleted, any other listing error is thrown", async () => {
+  const failing = (error: { statusCode?: string; message: string }) => ({
+    from: () => ({ list: async () => ({ data: null, error }), remove: async () => ({ error: null }) }),
+  });
+  const gone = createSessionAttachmentStore(failing({ statusCode: "404", message: "not found" }) as never);
+  await gone.removeProject("p1");
+  await gone.removeSession(scope.projectId, scope.sessionId);
+  const broken = createSessionAttachmentStore(failing({ statusCode: "500", message: "boom" }) as never);
+  await expect(broken.removeProject("p1")).rejects.toMatchObject({ message: "boom" });
+  await expect(broken.removeSession(scope.projectId, scope.sessionId)).rejects.toMatchObject({ message: "boom" });
+});
+
+test("a remove error on a page is thrown", async () => {
+  const failing = {
+    from: () => ({
+      list: async () => ({ data: [{ name: "a1" }], error: null }),
+      remove: async () => ({ error: { message: "denied" } }),
+    }),
+  };
+  const store = createSessionAttachmentStore(failing as never);
+  await expect(store.removeSession(scope.projectId, scope.sessionId)).rejects.toMatchObject({ message: "denied" });
+});

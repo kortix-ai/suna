@@ -98,6 +98,15 @@ const INJECTED_APP_SOURCE_PATTERNS = [
   // pattern matches. The chunk id varies with the extension's build, so the
   // stable anchor is the `executors/<digits>.js` shape, not one file name.
   /^app:\/\/\/executors\/\d+\.js$/,
+  // A browser extension's main-world bridge, a Parcel bundle (`newRequire`,
+  // module `Object.fIhds`) loaded as `dragOutMainWorldBridge.<hash>.js?<ms>?r=<ms>`.
+  // Sentry's `NextjsClientStackFrameNormalization` rewrites every frame origin,
+  // `chrome-extension://<id>` included, to `app://` before `beforeSend`. The
+  // bridge calls `chrome.runtime.connect` in the page world, where
+  // `chrome.runtime` is undefined: `TypeError: Cannot read properties of
+  // undefined (reading 'connect')` (KRTX-4430, pattern `7268998c…`, 1
+  // occurrence, 0 users, `https://kortix.com/`). The app ships no such file.
+  /^app:\/\/\/dragOutMainWorldBridge\.[0-9a-f]+\.js(?:\?|$)/,
 ] as const;
 
 export function isExtensionSource(filename: unknown): boolean {

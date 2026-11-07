@@ -44,6 +44,7 @@ import { type AgentGrant, accountTokens, readStoredAgentGrant, projectSessions }
 import { isMyKortixAgentName } from '@kortix/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { loadGitProjectRow } from './project-git-row';
 import { DEFAULT_AGENT_SENTINEL, grantFromLoadedAgents, isLaunchableAgentName, loadProjectAgents, type LoadedAgents } from '../agents';
 import { type MirrorRefresh, existingProjectMirrorPath, runGitCapture } from '../git/mirror';
 import {
@@ -52,7 +53,6 @@ import {
   resolveSessionAgentGrant,
   withGrantProvenance,
 } from './secret-grant';
-import { projectsView } from '../../workspaces/rows';
 
 /** The re-mint could not be written. The caller must FAIL the prompt: letting it
  *  through would run the new agent against the previous agent's grant, which is
@@ -258,15 +258,7 @@ async function loadStoredSessionGrant(sessionId: string): Promise<AgentGrant | n
  */
 async function myKortixEnabled(projectId: string): Promise<boolean> {
   try {
-    const [project] = await db
-      .select({
-        repoUrl: projectsView.repoUrl,
-        defaultBranch: projectsView.defaultBranch,
-        manifestPath: projectsView.manifestPath,
-      })
-      .from(projectsView)
-      .where(eq(projectsView.projectId, projectId))
-      .limit(1);
+    const project = await loadGitProjectRow(projectId);
     if (!project) return false;
     const loaded = project.defaultBranch
       ? await loadProjectAgents(
@@ -283,19 +275,6 @@ async function myKortixEnabled(projectId: string): Promise<boolean> {
   } catch {
     return true;
   }
-}
-
-async function loadGitProjectRow(projectId: string) {
-  const [project] = await db
-    .select({
-      repoUrl: projectsView.repoUrl,
-      defaultBranch: projectsView.defaultBranch,
-      manifestPath: projectsView.manifestPath,
-    })
-    .from(projectsView)
-    .where(eq(projectsView.projectId, projectId))
-    .limit(1);
-  return project;
 }
 
 /**

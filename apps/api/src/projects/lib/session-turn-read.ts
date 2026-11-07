@@ -136,18 +136,39 @@ function projectLiveTurns(
 /** Batched lifecycle-authoritative projection, scoped to the caller's visible IDs. */
 export async function readSessionTurnStates(sessionIds: string[]): Promise<Map<string, SessionTurnState>> {
   if (sessionIds.length === 0) return new Map();
+  // `session_sandboxes.session_id` is UNIQUE, so this is the session's one
+  // box. A box that is not running holds no live turn whatever its metadata
+  // still says — the same predicate settleOrphanedSandboxTurns uses to close
+  // every ledger row left open on a stopped box. Served by
+  // idx_session_sandboxes_session (plain Index Scan; measured, see below).
   const boxes = await db.select({
     sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status,
     metadata: sessionSandboxes.metadata, sandboxId: sessionSandboxes.sandboxId,
     externalId: sessionSandboxes.externalId, provider: sessionSandboxes.provider,
   }).from(sessionSandboxes).where(inArray(sessionSandboxes.sessionId, sessionIds));
   const authorities = boxes.map(box => ({ box, turns: RUNNING_SANDBOX_STATUSES.has(box.status) ? storedSandboxTurns(box.metadata) : [] }));
+  // Decoration only, keyed by the tokens the authority already named: the
+  // ledger owns `accepted_at`, and it fills in an identity the authority may
+  // not carry yet. It never adds or removes a turn — an open row whose token
+  // the authority no longer holds is a swallowed settle, not a running turn.
+  // Bounded by the authority's own token list, so this is a primary-key
+  // lookup and needs no ORDER BY and no LIMIT: measured as `Index Scan using
+  // session_turns_pkey (turn_token = ANY (...))`, with the session scope as a
+  // filter — kept because a token must never read another session's row.
   const tokens = authorities.flatMap(({ turns }) => turns.map(turn => turn.token));
   const rows = tokens.length === 0 ? [] : await db.select({
     turnToken: sessionTurns.turnToken, sessionId: sessionTurns.sessionId,
     messageId: sessionTurns.messageId, runtimeSessionId: sessionTurns.runtimeSessionId,
     startedAt: sessionTurns.startedAt, acceptedAt: sessionTurns.acceptedAt,
   }).from(sessionTurns).where(and(inArray(sessionTurns.sessionId, sessionIds), inArray(sessionTurns.turnToken, tokens)));
+  // `ended_at` is nullable, so it cannot order this on its own. Measured
+  // for one session id with EXPLAIN ANALYZE on real Postgres at 20k rows over 200 sessions:
+  // `Bitmap Index Scan on session_turns_session_idx` for the session scope,
+  // then a top-N heapsort over that session's rows only — the index orders
+  // by started_at, not by ended_at, so the sort is expected and bounded by
+  // one session's history.
+  // An ended turn can overlap an older live turn. Its identity lets the
+  // client distinguish that idle frame from the turn still running.
   const ended = await db.selectDistinctOn([sessionTurns.sessionId], {
     sessionId: sessionTurns.sessionId, turnToken: sessionTurns.turnToken,
     messageId: sessionTurns.messageId, endReason: sessionTurns.endReason,
@@ -158,6 +179,7 @@ export async function readSessionTurnStates(sessionIds: string[]): Promise<Map<s
   for (const row of ended) result.set(row.sessionId, { turns: [], last_ended: {
     turn_token: row.turnToken, ...(row.messageId ? { message_id: row.messageId } : {}),
     end_reason: row.endReason, ended_at: row.endedAt?.toISOString() ?? null,
+    // A requested stop is bookkeeping, not an error to report.
     ...(row.endError && !isRequestedStopName(row.endError.name) ? { error: row.endError } : {}),
   } });
   const ledgerBySession = new Map<string, Map<string, typeof rows[number]>>();
@@ -167,6 +189,8 @@ export async function readSessionTurnStates(sessionIds: string[]): Promise<Map<s
     ledgerBySession.set(row.sessionId, ledger);
   }
   for (const { box, turns: authority } of authorities) {
+    // Recovery stays off the response path. A reload can miss the runtime's
+    // idle frame too; the next read must not keep serving a completed turn.
     if (authority.length > 0) scheduleSessionTurnRecovery(box);
     const ledger = ledgerBySession.get(box.sessionId) ?? new Map();
     const live = projectLiveTurns(authority, ledger);
@@ -176,107 +200,7 @@ export async function readSessionTurnStates(sessionIds: string[]): Promise<Map<s
 }
 
 export async function readSessionTurnState(sessionId: string): Promise<SessionTurnState> {
-  // `session_sandboxes.session_id` is UNIQUE, so this is the session's one
-  // box. A box that is not running holds no live turn whatever its metadata
-  // still says — the same predicate settleOrphanedSandboxTurns uses to close
-  // every ledger row left open on a stopped box. Served by
-  // idx_session_sandboxes_session (plain Index Scan; measured, see below).
-  const [box] = await db
-    .select({
-      status: sessionSandboxes.status,
-      metadata: sessionSandboxes.metadata,
-      sandboxId: sessionSandboxes.sandboxId,
-      externalId: sessionSandboxes.externalId,
-      provider: sessionSandboxes.provider,
-    })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sessionId, sessionId))
-    .limit(1);
-  const authority =
-    box && RUNNING_SANDBOX_STATUSES.has(box.status) ? storedSandboxTurns(box.metadata) : [];
-
-  // Recovery stays off the response path. A reload can miss the runtime's
-  // idle frame too; the next read must not keep serving a completed turn.
-  if (box && authority.length > 0) scheduleSessionTurnRecovery({ ...box, sessionId });
-
-  // Decoration only, keyed by the tokens the authority already named: the
-  // ledger owns `accepted_at`, and it fills in an identity the authority may
-  // not carry yet. It never adds or removes a turn — an open row whose token
-  // the authority no longer holds is a swallowed settle, not a running turn.
-  // Bounded by the authority's own token list, so this is a primary-key
-  // lookup and needs no ORDER BY and no LIMIT: measured as `Index Scan using
-  // session_turns_pkey (turn_token = ANY (...))`, with the session scope as a
-  // filter — kept because a token must never read another session's row.
-  const ledger = new Map<
-    string,
-    {
-      messageId: string | null;
-      runtimeSessionId: string | null;
-      startedAt: Date;
-      acceptedAt: Date | null;
-    }
-  >();
-  if (authority.length > 0) {
-    const rows = await db
-      .select({
-        turnToken: sessionTurns.turnToken,
-        messageId: sessionTurns.messageId,
-        runtimeSessionId: sessionTurns.runtimeSessionId,
-        startedAt: sessionTurns.startedAt,
-        acceptedAt: sessionTurns.acceptedAt,
-      })
-      .from(sessionTurns)
-      .where(
-        and(
-          eq(sessionTurns.sessionId, sessionId),
-          inArray(
-            sessionTurns.turnToken,
-            authority.map((turn) => turn.token),
-          ),
-        ),
-      );
-    for (const row of rows) ledger.set(row.turnToken, row);
-  }
-
-  const live = projectLiveTurns(authority, ledger);
+  const state = (await readSessionTurnStates([sessionId])).get(sessionId) ?? { turns: [] };
   const failures = await readRecentTurnFailures(sessionId);
-  const recentFailures = failures.length > 0 ? { recent_failures: failures } : {};
-  const [ended] = await db
-    .select({
-      turnToken: sessionTurns.turnToken,
-      messageId: sessionTurns.messageId,
-      endReason: sessionTurns.endReason,
-      endError: sessionTurns.endError,
-      endedAt: sessionTurns.endedAt,
-    })
-    .from(sessionTurns)
-    .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.state, 'ended')))
-    // `ended_at` is nullable, so it cannot order this on its own. Measured
-    // with EXPLAIN ANALYZE on real Postgres at 20k rows over 200 sessions:
-    // `Bitmap Index Scan on session_turns_session_idx` for the session scope,
-    // then a top-N heapsort over that session's rows only — the index orders
-    // by started_at, not by ended_at, so the sort is expected and bounded by
-    // one session's history.
-    .orderBy(desc(sessionTurns.endedAt), desc(sessionTurns.startedAt))
-    .limit(1);
-  // An ended turn can overlap an older live turn. Its identity lets the
-  // client distinguish that idle frame from the turn still running.
-  return {
-    turns: live,
-    ...(ended
-      ? {
-          last_ended: {
-            turn_token: ended.turnToken,
-            ...(ended.messageId ? { message_id: ended.messageId } : {}),
-            end_reason: ended.endReason,
-            ended_at: ended.endedAt ? ended.endedAt.toISOString() : null,
-            // A requested stop is bookkeeping, not an error to report.
-            ...(ended.endError && !isRequestedStopName(ended.endError.name)
-              ? { error: ended.endError }
-              : {}),
-          },
-        }
-      : {}),
-    ...recentFailures,
-  };
+  return { ...state, ...(failures.length > 0 ? { recent_failures: failures } : {}) };
 }

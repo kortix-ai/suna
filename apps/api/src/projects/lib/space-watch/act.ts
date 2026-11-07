@@ -31,6 +31,7 @@ import { recordPendingQuestion } from '../pending-questions';
 import type { ProjectRow } from '../serializers';
 import { postIntoSpace, type StartThreadSpec } from '../space-posts';
 import { resolveUserIdentities } from '../user-identity';
+import { sessionTitleFromMetadata } from '../session-title-placeholder';
 import { WATCHER_POST_METADATA_KEY } from './keys';
 import { askOf, eventLine, parseWatcherDecision, type WatcherDecision } from './policy';
 import { claimDecision, proactiveOn, readWatcher, recordSpaceEvent, watcherOfSession, type WatcherRow } from './store';
@@ -68,8 +69,7 @@ async function recordThreadTurn(sessionId: string): Promise<void> {
   if (!watch?.enabled) return;
   const answer = await lastTurnAnswer(sessionId);
   if (!answer?.text.trim()) return;
-  const meta = (row.metadata ?? {}) as Record<string, unknown>;
-  const title = [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string' && !!v.trim()) ?? null;
+  const title = sessionTitleFromMetadata(row.metadata);
   await recordSpaceEvent({
     spaceId: row.spaceId,
     kind: 'turn_finished',

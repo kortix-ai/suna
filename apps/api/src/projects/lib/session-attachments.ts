@@ -8,7 +8,8 @@ import {
 import { getSupabase } from "../../shared/supabase";
 
 const BUCKET = "session-attachments";
-const missing = (error: any) =>
+type StorageError = { statusCode?: string | number; code?: string; message?: string };
+const missing = (error: StorageError) =>
   ["404", "NoSuchKey", "NoSuchBucket"].includes(
     String(error?.statusCode ?? error?.code),
   ) || /not found|does not exist/i.test(error?.message ?? "");
@@ -54,8 +55,9 @@ export function createSessionAttachmentStore(
           cacheControl: "0",
         });
       if (result.error) {
+        const failure: StorageError = result.error;
         if (
-          String((result.error as any).statusCode) !== "409" &&
+          String(failure.statusCode) !== "409" &&
           !/already exists|duplicate/i.test(result.error.message)
         )
           throw result.error;
@@ -96,25 +98,24 @@ export function createSessionAttachmentStore(
      * and empties each folder it names.
      */
     async removeProject(projectId: string) {
-      let previous = '';
-      for (;;) {
-        const listed = await storage.from(BUCKET).list(projectId, { limit: 100 });
-        if (listed.error) {
-          if (missing(listed.error)) return;
-          throw listed.error;
-        }
-        if (!listed.data?.length) return;
-        const names = listed.data.map((entry) => entry.name).join('\n');
-        // A folder that did not empty would list again forever.
-        if (names === previous) throw new Error(`Could not delete the session files of project ${projectId}`);
-        previous = names;
-        for (const entry of listed.data) await removePrefix(`${projectId}/${entry.name}`);
-      }
+      await drainListing(projectId, `Could not delete the session files of project ${projectId}`, async (names) => {
+        for (const name of names) await removePrefix(`${projectId}/${name}`);
+      });
     },
   };
 
   /** Delete every object one level under `prefix`, a page at a time. */
   async function removePrefix(prefix: string) {
+    await drainListing(prefix, `Could not delete the files under ${prefix}`, async (names) => {
+      const removed = await storage
+        .from(BUCKET)
+        .remove(names.map((name) => `${prefix}/${name}`));
+      if (removed.error) throw removed.error;
+    });
+  }
+
+  /** List one level under `prefix` a page at a time and `remove` each page until it lists empty. */
+  async function drainListing(prefix: string, stuck: string, remove: (names: string[]) => Promise<void>) {
     let previous = '';
     for (;;) {
       const listed = await storage.from(BUCKET).list(prefix, { limit: 100 });
@@ -123,14 +124,12 @@ export function createSessionAttachmentStore(
         throw listed.error;
       }
       if (!listed.data?.length) return;
-      const names = listed.data.map((file) => file.name).join('\n');
+      const names = listed.data.map((file) => file.name);
+      const page = names.join('\n');
       // A page that lists again after its remove would loop forever.
-      if (names === previous) throw new Error(`Could not delete the files under ${prefix}`);
-      previous = names;
-      const removed = await storage
-        .from(BUCKET)
-        .remove(listed.data.map((file) => `${prefix}/${file.name}`));
-      if (removed.error) throw removed.error;
+      if (page === previous) throw new Error(stuck);
+      previous = page;
+      await remove(names);
     }
   }
 }

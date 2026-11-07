@@ -58,6 +58,7 @@ import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { RESULT_EXCERPT_KEY, RESULT_EXCERPT_MAX_CHARS, plainExcerpt, readSessionBoards, sessionInbound, sessionTeamLead } from '../lib/session-board';
 import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
+import { sessionTitleFromMetadata } from '../lib/session-title-placeholder';
 import { readSessionsWorking } from '../lib/session-working-read';
 import type { ProjectSessionRow } from '../lib/serializers';
 import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../session-lifecycle';
@@ -101,11 +102,6 @@ const isLive = (row: Pick<SessionRow, 'metadata'>) =>
   typeof ((row.metadata ?? {}) as Record<string, unknown>).deletedAt !== 'string';
 
 const liveSql = sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`;
-
-function title(row: SessionRow): string | null {
-  const meta = (row.metadata ?? {}) as Record<string, unknown>;
-  return [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string' && !!v.trim()) ?? null;
-}
 
 /** How `other` relates to `self`. */
 export function relationOf(self: SessionRow, other: SessionRow): AgentRelation {
@@ -167,7 +163,7 @@ async function describe(self: SessionRow, rows: SessionRow[], caller: PeerCaller
       short_id: row.sessionId.slice(0, 8),
       project_id: row.projectId,
       agent_name: row.agentName,
-      title: title(row),
+      title: sessionTitleFromMetadata(row.metadata),
       relation,
       state: boards.get(row.sessionId)?.board_state ?? 'idle',
       inbound,
