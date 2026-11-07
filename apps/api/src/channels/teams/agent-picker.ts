@@ -31,8 +31,8 @@ export async function buildAgentsPicker(
   if (agents.length === 0) {
     return buildNoticeCard(
       lead
-        ? "I couldn't start a session — the agent set for this conversation no longer exists, and this project declares no other agent. Run `/agents default` to fall back to the project default, or declare an agent in `kortix.yaml`."
-        : 'This project has no declared agents, so it runs the default agent. Declare agents in `kortix.yaml` to switch here.',
+        ? "I couldn't start a session — the agent set for this conversation no longer exists, and this Kortix workspace declares no other agent. Run `/agents default` to fall back to the workspace default, or declare an agent in `kortix.yaml`."
+        : 'This Kortix workspace has no declared agents, so it runs the default agent. Declare agents in `kortix.yaml` to switch here.',
       '🤖',
     );
   }

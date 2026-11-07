@@ -11,7 +11,7 @@
  *      gets (projects/lib clamps; Apps reject, because an App that silently
  *      receives less than it asked for is still billed for what it asked for);
  *   2. account entitlement — checkBillingAdmission, exactly as session create;
- *   3. App count      — a per-account cap, like maxProjectsForAccount;
+ *   3. App count      — a per-account cap;
  *   4. concurrency    — running App runtimes, the tier's `appLimit`.
  *
  * Every cap lifts entirely when billing is off, so a local or self-hosted

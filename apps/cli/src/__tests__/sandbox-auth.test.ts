@@ -530,19 +530,19 @@ describe('API URL joining', () => {
   it('does not double the /v1 mount when the base already ends in /v1', async () => {
     // This is exactly the sandbox shape: KORTIX_API_URL = https://<tunnel>/v1
     const client = createApiClient({ apiBase: 'https://tunnel.example/v1', token: 't' });
-    await client.get('/projects/p1/change-requests');
-    expect(calls[0]).toBe('https://tunnel.example/v1/projects/p1/change-requests');
+    await client.get('/workspaces/p1/change-requests');
+    expect(calls[0]).toBe('https://tunnel.example/v1/workspaces/p1/change-requests');
   });
 
   it('adds the /v1 mount when the base is a bare origin', async () => {
     const client = createApiClient({ apiBase: 'https://api.kortix.com', token: 't' });
-    await client.get('/projects/p1/change-requests');
-    expect(calls[0]).toBe('https://api.kortix.com/v1/projects/p1/change-requests');
+    await client.get('/workspaces/p1/change-requests');
+    expect(calls[0]).toBe('https://api.kortix.com/v1/workspaces/p1/change-requests');
   });
 
   it('tolerates a trailing slash on the base', async () => {
     const client = createApiClient({ apiBase: 'https://tunnel.example/v1/', token: 't' });
-    await client.get('/projects/p1/change-requests');
-    expect(calls[0]).toBe('https://tunnel.example/v1/projects/p1/change-requests');
+    await client.get('/workspaces/p1/change-requests');
+    expect(calls[0]).toBe('https://tunnel.example/v1/workspaces/p1/change-requests');
   });
 });

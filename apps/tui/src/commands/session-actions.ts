@@ -98,7 +98,7 @@ export async function shareSession(
   const word = mode.trim().toLowerCase();
   if (word === 'team' || word === 'project') {
     await handle.setSharing({ mode: 'project' });
-    return 'Everyone in this project can open this session.';
+    return 'Everyone in this workspace can open this session.';
   }
   if (word === 'private' || word === 'me') {
     const current = (await handle.get()) as { created_by?: string | null } | null;
@@ -150,5 +150,5 @@ export async function forkSession(
 
 /** The web page of a session, for `/copy`. */
 export function sessionWebUrl(webBase: string, projectId: string, sessionId: string): string {
-  return `${webBase.replace(/\/+$/, '')}/projects/${projectId}/sessions/${sessionId}`;
+  return `${webBase.replace(/\/+$/, '')}/workspaces/${projectId}/sessions/${sessionId}`;
 }

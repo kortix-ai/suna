@@ -11,7 +11,7 @@
  * A field the block does not declare stays the App's own. Everything else on
  * the row (name, access, external URL, runtime state) is not declarable.
  */
-import { appLinks, apps, projects } from '@kortix/db';
+import { appLinks, apps } from '@kortix/db';
 import { validateAppsV2, type ManifestIssue } from '@kortix/manifest-schema';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { mutateManifestWithRetry, type ManifestCommitResult } from '../connectors/manifest-mutation';
@@ -19,6 +19,7 @@ import { withProjectGitAuth, withoutAppTriggers } from '../projects/surface';
 import { db } from '../shared/db';
 import { AppLimitError, assertAppMachineWithinLimits } from './limits';
 import { UnknownLinkedAppError, resolveAppLinks } from './links';
+import { projectsView } from '../workspaces/rows';
 
 export interface AppManifestFields {
   cpu?: number;
@@ -71,7 +72,7 @@ export function declaredAppFields(block: unknown): AppManifestFields {
  */
 export async function commitAppFields(projectId: string, slug: string, fields: AppManifestFields): Promise<ManifestCommitResult> {
   if (Object.keys(fields).length === 0) return { ok: true };
-  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
   let project: Awaited<ReturnType<typeof withProjectGitAuth>>;
   try {
@@ -125,7 +126,7 @@ export type AppRemovalResult = (ManifestCommitResult & { ok: false }) | { ok: tr
  * delete never removes a trigger its caller could not delete.
  */
 export async function commitAppRemoval(projectId: string, slug: string, options: { mayRemoveTriggers: boolean }): Promise<AppRemovalResult> {
-  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
   let project: Awaited<ReturnType<typeof withProjectGitAuth>>;
   try {
@@ -204,7 +205,7 @@ export async function syncDeclaredApps(projectId: string, appsNode: unknown): Pr
         if (!same) links = found;
       } catch (error) {
         if (!(error instanceof UnknownLinkedAppError)) throw error;
-        result.errors.push({ slug, error: `apps.${slug}.uses names no App of this project its creator can open: ${error.slugs.join(', ')}` });
+        result.errors.push({ slug, error: `apps.${slug}.uses names no App of this workspace its creator can open: ${error.slugs.join(', ')}` });
       }
     }
     if (Object.keys(update).length === 0 && !links) continue;

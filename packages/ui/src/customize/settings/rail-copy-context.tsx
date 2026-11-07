@@ -14,7 +14,7 @@ export interface SettingsRailChromeCopy {
 }
 
 export const DEFAULT_SETTINGS_RAIL_CHROME_COPY: SettingsRailChromeCopy = {
-  settings: 'Settings',
+  settings: 'Preferences',
   backToApp: 'Back to app',
   close: 'Close',
   docs: 'Docs',

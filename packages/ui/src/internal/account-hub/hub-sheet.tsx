@@ -5,7 +5,7 @@
  * Members "Invite", API "New token" and "Register app", project "Grant
  * access" — and the pane narrows to make room instead of a modal covering it.
  *
- * Mounted once by `AccountSettingsShell` around the content column, so the
+ * Mounted once by Workspace settings around the content column, so the
  * sheet is a sibling column of the whole pane, not a child of its scroll.
  *
  * ```tsx

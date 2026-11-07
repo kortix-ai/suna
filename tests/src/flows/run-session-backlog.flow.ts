@@ -62,12 +62,12 @@ harnessFlow(
     // Boot (≤540s) + one turn (≤240s) + the mirror wait (≤180s) exceeds 360s.
     timeoutMs: 900_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-      'GET /v1/projects/:projectId/sessions',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/workspaces/:projectId/sessions',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx, harness) => {
@@ -92,7 +92,7 @@ harnessFlow(
         async () => {
           const response = await ctx.client
             .as(ctx.P.OWNER)
-            .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
+            .get('/v1/workspaces/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
           response.status(200);
           return response.json<any>();
         },
@@ -119,7 +119,7 @@ harnessFlow(
     await ctx.step('the project session list returns the same mirrored title and tree', async () => {
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions', { params: { projectId } });
+        .get('/v1/workspaces/:projectId/sessions', { params: { projectId } });
       response.status(200);
       const body = response.json<any>();
       const rows = Array.isArray(body) ? body : (body.sessions ?? []);
@@ -143,9 +143,9 @@ harnessFlow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx, harness) => {
@@ -153,7 +153,7 @@ harnessFlow(
     await ctx.step('the ready session names the root conversation its runtime serves', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId', {
+        .get('/v1/workspaces/:projectId/sessions/:sessionId', {
           params: { projectId: session.projectId, sessionId: session.sessionId },
         });
       r.status(200).body().has('$.session_id', session.sessionId);
@@ -174,12 +174,12 @@ harnessFlow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx, harness) => {
@@ -195,7 +195,7 @@ harnessFlow(
         async () => {
           const r = await ctx.client
             .as(ctx.P.OWNER)
-            .get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params: { projectId, sessionId } });
+            .get('/v1/workspaces/:projectId/sessions/:sessionId/prompts', { params: { projectId, sessionId } });
           r.status(200);
           const mine = (r.json<any>().prompts ?? []).find((p: any) => p.prompt_id === promptId);
           if (mine?.state === 'failed') throw new Error(`prompt delivery failed: ${JSON.stringify(mine)}`);
@@ -217,7 +217,7 @@ harnessFlow(
     await ctx.step('a client reads the conversation from the runtime: the gzip answer of …/kortix/runtime/messages/<root> decodes', async () => {
       const detail = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
+        .get('/v1/workspaces/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
       const root = detail.status(200).json<any>()?.runtime_session_id;
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -239,10 +239,10 @@ harnessFlow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId/events',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/events',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
     ],
   },
   async (ctx, harness) => {
@@ -272,10 +272,10 @@ harnessFlow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/turn',
     ],
   },
   async (ctx, harness) => {
@@ -306,12 +306,12 @@ harnessFlow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/turn',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
     ],
   },
   async (ctx, harness) => {
@@ -362,10 +362,10 @@ harnessFlow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
     ],
   },
   async (ctx, harness) => {
@@ -406,12 +406,12 @@ harnessFlow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-      'POST /v1/projects/:projectId/sessions/:sessionId/commit-push',
-      'GET /v1/projects/:projectId/files/content',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/commit-push',
+      'GET /v1/workspaces/:projectId/files/content',
     ],
   },
   async (ctx, harness) => {
@@ -441,7 +441,7 @@ harnessFlow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/sessions/:sessionId/commit-push',
+          '/v1/workspaces/:projectId/sessions/:sessionId/commit-push',
           { message: 'ke2e RUN-7 agent change' },
           { params: { projectId, sessionId } },
         );
@@ -452,7 +452,7 @@ harnessFlow(
         async () =>
           ctx.client
             .as(ctx.P.OWNER)
-            .get('/v1/projects/:projectId/files/content', {
+            .get('/v1/workspaces/:projectId/files/content', {
               params: { projectId },
               query: { path, ref: sessionId },
             }),
@@ -482,8 +482,8 @@ flow(
     timeoutMs: 660_000,
     retry: { attempts: 2 },
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
       'POST /v1/p/share',
       'DELETE /v1/p/share/:token',
     ],
@@ -533,7 +533,7 @@ flow(
     requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 300_000,
-    routes: ['POST /v1/projects/:projectId/sessions'],
+    routes: ['POST /v1/workspaces/:projectId/sessions'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -546,7 +546,7 @@ flow(
       await ctx.step(`session ${n} of 4 → 201 with no X-RateLimit headers`, async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .post('/v1/projects/:projectId/sessions', {}, { params: { projectId: project.id } });
+          .post('/v1/workspaces/:projectId/sessions', {}, { params: { projectId: project.id } });
         r.status(201);
         const limit = r.header('x-ratelimit-limit');
         if (limit !== undefined) throw new Error(`session create still sends X-RateLimit-Limit: ${limit}`);
@@ -570,7 +570,7 @@ flow(
     domain: 'sessions',
     requires: ['funded', 'sandbox'],
     timeoutMs: 240_000,
-    routes: ['POST /v1/projects/:projectId/sessions'],
+    routes: ['POST /v1/workspaces/:projectId/sessions'],
   },
   async (ctx) => {
     const project = await ctx.fixtures.sharedSeededProject();
@@ -579,7 +579,7 @@ flow(
       'create session with client-minted id + branch_already_created → 201',
       async () => {
         const r = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/projects/:projectId/sessions',
+          '/v1/workspaces/:projectId/sessions',
           {
             session_id: clientSessionId,
             branch_already_created: true,
@@ -606,16 +606,16 @@ harnessFlow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/restart',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/restart',
     ],
   },
   async (ctx, harness) => {
     const { projectId, sessionId } = await bootSession(ctx, harness);
     await ctx.step('restart → 202 status provisioning', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/sessions/:sessionId/restart',
+        '/v1/workspaces/:projectId/sessions/:sessionId/restart',
         {},
         {
           params: { projectId, sessionId },
@@ -639,9 +639,9 @@ harnessFlow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/stop',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/stop',
     ],
   },
   async (ctx, harness) => {
@@ -651,7 +651,7 @@ harnessFlow(
     });
     await ctx.step('stopping an already-stopped session → 409', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).withTransientGatewayRetries().post(
-        '/v1/projects/:projectId/sessions/:sessionId/stop',
+        '/v1/workspaces/:projectId/sessions/:sessionId/stop',
         {},
         {
           params: { projectId, sessionId },
@@ -674,9 +674,9 @@ flow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 360_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/version-diff',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'GET /v1/workspaces/:projectId/version-diff',
     ],
   },
   async (ctx) => {
@@ -687,21 +687,21 @@ flow(
     // real session exists.)
     const { projectId, sessionId } = await bootSession(ctx, 'pi');
     await ctx.step('version-diff main → <sessionId> → 200 summary', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/version-diff', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/version-diff', {
         params: { projectId },
         query: { from: sessionId, into: 'main' },
       });
       r.status(200).body().exists('$.files_changed').has('$.from', sessionId).has('$.into', 'main');
     });
     await ctx.step('the `head`/`base` aliases work identically', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/version-diff', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/version-diff', {
         params: { projectId },
         query: { head: sessionId, base: 'main' },
       });
       r.status(200).body().exists('$.files_changed');
     });
     await ctx.step('missing into/base → 400', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/version-diff', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/version-diff', {
         params: { projectId },
         query: { from: sessionId },
       });
@@ -723,8 +723,8 @@ flow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 600_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
     ],
   },
   async (ctx) => {
@@ -784,16 +784,16 @@ flow(
     serial: true,
     timeoutMs: 600_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-      'POST /v1/projects/:projectId/sessions/:sessionId/commit-push',
-      'GET /v1/projects/:projectId/snapshots',
-      'POST /v1/projects/:projectId/change-requests',
-      'GET /v1/projects/:projectId/change-requests/:crId/merge-preview',
-      'POST /v1/projects/:projectId/change-requests/:crId/merge',
-      'DELETE /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/commit-push',
+      'GET /v1/workspaces/:projectId/snapshots',
+      'POST /v1/workspaces/:projectId/change-requests',
+      'GET /v1/workspaces/:projectId/change-requests/:crId/merge-preview',
+      'POST /v1/workspaces/:projectId/change-requests/:crId/merge',
+      'DELETE /v1/workspaces/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx) => {
@@ -804,7 +804,7 @@ flow(
         async () => {
           const r = await ctx.client
             .as(ctx.P.OWNER)
-            .get('/v1/projects/:projectId/snapshots', { params: { projectId: project.id } });
+            .get('/v1/workspaces/:projectId/snapshots', { params: { projectId: project.id } });
           return r.statusCode === 200 ? r.json<any>() : null;
         },
         {
@@ -872,7 +872,7 @@ flow(
       const committed = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/sessions/:sessionId/commit-push',
+          '/v1/workspaces/:projectId/sessions/:sessionId/commit-push',
           { message: 'Add golden end-to-end fixture' },
           { params: { projectId: project.id, sessionId: session.id } },
         );
@@ -888,7 +888,7 @@ flow(
           const resp = await ctx.client
             .as(ctx.P.OWNER)
             .post(
-              '/v1/projects/:projectId/change-requests',
+              '/v1/workspaces/:projectId/change-requests',
               { head_ref: session.id, title: ctx.fixtures.name('golden-cr') },
               { params: { projectId: project.id } },
             );
@@ -914,7 +914,7 @@ flow(
     await ctx.step('merge-preview reports mergeable', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/change-requests/:crId/merge-preview', {
+        .get('/v1/workspaces/:projectId/change-requests/:crId/merge-preview', {
           params: { projectId: project.id, crId },
         });
       r.status(200);
@@ -922,7 +922,7 @@ flow(
 
     await ctx.step('merge the CR → 200 merged', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/change-requests/:crId/merge',
+        '/v1/workspaces/:projectId/change-requests/:crId/merge',
         {},
         {
           params: { projectId: project.id, crId },
@@ -934,7 +934,7 @@ flow(
     await ctx.step('delete the session → 200 stopped (branch preserved)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/projects/:projectId/sessions/:sessionId', {
+        .del('/v1/workspaces/:projectId/sessions/:sessionId', {
           params: { projectId: project.id, sessionId: session.id },
         });
       r.status(200);
@@ -967,7 +967,7 @@ flow(
     requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 240_000,
-    routes: ['POST /v1/webhooks/slack/:projectId', 'GET /v1/projects/:projectId/sessions'],
+    routes: ['POST /v1/webhooks/slack/:projectId', 'GET /v1/workspaces/:projectId/sessions'],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
@@ -1008,7 +1008,7 @@ flow(
         async () => {
           const r = await ctx.client
             .as(ctx.P.OWNER)
-            .get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } });
+            .get('/v1/workspaces/:projectId/sessions', { params: { projectId: project.id } });
           return r.statusCode === 200 ? r.json<any>() : null;
         },
         {
@@ -1073,12 +1073,12 @@ harnessFlow(
     // Boot (≤540s) + the boot turn (≤240s).
     timeoutMs: 900_000,
     routes: [
-      'PATCH /v1/projects/:projectId/features',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'PATCH /v1/workspaces/:projectId/features',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/turn',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx, harness) => {
@@ -1150,10 +1150,10 @@ harnessFlow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
     ],
   },
   async (ctx, harness) => {
@@ -1216,11 +1216,11 @@ flow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
-      'PATCH /v1/projects/:projectId/features',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'PATCH /v1/workspaces/:projectId/features',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx) => {
@@ -1338,11 +1338,11 @@ harnessFlow(
     // Three sessions: boot (≤540s) + one turn (≤240s) each.
     timeoutMs: 2_500_000,
     routes: [
-      'PATCH /v1/projects/:projectId/features',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'PATCH /v1/workspaces/:projectId/features',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/turn',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
     ],
   },
   async (ctx, harness) => {
@@ -1429,11 +1429,11 @@ harnessFlow(
     // One session: boot (≤540s) + one turn (≤240s).
     timeoutMs: 900_000,
     routes: [
-      'PATCH /v1/projects/:projectId/features',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'PATCH /v1/workspaces/:projectId/features',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/turn',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
     ],
   },
   async (ctx, harness) => {
@@ -1521,13 +1521,13 @@ harnessFlow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
-      'PATCH /v1/projects/:projectId/features',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'PATCH /v1/workspaces/:projectId/features',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/turn',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
     ],
   },
   async (ctx, harness) => {
@@ -1606,12 +1606,12 @@ harnessFlow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
-      'PATCH /v1/projects/:projectId/features',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'PATCH /v1/workspaces/:projectId/features',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/turn',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
     ],
   },
   async (ctx, harness) => {
@@ -1722,12 +1722,12 @@ harnessFlow(
     // Boot (≤540s) + the boot turn + two turns (≤240s each).
     timeoutMs: 1_200_000,
     routes: [
-      'PATCH /v1/projects/:projectId/features',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'PATCH /v1/workspaces/:projectId/features',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/turn',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
     ],
   },
   async (ctx, harness) => {
@@ -1781,10 +1781,10 @@ flow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/turn',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
     ],
   },
   async (ctx) => {
@@ -1828,12 +1828,12 @@ harnessFlow(
     requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
-      'PATCH /v1/projects/:projectId/features',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'PATCH /v1/workspaces/:projectId/features',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/turn',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
     ],
   },
   async (ctx, harness) => {

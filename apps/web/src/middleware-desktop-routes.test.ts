@@ -17,18 +17,18 @@ const desktopNavRulesSource = readFileSync(
 );
 
 describe('desktop route allowlist', () => {
-  test('/new is reachable inside the desktop shell (web middleware half)', () => {
+  test('/workspaces (and /workspaces/new under it) is reachable inside the desktop shell (web middleware half)', () => {
     const list = source.slice(
       source.indexOf('const DESKTOP_ALLOWED_ROUTES'),
       source.indexOf('export async function middleware'),
     );
-    expect(list).toContain("'/new'");
+    expect(list).toContain("'/workspaces'");
   });
 
   // Final-review FIX 3: the web half above was pinned, but the Electron
-  // main-process half never was — that gap is exactly what let `/new` go
+  // main-process half never was — that gap is exactly what let `/workspaces/new` go
   // missing from `APP_PATH_PREFIXES` while `DESKTOP_ALLOWED_ROUTES` already
-  // had it. A full-frame navigation to `/new` (a deep link, an external
+  // had it. A full-frame navigation to `/workspaces/new` (a deep link, an external
   // open, `target=_blank`) fell through `isAppPath` and opened the create
   // page in the user's system browser instead of the desktop window. Both
   // halves of the pair must be asserted, in the SAME test file, or a future
@@ -41,6 +41,10 @@ describe('desktop route allowlist', () => {
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const shellList = desktopNavRulesSource.slice(start, end);
+    expect(shellList).toContain("'/workspaces'");
+    // Shipped builds and old links still open /projects/... and /new: they stay
+    // in the window, and next.config redirects them to /workspaces/....
+    expect(shellList).toContain("'/projects'");
     expect(shellList).toContain("'/new'");
     const webList = source.slice(
       source.indexOf('const DESKTOP_ALLOWED_ROUTES'),
@@ -51,16 +55,12 @@ describe('desktop route allowlist', () => {
     expect(webRoutes.filter((route) => !shellList.includes(`'${route}'`))).toEqual([]);
   });
 
-  test('the desktop bounce lands on the door that resolves a real workspace', () => {
-    expect(source).toContain('NextResponse.redirect(new URL(PROJECT_LANDING_PATH');
-  });
-
-  test('/new is NOT public — it requires authentication', () => {
+  test('/workspaces is NOT public — it requires authentication', () => {
     const publicList = source.slice(
       source.indexOf('const PUBLIC_ROUTES'),
       source.indexOf('const DESKTOP_ALLOWED_ROUTES'),
     );
-    expect(publicList).not.toContain("'/new'");
+    expect(publicList).not.toContain("'/workspaces");
   });
 });
 
@@ -75,6 +75,9 @@ describe('desktop site root', () => {
   // The shell launches at `/`. It must reach the identity-aware `/` redirect
   // (the remembered project for a signed-in user, as on web), not the
   // identity-blind gate bounce. Signed out, both end at the landing door.
+  // An installed shell loads only its own app paths (/projects, not
+  // /workspaces): the door is /projects/start, served from /workspaces/start
+  // (src/lib/workspace-redirects.ts).
   test('a signed-out desktop `/` lands on the door, never the list or marketing', async () => {
     const response = await middleware(desktopRequest('/'));
     expect(response.status).toBe(307);

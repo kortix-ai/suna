@@ -42,6 +42,7 @@ function projectRow(over: Partial<ProjectRow> = {}): ProjectRow {
     metadata: {},
     idempotencyKey: KEY,
     sandboxProviderGeneration: 0,
+    splitPending: false,
     lastOpenedAt: null,
     createdAt: now,
     updatedAt: now,

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 import { configureKortix } from '../../http/config';
-import { createProjectSkill, getBuiltinSkill } from './skills';
+import { createWorkspaceSkill, getBuiltinSkill } from './skills';
 
 let nextResponse: () => Response = () => new Response('{}', { status: 200 });
 
@@ -20,7 +20,7 @@ describe('createProjectSkill', () => {
         { status: 201, headers: { 'content-type': 'application/json' } },
       );
 
-    const created = await createProjectSkill('proj-1', {
+    const created = await createWorkspaceSkill('proj-1', {
       name: 'Release Notes',
       description: 'Draft the weekly release notes',
     });
@@ -32,7 +32,7 @@ describe('createProjectSkill', () => {
       string,
       RequestInit,
     ];
-    expect(call[0]).toBe('http://backend.test/v1/projects/proj-1/skills');
+    expect(call[0]).toBe('http://backend.test/v1/workspaces/proj-1/skills');
     expect(call[1]?.method).toBe('POST');
     expect(JSON.parse(String(call[1]?.body))).toEqual({
       name: 'Release Notes',
@@ -52,7 +52,7 @@ describe('createProjectSkill', () => {
 
     let error: Error | null = null;
     try {
-      await createProjectSkill('proj-1', { name: 'Release Notes' });
+      await createWorkspaceSkill('proj-1', { name: 'Release Notes' });
     } catch (e) {
       error = e as Error;
     }
@@ -62,11 +62,11 @@ describe('createProjectSkill', () => {
 
 describe('removeProjectSkill', () => {
   test('removes an explicitly confirmed folder through the project API', async () => {
-    const { removeProjectSkill } = await import('./skills');
+    const { removeWorkspaceSkill } = await import('./skills');
     nextResponse = () => new Response(JSON.stringify({ ok: true, commitSha: 'abc', removed: ['skills/pdf/SKILL.md'] }), { headers: { 'content-type': 'application/json' } });
-    const removed = await removeProjectSkill('proj-1', { folder: 'skills/pdf', confirm: true });
+    const removed = await removeWorkspaceSkill('proj-1', { folder: 'skills/pdf', confirm: true });
     expect(removed.removed).toEqual(['skills/pdf/SKILL.md']);
-    expect(globalThis.fetch).toHaveBeenCalledWith('http://backend.test/v1/projects/proj-1/skills/remove', expect.objectContaining({ method: 'POST', body: JSON.stringify({ folder: 'skills/pdf', confirm: true }) }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('http://backend.test/v1/workspaces/proj-1/skills/remove', expect.objectContaining({ method: 'POST', body: JSON.stringify({ folder: 'skills/pdf', confirm: true }) }));
   });
 });
 

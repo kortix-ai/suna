@@ -89,7 +89,7 @@ describe('ensureDefaultProjectBinding', () => {
   function mockProjects(list: unknown[] | { status: number }) {
     globalThis.fetch = (async (url: string | URL | Request) => {
       const u = String(url instanceof Request ? url.url : url);
-      if (u.includes('/projects')) {
+      if (u.includes('/workspaces')) {
         if (Array.isArray(list)) return Response.json(list);
         return Response.json({ error: 'boom' }, { status: list.status });
       }
@@ -128,10 +128,10 @@ describe('ensureDefaultProjectBinding', () => {
     expect(outcome.bound).toBe(true);
     expect(outcome.project?.project_id).toBe('proj_only');
     expect(storedDefaultProject()?.project_id).toBe('proj_only');
-    expect(stderrChunks.join('')).toContain('Default project:');
+    expect(stderrChunks.join('')).toContain('Default workspace:');
   });
 
-  it('hints at kortix init and binds nothing when the account has zero projects', async () => {
+  it('names create-or-join and binds nothing when there is no workspace', async () => {
     mockProjects([]);
 
     const outcome = await ensureDefaultProjectBinding(AUTH);
@@ -139,21 +139,42 @@ describe('ensureDefaultProjectBinding', () => {
     expect(outcome.bound).toBe(false);
     expect(outcome.project).toBeNull();
     expect(storedDefaultProject()).toBeUndefined();
-    expect(stderrChunks.join('')).toContain('kortix init');
+    expect(stderrChunks.join('')).toContain(
+      'No workspace yet. Create one with kortix workspaces create <name>, or accept an invite.',
+    );
   });
 
-  it('says "in this account", not "your first" — the user may have projects elsewhere', async () => {
-    // The old wording told someone with four projects under a sibling account to
-    // create their first one. It is also the line that makes a command look
-    // failed right before its cross-account fallback succeeds.
-    mockProjects([]);
+  it('lists workspaces across every account, flat, and binds the only one', async () => {
+    // A workspace in a sibling account is still the person's workspace: an
+    // empty active account must not read as "no workspace".
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const u = new URL(String(url instanceof Request ? url.url : url));
+      if (u.pathname.endsWith('/me')) {
+        return Response.json({
+          user_id: 'user_1',
+          email: 'user@example.test',
+          accounts: [
+            { account_id: 'account_1', slug: 'account1', name: 'Empty', role: 'owner' },
+            { account_id: 'account_2', slug: 'account2', name: 'Acme', role: 'member' },
+          ],
+        });
+      }
+      if (u.pathname.endsWith('/workspaces')) {
+        const scoped = u.searchParams.get('account_id');
+        return Response.json(
+          scoped === 'account_2' ? [{ ...project('proj_acme', 'Acme'), account_id: 'account_2' }] : [],
+        );
+      }
+      return Response.json({ error: 'unexpected route' }, { status: 404 });
+    }) as typeof fetch;
 
-    await ensureDefaultProjectBinding(AUTH);
+    const outcome = await ensureDefaultProjectBinding(AUTH);
 
-    const out = stderrChunks.join('');
-    expect(out).toContain('No projects in this account');
-    expect(out).toContain('kortix accounts use');
-    expect(out).not.toContain('your first');
+    expect(outcome.project?.project_id).toBe('proj_acme');
+    expect(storedDefaultProject()?.project_id).toBe('proj_acme');
+    const cfg = JSON.parse(readFileSync(configFile, 'utf8'));
+    expect(cfg.hosts.test.account_id).toBe('account_2');
+    expect(stderrChunks.join('')).toContain('Default workspace: Acme');
   });
 
   it('stays SILENT on a FAILED project list too, not just an empty one', async () => {
@@ -182,7 +203,7 @@ describe('ensureDefaultProjectBinding', () => {
     // to know why nothing bound.
     mockProjects({ status: 500 });
     await ensureDefaultProjectBinding(AUTH);
-    expect(stderrChunks.join('')).toContain('Could not list projects');
+    expect(stderrChunks.join('')).toContain('Could not list workspaces');
   });
 
   it('stays SILENT when the caller has a fallback', async () => {
@@ -206,7 +227,7 @@ describe('ensureDefaultProjectBinding', () => {
     expect(outcome.bound).toBe(false);
     expect(outcome.project).toBeNull();
     expect(storedDefaultProject()).toBeUndefined();
-    expect(stderrChunks.join('')).toContain('kortix projects use');
+    expect(stderrChunks.join('')).toContain('kortix workspaces use');
   });
 
   it('degrades to unbound with the reason on stderr when listing projects fails', async () => {
@@ -216,6 +237,6 @@ describe('ensureDefaultProjectBinding', () => {
 
     expect(outcome.bound).toBe(false);
     expect(outcome.project).toBeNull();
-    expect(stderrChunks.join('')).toContain('Could not list projects');
+    expect(stderrChunks.join('')).toContain('Could not list workspaces');
   });
 });

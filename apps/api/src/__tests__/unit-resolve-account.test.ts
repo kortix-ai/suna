@@ -23,6 +23,8 @@ const state = {
   // before the resolver guard (KRTX-211: a non-uuid `?account_id=` surfaced as
   // an opaque 500). The guard must answer 403 before any read happens.
   membershipThrows: false,
+  /** An `accounts` row whose id equals the caller id (an API-key credential). */
+  accountRow: null as { accountId: string } | null,
   creditAccount: null as { tier?: string | null; stripeSubscriptionId?: string | null } | null,
   legacyCustomer: null as { id?: string | null; email?: string | null } | null,
   customerSearchResults: [] as Array<{ id: string }>,
@@ -49,6 +51,8 @@ function rowsForTable(table: { __table: string }) {
       return state.membership ? [state.membership] : [];
     case 'creditAccounts':
       return state.creditAccount ? [state.creditAccount] : [];
+    case 'accounts':
+      return state.accountRow ? [state.accountRow] : [];
     default:
       return [];
   }
@@ -183,6 +187,7 @@ const { setImpersonationContext } = await import('../shared/impersonation');
 beforeEach(() => {
   state.membership = null;
   state.membershipThrows = false;
+  state.accountRow = null;
   membershipReads = 0;
   state.creditAccount = null;
   state.legacyCustomer = null;
@@ -195,74 +200,84 @@ beforeEach(() => {
   stripeListCalls.length = 0;
 });
 
-describe('resolveAccountId legacy billing sync', () => {
-  test('syncs a paid legacy Stripe subscription for an already-migrated membership', async () => {
+describe('resolveAccountId has no billing side effect', () => {
+  // The legacy Stripe recovery left the request path (design.md §3.1 finding
+  // 8): only POST /v1/billing/sync-subscription runs it.
+  test('a membership with an unsynced paid Stripe customer resolves without a Stripe call or a billing write', async () => {
     state.membership = { accountId: 'acct_paid_123' };
     state.legacyCustomer = { id: 'cus_legacy_123', email: 'paid@example.com' };
     state.subscriptionResults = {
-      cus_legacy_123: [
-        {
-          id: 'sub_paid_123',
-          status: 'active',
-          items: {
-            data: [
-              {
-                price: {
-                  id: 'price_1ReHB5G6l1KZGqIrD70I1xqM', // a legacy $20 price, billed yearly
-                  recurring: { interval: 'year' },
-                },
-              },
-            ],
-          },
-        },
-      ],
+      cus_legacy_123: [{ id: 'sub_paid_123', status: 'active', items: { data: [] } }],
     };
 
-    const accountId = await resolveAccountId('user_paid_123');
+    expect(await resolveAccountId('user_paid_123')).toBe('acct_paid_123');
+    expect(stripeListCalls).toHaveLength(0);
+    expect(upsertCreditAccountCalls).toHaveLength(0);
+    expect(walletResets).toHaveLength(0);
+    expect(insertCalls).toHaveLength(0);
+  });
+});
 
-    expect(accountId).toBe('acct_paid_123');
-    expect(stripeListCalls).toEqual(['cus_legacy_123']);
-    expect(upsertCreditAccountCalls).toHaveLength(1);
-    expect(upsertCreditAccountCalls[0]).toEqual({
-      accountId: 'acct_paid_123',
-      data: {
-        billingCycleAnchor: undefined,
-        commitmentEndDate: null,
-        commitmentType: null,
-        tier: 'credits',
-        planMonthlyUsd: '20',
-        provider: 'stripe',
-        stripeSubscriptionId: 'sub_paid_123',
-        stripeSubscriptionStatus: 'active',
-        planType: 'yearly',
-      },
-    });
-    expect(upsertCustomerCalls).toContainEqual({
-      accountId: 'acct_paid_123',
-      id: 'cus_legacy_123',
-      email: 'paid@example.com',
-      active: true,
-      provider: 'stripe',
-    });
-    expect(walletResets).toContainEqual({
-      accountId: 'acct_paid_123',
-      amount: 20,
-      description: 'Recovered legacy Stripe subscription: 2000 credits',
-      key: { event: 'legacy_sync:sub_paid_123' },
+// ─── No workspace ────────────────────────────────────────────────────────────
+// No account is ever created implicitly (Workspaces D3). A person with no
+// membership gets the typed 409, and nothing is inserted.
+
+const NO_ACCOUNT_USER = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+async function refusal(run: () => Promise<unknown>): Promise<{ status?: number; code?: string }> {
+  try {
+    await run();
+  } catch (error) {
+    const httpError = error as { status?: number; res?: Response };
+    return { status: httpError.status, code: (await httpError.res?.clone().json())?.code };
+  }
+  return {};
+}
+
+describe('resolveAccountId for a person with no workspace', () => {
+  test('answers 409 no_workspace and creates nothing', async () => {
+    expect(await refusal(() => resolveAccountId(NO_ACCOUNT_USER))).toEqual({ status: 409, code: 'no_workspace' });
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  test('an API-key caller whose id IS an existing account gets that account', async () => {
+    state.accountRow = { accountId: NO_ACCOUNT_USER };
+    expect(await resolveAccountId(NO_ACCOUNT_USER)).toBe(NO_ACCOUNT_USER);
+  });
+
+  test('the account-credential fallback is refused when the caller asks for a membership', async () => {
+    state.accountRow = { accountId: NO_ACCOUNT_USER };
+    expect(
+      await refusal(() => resolveAccountId(NO_ACCOUNT_USER, { allowAccountCredential: false })),
+    ).toEqual({ status: 409, code: 'no_workspace' });
+  });
+});
+
+describe('resolveScopedAccountId without account_id', () => {
+  function scopedRequest(userId: string, boundAccountId?: string) {
+    return {
+      req: { query: () => undefined, json: async () => ({}) },
+      get: (key: string) => (key === 'userId' ? userId : key === 'accountId' ? boundAccountId : undefined),
+    } as never;
+  }
+
+  test('a person whose id names an account they are not a member of is refused', async () => {
+    // A legacy personal account the person left: the id still names a row.
+    state.accountRow = { accountId: NO_ACCOUNT_USER };
+    expect(await refusal(() => resolveScopedAccountId(scopedRequest(NO_ACCOUNT_USER), 'query'))).toEqual({
+      status: 409,
+      code: 'no_workspace',
     });
   });
 
-  test('skips Stripe sync when the account already has a Stripe subscription row', async () => {
-    state.membership = { accountId: 'acct_existing_123' };
-    state.creditAccount = { tier: 'tier_6_50', stripeSubscriptionId: 'sub_existing_123' };
-    state.legacyCustomer = { id: 'cus_existing_123', email: 'existing@example.com' };
+  test('the account the credential is bound to wins over the earliest membership', async () => {
+    state.membership = { accountId: 'acct_earliest' };
+    expect(await resolveScopedAccountId(scopedRequest(NO_ACCOUNT_USER, 'acct_bound'), 'query')).toBe('acct_bound');
+  });
 
-    const accountId = await resolveAccountId('user_existing_123');
-
-    expect(accountId).toBe('acct_existing_123');
-    expect(stripeListCalls).toHaveLength(0);
-    expect(upsertCreditAccountCalls).toHaveLength(0);
-    expect(insertCalls).toHaveLength(0);
+  test('a member resolves to their earliest membership', async () => {
+    state.membership = { accountId: 'acct_earliest' };
+    expect(await resolveScopedAccountId(scopedRequest(NO_ACCOUNT_USER), 'query')).toBe('acct_earliest');
   });
 });
 
@@ -335,7 +350,7 @@ describe('resolveScopedAccountId with a malformed account_id (KRTX-211)', () => 
       message = (error as Error).message;
     }
     expect(status).toBe(403);
-    expect(message).toBe('Not a member of the requested account');
+    expect(message).toBe('Not a member of the requested workspace');
     expect(membershipReads).toBe(0);
   });
 

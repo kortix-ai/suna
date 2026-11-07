@@ -221,7 +221,7 @@ export async function createChannel(
     return {
       error: {
         status: 400,
-        body: { error: 'Only members of the project can be added to a channel.', code: 'not_project_member' },
+        body: { error: 'Only members of the workspace can be added to a channel.', code: 'not_project_member' },
       },
     };
   }
@@ -468,7 +468,7 @@ export async function updateChannel(
   }
   if (!canEditSpace(row, viewer)) {
     return {
-      error: { status: 403, body: { error: 'Only the channel’s creator or a project manager can edit it.', code: 'forbidden' } },
+      error: { status: 403, body: { error: 'Only the channel’s creator or a workspace manager can edit it.', code: 'forbidden' } },
     };
   }
   if (input.archived === true && row.isDefault) {

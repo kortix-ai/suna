@@ -34,7 +34,7 @@ export const PROVIDERS_KEYS: readonly Binding[] = [
   { id: 'providers.access', scope: 'providers', chords: [{ key: 'm' }], description: 'Change who can use the selected account.' },
   { id: 'providers.rotate', scope: 'providers', chords: [{ key: 'x' }], description: 'Rotate the selected key.' },
   { id: 'providers.delete', scope: 'providers', chords: [{ key: 'd' }], description: 'Remove or disconnect (asks first).' },
-  { id: 'providers.toggle', scope: 'providers', chords: [{ key: 'e' }], description: 'Turn the provider on or off for this project.' },
+  { id: 'providers.toggle', scope: 'providers', chords: [{ key: 'e' }], description: 'Turn the provider on or off for this workspace.' },
   { id: 'providers.openLink', scope: 'providers', chords: [{ key: 'o' }], description: 'Open the sign-in link in the browser.' },
   { id: 'providers.copy', scope: 'providers', chords: [{ key: 'c' }], description: 'Copy the sign-in code, or the link.' },
   { id: 'providers.confirm', scope: 'providers', chords: [{ key: 'y' }], description: 'Confirm.' },

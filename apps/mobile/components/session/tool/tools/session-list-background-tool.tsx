@@ -48,7 +48,7 @@ export function SessionListBackgroundTool({ call, defaultOpen, forceOpen, locked
     <BasicTool
       disclosureId={disclosureKey('tool', call.id)}
       icon={StackIcon}
-      trigger={{ title: 'Background work', subtitle: project || 'all projects', args }}
+      trigger={{ title: 'Background work', subtitle: project || 'all workspaces', args }}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}

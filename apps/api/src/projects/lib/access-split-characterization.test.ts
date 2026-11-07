@@ -213,10 +213,11 @@ describe('access split characterization — capability denial', () => {
     const body = denial.res ? ((await denial.res.json()) as Record<string, unknown>) : null;
     expect(body).toEqual({
       error: true,
-      message: 'You do not have access to this project',
+      message: 'You do not have access to this workspace',
       status: 403,
       code: 'role_missing',
       action: 'project.read',
+      workspace_action: 'workspace.read',
     });
   });
 });

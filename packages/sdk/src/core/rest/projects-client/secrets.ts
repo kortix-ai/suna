@@ -72,6 +72,8 @@ export interface SecretBrokerResponse {
  * (`shared_with`): everyone in the project by default, or specific people,
  * groups and agents. A person reaches a narrowed value directly or in their
  * own private sessions; an agent in every one of its sessions.
+ *
+ * @deprecated Use `WorkspaceSecret`. Kept permanently.
  */
 export interface ProjectSecret {
   /** Unique per project. The handle an agent's `secrets` grant references. */
@@ -138,6 +140,9 @@ export interface ProjectSecret {
   status?: SecretValueStatus;
 }
 
+/** The workspace name of {@link ProjectSecret}: the same type. */
+export type WorkspaceSecret = ProjectSecret;
+
 /** One principal a secret value is shared with. `agent`: `principal_id` is the
  *  agent's service account (`listAgentIdentities`) — every session of that
  *  agent, triggers included, may use the value, so anyone who may run the
@@ -147,6 +152,7 @@ export interface SecretSharePrincipal {
   principal_id: string;
 }
 
+/** @deprecated Use `WorkspaceSecretsResponse`. Kept permanently. */
 export interface ProjectSecretsResponse {
   items: ProjectSecret[];
   /** Whether the requesting member can edit shared rows (vs only their own overrides). */
@@ -173,17 +179,27 @@ export interface ProjectSecretsResponse {
   agent_scope?: ProjectSecretsAgentScope | null;
 }
 
-/** An agent session's secrets grant, as `GET /projects/:id/secrets` reports it. */
+/** The workspace name of {@link ProjectSecretsResponse}: the same type. */
+export type WorkspaceSecretsResponse = ProjectSecretsResponse;
+
+/**
+ * An agent session's secrets grant, as `GET /projects/:id/secrets` reports it.
+ *
+ * @deprecated Use `WorkspaceSecretsAgentScope`. Kept permanently.
+ */
 export interface ProjectSecretsAgentScope {
   agent: string;
   /** `'all'`, or the secret identifiers the agent may receive. */
   secrets: 'all' | string[];
 }
 
-export async function listProjectSecrets(projectId: string) {
+/** The workspace name of {@link ProjectSecretsAgentScope}: the same type. */
+export type WorkspaceSecretsAgentScope = ProjectSecretsAgentScope;
+
+export async function listWorkspaceSecrets(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectSecretsResponse>(
-      `/projects/${projectId}/secrets`,
+      `/workspaces/${projectId}/secrets`,
       // Background read fired from member-visible surfaces (model picker, LLM
       // providers, agent editor) — project.secret.read is manager-tier, so a
       // plain member legitimately 403s here. Callers render their own state.
@@ -192,7 +208,10 @@ export async function listProjectSecrets(projectId: string) {
   );
 }
 
-export async function upsertProjectSecret(
+/** @deprecated Use `listWorkspaceSecrets`. Kept permanently. */
+export const listProjectSecrets = listWorkspaceSecrets;
+
+export async function upsertWorkspaceSecret(
   projectId: string,
   input: {
     name: string;
@@ -215,10 +234,13 @@ export async function upsertProjectSecret(
     shared_with?: SecretSharePrincipal[];
   },
 ) {
-  return unwrap(await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input));
+  return unwrap(await backendApi.post<ProjectSecret>(`/workspaces/${projectId}/secrets`, input));
 }
 
-export async function setProjectSecretStrategy(
+/** @deprecated Use `upsertWorkspaceSecret`. Kept permanently. */
+export const upsertProjectSecret = upsertWorkspaceSecret;
+
+export async function setWorkspaceSecretStrategy(
   projectId: string,
   identifier: string,
   strategy: SecretDeliveryStrategy,
@@ -226,24 +248,30 @@ export async function setProjectSecretStrategy(
 ) {
   return unwrap(
     await backendApi.put<ProjectSecret>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/strategy`,
+      `/workspaces/${projectId}/secrets/${encodeURIComponent(identifier)}/strategy`,
       { strategy, ...options },
     ),
   );
 }
 
-export async function brokerProjectSecretRequest(
+/** @deprecated Use `setWorkspaceSecretStrategy`. Kept permanently. */
+export const setProjectSecretStrategy = setWorkspaceSecretStrategy;
+
+export async function brokerWorkspaceSecretRequest(
   projectId: string,
   identifier: string,
   input: SecretBrokerRequest,
 ): Promise<SecretBrokerResponse> {
   return unwrap(
     await backendApi.post<SecretBrokerResponse>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/broker`,
+      `/workspaces/${projectId}/secrets/${encodeURIComponent(identifier)}/broker`,
       input,
     ),
   );
 }
+
+/** @deprecated Use `brokerWorkspaceSecretRequest`. Kept permanently. */
+export const brokerProjectSecretRequest = brokerWorkspaceSecretRequest;
 
 // ── Provider OAuth device flow (poll-based) ────────────────────────────────
 // Connect a subscription-backed provider (e.g. ChatGPT) via a device-code flow.
@@ -276,16 +304,19 @@ export type ProviderOAuthPoll =
   | { status: 'failed'; error: string };
 
 /** The provider logins (ChatGPT, OpenCode Zen, OpenCode Go) saved on a project. */
-export async function listProjectProviderOAuth(
+export async function listWorkspaceProviderOAuth(
   projectId: string,
 ): Promise<ProviderOAuthCredential[]> {
   const result = unwrap(
-    await backendApi.get<{ items: ProviderOAuthCredential[] }>(`/projects/${projectId}/oauth`),
+    await backendApi.get<{ items: ProviderOAuthCredential[] }>(`/workspaces/${projectId}/oauth`),
   );
   return result.items ?? [];
 }
 
-export async function startProjectProviderOAuth(
+/** @deprecated Use `listWorkspaceProviderOAuth`. Kept permanently. */
+export const listProjectProviderOAuth = listWorkspaceProviderOAuth;
+
+export async function startWorkspaceProviderOAuth(
   projectId: string,
   provider: string,
   input?: {
@@ -297,7 +328,7 @@ export async function startProjectProviderOAuth(
   },
 ): Promise<ProviderOAuthStart> {
   return unwrap(
-    await backendApi.post<ProviderOAuthStart>(`/projects/${projectId}/oauth/${provider}/start`, {
+    await backendApi.post<ProviderOAuthStart>(`/workspaces/${projectId}/oauth/${provider}/start`, {
       sharing: input?.sharing,
       ...(input?.resourceLabel === undefined ? {} : { resource_label: input.resourceLabel }),
       ...(input?.resourceId === undefined ? {} : { resource_id: input.resourceId }),
@@ -305,25 +336,34 @@ export async function startProjectProviderOAuth(
   );
 }
 
-export async function pollProjectProviderOAuth(
+/** @deprecated Use `startWorkspaceProviderOAuth`. Kept permanently. */
+export const startProjectProviderOAuth = startWorkspaceProviderOAuth;
+
+export async function pollWorkspaceProviderOAuth(
   projectId: string,
   provider: string,
   flowId: string,
 ): Promise<ProviderOAuthPoll> {
   return unwrap(
-    await backendApi.post<ProviderOAuthPoll>(`/projects/${projectId}/oauth/${provider}/poll`, {
+    await backendApi.post<ProviderOAuthPoll>(`/workspaces/${projectId}/oauth/${provider}/poll`, {
       flow_id: flowId,
     }),
   );
 }
 
-export async function deleteProjectProviderOAuth(projectId: string, provider: string) {
+/** @deprecated Use `pollWorkspaceProviderOAuth`. Kept permanently. */
+export const pollProjectProviderOAuth = pollWorkspaceProviderOAuth;
+
+export async function deleteWorkspaceProviderOAuth(projectId: string, provider: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/oauth/${encodeURIComponent(provider)}`,
+      `/workspaces/${projectId}/oauth/${encodeURIComponent(provider)}`,
     ),
   );
 }
+
+/** @deprecated Use `deleteWorkspaceProviderOAuth`. Kept permanently. */
+export const deleteProjectProviderOAuth = deleteWorkspaceProviderOAuth;
 
 /**
  * Cadence the poller may not go under: a faster loop would hammer the poll
@@ -336,12 +376,13 @@ const POLL_INTERVAL_FALLBACK_MS = 3_000;
 /** Deadline when `start` sends no expiry: give up after ten minutes. */
 const POLL_DEADLINE_FALLBACK_MS = 10 * 60_000;
 
+/** @deprecated Use `WorkspaceProviderOAuthFlowOptions`. Kept permanently. */
 export interface ProjectProviderOAuthFlowOptions {
   projectId: string;
   provider: string;
   /** The `start` request body: sharing intent, or an account resource to
    *  reconnect. Same shape as `startProjectProviderOAuth`'s input. */
-  input?: Parameters<typeof startProjectProviderOAuth>[2];
+  input?: Parameters<typeof startWorkspaceProviderOAuth>[2];
   /** Called once `start` resolves, before the first poll: show the code and
    *  the verification link while the loop waits. */
   onChallenge?: (challenge: { verification_url: string; user_code: string | null }) => void;
@@ -355,11 +396,18 @@ export interface ProjectProviderOAuthFlowOptions {
   now?: () => number;
 }
 
+/** The workspace name of {@link ProjectProviderOAuthFlowOptions}: the same type. */
+export type WorkspaceProviderOAuthFlowOptions = ProjectProviderOAuthFlowOptions;
+
+/** @deprecated Use `WorkspaceProviderOAuthFlowResult`. Kept permanently. */
 export type ProjectProviderOAuthFlowResult =
   | { status: 'success'; credential: ProviderOAuthCredential }
   | { status: 'failed'; error: string }
   | { status: 'expired' }
   | { status: 'cancelled' };
+
+/** The workspace name of {@link ProjectProviderOAuthFlowResult}: the same type. */
+export type WorkspaceProviderOAuthFlowResult = ProjectProviderOAuthFlowResult;
 
 /**
  * Drive one device-OAuth authorization to a terminal state: start, show the
@@ -372,7 +420,7 @@ export type ProjectProviderOAuthFlowResult =
  * terminal. Start failures propagate: a permission or sharing problem is the
  * caller's to present, not an authorization outcome.
  */
-export async function runProjectProviderOAuthFlow(
+export async function runWorkspaceProviderOAuthFlow(
   options: ProjectProviderOAuthFlowOptions,
 ): Promise<ProjectProviderOAuthFlowResult> {
   const {
@@ -386,7 +434,7 @@ export async function runProjectProviderOAuthFlow(
   } = options;
   const cancelled = () => isCancelled?.() ?? false;
 
-  const start = await startProjectProviderOAuth(projectId, provider, input);
+  const start = await startWorkspaceProviderOAuth(projectId, provider, input);
   if (cancelled()) return { status: 'cancelled' };
   onChallenge?.({ verification_url: start.verification_url, user_code: start.user_code });
 
@@ -397,7 +445,7 @@ export async function runProjectProviderOAuthFlow(
     if (cancelled()) return { status: 'cancelled' };
     let poll: ProviderOAuthPoll;
     try {
-      poll = await pollProjectProviderOAuth(projectId, provider, start.flow_id);
+      poll = await pollWorkspaceProviderOAuth(projectId, provider, start.flow_id);
     } catch {
       continue;
     }
@@ -409,47 +457,62 @@ export async function runProjectProviderOAuthFlow(
   return cancelled() ? { status: 'cancelled' } : { status: 'expired' };
 }
 
-export async function upsertProjectGitCredential(projectId: string, input: { token: string }) {
+/** @deprecated Use `runWorkspaceProviderOAuthFlow`. Kept permanently. */
+export const runProjectProviderOAuthFlow = runWorkspaceProviderOAuthFlow;
+
+export async function upsertWorkspaceGitCredential(projectId: string, input: { token: string }) {
   return unwrap(
     await backendApi.put<{
       configured: boolean;
       provider: string;
       git_connection: ProjectGitConnection;
-    }>(`/projects/${projectId}/git-credential`, input),
+    }>(`/workspaces/${projectId}/git-credential`, input),
   );
 }
 
-export async function deleteProjectSecret(projectId: string, identifier: string) {
+/** @deprecated Use `upsertWorkspaceGitCredential`. Kept permanently. */
+export const upsertProjectGitCredential = upsertWorkspaceGitCredential;
+
+export async function deleteWorkspaceSecret(projectId: string, identifier: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}`,
+      `/workspaces/${projectId}/secrets/${encodeURIComponent(identifier)}`,
     ),
   );
 }
+
+/** @deprecated Use `deleteWorkspaceSecret`. Kept permanently. */
+export const deleteProjectSecret = deleteWorkspaceSecret;
 
 /**
  * Set/update the caller's OWN per-key override ("use mine") and/or flip whether
  * it's active. Any project member may call this; it never touches the shared
  * value or anyone else's override.
  */
-export async function setPersonalProjectSecret(
+export async function setPersonalWorkspaceSecret(
   projectId: string,
   name: string,
   input: { value?: string; active?: boolean },
 ) {
   return unwrap(
     await backendApi.put<ProjectSecret>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
+      `/workspaces/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
       input,
     ),
   );
 }
 
+/** @deprecated Use `setPersonalWorkspaceSecret`. Kept permanently. */
+export const setPersonalProjectSecret = setPersonalWorkspaceSecret;
+
 /** Remove the caller's own override for a key (falls back to the shared value). */
-export async function deletePersonalProjectSecret(projectId: string, name: string) {
+export async function deletePersonalWorkspaceSecret(projectId: string, name: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
+      `/workspaces/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
     ),
   );
 }
+
+/** @deprecated Use `deletePersonalWorkspaceSecret`. Kept permanently. */
+export const deletePersonalProjectSecret = deletePersonalWorkspaceSecret;

@@ -61,13 +61,13 @@ docs repo. Nothing publishes without a human merge.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the mining skill and the weekly trigger, and opens a change request for you to review. Prefer
 clicks? Choose **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a weekly ticket-to-KB agent in this project.
+  code={`Set up a weekly ticket-to-KB agent in this workspace.
 
 1. Create the agent agents/ticket-to-kb.md. Its job is to turn resolved support tickets into draft knowledge-base articles. It may use the PLAIN_API_KEY and GH_TOKEN secrets.
 
@@ -89,7 +89,7 @@ clicks? Choose **Use this template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Add a read-only Plain API key and a GitHub token for your docs repo as project
+Add a read-only Plain API key and a GitHub token for your docs repo as workspace
 secrets. Both are encrypted and injected into the session at runtime, scoped to
 this agent.
 
@@ -127,7 +127,7 @@ let the schedule take over.
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every Monday at 08:00. It reads its ledger in memory first, so a topic
 already drafted is never drafted again. To change the time, edit the cron line,
-or open **Triggers** in the project.
+or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

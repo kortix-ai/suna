@@ -70,7 +70,7 @@ function dashboardUrl(projectId: string | undefined, qs: Record<string, string>)
   const params = new URLSearchParams(qs);
   if (!projectId) return `${frontendBase()}/?${params.toString()}`;
   params.set('customize', 'connectors');
-  return `${frontendBase()}/projects/${projectId}?${params.toString()}`;
+  return `${frontendBase()}/workspaces/${projectId}?${params.toString()}`;
 }
 
 export const discordOauthApp = makeOpenApiApp();

@@ -77,7 +77,7 @@ const ENGLISH_PLACEHOLDER_COPY: ComposerPlaceholderCopy = {
   commandPalette: (modifier) => `Press ${modifier}K to open the command palette`,
   switchAgents: 'Press Tab to switch agents',
   attachFiles: 'Drag and drop files to attach them',
-  changed: "Ask what's changed in your project",
+  changed: "Ask what's changed in your workspace",
   newLine: 'Press Shift+Enter for a new line',
   settings: (modifier) => `Press ${modifier}, to open settings`,
   compact: 'Ask to compact the session when it gets long',

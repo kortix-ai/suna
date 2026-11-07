@@ -64,6 +64,11 @@ describe('denial', () => {
 
   test('apps deploy names run_command in a session sandbox', () => {
     expect(denial(['apps', 'deploy'])?.use).toContain('run_command in a session sandbox');
+    // Listing and revoking keys run; creating one would print its secret here.
+    expect(denial(['keys', 'ls', '--json'])).toBeNull();
+    expect(denial(['keys', 'rm', 'k1', '-y'])).toBeNull();
+    expect(denial(['keys', 'create', 'ci'])?.reason).toContain('prints its secret');
+    expect(denial(['keys', 'new', 'ci'])?.reason).toContain('prints its secret');
   });
 
   test('the removed migrate command is unknown; tasks and the automations alias run', () => {

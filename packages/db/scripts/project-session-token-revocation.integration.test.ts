@@ -28,8 +28,8 @@ describe.skipIf(!url)('project archive revokes session credentials', () => {
     await client.connect();
     await client.query("insert into kortix.accounts (account_id, name) values ($1, 'synthetic')", [account]);
     for (const id of [project, other]) {
-      await client.query(`insert into kortix.projects (project_id, account_id, name, repo_url)
-        values ($1, $2, 'synthetic', 'https://example.test/synthetic.git')`, [id, account]);
+      await client.query(`insert into kortix.projects (project_id, account_id, name, repo_url, split_pending)
+        values ($1, $2, 'synthetic', 'https://example.test/synthetic.git', true)`, [id, account]);
     }
   });
   afterAll(async () => {

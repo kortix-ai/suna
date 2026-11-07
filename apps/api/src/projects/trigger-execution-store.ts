@@ -1,4 +1,4 @@
-import { projectTriggerExecutions, projectTriggerRuntime, projects } from '@kortix/db';
+import { projectTriggerExecutions, projectTriggerRuntime } from '@kortix/db';
 import { and, asc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { formatDurationSeconds } from '@kortix/manifest-schema';
 import { db } from '../shared/db';
@@ -12,6 +12,7 @@ import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { cronSlotFields } from './lib/trigger-payload';
 import { clearTriggerAlert, raiseTriggerAlert } from './lib/trigger-alerts';
 import { accountAutomationsRunSql } from '../accounts/automation-pause';
+import { projectsView } from '../workspaces/rows';
 
 export type TriggerExecutionRow = typeof projectTriggerExecutions.$inferSelect;
 
@@ -65,23 +66,23 @@ export async function claimDueScheduleSlots(input: {
       scheduleSpec: projectTriggerRuntime.scheduleSpec,
     })
     .from(projectTriggerRuntime)
-    .innerJoin(projects, eq(projects.projectId, projectTriggerRuntime.projectId))
+    .innerJoin(projectsView, eq(projectsView.projectId, projectTriggerRuntime.projectId))
     .where(
       and(
-        eq(projects.status, 'active'),
+        eq(projectsView.status, 'active'),
         eq(projectTriggerRuntime.enabled, true),
         eq(projectTriggerRuntime.triggerType, 'cron'),
         lte(projectTriggerRuntime.nextFireAt, input.now),
-        sql`coalesce(${projects.metadata} ->> 'triggers_paused', 'false') <> 'true'`,
+        sql`coalesce(${projectsView.metadata} ->> 'triggers_paused', 'false') <> 'true'`,
         // Pause all triggers (KRTX-1721): the slot stays due and unclaimed,
         // so resuming fires a missed slot once.
-        accountAutomationsRunSql(projects.accountId),
+        accountAutomationsRunSql(projectsView.accountId),
         // An auto-paused trigger (KRTX-1721) stays due and unclaimed until it is resumed.
         isNull(projectTriggerRuntime.autoPausedAt),
         // A session reminder fires only while its project has the `reminders`
         // flag on. Off, the row stays due and unclaimed, so turning the flag
         // back on fires a missed slot once, like any downtime.
-        sql`(${projectTriggerRuntime.scheduleSpec} ->> 'reminder' is null or (case when jsonb_typeof(${projects.metadata} #> '{experimental,reminders}') = 'boolean' then ${projects.metadata} #>> '{experimental,reminders}' else ${remindersDefault()} end) = 'true')`,
+        sql`(${projectTriggerRuntime.scheduleSpec} ->> 'reminder' is null or (case when jsonb_typeof(${projectsView.metadata} #> '{experimental,reminders}') = 'boolean' then ${projectsView.metadata} #>> '{experimental,reminders}' else ${remindersDefault()} end) = 'true')`,
       ),
     )
     .orderBy(asc(projectTriggerRuntime.nextFireAt), asc(projectTriggerRuntime.projectId))

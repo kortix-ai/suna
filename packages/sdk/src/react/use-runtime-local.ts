@@ -23,7 +23,7 @@ import {
 import type { Agent, Config, ProviderListResponse } from '../core/runtime/runtime-types';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAgentSelectionScope } from './agent-selection-scope';
-import { useKortixRouteProjectId } from './route-project';
+import { useKortixRouteWorkspaceId } from './route-project';
 import { useModelStore, type ModelKey } from './use-model-store';
 
 export type { ModelKey };
@@ -278,7 +278,7 @@ export function useRuntimeLocal({
   // kortix-only allowlist, so a native bypass provider never leaks in. ----
   const providerMode = modelProviderMode();
   const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
-  const projectId = useKortixRouteProjectId();
+  const projectId = useKortixRouteWorkspaceId();
 
   // ---- Model store (persisted: recent, variant, per-agent/session selection) ----
   const modelStore = useModelStore(flatModels);

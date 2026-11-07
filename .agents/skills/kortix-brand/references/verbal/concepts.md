@@ -21,7 +21,7 @@ A person reads it. An agent edits it. You can `grep` your whole company.
 
 Six beats. Tell them in this order. Each beat ends where the next one starts.
 
-1. **A company is a git repository.** A Kortix project is a git repo, and the repo is the company: configuration and accumulated state in one place, all text, all under version control, readable by a person and editable by an agent. `kortix.yaml` declares the agents, skills, tools, triggers and connectors. Everything past that is files.
+1. **A company is a git repository.** A Kortix workspace is backed by a git repo, and the repo is the company: configuration and accumulated state in one place, all text, all under version control, readable by a person and editable by an agent. `kortix.yaml` declares the agents, skills, tools, triggers and connectors. Everything past that is files.
 2. **It ships like code.** `kortix init` turns a directory into a Kortix. `kortix ship` checks that it compiles, asks for missing secrets, pushes it up and runs it. The repo behaves the same on your laptop and in the cloud.
 3. **Work runs on cloud computers.** Start a session and a sandbox boots from one snapshot running the `kortix-sandbox-agent-server` daemon. It clones the repo, cuts a fresh branch and hands over a ready machine. The agent works walled off. When it wants to keep something, it commits and opens a change request toward `main`. A person decides whether it lands.
 4. **It scales to a workforce.** Each session is its own sandbox on its own branch, so thousands can run in parallel without touching each other. The only shared thing is the world outside. The parallel, isolated workforce is the part that is hard to copy.
@@ -65,7 +65,7 @@ Three concepts have an approved metaphor. Use it only as stated. Every other con
 
 | Concept | Approved metaphor | When to use it |
 | --- | --- | --- |
-| Project | "A company you can clone." | Intro, developer pitch. |
+| Workspace | "A company you can clone." | Intro, developer pitch. |
 | Change request | "CI/CD, but for the work of an organization, not just its code." | Explaining governance and self-improvement. |
 | Memory | "The living company brain." | Pillar 2. |
 

@@ -65,9 +65,10 @@ import {
   runReminderResponse,
   setReminderEnabledResponse,
 } from './session-reminders';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const TriggerRowSchema = z.record(z.string(), z.any());
-const idParams = z.object({ projectId: z.string(), id: z.string() });
+const idParams = z.object({ workspaceId: z.string(), id: z.string() });
 
 /** True when the caller holds `action` on the project; a 403 reads as false, anything else throws. */
 async function holds(c: Context<AppEnv>, loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>, action: string): Promise<boolean> {
@@ -122,7 +123,7 @@ const NOT_RUNTIME = 'Runtime trigger not found. A kortix.yaml trigger changes th
 
 /** The runtime row `:id` names, and whether it targets a session. */
 async function loadTarget(c: Context<AppEnv>) {
-  const projectId = c.req.param('projectId') ?? '';
+  const projectId = workspaceIdParam(c) ?? '';
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return { response: c.json({ error: 'Not found' }, 404) } as const;
   const row = await loadRuntimeTrigger(projectId, c.req.param('id') ?? '');
@@ -135,13 +136,13 @@ export function registerRuntimeTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/triggers/all',
+      path: '/{workspaceId}/triggers/all',
       tags: ['triggers'],
       summary: 'List the kortix.yaml and runtime triggers of a project',
       description:
         'kortix.yaml triggers (`origin: declared`) and runtime triggers: loops and rows created through POST /triggers/runtime (`origin: runtime`). Each row has a `source` and a `target`. Rows the caller may not read are left out: declared and agent-target rows need project.trigger.read, session-target rows a session the caller can open.',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: json(
           z.object({
@@ -156,7 +157,7 @@ export function registerRuntimeTriggersRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const declared = (await holds(c, loaded, PROJECT_ACTIONS.PROJECT_TRIGGER_READ))
@@ -186,14 +187,14 @@ export function registerRuntimeTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/triggers/runtime',
+      path: '/{workspaceId}/triggers/runtime',
       tags: ['triggers'],
       summary: 'Create a runtime trigger',
       description:
         'Stored in the database, not kortix.yaml: no commit. `target.session_id` wakes that session on every fire (a loop); `target.agent` starts a new session of that agent. A schedule into a session keeps the loop rules (every at least 5m, at/in for a first fire).',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
           prompt: z.string().openapi({ description: 'Prompt each fire sends. `{{ body.x }}`, `{{ change_request.number }}` render against the payload.' }),
           name: z.string().optional().openapi({ description: 'Label.' }),
@@ -211,7 +212,7 @@ export function registerRuntimeTriggersRoutes(): void {
     }),
     async (c) => {
       const body = await readJsonObject(c);
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const now = new Date();
       const parsed = parseRuntimeTriggerBody(body, now);
       if ('error' in parsed) return c.json({ error: parsed.error }, 400);
@@ -266,7 +267,7 @@ export function registerRuntimeTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/triggers/runtime/{id}',
+      path: '/{workspaceId}/triggers/runtime/{id}',
       tags: ['triggers'],
       summary: 'Pause or resume a runtime trigger',
       ...auth,
@@ -302,7 +303,7 @@ export function registerRuntimeTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/triggers/runtime/{id}',
+      path: '/{workspaceId}/triggers/runtime/{id}',
       tags: ['triggers'],
       summary: 'Delete a runtime trigger',
       ...auth,
@@ -332,7 +333,7 @@ export function registerRuntimeTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/triggers/runtime/{id}/run',
+      path: '/{workspaceId}/triggers/runtime/{id}/run',
       tags: ['triggers'],
       summary: 'Run a runtime trigger now',
       description: 'One fire with an empty payload. The schedule does not move.',

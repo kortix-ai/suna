@@ -7,7 +7,7 @@
  *
  * Two consumers, one request: `account-hub-content.tsx` (which pane to
  * render, which controls to offer) and the settings sidebar in
- * `account-settings-sidebar.tsx` (which nav items exist). Both call the hook
+ * Workspace settings' rail (`project-admin-dashboard.tsx`, which rows exist). Both call the hook
  * below; React Query keys the batch on `(accountId, userId, probes)`, so the
  * second caller reads the first caller's cache entry and the server sees one
  * `:batch` POST per page load, not two.
@@ -80,6 +80,8 @@ export interface AccountHubAccess {
   canCreateToken: Allowed;
   /** Which sections this caller may open. ONE rule — see the body. */
   sectionVisible: Record<AccountSection, boolean>;
+  /** Every probe answered (or failed): `sectionVisible` is final. */
+  settled: boolean;
   /** The first section in nav order this caller can see; `help` at worst. */
   firstVisibleSection: AccountSection;
 }
@@ -95,6 +97,8 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
   // fanned out 16 concurrent queries — a meaningful contributor to DB
   // connection-pool pressure. The :batch endpoint answers all of them in one
   // request. Results come back in the same order as ACCOUNT_PERMISSION_PROBES.
+  const verdicts = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
+  const settled = !!accountId && verdicts.every((verdict) => !verdict.isLoading);
   const [
     { allowed: canReadMembers },
     { allowed: canReadGroups },
@@ -112,7 +116,7 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     { allowed: canManageRoles },
     { allowed: canWriteBilling },
     { allowed: canCreateToken },
-  ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
+  ] = verdicts;
 
   // Self-host billing-disabled: no Stripe plan controls to show. Session costs
   // remain available because they do not require the internal billing engine.
@@ -159,7 +163,10 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     // The account's service accounts and OAuth apps. Their lists assert
     // `token.read`, which every member holds, but every control in the pane
     // needs `token.create`; a person's own tokens live in /settings/tokens.
-    tokens: canCreateToken === true,
+    // Every member: a person's own access keys live here (they left
+    // `/settings` with Workspaces). The machine keys inside still need
+    // `token.create`.
+    tokens: true,
     // GET .../audit — `AUDIT_READ`, also ADMIN_EXTRAS.
     audit: canReadAudit === true,
     settings: canWriteAccount === true,
@@ -194,6 +201,7 @@ export function useAccountHubAccess(accountId: string | undefined): AccountHubAc
     canWriteBilling,
     canCreateToken,
     sectionVisible,
+    settled,
     firstVisibleSection,
   };
 }

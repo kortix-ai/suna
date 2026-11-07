@@ -150,7 +150,7 @@ describe('row mappers', () => {
   });
 
   test('memoryWebUrl joins the origin and the project without a double slash', () => {
-    expect(memoryWebUrl('https://kortix.com/', 'p1')).toBe('https://kortix.com/projects/p1/memory');
+    expect(memoryWebUrl('https://kortix.com/', 'p1')).toBe('https://kortix.com/workspaces/p1/memory');
   });
 });
 

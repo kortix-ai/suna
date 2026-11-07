@@ -181,14 +181,14 @@ describe('drive-model', () => {
   test('driveWebUrl uses the web ?path= encoding', () => {
     const web = 'https://dev.kortix.com/';
     expect(driveWebUrl(web, 'p1', '/Users/ana/Memory', '/Users/ana')).toBe(
-      'https://dev.kortix.com/projects/p1/drive?path=~/Memory',
+      'https://dev.kortix.com/workspaces/p1/drive?path=~/Memory',
     );
     expect(driveWebUrl(web, 'p1', '/Company/Q3 plan', '/Users/ana')).toBe(
-      'https://dev.kortix.com/projects/p1/drive?path=Company/Q3+plan',
+      'https://dev.kortix.com/workspaces/p1/drive?path=Company/Q3+plan',
     );
-    expect(driveWebUrl(web, 'p1', '/', null)).toBe('https://dev.kortix.com/projects/p1/drive');
+    expect(driveWebUrl(web, 'p1', '/', null)).toBe('https://dev.kortix.com/workspaces/p1/drive');
     expect(featureFlagsWebUrl(web, 'p1')).toBe(
-      'https://dev.kortix.com/projects/p1/admin/feature-flags',
+      'https://dev.kortix.com/workspaces/p1/admin/feature-flags',
     );
   });
 
@@ -565,7 +565,7 @@ describe('<DriveView/> through the OpenTUI test renderer', () => {
         {...props({
           notice: {
             tone: 'info',
-            message: 'Drive is off for this project. Turn on Volumes in Feature flags.',
+            message: 'Drive is off for this workspace. Turn on Volumes in Feature flags.',
             hint: 'o open Feature flags in the web app · Esc back',
           },
           onOpenWeb: (row) => opened.push(row?.path ?? null),
@@ -575,7 +575,7 @@ describe('<DriveView/> through the OpenTUI test renderer', () => {
     );
     await off.flush();
     const frame = off.captureCharFrame();
-    expect(frame).toContain('Drive is off for this project. Turn on Volumes in Feature flags.');
+    expect(frame).toContain('Drive is off for this workspace. Turn on Volumes in Feature flags.');
     expect(frame).not.toContain('notes.md');
     await act(async () => off.mockInput.pressKey('o'));
     await off.flush();

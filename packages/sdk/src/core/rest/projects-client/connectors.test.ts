@@ -5,13 +5,13 @@ import {
   checkMcpServerSignIn,
   listConnectorMoves,
   moveConnector,
-  addComputerToProject,
+  addComputerToWorkspace,
   createConnector,
   deleteConnector,
   discoverConnectionOAuth2,
   discoverConnectionOAuth2Resource,
   discoverConnectorAuth,
-  ensureProjectConnectorConnection,
+  ensureWorkspaceConnectorConnection,
   getConnectStatus,
   getConnectionPolicies,
   getConnectionOAuth2Application,
@@ -149,9 +149,9 @@ test('connection APIs expose only connection identifiers', async () => {
 
 test('native OAuth2 lifecycle methods use connection-scoped generic routes', async () => {
   nextResponse = { status: 200, body: { connection_id: 'connection-1' } };
-  await ensureProjectConnectorConnection('P1', 'generic-api');
+  await ensureWorkspaceConnectorConnection('P1', 'generic-api');
   expect(last()).toMatchObject({ method: 'POST' });
-  expect(last().url).toContain('/projects/P1/connectors/generic-api/oauth2/connection');
+  expect(last().url).toContain('/workspaces/P1/connectors/generic-api/oauth2/connection');
 
   nextResponse = { status: 200, body: { ok: true } };
   const application = {
@@ -163,7 +163,7 @@ test('native OAuth2 lifecycle methods use connection-scoped generic routes', asy
   };
   await putConnectionOAuth2Application('P1', 'connection-1', application);
   expect(last()).toMatchObject({ method: 'PUT', body: application });
-  expect(last().url).toContain('/projects/P1/connections/connection-1/oauth2/application');
+  expect(last().url).toContain('/workspaces/P1/connections/connection-1/oauth2/application');
 
   nextResponse = {
     status: 200,
@@ -186,7 +186,7 @@ test('native OAuth2 lifecycle methods use connection-scoped generic routes', asy
     body: { authorization_url: application.authorization_url },
   };
   await startConnectionOAuth2Authorization('P1', 'connection-1', {
-    success_redirect_uri: 'https://dev.kortix.com/projects/P1',
+    success_redirect_uri: 'https://dev.kortix.com/workspaces/P1',
   });
   expect(last().url).toContain('/oauth2/authorize');
 
@@ -240,7 +240,7 @@ test('MCP authorization discovery and dynamic client registration', async () => 
   };
   const discovered = await discoverConnectionOAuth2Resource('P1', 'connection-1');
   expect(last()).toMatchObject({ method: 'POST', body: {} });
-  expect(last().url).toContain('/projects/P1/connections/connection-1/oauth2/discover-resource');
+  expect(last().url).toContain('/workspaces/P1/connections/connection-1/oauth2/discover-resource');
   expect(discovered.discovery.registration_endpoint).toBe('https://api.read.ai/oauth/register');
   expect(discovered.discovery.scopes).toEqual(['openid', 'offline_access', 'mcp:execute']);
 
@@ -269,7 +269,7 @@ test('MCP authorization discovery and dynamic client registration', async () => 
   };
   const registered = await registerConnectionOAuth2Client('P1', 'connection-1', registration);
   expect(last()).toMatchObject({ method: 'POST', body: registration });
-  expect(last().url).toContain('/projects/P1/connections/connection-1/oauth2/register');
+  expect(last().url).toContain('/workspaces/P1/connections/connection-1/oauth2/register');
   expect(registered.application.client_id).toBe('issued-client');
 });
 
@@ -299,7 +299,7 @@ test('a catalogue app on a Kortix OAuth client: discovery says kortix_client, re
 test('connection methods use the canonical connection route contract', async () => {
   nextResponse = { status: 200, body: { connections: [] } };
   await listConnections('P1');
-  expect(last().url).toContain('/projects/P1/connections');
+  expect(last().url).toContain('/workspaces/P1/connections');
 
   nextResponse = {
     status: 200,
@@ -349,7 +349,7 @@ test('connection methods use the canonical connection route contract', async () 
   };
   const renamed = await renameConnection('P1', 'connection-1', 'Support inbox');
   expect(last()).toMatchObject({ method: 'PUT', body: { label: 'Support inbox' } });
-  expect(last().url).toContain('/projects/P1/connections/connection-1/label');
+  expect(last().url).toContain('/workspaces/P1/connections/connection-1/label');
   expect(renamed.label).toBe('Support inbox');
   expect(renamed.connected_as).toBe('support@example.test');
 
@@ -362,13 +362,13 @@ test('connection methods use the canonical connection route contract', async () 
   const audience: ConnectionSharePrincipal[] = [{ principal_type: 'group', principal_id: 'group-1' }];
   const shared = await shareConnection('P1', 'connection-1', audience);
   expect(last()).toMatchObject({ method: 'POST', body: { principals: audience } });
-  expect(last().url).toContain('/projects/P1/connections/connection-1/share');
+  expect(last().url).toContain('/workspaces/P1/connections/connection-1/share');
   expect(shared.owner_type).toBe('project');
   await shareConnection('P1', 'connection-1');
   expect(last().body).toEqual({ principals: [] });
 
   nextResponse = { status: 200, body: { connection_id: 'connection-1' } };
-  await ensureProjectConnectorConnection('P1', 'gmail');
+  await ensureWorkspaceConnectorConnection('P1', 'gmail');
   expect(last().url).toContain('/connectors/gmail/oauth2/connection');
 
   nextResponse = { status: 200, body: { token: 'connect-token' } };
@@ -457,7 +457,7 @@ test('listConnectors GETs the project connectors list', async () => {
     },
   };
   const result = await listConnectors('P1');
-  expect(last().url).toContain('/connectors/projects/P1/connectors');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors');
   expect(last().method).toBe('GET');
   expect(result.connectors[0]?.requestAuthType).toBe('hmac');
 });
@@ -504,7 +504,7 @@ test('setConnectorSecretBinding sends one explicit project secret identifier', a
   await setConnectorSecretBinding('P1', 'signed-api', 'SIGNING_KEY');
 
   expect(last()).toEqual({
-    url: 'http://test.local/connectors/projects/P1/connectors/signed-api/secret-binding',
+    url: 'http://test.local/connectors/workspaces/P1/connectors/signed-api/secret-binding',
     method: 'PUT',
     body: { secret_identifier: 'SIGNING_KEY' },
   });
@@ -542,7 +542,7 @@ test('listConnectors is a silent background read — a 403 never hits the global
 test('syncConnectors POSTs an empty body to the sync endpoint', async () => {
   nextResponse = { status: 200, body: { synced: 2, errors: [] } };
   const result = await syncConnectors('P1');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/sync');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/sync');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({});
   expect(result).toEqual({ synced: 2, errors: [] });
@@ -551,7 +551,7 @@ test('syncConnectors POSTs an empty body to the sync endpoint', async () => {
 test('setConnectorCredentialMode PUTs { mode }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await setConnectorCredentialMode('P1', 'slack', 'shared');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/slack/credential-mode');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/slack/credential-mode');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ mode: 'shared' });
 });
@@ -560,7 +560,7 @@ test('setConnectorAuthorizationStrategy PUTs one exclusive strategy', async () =
   nextResponse = { status: 200, body: { ok: true } };
   await setConnectorAuthorizationStrategy('P1', 'gmail-read', 'user');
   expect(last().url).toContain(
-    '/connectors/projects/P1/connectors/gmail-read/authorization-strategy',
+    '/connectors/workspaces/P1/connectors/gmail-read/authorization-strategy',
   );
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ authorization_strategy: 'user' });
@@ -569,7 +569,7 @@ test('setConnectorAuthorizationStrategy PUTs one exclusive strategy', async () =
 test('setConnectorSensitive PUTs { sensitive }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await setConnectorSensitive('P1', 'slack', true);
-  expect(last().url).toContain('/connectors/projects/P1/connectors/slack/sensitive');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/slack/sensitive');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ sensitive: true });
 });
@@ -580,7 +580,7 @@ test('getConnectorPolicies GETs the policies list', async () => {
     body: { policies: [{ match: '*', action: 'require_approval' }] },
   };
   const result = await getConnectorPolicies('P1', 'slack');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/slack/policies');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/slack/policies');
   expect(last().method).toBe('GET');
   expect(result.policies).toHaveLength(1);
 });
@@ -620,7 +620,7 @@ test('setConnectorPolicies PUTs { policies }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   const policies = [{ match: 'send_message', action: 'block' as const }];
   await setConnectorPolicies('P1', 'slack', policies);
-  expect(last().url).toContain('/connectors/projects/P1/connectors/slack/policies');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/slack/policies');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ policies });
 });
@@ -636,7 +636,7 @@ test('getConnectorPolicies reads one policy set with { policySet }', async () =>
   };
   const result = await getConnectorPolicies('P1', 'gmail', { policySet: 'read only' });
   expect(last().url).toContain(
-    '/connectors/projects/P1/connectors/gmail/policies?policy_set=read%20only',
+    '/connectors/workspaces/P1/connectors/gmail/policies?policy_set=read%20only',
   );
   expect(last().method).toBe('GET');
   expect(result.policy_set).toBe('read_only');
@@ -660,7 +660,7 @@ test('setConnectorPolicies writes one policy set and keeps rule conditions', asy
     },
   ];
   await setConnectorPolicies('P1', 'gmail', policies, { policySet: 'outreach' });
-  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/policies?policy_set=outreach');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/gmail/policies?policy_set=outreach');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ policies });
 });
@@ -675,7 +675,7 @@ test('listConnectorPolicySets GETs every set with its rules and agents', async (
     },
   };
   const result = await listConnectorPolicySets('P1', 'gmail');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/policy-sets');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/gmail/policy-sets');
   expect(last().method).toBe('GET');
   const set: ConnectorPolicySet | undefined = result.sets[0];
   expect(set?.agents).toEqual(['support']);
@@ -686,7 +686,7 @@ test('upsertConnectorPolicySet PUTs only the description', async () => {
   const result = await upsertConnectorPolicySet('P1', 'gmail', 'read_only', {
     description: 'No sends',
   });
-  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/policy-sets/read_only');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/gmail/policy-sets/read_only');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ description: 'No sends' });
   expect(result.created).toBe(true);
@@ -702,7 +702,7 @@ test('renameConnectorPolicySet PUTs { name } to the name route', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await renameConnectorPolicySet('P1', 'gmail', 'read_only', 'readers');
   expect(last().url).toContain(
-    '/connectors/projects/P1/connectors/gmail/policy-sets/read_only/name',
+    '/connectors/workspaces/P1/connectors/gmail/policy-sets/read_only/name',
   );
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ name: 'readers' });
@@ -711,7 +711,7 @@ test('renameConnectorPolicySet PUTs { name } to the name route', async () => {
 test('deleteConnectorPolicySet DELETEs the set and surfaces policy_set_in_use', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await deleteConnectorPolicySet('P1', 'gmail', 'read_only');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/policy-sets/read_only');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/gmail/policy-sets/read_only');
   expect(last().method).toBe('DELETE');
 
   nextResponse = {
@@ -741,7 +741,7 @@ test('getConnectorConfig GETs the config, url-encoding a slug with special chara
   };
   const result = await getConnectorConfig('P1', 'my app/v1');
   expect(last().url).toContain(
-    `/connectors/projects/P1/connectors/${encodeURIComponent('my app/v1')}/config`,
+    `/connectors/workspaces/P1/connectors/${encodeURIComponent('my app/v1')}/config`,
   );
   expect(last().url).not.toContain('my app/v1');
   expect(last().method).toBe('GET');
@@ -751,7 +751,7 @@ test('getConnectorConfig GETs the config, url-encoding a slug with special chara
 test('setConnectorName PUTs { name }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await setConnectorName('P1', 'slack', 'Team Slack');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/slack/name');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/slack/name');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ name: 'Team Slack' });
 });
@@ -762,7 +762,7 @@ test('pipedreamConnect POSTs an empty body to the connect endpoint', async () =>
     body: { connectUrl: 'https://pipedream.com/connect/x' },
   };
   const result = await pipedreamConnect('P1', 'github');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/github/connect');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/github/connect');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({});
   expect(result.connectUrl).toContain('pipedream.com');
@@ -777,7 +777,7 @@ test('createConnector POSTs the draft as the raw body', async () => {
     create_only: true,
   };
   await createConnector('P1', draft);
-  expect(last().url).toContain('/connectors/projects/P1/connectors');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors');
   expect(last().url).not.toContain('/executor/');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual(draft);
@@ -842,12 +842,12 @@ test('listConnections passes the machine access state through', async () => {
 
 test('addComputerToProject POSTs { tunnel_id, share } and returns the connection view', async () => {
   nextResponse = { status: 200, body: computerConnection };
-  const result = await addComputerToProject('P1', {
+  const result = await addComputerToWorkspace('P1', {
     tunnelId: '11111111-1111-4111-8111-111111111111',
     share: 'project',
   });
   expect(last().method).toBe('POST');
-  expect(last().url).toBe('http://test.local/projects/P1/computers');
+  expect(last().url).toBe('http://test.local/workspaces/P1/computers');
   expect(last().body).toEqual({
     tunnel_id: '11111111-1111-4111-8111-111111111111',
     share: 'project',
@@ -858,13 +858,13 @@ test('addComputerToProject POSTs { tunnel_id, share } and returns the connection
 
 test('addComputerToProject omits share so the server applies its private default', async () => {
   nextResponse = { status: 200, body: computerConnection };
-  await addComputerToProject('P1', { tunnelId: '11111111-1111-4111-8111-111111111111' });
+  await addComputerToWorkspace('P1', { tunnelId: '11111111-1111-4111-8111-111111111111' });
   expect(last().body).toEqual({ tunnel_id: '11111111-1111-4111-8111-111111111111' });
 });
 
 test('addComputerToProject surfaces a refusal as an ApiError with the status', async () => {
   nextResponse = { status: 409, body: { error: 'computer belongs to another account' } };
-  const error = await addComputerToProject('P1', {
+  const error = await addComputerToWorkspace('P1', {
     tunnelId: '11111111-1111-4111-8111-111111111111',
   }).catch((e: unknown) => e);
   expect((error as { status?: number }).status).toBe(409);
@@ -891,7 +891,7 @@ test('discoverConnectorAuth POSTs a draft to the auth-discovery endpoint', async
     spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
   };
   expect(await discoverConnectorAuth('P1', draft)).toEqual(discovery);
-  expect(last().url).toContain('/connectors/projects/P1/connectors/auth-discovery');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/auth-discovery');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual(draft);
 });
@@ -899,14 +899,14 @@ test('discoverConnectorAuth POSTs a draft to the auth-discovery endpoint', async
 test('deleteConnector DELETEs the connector by slug', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await deleteConnector('P1', 'slack');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/slack');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/slack');
   expect(last().method).toBe('DELETE');
 });
 
 test('listPipedreamApps GETs with no query string when no optional params are given', async () => {
   nextResponse = { status: 200, body: { apps: [], hasMore: false } };
   await listPipedreamApps('P1');
-  expect(last().url).toContain('/connectors/projects/P1/pipedream/apps');
+  expect(last().url).toContain('/connectors/workspaces/P1/pipedream/apps');
   expect(last().url).not.toContain('?');
   expect(last().method).toBe('GET');
 });
@@ -936,7 +936,7 @@ test('listConnectToolkits GETs the Composio-first toolkit catalog with paginatio
     limit: 24,
   });
 
-  expect(last().url).toContain('/connectors/projects/P1/connect/toolkits?');
+  expect(last().url).toContain('/connectors/workspaces/P1/connect/toolkits?');
   expect(last().url).toContain('q=mail');
   expect(last().url).toContain('category=productivity');
   expect(last().url).toContain('cursor=cursor-1');
@@ -969,7 +969,7 @@ test('listConnectSections GETs the Composio browse page with true category total
   const result = await listConnectSections('P1', { perCategory: 6, maxCategories: 12 });
 
   expect(last().method).toBe('GET');
-  expect(last().url).toContain('/connectors/projects/P1/connect/sections?');
+  expect(last().url).toContain('/connectors/workspaces/P1/connect/sections?');
   expect(last().url).toContain('perCategory=6');
   expect(last().url).toContain('maxCategories=12');
   expect(result.provider).toBe('composio');
@@ -981,7 +981,7 @@ test('listConnectSections GETs the Composio browse page with true category total
 test('listConnectSections GETs without a query string when unparameterised', async () => {
   nextResponse = { status: 200, body: { provider: 'composio', sections: [], categories: [] } };
   await listConnectSections('P1');
-  expect(last().url).toMatch(/\/connectors\/projects\/P1\/connect\/sections$/);
+  expect(last().url).toMatch(/\/connectors\/workspaces\/P1\/connect\/sections$/);
 });
 
 test('listPipedreamApps GETs with q + cursor as query params when given', async () => {
@@ -990,7 +990,7 @@ test('listPipedreamApps GETs with q + cursor as query params when given', async 
     body: { apps: [], nextCursor: 'c2', hasMore: true },
   };
   const result = await listPipedreamApps('P1', 'slack', 'c1');
-  expect(last().url).toContain('/connectors/projects/P1/pipedream/apps?');
+  expect(last().url).toContain('/connectors/workspaces/P1/pipedream/apps?');
   expect(last().url).toContain('q=slack');
   expect(last().url).toContain('cursor=c1');
   expect(result.nextCursor).toBe('c2');
@@ -1064,7 +1064,7 @@ test('listPipedreamSections GETs the browse page in one request', async () => {
     },
   };
   const result = await listPipedreamSections('P1', { perCategory: 6, maxCategories: 12 });
-  expect(last().url).toContain('/connectors/projects/P1/pipedream/sections?');
+  expect(last().url).toContain('/connectors/workspaces/P1/pipedream/sections?');
   expect(last().url).toContain('perCategory=6');
   expect(last().url).toContain('maxCategories=12');
   // The section states its category's TRUE size, not the length of `apps` —
@@ -1082,7 +1082,7 @@ test('listPipedreamSections GETs without a query string when unparameterised', a
 test('listDiscoverConnectors GETs a searchable cursor page', async () => {
   nextResponse = { status: 200, body: { items: [], total: 0, hasMore: false } };
   await listDiscoverConnectors('P1', 'notion admin', '48');
-  expect(last().url).toContain('/connectors/projects/P1/discover/connectors?');
+  expect(last().url).toContain('/connectors/workspaces/P1/discover/connectors?');
   expect(last().url).toContain('q=notion+admin');
   expect(last().url).toContain('cursor=48');
   expect(last().method).toBe('GET');
@@ -1096,7 +1096,7 @@ test('listDiscoverConnectors accepts a query object with a category filter and p
     cursor: '48',
     limit: 24,
   });
-  expect(last().url).toContain('/connectors/projects/P1/discover/connectors?');
+  expect(last().url).toContain('/connectors/workspaces/P1/discover/connectors?');
   expect(last().url).toContain('q=pay');
   expect(last().url).toContain('category=finance');
   expect(last().url).toContain('cursor=48');
@@ -1135,13 +1135,13 @@ test('the Discover catalogue filters by kind, lists a way\'s tools and installs 
 
   nextResponse = { status: 200, body: { way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe' }, tools: [{ name: 'STRIPE_LIST', description: 'List' }], total: 1, source: 'composio' } };
   const tools = await getDiscoverConnectorTools('P1', 'kortix:stripe', 'composio:stripe');
-  expect(last().url).toContain('/connectors/projects/P1/discover/connectors/tools?id=kortix%3Astripe&way=composio%3Astripe');
+  expect(last().url).toContain('/connectors/workspaces/P1/discover/connectors/tools?id=kortix%3Astripe&way=composio%3Astripe');
   expect(tools.tools[0]?.name).toBe('STRIPE_LIST');
 
   nextResponse = { status: 200, body: { ok: true, slug: 'billing', name: 'Billing', provider: 'composio', way: { id: 'composio:stripe', kind: 'composio', name: 'Stripe', oneClick: true }, next: 'connect' } };
   const installed = await installDiscoverConnector('P1', { id: 'kortix:stripe', way: 'composio:stripe', name: 'Billing' });
   expect(last().method).toBe('POST');
-  expect(last().url).toContain('/connectors/projects/P1/discover/install');
+  expect(last().url).toContain('/connectors/workspaces/P1/discover/install');
   expect(last().body).toEqual({ id: 'kortix:stripe', way: 'composio:stripe', name: 'Billing' });
   expect(installed.next).toBe('connect');
 });
@@ -1160,7 +1160,7 @@ test('listDiscoverSections GETs the Discover browse page with true category tota
   const result = await listDiscoverSections('P1', { perCategory: 6, maxCategories: 12 });
 
   expect(last().method).toBe('GET');
-  expect(last().url).toContain('/connectors/projects/P1/discover/sections?');
+  expect(last().url).toContain('/connectors/workspaces/P1/discover/sections?');
   expect(last().url).toContain('perCategory=6');
   expect(last().url).toContain('maxCategories=12');
   // `total` is the category's size, not `items.length` — 116 over one card.
@@ -1172,7 +1172,7 @@ test('listDiscoverSections GETs the Discover browse page with true category tota
 test('listDiscoverSections GETs without a query string when unparameterised', async () => {
   nextResponse = { status: 200, body: { popular: [], sections: [], categories: [] } };
   await listDiscoverSections('P1');
-  expect(last().url).toMatch(/\/connectors\/projects\/P1\/discover\/sections$/);
+  expect(last().url).toMatch(/\/connectors\/workspaces\/P1\/discover\/sections$/);
 });
 
 test('getDiscoverConnector GETs detail by encoded catalogue id', async () => {
@@ -1181,7 +1181,7 @@ test('getDiscoverConnector GETs detail by encoded catalogue id', async () => {
     body: { item: { id: 'openapi/1forge-com' }, variants: [] },
   };
   const result = await getDiscoverConnector('P1', 'openapi/1forge-com');
-  expect(last().url).toContain('/connectors/projects/P1/discover/connectors/detail?');
+  expect(last().url).toContain('/connectors/workspaces/P1/discover/connectors/detail?');
   expect(last().url).toContain('id=openapi%2F1forge-com');
   expect(last().method).toBe('GET');
   expect(result.item.id).toBe('openapi/1forge-com');
@@ -1201,7 +1201,7 @@ test('getConnectStatus GETs the deployment-wide connect-status endpoint', async 
 test('setConnectorCredential PUTs { value }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await setConnectorCredential('P1', 'slack', 'sekret');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/slack/credential');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/slack/credential');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ value: 'sekret' });
 });
@@ -1219,7 +1219,7 @@ test('setConnectorCredential PUTs a native OAuth2 client-credentials configurati
     token_params: { tenant_hint: 'tenant-123' },
   };
   await setConnectorCredential('P1', 'sharepoint', { oauth2 });
-  expect(last().url).toContain('/connectors/projects/P1/connectors/sharepoint/credential');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/sharepoint/credential');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ oauth2 });
 });
@@ -1236,7 +1236,7 @@ test('setConnectorCredential returns the re-sync the credential ran', async () =
 test('pipedreamFinalize POSTs an empty body to the connect/finalize endpoint', async () => {
   nextResponse = { status: 200, body: { connected: true, accountId: 'acc_1' } };
   const result = await pipedreamFinalize('P1', 'github');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/github/connect/finalize');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/github/connect/finalize');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({});
   expect(result).toEqual({ connected: true, accountId: 'acc_1' });
@@ -1245,7 +1245,7 @@ test('pipedreamFinalize POSTs an empty body to the connect/finalize endpoint', a
 test('connection lifecycle uses the typed project connection routes', async () => {
   nextResponse = { status: 200, body: { connections: [] } };
   await listConnections('P1');
-  expect(last().url).toContain('/projects/P1/connections');
+  expect(last().url).toContain('/workspaces/P1/connections');
   expect(last().method).toBe('GET');
 
   nextResponse = {
@@ -1311,7 +1311,7 @@ test('member connection creation is owner-scoped by the API and never accepts an
     connector_alias: 'gmail',
     label: 'My Gmail',
   });
-  expect(last().url).toContain('/projects/P1/connections/me');
+  expect(last().url).toContain('/workspaces/P1/connections/me');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ connector_alias: 'gmail', label: 'My Gmail' });
 });
@@ -1324,7 +1324,7 @@ test('connection-specific Pipedream connect and finalize bind the OAuth identity
   await pipedreamConnectConnection('P1', 'connection-member', {
     success_redirect_uri: 'kortix://connected',
   });
-  expect(last().url).toContain('/projects/P1/connections/connection-member/connect');
+  expect(last().url).toContain('/workspaces/P1/connections/connection-member/connect');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ success_redirect_uri: 'kortix://connected' });
 
@@ -1333,7 +1333,7 @@ test('connection-specific Pipedream connect and finalize bind the OAuth identity
     body: { connected: true, accountId: 'acc-member' },
   };
   await pipedreamFinalizeConnection('P1', 'connection-member');
-  expect(last().url).toContain('/projects/P1/connections/connection-member/connect/finalize');
+  expect(last().url).toContain('/workspaces/P1/connections/connection-member/connect/finalize');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({});
 });
@@ -1348,7 +1348,7 @@ test('listSessionConnectRequests reads the connectors this session is waiting on
     },
   };
   const result = await listSessionConnectRequests('P1', 'S1');
-  expect(last().url).toContain('/connectors/projects/P1/sessions/S1/connect-requests');
+  expect(last().url).toContain('/connectors/workspaces/P1/sessions/S1/connect-requests');
   expect(last().method).toBe('GET');
   expect(result).toEqual([{ slug: 'gmail', app: 'gmail', provider: 'composio', connected: false }]);
 });
@@ -1361,12 +1361,12 @@ test('listSessionConnectRequests returns an empty list when the API omits the fi
 test('connectorConnect and connectorFinalize are the provider-neutral names for the same routes', async () => {
   nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/x' } };
   const connect = await connectorConnect('P1', 'gmail');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/connect');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/gmail/connect');
   expect(connect.connectUrl).toContain('connect.composio.dev');
 
   nextResponse = { status: 200, body: { provider: 'composio', connected: true } };
   const finalized = await connectorFinalize('P1', 'gmail');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/connect/finalize');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/gmail/connect/finalize');
   expect(finalized.connected).toBe(true);
 });
 
@@ -1378,7 +1378,7 @@ test('connectorFinalize can finalize the PROJECT-owned account the connect start
   // caller waited out the full Connect Link timeout.
   nextResponse = { status: 200, body: { provider: 'composio', connected: true } };
   await connectorFinalize('P1', 'gmail', { owner: 'project' });
-  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/connect/finalize');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/gmail/connect/finalize');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ owner: 'project' });
 });
@@ -1425,7 +1425,7 @@ test('connect surfaces the already-connected verdict the popup flow branches on'
 test('callConnector sends no account key when the caller names none', async () => {
   nextResponse = { status: 200, body: { ok: true, data: { id: 1 } } };
   await callConnector('P1', 'gmail.send_email', { to: 'a@b.c' });
-  expect(calls[0].url).toBe('http://test.local/connectors/projects/P1/call');
+  expect(calls[0].url).toBe('http://test.local/connectors/workspaces/P1/call');
   expect(calls[0].body).toEqual({
     connector: 'gmail',
     action: 'send_email',
@@ -1466,7 +1466,7 @@ test('listConnectorAccounts reads the accounts a call may run as', async () => {
   const rejectedAt: string | null | undefined = accounts[1].credential_rejected_at;
   expect(rejectedAt).toBe('2026-10-19T00:00:00Z');
   expect(accounts[0].credential_rejected_at).toBeUndefined();
-  expect(calls[0].url).toBe('http://test.local/connectors/projects/P1/connectors/gmail/accounts');
+  expect(calls[0].url).toBe('http://test.local/connectors/workspaces/P1/connectors/gmail/accounts');
   expect(calls[0].method).toBe('GET');
   expect(accounts.map((account) => account.label)).toEqual(['Work', 'Personal']);
   // Default first, because that is the one an unselected call resolves to.
@@ -1484,7 +1484,7 @@ test('listConnectorAccounts reads the accounts a call may run as', async () => {
 test('connectorConnect sends no owner when the caller names none', async () => {
   nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/x' } };
   await connectorConnect('P1', 'gmail');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/connect');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/gmail/connect');
   expect(last().method).toBe('POST');
   // Omitted rather than null: the API reads the key's presence to pick its default.
   expect(last().body).toEqual({});
@@ -1598,16 +1598,16 @@ test('connectionSharedWithEveryone: a private account is nobody else\'s', () => 
 test('listConnectors sends no query by default, and forwards an explicit includeSchemas either way', async () => {
   nextResponse = { status: 200, body: { connectors: [] } };
   await listConnectors('P1');
-  expect(last()!.url).toBe('http://test.local/connectors/projects/P1/connectors');
+  expect(last()!.url).toBe('http://test.local/connectors/workspaces/P1/connectors');
 
   await listConnectors('P1', { includeSchemas: false });
   expect(last()!.url).toBe(
-    'http://test.local/connectors/projects/P1/connectors?include_schemas=false',
+    'http://test.local/connectors/workspaces/P1/connectors?include_schemas=false',
   );
 
   await listConnectors('P1', { includeSchemas: true });
   expect(last()!.url).toBe(
-    'http://test.local/connectors/projects/P1/connectors?include_schemas=true',
+    'http://test.local/connectors/workspaces/P1/connectors?include_schemas=true',
   );
 });
 
@@ -1620,11 +1620,11 @@ test('getConnectorCatalog forwards an explicit includeSchemas: false', async () 
 test('getConnectorCatalog forwards slug and includeSchemas as query params', async () => {
   nextResponse = { status: 200, body: { connectors: [] } };
   await getConnectorCatalog('P1');
-  expect(last()!.url).toBe('http://test.local/connectors/projects/P1/catalog');
+  expect(last()!.url).toBe('http://test.local/connectors/workspaces/P1/catalog');
 
   await getConnectorCatalog('P1', { slug: 'gmail', includeSchemas: true });
   const url = new URL(last()!.url);
-  expect(url.pathname).toBe('/connectors/projects/P1/catalog');
+  expect(url.pathname).toBe('/connectors/workspaces/P1/catalog');
   expect(url.searchParams.get('slug')).toBe('gmail');
   expect(url.searchParams.get('include_schemas')).toBe('true');
 });
@@ -1649,7 +1649,7 @@ test('listConnectorTools never asks for schemas — no caller of it reads inputS
   // server's include-by-default sends them and the summary path pays 439KB it
   // never reads. Asserting the bare URL only proved the bug.
   expect(last()!.url).toBe(
-    'http://test.local/connectors/projects/P1/catalog?include_schemas=false',
+    'http://test.local/connectors/workspaces/P1/catalog?include_schemas=false',
   );
 });
 
@@ -1671,7 +1671,7 @@ test('describeConnectorTool fetches ONE connector, with its schema, instead of t
   };
   const tool = await describeConnectorTool('P1', 'gmail.send');
   const url = new URL(last()!.url);
-  expect(url.pathname).toBe('/connectors/projects/P1/catalog');
+  expect(url.pathname).toBe('/connectors/workspaces/P1/catalog');
   expect(url.searchParams.get('slug')).toBe('gmail');
   expect(url.searchParams.get('include_schemas')).toBe('true');
   expect(tool?.inputSchema).toEqual(schema);
@@ -1711,7 +1711,7 @@ test('describeConnectorTool: a malformed tool name (no dot) resolves to null wit
 test('deleteConnectorCredential DELETEs the connector credential (disconnect)', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   const result = await deleteConnectorCredential('P1', 'google sheets');
-  expect(last().url).toBe('http://test.local/connectors/projects/P1/connectors/google%20sheets/credential');
+  expect(last().url).toBe('http://test.local/connectors/workspaces/P1/connectors/google%20sheets/credential');
   expect(last().method).toBe('DELETE');
   expect(result).toEqual({ ok: true });
 });
@@ -1744,7 +1744,7 @@ test('checkMcpServerSignIn POSTs the server URL and returns whether sign-in is o
   );
   expect(check).toEqual({ requires_sign_in: true, one_click: true });
   expect(last()).toEqual({
-    url: 'http://test.local/connectors/projects/p1/connectors/mcp-sign-in-check',
+    url: 'http://test.local/connectors/workspaces/p1/connectors/mcp-sign-in-check',
     method: 'POST',
     body: { url: 'https://mcp.example.test/mcp' },
   });
@@ -1766,7 +1766,7 @@ test('listConnectorMoves GETs the Pipedream connectors and the Kortix app each m
   expect(moves).toEqual([move]);
   const provider: 'pipedream' | 'composio' = moves[0]!.provider;
   expect(provider).toBe('composio');
-  expect(last()).toEqual({ url: 'http://test.local/projects/p1/connector-moves', method: 'GET', body: undefined });
+  expect(last()).toEqual({ url: 'http://test.local/workspaces/p1/connector-moves', method: 'GET', body: undefined });
 });
 
 test('moveConnector POSTs the account to sign in on and returns the next step', async () => {
@@ -1778,7 +1778,7 @@ test('moveConnector POSTs the account to sign in on and returns the next step', 
   expect(result.status).toBe('sign_in');
   expect(result.connection_id).toBe('c1');
   expect(last()).toEqual({
-    url: 'http://test.local/projects/p1/connectors/gmail%20work/move',
+    url: 'http://test.local/workspaces/p1/connectors/gmail%20work/move',
     method: 'POST',
     body: { connection_id: 'c1' },
   });
@@ -1797,7 +1797,7 @@ test('upsertConnectorPolicySet sends a template: the server writes its rules', a
 test('listConnectorAgents GETs every agent of a connector with its rule set', async () => {
   nextResponse = { status: 200, body: { slug: 'gmail', policy_sets: ['read_only'], agents: [{ agent: 'support', granted: true, policy_set: 'read_only', policy_set_missing: false }] } };
   const result = await listConnectorAgents('P1', 'gmail');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/gmail/agents');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/gmail/agents');
   expect(last().method).toBe('GET');
   const row: ConnectorAgentRow | undefined = result.agents[0];
   expect(row?.policy_set).toBe('read_only');
@@ -1806,7 +1806,7 @@ test('listConnectorAgents GETs every agent of a connector with its rule set', as
 test('getConnectorRulesMatrix GETs connectors × agents', async () => {
   nextResponse = { status: 200, body: { connectors: [{ slug: 'gmail', name: 'Gmail', policy_sets: [] }], agents: [{ agent: 'ops', cells: { gmail: { granted: false, policy_set: null, policy_set_missing: false } } }] } };
   const matrix: ConnectorRulesMatrix = await getConnectorRulesMatrix('P1');
-  expect(last().url).toContain('/connectors/projects/P1/rules-matrix');
+  expect(last().url).toContain('/connectors/workspaces/P1/rules-matrix');
   expect(matrix.agents[0]?.cells.gmail?.granted).toBe(false);
 });
 
@@ -1819,7 +1819,7 @@ test('setConnectorOAuth2ClientCredentials PUTs the client credentials and reads 
     scopes: ['read'],
   });
   expect(last().method).toBe('PUT');
-  expect(last().url).toContain('/connectors/projects/P1/connectors/billing/oauth2/connection');
+  expect(last().url).toContain('/connectors/workspaces/P1/connectors/billing/oauth2/connection');
   expect(last().body).toEqual({ token_url: 'https://auth.example.test/token', client_id: 'abc', client_secret: 'x', scopes: ['read'] });
   expect(result.expires_at).toBe('2026-10-24T12:00:00.000Z');
 });

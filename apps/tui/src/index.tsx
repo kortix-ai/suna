@@ -17,7 +17,10 @@ import { runTui } from './main.tsx';
 
 const code = await runTui({
   host: resolveHost(),
-  projectId: process.env.KORTIX_PROJECT_ID,
+  // `KORTIX_WORKSPACE_ID` first, as in the CLI and kortixd.
+  // `kortix tui --workspace/--project` sets both names to its flag, so the
+  // flag still outranks the shell.
+  projectId: process.env.KORTIX_WORKSPACE_ID?.trim() || process.env.KORTIX_PROJECT_ID?.trim() || undefined,
   sessionId: process.env.KORTIX_SESSION_ID,
   newSession:
     process.env.KORTIX_TUI_NEW === '1'

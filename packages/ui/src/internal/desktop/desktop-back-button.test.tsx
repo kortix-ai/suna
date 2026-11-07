@@ -35,21 +35,21 @@ describe('goBack', () => {
     // The account hub opens /github/setup with router.replace, so history
     // skips the hub. The stored return path reopens it on the Git tab.
     const router = fakeRouter();
-    goBack(router, inApp, { to: '/projects/p1?accountTab=git', home: '/projects/p2' });
-    expect(router.calls).toEqual(['replace:/projects/p1?accountTab=git']);
+    goBack(router, inApp, { to: '/workspaces/p1?accountTab=git', home: '/workspaces/p2' });
+    expect(router.calls).toEqual(['replace:/workspaces/p1?accountTab=git']);
   });
 
   test('without a target, returns to the previous in-app page', () => {
     const router = fakeRouter();
-    goBack(router, inApp, { home: '/projects/p1' });
+    goBack(router, inApp, { home: '/workspaces/p1' });
     expect(router.calls).toEqual(['back']);
   });
 
   test('with nothing in-app behind it, replaces the dead end with home', () => {
     // A window opened straight onto the page: the entry behind is about:blank.
     const router = fakeRouter();
-    goBack(router, nothingBehind, { home: '/projects/p1' });
-    expect(router.calls).toEqual(['replace:/projects/p1']);
+    goBack(router, nothingBehind, { home: '/workspaces/p1' });
+    expect(router.calls).toEqual(['replace:/workspaces/p1']);
   });
 
   test('in the desktop shell, history is the shell’s: it skips entries outside the app', async () => {
@@ -62,7 +62,7 @@ describe('goBack', () => {
       navigation: { canGoBack: true },
       kortixDesktop: { navigate: async (d) => (asked.push(d), true) },
     };
-    await goBack(router, win, { home: '/projects/p1' });
+    await goBack(router, win, { home: '/workspaces/p1' });
     expect(asked).toEqual(['back']);
     expect(router.calls).toEqual([]);
   });
@@ -73,8 +73,8 @@ describe('goBack', () => {
       navigation: { canGoBack: true },
       kortixDesktop: { navigate: async () => false },
     };
-    await goBack(router, win, { home: '/projects/p1' });
-    expect(router.calls).toEqual(['replace:/projects/p1']);
+    await goBack(router, win, { home: '/workspaces/p1' });
+    expect(router.calls).toEqual(['replace:/workspaces/p1']);
   });
 
   test('a declared target still wins in the desktop shell', async () => {
@@ -83,17 +83,17 @@ describe('goBack', () => {
     const win: NavigationWindow = {
       kortixDesktop: { navigate: async (d) => (asked.push(d), true) },
     };
-    await goBack(router, win, { to: '/projects/p1?accountTab=git', home: '/p' });
+    await goBack(router, win, { to: '/workspaces/p1?accountTab=git', home: '/p' });
     expect(asked).toEqual([]);
-    expect(router.calls).toEqual(['replace:/projects/p1?accountTab=git']);
+    expect(router.calls).toEqual(['replace:/workspaces/p1?accountTab=git']);
   });
 
   test('does not trust history.length, which counts other origins', () => {
     // github.com → /github/setup is two entries, one cross-origin. back()
     // through it would load github.com inside the desktop window.
     const router = fakeRouter();
-    goBack(router, { history: { length: 2 } } as NavigationWindow, { home: '/projects/p1' });
-    expect(router.calls).toEqual(['replace:/projects/p1']);
+    goBack(router, { history: { length: 2 } } as NavigationWindow, { home: '/workspaces/p1' });
+    expect(router.calls).toEqual(['replace:/workspaces/p1']);
   });
 });
 
@@ -159,7 +159,7 @@ describe('only the desktop shell shows Back', () => {
     expect(unlayered(optOut!.index!)).toBe(true);
   });
 
-  // A positioned top row on a full-screen frame (`/new`, the `/projects/start`
+  // A positioned top row on a full-screen frame (`/workspaces/new`, the `/workspaces/start`
   // sign-out) starts in the title-bar band: traffic lights on macOS, the
   // web-drawn window controls on Win/Linux. On desktop it drops below the band.
   test('a band row sits below the title-bar band on desktop', () => {
@@ -185,21 +185,21 @@ describe('hasBackDestination', () => {
   test('a screen away from home always has somewhere to go', () => {
     // A window opened straight onto /new: nothing behind, but home is a project.
     expect(
-      hasBackDestination(nothingBehind, { home: '/projects/p1', pathname: '/new' }),
+      hasBackDestination(nothingBehind, { home: '/workspaces/p1', pathname: '/workspaces/new' }),
     ).toBe(true);
   });
 
   test('home with nothing behind hides Back: a click would replace home with home', () => {
     expect(
-      hasBackDestination(nothingBehind, { home: '/projects/p1', pathname: '/projects/p1' }),
+      hasBackDestination(nothingBehind, { home: '/workspaces/p1', pathname: '/workspaces/p1' }),
     ).toBe(false);
   });
 
   test('home compares by pathname, so a query on home does not count as elsewhere', () => {
     expect(
       hasBackDestination(nothingBehind, {
-        home: '/projects/start?from=door',
-        pathname: '/projects/start',
+        home: '/workspaces/start?from=door',
+        pathname: '/workspaces/start',
       }),
     ).toBe(false);
   });
@@ -249,9 +249,9 @@ describe('every screen has Back by default', () => {
 
   test('rows pinned to the top of a shell-less screen drop below the band', () => {
     for (const file of [
-      // `/new` and `/projects` render their top row through this component.
+      // `/workspaces/new` and `/workspaces` render their top row through this component.
       'features/workspace/account-top-bar.tsx',
-      'app/[locale]/(app)/projects/start/page.tsx',
+      'app/[locale]/(app)/workspaces/start/page.tsx',
     ]) {
       expect(readFileSync(join(webSrc, file), 'utf8')).toContain('kx-desktop-band-row');
     }

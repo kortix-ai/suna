@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { uiSourcePath } from '@/test-utils/read-source';
 
 const projectLayout = readFileSync(
-  new URL('../../app/[locale]/(app)/projects/[id]/layout.tsx', import.meta.url),
+  new URL('../../app/[locale]/(app)/workspaces/[id]/layout.tsx', import.meta.url),
   'utf8',
 );
 const providerConnect = readFileSync(uiSourcePath('customize/providers/provider-connect.tsx'), 'utf8');

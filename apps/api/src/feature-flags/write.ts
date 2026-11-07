@@ -5,11 +5,11 @@
  * `PUT /v1/admin/api/projects/:id/features` (platform operators).
  */
 import type { FeatureFlagKey } from '@kortix/api-contract';
-import { projects } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { metadataClearSubtreeKey, metadataMergeSubtree } from '../projects/surface';
 import { runFeatureFlagToggleEffects } from './toggle-effects';
+import { projectsView, updateProjectRowsReturning } from '../workspaces/rows';
 
 /**
  * Sets (`true`/`false`) or clears (`null`) one override. Returns the updated
@@ -35,16 +35,12 @@ export async function writeProjectFeatureFlag(
   // `created_at` with it, so both sides use one clock.
   const written = await db.transaction(async (tx) => {
     const [before] = await tx
-      .select({ metadata: projects.metadata })
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
+      .select({ metadata: projectsView.metadata })
+      .from(projectsView)
+      .where(eq(projectsView.projectId, projectId))
       .for('update');
     if (!before) return null;
-    const [updated] = await tx
-      .update(projects)
-      .set({ metadata: metadataExpr, updatedAt: sql`date_trunc('milliseconds', now())` })
-      .where(eq(projects.projectId, projectId))
-      .returning();
+    const [updated] = await updateProjectRowsReturning(eq(projectsView.projectId, projectId), { metadata: metadataExpr, updatedAt: sql`date_trunc('milliseconds', now())` }, tx);
     return updated ? { row: updated, previousMetadata: before.metadata } : null;
   });
   if (!written) return null;

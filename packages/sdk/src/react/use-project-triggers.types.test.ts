@@ -10,15 +10,15 @@ import type {
   ProjectTrigger,
   UpdateProjectTriggerInput,
   ProjectTriggerDryRunResult,
-  fireProjectTrigger,
+  fireWorkspaceTrigger,
 } from '../core/rest/projects-client/triggers';
-import type { useProjectTriggers } from './use-project-triggers';
+import type { useWorkspaceTriggers } from './use-project-triggers';
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 declare function expectTrue<T extends true>(): void;
-declare const fire: typeof fireProjectTrigger;
+declare const fire: typeof fireWorkspaceTrigger;
 declare const handleFire: ReturnType<typeof bindProjectOperationsAdmin>['triggers']['fire'];
-type Hook = ReturnType<typeof useProjectTriggers>;
+type Hook = ReturnType<typeof useWorkspaceTriggers>;
 
 /** Never called: the body is checked by `tsc`. */
 export function fireTypes(flag: boolean): void {

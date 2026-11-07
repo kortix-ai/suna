@@ -1,7 +1,7 @@
 /**
- * The two GitHub-backed repository sources on `/new`, as pure functions.
+ * The two GitHub-backed repository sources on `/workspaces/new`, as pure functions.
  *
- * `/new` shipped with `github-create` and `github-import` present in the
+ * `/workspaces/new` shipped with `github-create` and `github-import` present in the
  * Select but `disabled`, and `canSubmit` additionally required
  * `source === 'managed'` — so both were dead options with an apology under
  * them. Nothing was missing on the server: `POST /projects/create-repo` and
@@ -135,7 +135,7 @@ export function iconPayload(state: NewWorkspaceFormState): Record<string, unknow
  *
  * No `default_branch`. The route does not accept one — it reads
  * `repo.default_branch` off the repository GitHub just created (`project-from-repository.ts`) —
- * so `/new` hides the branch field for this source rather than collecting a
+ * so `/workspaces/new` hides the branch field for this source rather than collecting a
  * value that would be silently dropped.
  */
 export function buildCreateRepoPayload(
@@ -161,7 +161,7 @@ export function buildCreateRepoPayload(
  * `resolveImportedDefaultBranch` (`apps/api/src/projects/lib/git.ts`) uses
  * the repository's OWN default when the key is absent, and VALIDATES the
  * value against GitHub when it is present — 400 `Selected branch "x" does not
- * exist` otherwise. `/new` seeds `state.defaultBranch` from the picked
+ * exist` otherwise. `/workspaces/new` seeds `state.defaultBranch` from the picked
  * repository's `default_branch` the moment a repository is chosen
  * (`advanced-fields.tsx`), so the value sent is the repository's real default
  * unless the user deliberately typed another branch — in which case a
@@ -185,7 +185,7 @@ export function buildLinkRepositoryPayload(
 }
 
 /**
- * Apply a repository choice from the `/new` list — source and GitHub owner in
+ * Apply a repository choice from the `/workspaces/new` list — source and GitHub owner in
  * one update.
  *
  * Delegates the clearing rules to `withRepositorySource` so a switch cannot
@@ -203,7 +203,7 @@ export function withRepositoryChoice(
  * True when the `managed` source is importing an existing managed repository
  * rather than provisioning a new one.
  *
- * `repoFullName` is null for every ordinary managed create — `/new` only ever
+ * `repoFullName` is null for every ordinary managed create — `/workspaces/new` only ever
  * sets it under `managed` through the operator-only managed-import picker — so
  * its presence IS the distinction, and no fourth `RepositorySource` value is
  * needed for a case that shares the source's meaning.

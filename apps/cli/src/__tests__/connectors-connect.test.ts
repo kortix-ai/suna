@@ -86,7 +86,7 @@ describe('kortix connectors connect', () => {
     expect(code).toBe(0);
     expect(requests).toEqual([
       {
-        url: 'https://api.test/v1/connectors/projects/project-1/connectors/github/connect',
+        url: 'https://api.test/v1/connectors/workspaces/project-1/connectors/github/connect',
         method: 'POST',
         body: {},
       },
@@ -107,7 +107,7 @@ describe('kortix connectors connect', () => {
     expect(code).toBe(0);
     expect(requests).toEqual([
       {
-        url: 'https://api.test/v1/projects/project-1/connect-requests',
+        url: 'https://api.test/v1/workspaces/project-1/connect-requests',
         method: 'POST',
         body: { slug: 'github', label: 'Work GitHub', owner: 'project' },
       },
@@ -150,7 +150,7 @@ describe('kortix connectors connect', () => {
     expect(code).toBe(0);
     expect(requests).toEqual([
       {
-        url: 'https://api.test/v1/connectors/projects/project-1/connectors/github/connect/finalize',
+        url: 'https://api.test/v1/connectors/workspaces/project-1/connectors/github/connect/finalize',
         method: 'POST',
         body: {
           connection_id: '11111111-1111-4111-8111-111111111111',
@@ -228,7 +228,7 @@ describe('kortix connectors connections', () => {
     expect(code).toBe(0);
     expect(requests).toEqual([
       {
-        url: 'https://api.test/v1/projects/project-1/connections',
+        url: 'https://api.test/v1/workspaces/project-1/connections',
         method: 'GET',
         body: undefined,
       },
@@ -304,7 +304,7 @@ describe('kortix connectors connections', () => {
     expect(code).toBe(0);
     expect(requests).toEqual([
       {
-        url: 'https://api.test/v1/projects/project-1/connections',
+        url: 'https://api.test/v1/workspaces/project-1/connections',
         method: 'POST',
         body: {
           connector_alias: 'github',
@@ -328,7 +328,7 @@ describe('kortix connectors connections', () => {
 
     expect(await runConnectors(['connections', 'ls', '--all', '--json'])).toBe(0);
     expect(requests[0]).toEqual({
-      url: 'https://api.test/v1/projects/project-1/connections/all',
+      url: 'https://api.test/v1/workspaces/project-1/connections/all',
       method: 'GET',
       body: undefined,
     });
@@ -387,7 +387,7 @@ describe('kortix connectors connections', () => {
       ]),
     ).toBe(0);
     expect(requests[0]).toEqual({
-      url: 'https://api.test/v1/projects/project-1/connections/me',
+      url: 'https://api.test/v1/workspaces/project-1/connections/me',
       method: 'POST',
       body: {
         connector_alias: 'github',
@@ -422,27 +422,27 @@ describe('kortix connectors connections', () => {
 
     expect(requests.map(({ url, method, body }) => ({ url, method, body }))).toEqual([
       {
-        url: `https://api.test/v1/projects/project-1/connections/${connectionId}/credential`,
+        url: `https://api.test/v1/workspaces/project-1/connections/${connectionId}/credential`,
         method: 'PUT',
         body: { value: 'secret-value' },
       },
       {
-        url: `https://api.test/v1/projects/project-1/connections/${connectionId}/revoke`,
+        url: `https://api.test/v1/workspaces/project-1/connections/${connectionId}/revoke`,
         method: 'PUT',
         body: {},
       },
       {
-        url: 'https://api.test/v1/projects/project-1/connections',
+        url: 'https://api.test/v1/workspaces/project-1/connections',
         method: 'GET',
         body: undefined,
       },
       {
-        url: `https://api.test/v1/projects/project-1/connections/${connectionId}/activate`,
+        url: `https://api.test/v1/workspaces/project-1/connections/${connectionId}/activate`,
         method: 'PUT',
         body: {},
       },
       {
-        url: `https://api.test/v1/projects/project-1/connections/${connectionId}/default`,
+        url: `https://api.test/v1/workspaces/project-1/connections/${connectionId}/default`,
         method: 'PUT',
         body: {},
       },
@@ -454,7 +454,7 @@ describe('kortix connectors connections', () => {
     expect(await runConnectors(['connections', 'rename', connectionId, 'Support', 'inbox'])).toBe(0);
     expect(requests.map(({ url, method, body }) => ({ url, method, body }))).toEqual([
       {
-        url: `https://api.test/v1/projects/project-1/connections/${connectionId}/label`,
+        url: `https://api.test/v1/workspaces/project-1/connections/${connectionId}/label`,
         method: 'PUT',
         body: { label: 'Support inbox' },
       },
@@ -469,9 +469,9 @@ describe('kortix connectors connections', () => {
       const url = String(input);
       const body = typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body;
       requests.push({ url, method: init?.method ?? 'GET', body });
-      const payload = url.endsWith('/projects/project-1')
+      const payload = url.endsWith('/workspaces/project-1')
         ? { project_id: 'project-1', account_id: 'acct-1' }
-        : url.endsWith('/accounts/acct-1/members')
+        : url.endsWith('/workspaces/acct-1/members')
           ? [{ user_id: ada, email: 'ada@example.test' }]
           : {
               connection_id: connectionId,
@@ -496,7 +496,7 @@ describe('kortix connectors connections', () => {
     ).toBe(0);
     const share = requests.find((r) => r.url.endsWith(`/connections/${connectionId}/share`));
     expect(share).toEqual({
-      url: `https://api.test/v1/projects/project-1/connections/${connectionId}/share`,
+      url: `https://api.test/v1/workspaces/project-1/connections/${connectionId}/share`,
       method: 'POST',
       body: {
         principals: [
@@ -558,7 +558,7 @@ describe('kortix connectors connections', () => {
     expect(await runConnectors(['connections', 'finalize', connectionId, '--json'])).toBe(0);
     expect(requests).toEqual([
       {
-        url: `https://api.test/v1/projects/project-1/connections/${connectionId}/connect`,
+        url: `https://api.test/v1/workspaces/project-1/connections/${connectionId}/connect`,
         method: 'POST',
         body: {
           success_redirect_uri: 'https://app.test/success',
@@ -566,7 +566,7 @@ describe('kortix connectors connections', () => {
         },
       },
       {
-        url: `https://api.test/v1/projects/project-1/connections/${connectionId}/connect/finalize`,
+        url: `https://api.test/v1/workspaces/project-1/connections/${connectionId}/connect/finalize`,
         method: 'POST',
         body: {},
       },

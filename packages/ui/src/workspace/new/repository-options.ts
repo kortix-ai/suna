@@ -1,5 +1,5 @@
 /**
- * The "Git account" choice on `/new`, as data.
+ * The "Git account" choice on `/workspaces/new`, as data.
  *
  * A project's repository lives under exactly one git owner: a GitHub personal
  * account or organization the Kortix account has connected, or `Kortix
@@ -125,7 +125,7 @@ export function repositoryAction(state: Pick<NewWorkspaceFormState, 'source'>): 
  * A personal account does. GitHub accepts the account's App installation token
  * on `POST /orgs/{org}/repos` but not on `POST /user/repos`, so a personal
  * create runs on a GitHub App USER access token instead. The server asks for
- * one with `409 github_user_authorization_required`, and `/new` answers it with
+ * one with `409 github_user_authorization_required`, and `/workspaces/new` answers it with
  * a single popup (`github-user-authorization.ts`).
  */
 export function createNeedsGitHubAuthorization(option: GitAccountOption): boolean {

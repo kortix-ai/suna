@@ -87,7 +87,7 @@ const last = () => calls[calls.length - 1];
 test('getSlackInstallation hits the installation endpoint and returns null on failure', async () => {
   nextResponse = { status: 404, body: { message: 'not found' } };
   const result = await getSlackInstallation('P1');
-  expect(last().url).toContain('/projects/P1/channels/slack/installation');
+  expect(last().url).toContain('/workspaces/P1/channels/slack/installation');
   expect(result).toBeNull();
 });
 
@@ -97,7 +97,7 @@ test('connectSlack posts bot token + signing secret', async () => {
     body: { workspaceId: 'W1', workspaceName: 'Acme', botUserId: 'B1', installedAt: '2026-01-01' },
   };
   const result = await connectSlack('P1', { bot_token: 'xoxb', signing_secret: 'sig' });
-  expect(last().url).toContain('/projects/P1/channels/slack/connect');
+  expect(last().url).toContain('/workspaces/P1/channels/slack/connect');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ bot_token: 'xoxb', signing_secret: 'sig' });
   expect(result.workspaceId).toBe('W1');
@@ -156,7 +156,7 @@ test('getSlackManifest hits the webhooks manifest route (not /projects)', async 
 test('disconnectSlack deletes the installation and throws on failure', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await disconnectSlack('P1');
-  expect(last().url).toContain('/projects/P1/channels/slack/installation');
+  expect(last().url).toContain('/workspaces/P1/channels/slack/installation');
   expect(last().method).toBe('DELETE');
 
   nextResponse = { status: 500, body: { message: 'boom' } };
@@ -167,7 +167,7 @@ test('getEmailInstallation forwards an optional connector_slug query param', asy
   nextResponse = { status: 200, body: null };
   await getEmailInstallation('P1', 'custom_inbox');
   expect(last().url).toContain(
-    '/projects/P1/channels/email/installation?connector_slug=custom_inbox',
+    '/workspaces/P1/channels/email/installation?connector_slug=custom_inbox',
   );
 });
 
@@ -197,7 +197,7 @@ test('connectEmail posts the connect payload', async () => {
     },
   };
   const installation = await connectEmail('P1', { email: 'a@b.com' });
-  expect(last().url).toContain('/projects/P1/channels/email/connect');
+  expect(last().url).toContain('/workspaces/P1/channels/email/connect');
   expect(last().body).toEqual({ email: 'a@b.com' });
   expect(installation.connectionId).toBe('connection-email-1');
 });
@@ -261,7 +261,7 @@ test('disconnectEmail throws with the server error message on failure', async ()
 test('getSlackChannelFile GETs the file proxy with the url query param', async () => {
   nextResponse = { status: 200, body: { data: 'bytes' } };
   await getSlackChannelFile('P1', 'https://files.slack.com/x/y.pdf');
-  expect(last().url).toContain('/projects/P1/channels/slack/file?url=');
+  expect(last().url).toContain('/workspaces/P1/channels/slack/file?url=');
   expect(last().url).toContain(encodeURIComponent('https://files.slack.com/x/y.pdf'));
   expect(last().method).toBe('GET');
 });
@@ -274,7 +274,7 @@ test('uploadSlackChannelFile posts channel/filename/content_base64 to the upload
     contentBase64: 'YWJj',
     comment: 'here you go',
   });
-  expect(last().url).toContain('/projects/P1/channels/slack/file/upload');
+  expect(last().url).toContain('/workspaces/P1/channels/slack/file/upload');
   expect(last().method).toBe('POST');
   expect(last().body).toMatchObject({
     channel: 'C1',
@@ -336,7 +336,7 @@ test('listChannelBindings hits the bindings collection', async () => {
     },
   };
   const result = await listChannelBindings('P1');
-  expect(last().url).toContain('/projects/P1/channels/bindings');
+  expect(last().url).toContain('/workspaces/P1/channels/bindings');
   expect(last().method).toBe('GET');
   expect(result.projectDefaultAgent).toBe('support');
   expect(result.bindings).toHaveLength(1);
@@ -415,7 +415,7 @@ test('updateChannelBinding PATCHes the binding by id', async () => {
     agentName: 'billing',
     conversationPolicy: 'owner_only',
   });
-  expect(last().url).toContain('/projects/P1/channels/bindings/b1');
+  expect(last().url).toContain('/workspaces/P1/channels/bindings/b1');
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({ agentName: 'billing', conversationPolicy: 'owner_only' });
   expect(result.agentName).toBe('billing');
@@ -427,12 +427,12 @@ test('updateChannelBinding PATCHes the binding by id', async () => {
 });
 
 test('completeSlackInstall posts the OAuth code and state and returns where to land', async () => {
-  nextResponse = { status: 200, body: { redirect_url: 'https://app.test/projects/P1?success=1' } };
+  nextResponse = { status: 200, body: { redirect_url: 'https://app.test/workspaces/P1?success=1' } };
   const result = await completeSlackInstall('P1', { code: 'c1', state: 's1' });
-  expect(last().url).toContain('/projects/P1/channels/slack/oauth/complete');
+  expect(last().url).toContain('/workspaces/P1/channels/slack/oauth/complete');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ code: 'c1', state: 's1' });
-  expect(result).toEqual({ redirect_url: 'https://app.test/projects/P1?success=1' });
+  expect(result).toEqual({ redirect_url: 'https://app.test/workspaces/P1?success=1' });
 });
 
 test('completeTeamsInstall surfaces the refusal code when another user started the install', async () => {
@@ -441,7 +441,7 @@ test('completeTeamsInstall surfaces the refusal code when another user started t
     body: { error: 'This install was started by another Kortix account.', code: 'CHANNEL_INSTALL_STATE_MISMATCH' },
   };
   const error = await completeTeamsInstall('P1', { code: 'c2', state: 's2' }).catch((e: unknown) => e);
-  expect(last().url).toContain('/projects/P1/channels/teams/oauth/complete');
+  expect(last().url).toContain('/workspaces/P1/channels/teams/oauth/complete');
   expect(last().body).toEqual({ code: 'c2', state: 's2' });
   expect((error as { code?: string }).code).toBe('CHANNEL_INSTALL_STATE_MISMATCH');
   expect((error as { status?: number }).status).toBe(403);
@@ -451,7 +451,7 @@ test('getTelegramInstallation reads the installation and returns null when there
   nextResponse = { status: 200, body: { bot_id: '123', username: 'kortix_bot', allowed_user_ids: ['42'] } };
   expect(await getTelegramInstallation('P1')).toEqual({ bot_id: '123', username: 'kortix_bot', allowed_user_ids: ['42'] });
   expect(last()).toMatchObject({ method: 'GET' });
-  expect(last().url).toContain('/projects/P1/channels/telegram/installation');
+  expect(last().url).toContain('/workspaces/P1/channels/telegram/installation');
 
   nextResponse = { status: 200, body: null };
   expect(await getTelegramInstallation('P1')).toBeNull();
@@ -463,7 +463,7 @@ test('connectTelegram posts the bot token and allowed user ids', async () => {
   nextResponse = { status: 200, body: { bot_id: '123', username: 'kortix_bot', allowed_user_ids: ['42'] } };
   const result = await connectTelegram('P1', { bot_token: '123:abc', allowed_user_ids: ['42'] });
   expect(last()).toMatchObject({ method: 'POST', body: { bot_token: '123:abc', allowed_user_ids: ['42'] } });
-  expect(last().url).toContain('/projects/P1/channels/telegram/connect');
+  expect(last().url).toContain('/workspaces/P1/channels/telegram/connect');
   expect(result.bot_id).toBe('123');
 });
 
@@ -476,7 +476,7 @@ test('setTelegramAllowedUsers replaces the allowed list', async () => {
   nextResponse = { status: 200, body: { bot_id: '123', username: null, allowed_user_ids: ['1', '2'] } };
   const result = await setTelegramAllowedUsers('P1', ['1', '2']);
   expect(last()).toMatchObject({ method: 'PUT', body: { user_ids: ['1', '2'] } });
-  expect(last().url).toContain('/projects/P1/channels/telegram/allowed-users');
+  expect(last().url).toContain('/workspaces/P1/channels/telegram/allowed-users');
   expect(result.allowed_user_ids).toEqual(['1', '2']);
 });
 
@@ -484,7 +484,7 @@ test('disconnectTelegram deletes the installation', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await disconnectTelegram('P1');
   expect(last()).toMatchObject({ method: 'DELETE' });
-  expect(last().url).toMatch(/\/projects\/P1\/channels\/telegram$/);
+  expect(last().url).toMatch(/\/workspaces\/P1\/channels\/telegram$/);
 });
 
 const telegramInstall = { bot_id: '123', username: 'kortix_bot', allowed_user_ids: ['42'], access_request_count: 1 };
@@ -513,7 +513,7 @@ test('listTelegramUsers reads the allowed users and the access requests', async 
   };
   nextResponse = { status: 200, body: users };
   expect(await listTelegramUsers('P/1')).toEqual(users);
-  expect(last()).toMatchObject({ method: 'GET', url: 'http://test.local/projects/P%2F1/channels/telegram/users' });
+  expect(last()).toMatchObject({ method: 'GET', url: 'http://test.local/workspaces/P%2F1/channels/telegram/users' });
 });
 
 test('listTelegramUsers throws the API error message', async () => {
@@ -526,7 +526,7 @@ test('allowTelegramUser posts one user id and returns the installation', async (
   const result = await allowTelegramUser('P1', '77');
   expect(last()).toMatchObject({
     method: 'POST',
-    url: 'http://test.local/projects/P1/channels/telegram/allowed-users',
+    url: 'http://test.local/workspaces/P1/channels/telegram/allowed-users',
     body: { user_id: '77' },
   });
   expect(result.allowed_user_ids).toEqual(['42', '77']);
@@ -543,7 +543,7 @@ test('removeTelegramUser deletes one allowed user id and returns the installatio
   const result = await removeTelegramUser('P1', '42');
   expect(last()).toMatchObject({
     method: 'DELETE',
-    url: 'http://test.local/projects/P1/channels/telegram/allowed-users/42',
+    url: 'http://test.local/workspaces/P1/channels/telegram/allowed-users/42',
   });
   expect(result.allowed_user_ids).toEqual([]);
 });
@@ -553,7 +553,7 @@ test('dismissTelegramAccessRequest deletes one access request and returns the in
   const result = await dismissTelegramAccessRequest('P1', '77');
   expect(last()).toMatchObject({
     method: 'DELETE',
-    url: 'http://test.local/projects/P1/channels/telegram/access-requests/77',
+    url: 'http://test.local/workspaces/P1/channels/telegram/access-requests/77',
   });
   expect(result.access_request_count).toBe(0);
 });
@@ -577,14 +577,14 @@ describe('getTelegramUserPhoto', () => {
     expect(calls).toHaveLength(1);
     expect(last()).toMatchObject({
       method: 'GET',
-      url: `http://test.local/projects/P1/channels/telegram/users/42/photo?v=${encodeURIComponent('AQAD+x/y')}`,
+      url: `http://test.local/workspaces/P1/channels/telegram/users/42/photo?v=${encodeURIComponent('AQAD+x/y')}`,
     });
     expect(calls.some((c) => c.url.includes('telegram.org'))).toBe(false);
   });
 
   test('omits the version query when none is given', async () => {
     await getTelegramUserPhoto('P1', '42');
-    expect(last().url).toBe('http://test.local/projects/P1/channels/telegram/users/42/photo');
+    expect(last().url).toBe('http://test.local/workspaces/P1/channels/telegram/users/42/photo');
   });
 
   test('returns null when the user has no photo (404)', async () => {
@@ -634,7 +634,7 @@ test('listChannelUsers reads the same route as listTelegramUsers', async () => {
   const generic = last();
   await listTelegramUsers('P/1');
   expect(generic).toEqual(last());
-  expect(generic).toMatchObject({ method: 'GET', url: 'http://test.local/projects/P%2F1/channels/telegram/users' });
+  expect(generic).toMatchObject({ method: 'GET', url: 'http://test.local/workspaces/P%2F1/channels/telegram/users' });
 });
 
 test('listChannelUsers throws the API error message', async () => {
@@ -647,7 +647,7 @@ test('allowChannelUser posts one user id and returns the access list', async () 
   const result: ChannelAccessList = await allowChannelUser('P1', 'telegram', '77');
   expect(last()).toMatchObject({
     method: 'POST',
-    url: 'http://test.local/projects/P1/channels/telegram/allowed-users',
+    url: 'http://test.local/workspaces/P1/channels/telegram/allowed-users',
     body: { user_id: '77' },
   });
   expect(result).toMatchObject({ allowed_user_ids: ['42', '77'], access_request_count: 0 });
@@ -663,7 +663,7 @@ test('removeChannelUser deletes one allowed user id', async () => {
   expect((await removeChannelUser('P1', 'telegram', '4/2')).allowed_user_ids).toEqual([]);
   expect(last()).toMatchObject({
     method: 'DELETE',
-    url: 'http://test.local/projects/P1/channels/telegram/allowed-users/4%2F2',
+    url: 'http://test.local/workspaces/P1/channels/telegram/allowed-users/4%2F2',
     body: undefined,
   });
 });
@@ -673,7 +673,7 @@ test('dismissChannelAccessRequest deletes one access request', async () => {
   expect((await dismissChannelAccessRequest('P1', 'telegram', '77')).access_request_count).toBe(0);
   expect(last()).toMatchObject({
     method: 'DELETE',
-    url: 'http://test.local/projects/P1/channels/telegram/access-requests/77',
+    url: 'http://test.local/workspaces/P1/channels/telegram/access-requests/77',
     body: undefined,
   });
 });
@@ -703,10 +703,10 @@ describe('getChannelUserPhoto', () => {
     expect(generic).toEqual(last());
     expect(generic).toMatchObject({
       method: 'GET',
-      url: `http://test.local/projects/P1/channels/telegram/users/42/photo?v=${encodeURIComponent('AQAD+x/y')}`,
+      url: `http://test.local/workspaces/P1/channels/telegram/users/42/photo?v=${encodeURIComponent('AQAD+x/y')}`,
     });
     await getChannelUserPhoto('P1', 'telegram', '42');
-    expect(last().url).toBe('http://test.local/projects/P1/channels/telegram/users/42/photo');
+    expect(last().url).toBe('http://test.local/workspaces/P1/channels/telegram/users/42/photo');
   });
 
   test('returns null when the user has no photo (404) and throws on other errors', async () => {
@@ -738,7 +738,7 @@ test('listEmailDomains posts the key in the body, never in the URL', async () =>
     },
   };
   const list = await listEmailDomains('P1', { apiKey: 're_secret' });
-  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/domains$/);
+  expect(last().url).toMatch(/\/workspaces\/P1\/channels\/email\/domains$/);
   expect(last().url).not.toContain('re_secret');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ api_key: 're_secret' });
@@ -765,13 +765,13 @@ test('addEmailDomain and verifyEmailDomain post to their routes and return the d
   };
   nextResponse = { status: 200, body: { domain, setup: null } };
   const added = await addEmailDomain('P1', { apiKey: 're_secret', domain: 'mail.example.com' });
-  expect(last().url).toContain('/projects/P1/channels/email/domains/add');
+  expect(last().url).toContain('/workspaces/P1/channels/email/domains/add');
   expect(last().body).toEqual({ api_key: 're_secret', domain: 'mail.example.com' });
   expect(added.domain.records[0]?.type).toBe('TXT');
 
   nextResponse = { status: 200, body: { domain: { ...domain, status: 'VERIFIED', verified: true }, setup: null } };
   const checked = await verifyEmailDomain('P1', { apiKey: 're_secret', domainId: 'd1' });
-  expect(last().url).toContain('/projects/P1/channels/email/domains/verify');
+  expect(last().url).toContain('/workspaces/P1/channels/email/domains/verify');
   expect(last().body).toEqual({ api_key: 're_secret', domain_id: 'd1' });
   expect(checked.domain.verified).toBe(true);
 });
@@ -803,7 +803,7 @@ test('listEmailInboxes reads the accounts of the email connector', async () => {
   nextResponse = { status: 200, body: { inboxes: [INBOX] } };
   const inboxes = await listEmailInboxes('P1');
   expect(last()).toMatchObject({ method: 'GET' });
-  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/inboxes$/);
+  expect(last().url).toMatch(/\/workspaces\/P1\/channels\/email\/inboxes$/);
   expect(inboxes).toEqual([INBOX]);
 });
 
@@ -811,7 +811,7 @@ test('addEmailInbox posts the inbox with who may use it; the key travels in the 
   nextResponse = { status: 201, body: { ...INBOX, owner_type: 'member', owner_id: 'u1' } };
   const inbox = await addEmailInbox('P1', { username: 'support', share: 'me', api_key: 're_secret', domain: 'mail.example.com' });
   expect(last()).toMatchObject({ method: 'POST' });
-  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/inboxes$/);
+  expect(last().url).toMatch(/\/workspaces\/P1\/channels\/email\/inboxes$/);
   expect(last().url).not.toContain('re_secret');
   expect(last().body).toEqual({ username: 'support', share: 'me', api_key: 're_secret', domain: 'mail.example.com' });
   expect(inbox.owner_type).toBe('member');
@@ -821,7 +821,7 @@ test('updateEmailInbox patches one inbox by its connection id', async () => {
   nextResponse = { status: 200, body: { ...INBOX, agent_name: 'support' } };
   const inbox = await updateEmailInbox('P1', 'c1', { agent_name: 'support' });
   expect(last()).toMatchObject({ method: 'PATCH', body: { agent_name: 'support' } });
-  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/inboxes\/c1$/);
+  expect(last().url).toMatch(/\/workspaces\/P1\/channels\/email\/inboxes\/c1$/);
   expect(inbox.agent_name).toBe('support');
 });
 
@@ -829,7 +829,7 @@ test('removeEmailInbox deletes one inbox and says whether Resend deleted it too'
   nextResponse = { status: 200, body: { status: 'deleted', inbox_deleted: true } };
   const result = await removeEmailInbox('P1', 'c1');
   expect(last()).toMatchObject({ method: 'DELETE' });
-  expect(last().url).toMatch(/\/projects\/P1\/channels\/email\/inboxes\/c1$/);
+  expect(last().url).toMatch(/\/workspaces\/P1\/channels\/email\/inboxes\/c1$/);
   expect(result).toEqual({ status: 'deleted', inbox_deleted: true });
 });
 
@@ -841,7 +841,7 @@ test('a refused add surfaces the server error', async () => {
 test('getDiscordMode returns the Add to Discord link, and unavailable on failure', async () => {
   nextResponse = { status: 200, body: { available: true, install_url: 'https://discord.com/oauth2/authorize?x=1' } };
   expect(await getDiscordMode('P1')).toEqual({ available: true, install_url: 'https://discord.com/oauth2/authorize?x=1' });
-  expect(last().url).toContain('/projects/P1/channels/discord/mode');
+  expect(last().url).toContain('/workspaces/P1/channels/discord/mode');
   expect(last().method).toBe('GET');
 
   nextResponse = { status: 500, body: {} };
@@ -854,7 +854,7 @@ test('getDiscordInstallation reads the server install, and null when none', asyn
     body: { guild_id: '123456789012345678', guild_name: 'Team', allowed_user_ids: ['223456789012345678'], access_request_count: 1 },
   };
   const install = await getDiscordInstallation('P1');
-  expect(last().url).toContain('/projects/P1/channels/discord/installation');
+  expect(last().url).toContain('/workspaces/P1/channels/discord/installation');
   expect(install?.guild_name).toBe('Team');
   expect(install?.allowed_user_ids).toEqual(['223456789012345678']);
 
@@ -863,12 +863,12 @@ test('getDiscordInstallation reads the server install, and null when none', asyn
 });
 
 test('completeDiscordInstall posts the code and state, and surfaces a refusal', async () => {
-  nextResponse = { status: 200, body: { redirect_url: 'https://kortix.test/projects/P1?success=1' } };
+  nextResponse = { status: 200, body: { redirect_url: 'https://kortix.test/workspaces/P1?success=1' } };
   const done = await completeDiscordInstall('P1', { code: 'c0de', state: 'st' });
-  expect(last().url).toContain('/projects/P1/channels/discord/oauth/complete');
+  expect(last().url).toContain('/workspaces/P1/channels/discord/oauth/complete');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ code: 'c0de', state: 'st' });
-  expect(done.redirect_url).toBe('https://kortix.test/projects/P1?success=1');
+  expect(done.redirect_url).toBe('https://kortix.test/workspaces/P1?success=1');
 
   nextResponse = { status: 403, body: { error: 'This install was started by someone else.', code: 'CHANNEL_INSTALL_STATE_MISMATCH' } };
   await expect(completeDiscordInstall('P1', { code: 'c0de', state: 'st' })).rejects.toThrow();
@@ -877,7 +877,7 @@ test('completeDiscordInstall posts the code and state, and surfaces a refusal', 
 test('setDiscordAllowedUsers replaces the allowed list', async () => {
   nextResponse = { status: 200, body: { guild_id: '123456789012345678', guild_name: null, allowed_user_ids: ['223456789012345678'], access_request_count: 0 } };
   await setDiscordAllowedUsers('P1', ['223456789012345678']);
-  expect(last().url).toContain('/projects/P1/channels/discord/allowed-users');
+  expect(last().url).toContain('/workspaces/P1/channels/discord/allowed-users');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ user_ids: ['223456789012345678'] });
 });
@@ -885,7 +885,7 @@ test('setDiscordAllowedUsers replaces the allowed list', async () => {
 test('disconnectDiscord deletes the install, and throws on a refusal', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await disconnectDiscord('P1');
-  expect(last().url).toMatch(/\/projects\/P1\/channels\/discord$/);
+  expect(last().url).toMatch(/\/workspaces\/P1\/channels\/discord$/);
   expect(last().method).toBe('DELETE');
 
   nextResponse = { status: 403, body: { error: 'forbidden' } };
@@ -895,10 +895,10 @@ test('disconnectDiscord deletes the install, and throws on a refusal', async () 
 test('the access routes take the Discord platform', async () => {
   nextResponse = { status: 200, body: { allowed: [], requests: [] } };
   await listChannelUsers('P1', 'discord');
-  expect(last().url).toContain('/projects/P1/channels/discord/users');
+  expect(last().url).toContain('/workspaces/P1/channels/discord/users');
   nextResponse = { status: 200, body: { allowed_user_ids: ['223456789012345678'], access_request_count: 0 } };
   await allowChannelUser('P1', 'discord', '223456789012345678');
-  expect(last().url).toContain('/projects/P1/channels/discord/allowed-users');
+  expect(last().url).toContain('/workspaces/P1/channels/discord/allowed-users');
   expect(last().body).toEqual({ user_id: '223456789012345678' });
 });
 

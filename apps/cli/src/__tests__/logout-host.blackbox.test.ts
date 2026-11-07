@@ -93,7 +93,7 @@ for (const name of ['custom', 'default', 'selfhost']) {
         `CLI_BIN="$0"; CLI_ENTRY="$1"; kortix() { "$CLI_BIN" "$CLI_ENTRY" "$@"; }; ${hint?.[1]} --token kortix_pat_new --no-project`,
         process.execPath, join(import.meta.dir, '../index.ts')]);
       expect(login.code).toBe(0);
-      expect(requests).toEqual(['/v1/accounts/me']);
+      expect(requests).toEqual(['/v1/me']);
       const recovered = JSON.parse(readFileSync(join(dir, 'config.json'), 'utf8'));
       expect(recovered.hosts[name]).toMatchObject({ url: api.url.origin,
         dashboard_url: 'http://localhost:3000', token: 'kortix_pat_new' });

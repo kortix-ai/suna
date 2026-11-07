@@ -1,3 +1,4 @@
+import { asLegacyWorkspaceRoute, renameWorkspaceRouteParams } from '@kortix/shared/workspace-routes';
 import type { UiTranslator } from '@/i18n/translator';
 import {
   auditFamilyDetail,
@@ -524,7 +525,14 @@ function matchHttpRoute(method: string, path: string): RouteMatcher | null {
   );
 }
 
-function routeArea(path: string): string {
+function routeArea(rawPath: string): string {
+  // Templates name the id `:workspaceId` since 2026-11-05 (`:projectId` /
+  // `:accountId` before), and `/v1/workspaces/…` is the canonical prefix of
+  // both `/v1/projects/…` and the account families: group by the legacy name.
+  const path = asLegacyWorkspaceRoute(renameWorkspaceRouteParams(rawPath)).replace(
+    /\/(accounts|projects)\/:workspaceId\//,
+    (_, kind: string) => `/${kind}/:${kind === 'accounts' ? 'accountId' : 'projectId'}/`,
+  );
   if (path.startsWith('/internal/gateway/')) return 'Gateway';
   if (path.startsWith('/scim/')) return 'SCIM';
   if (path === '/health' || path === '/health/live' || path === '/metrics') return 'System';
@@ -540,7 +548,7 @@ function routeArea(path: string): string {
   if (path.startsWith('/v1/webhooks/')) return 'Webhooks';
   if (path.includes('/channels/')) return 'Channels';
   if (path.startsWith('/v1/router/') || path.startsWith('/v1/llm/')) return 'Models';
-  if (path.startsWith('/v1/projects')) return 'Projects';
+  if (path.startsWith('/v1/projects')) return 'Workspaces';
   if (path.startsWith('/v1/accounts') || path.startsWith('/v1/account')) return 'Accounts';
   return 'API';
 }

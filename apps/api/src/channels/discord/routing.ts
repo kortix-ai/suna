@@ -16,12 +16,13 @@
  * interactions webhook can call it; the conversation writes the binding
  * (settings.ts `ensureChatBinding`).
  */
-import { chatChannelBindings, chatInstalls, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { readChannelAccess } from '../core/channel-access';
 import { findChatThread } from '../core/threads';
 import { discordGuildProjects } from './installs';
+import { projectsView } from '../../workspaces/rows';
 
 export type DiscordRoute =
   /** `guildId`: the project's install, the conversation's workspace. */
@@ -49,15 +50,15 @@ async function boundProject(guildId: string, channelId: string): Promise<string 
       chatInstalls,
       and(
         eq(chatInstalls.platform, 'discord'),
-        eq(chatInstalls.workspaceId, chatChannelBindings.workspaceId),
+        eq(chatInstalls.platformTeamId, chatChannelBindings.platformTeamId),
         eq(chatInstalls.projectId, chatChannelBindings.projectId),
       ),
     )
-    .innerJoin(projects, and(eq(projects.projectId, chatChannelBindings.projectId), eq(projects.status, 'active')))
+    .innerJoin(projectsView, and(eq(projectsView.projectId, chatChannelBindings.projectId), eq(projectsView.status, 'active')))
     .where(
       and(
         eq(chatChannelBindings.platform, 'discord'),
-        eq(chatChannelBindings.workspaceId, guildId),
+        eq(chatChannelBindings.platformTeamId, guildId),
         eq(chatChannelBindings.channelId, channelId),
       ),
     )
@@ -91,17 +92,17 @@ async function resolveGuild(place: DiscordPlace & { guildId: string }): Promise<
 async function resolveDirect(place: DiscordPlace): Promise<DiscordRoute> {
   const conversation = { platform: 'discord', threadId: place.channelId };
   const bound = await db
-    .select({ projectId: chatChannelBindings.projectId, guildId: chatChannelBindings.workspaceId, metadata: projects.metadata })
+    .select({ projectId: chatChannelBindings.projectId, guildId: chatChannelBindings.platformTeamId, metadata: projectsView.metadata })
     .from(chatChannelBindings)
     .innerJoin(
       chatInstalls,
       and(
         eq(chatInstalls.platform, 'discord'),
-        eq(chatInstalls.workspaceId, chatChannelBindings.workspaceId),
+        eq(chatInstalls.platformTeamId, chatChannelBindings.platformTeamId),
         eq(chatInstalls.projectId, chatChannelBindings.projectId),
       ),
     )
-    .innerJoin(projects, and(eq(projects.projectId, chatChannelBindings.projectId), eq(projects.status, 'active')))
+    .innerJoin(projectsView, and(eq(projectsView.projectId, chatChannelBindings.projectId), eq(projectsView.status, 'active')))
     .where(and(eq(chatChannelBindings.platform, conversation.platform), eq(chatChannelBindings.channelId, place.channelId)));
   const rows = place.userId ? bound.filter((r) => readChannelAccess(r.metadata, 'discord').allowedUserIds.includes(place.userId!)) : bound;
   if (rows.length === 1) return { kind: 'project', projectId: rows[0]!.projectId!, guildId: rows[0]!.guildId };
@@ -115,14 +116,14 @@ async function resolveDirect(place: DiscordPlace): Promise<DiscordRoute> {
 // 3-second interaction window. Upgrade at ~10k installs: a GIN index on metadata->'discord'->'allowedUserIds'.
 export async function projectsAllowing(userId: string): Promise<Array<{ projectId: string; guildId: string }>> {
   const rows = await db
-    .select({ projectId: chatInstalls.projectId, guildId: chatInstalls.workspaceId, metadata: projects.metadata })
+    .select({ projectId: chatInstalls.projectId, guildId: chatInstalls.platformTeamId, metadata: projectsView.metadata })
     .from(chatInstalls)
-    .innerJoin(projects, and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active')))
+    .innerJoin(projectsView, and(eq(projectsView.projectId, chatInstalls.projectId), eq(projectsView.status, 'active')))
     .where(
       and(
         eq(chatInstalls.platform, 'discord'),
         // Only the rows that can hold the id travel; `readChannelAccess` below keeps the exact rule.
-        sql`${projects.metadata} -> 'discord' -> 'allowedUserIds' @> ${JSON.stringify([userId])}::jsonb`,
+        sql`${projectsView.metadata} -> 'discord' -> 'allowedUserIds' @> ${JSON.stringify([userId])}::jsonb`,
       ),
     );
   return rows
@@ -134,9 +135,9 @@ export async function projectsAllowing(userId: string): Promise<Array<{ projectI
 export async function projectNames(projectIds: string[]): Promise<Array<{ projectId: string; name: string }>> {
   if (!projectIds.length) return [];
   const rows = await db
-    .select({ projectId: projects.projectId, name: projects.name })
-    .from(projects)
-    .where(inArray(projects.projectId, projectIds));
+    .select({ projectId: projectsView.projectId, name: projectsView.name })
+    .from(projectsView)
+    .where(inArray(projectsView.projectId, projectIds));
   return projectIds.flatMap((id) => {
     const row = rows.find((r) => r.projectId === id);
     return row ? [{ projectId: id, name: row.name }] : [];

@@ -44,7 +44,7 @@ import { refreshAfterShare } from './share-session-cache';
  */
 const SESSION_SHARING_COPY: SharingCopy = {
   heading: 'Who can open this session',
-  project: { label: 'Whole project', desc: 'Every member of this project.' },
+  project: { label: 'Whole workspace', desc: 'Every member of this workspace.' },
   private: { label: 'Only you', desc: 'Nobody else can open this session.' },
   members: { label: 'Specific people', desc: 'Only the members and groups you choose.' },
 };

@@ -1,6 +1,6 @@
 import type { ContinueSessionCommand, SessionDeliveryOutcome } from './types';
 import type { ProvisionTimeline } from '../../platform/services/provision-timeline';
-import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { openSession } from '../session-open';
@@ -12,6 +12,7 @@ import { PromptNeverLandedError } from './runtime-client';
 import { armSessionRuntimeActive } from './runtime-active-signal';
 import { transitionSession } from './status-transitions';
 import { boxServesRuntimeFloor } from '../session-open/runtime-floor-policy';
+import { projectsView } from '../../workspaces/rows';
 
 // After a session's runtime reports `ready` we still have to hand the prompt to
 // the daemon — and a just-woken sandbox is flaky for a beat: the
@@ -146,10 +147,10 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
   // Loaded LAZILY: only `openSession` (the slow path that wakes a box) reads
   // the project row, and the session's foreign key already proves it exists.
   // On the fast path this saved a full round trip per delivery.
-  let projectRow: typeof projects.$inferSelect | undefined;
+  let projectRow: typeof projectsView.$inferSelect | undefined;
   const loadProject = async () =>
     (projectRow ??= (
-      await db.select().from(projects).where(eq(projects.projectId, session.projectId)).limit(1)
+      await db.select().from(projectsView).where(eq(projectsView.projectId, session.projectId)).limit(1)
     )[0]);
 
 

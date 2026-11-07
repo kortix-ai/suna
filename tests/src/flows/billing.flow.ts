@@ -75,7 +75,7 @@ flow(
   },
   async (ctx) => {
     await ctx.step(
-      'fresh personal account is repaired to free tier with usable credits',
+      'a freshly created account is on the free tier with usable credits',
       async () => {
         const r = await ctx.client.as(ctx.P.NONMEMBER).get('/v1/billing/account-state');
         r.status(200)
@@ -685,7 +685,7 @@ flow(
     ],
   },
   async (ctx) => {
-    // Throwaway user whose only account is its own personal account.
+    // Throwaway user whose only account is the one it created (POST /v1/accounts).
     const victim = await ctx.fixtures.user({ label: 'DEL-2' });
     let asVictim = ctx.client.as(victim);
     const signInAgain = async () => {
@@ -698,22 +698,26 @@ flow(
       const r = await ctx.client.as(ctx.P.ANON).get('/v1/account/deletion-status');
       r.status(401);
     });
-    await ctx.step('throwaway user schedules deletion (/account mount) → 200', async () => {
+    await ctx.step('throwaway user schedules deletion (/account mount) → 200; it ends their sign-ins → 401', async () => {
       const r = await asVictim.post('/v1/account/request-deletion', { reason: 'ke2e' });
       r.status(200);
+      // "Delete my account" deletes the person: the request ends every
+      // sign-in, and the person signs in again to cancel it.
       (await asVictim.get('/v1/account/deletion-status')).status(401);
       await signInAgain();
     });
-    await ctx.step(
-      'deletion-status reflects the pending request',
-      async () => {
-        const r = await asVictim.get('/v1/account/deletion-status');
-        r.status(200);
-      },
-    );
-    await ctx.step('requesting again while pending → 400 (already exists)', async () => {
+    let scheduledFor = '';
+    await ctx.step('after signing in again, deletion-status reflects the pending request', async () => {
+      const status = (await asVictim.get('/v1/account/deletion-status')).status(200);
+      status.body().has('$.has_pending_deletion', true);
+      scheduledFor = String(status.json<{ deletion_scheduled_for?: string }>().deletion_scheduled_for ?? '');
+    });
+    await ctx.step('requesting again while pending → 200 with the same date; the sign-in survives', async () => {
       const r = await asVictim.post('/v1/account/request-deletion', { reason: 'again' });
-      r.status([400, 409]);
+      r.status(200);
+      const again = r.json<{ deletion_scheduled_for: string | null }>().deletion_scheduled_for;
+      if (scheduledFor && again && Date.parse(again) !== Date.parse(scheduledFor)) throw new Error(`date moved: ${scheduledFor} → ${again}`);
+      (await asVictim.get('/v1/account/deletion-status')).status(200).body().has('$.has_pending_deletion', true);
     });
     await ctx.step('throwaway user cancels the deletion → 200', async () => {
       const r = await asVictim.post('/v1/account/cancel-deletion', {});
@@ -744,16 +748,17 @@ flow(
         throw new Error(`expected has_pending_deletion=false after cancel, got ${JSON.stringify(body)}`);
       }
     });
-    await ctx.step('two concurrent requests → exactly one 200, the other 400', async () => {
+    await ctx.step('two concurrent requests → each 200 (or 401 once the other ended the sign-in); one request is pending', async () => {
       const [a, b] = await Promise.all([
         asVictim.post('/v1/account/request-deletion', { reason: 'race-a' }),
         asVictim.post('/v1/account/request-deletion', { reason: 'race-b' }),
       ]);
       const statuses = [a.statusCode, b.statusCode].sort();
-      if (!statuses.includes(200) || !statuses.some(status => status === 400 || status === 401)) {
-        throw new Error(`expected one 200 and one 400/401, got ${JSON.stringify(statuses)}`);
+      if (!statuses.includes(200) || !statuses.every((status) => status === 200 || status === 401)) {
+        throw new Error(`expected 200 and 200/401, got ${JSON.stringify(statuses)}`);
       }
       await signInAgain();
+      (await asVictim.get('/v1/account/deletion-status')).status(200).body().has('$.has_pending_deletion', true);
       const cleanup = await asVictim.post('/v1/account/cancel-deletion', {});
       cleanup.status(200);
     });
@@ -762,7 +767,7 @@ flow(
 
 /**
  * DEL-5 — deletion is an owner act. `addMember` inserts the membership
- * directly, so the member has no personal account and resolves the TEAM as
+ * directly, so the member has no account of its own and resolves the TEAM as
  * its primary account. Every deletion route refuses the member with 403
  * `account.delete`, and the team survives.
  */
@@ -772,9 +777,10 @@ flow(
     domain: 'billing',
     routes: [
       'GET /v1/account/deletion-status',
-      'POST /v1/account/request-deletion',
+      'GET /v1/account/deletion-plan',
       'POST /v1/account/cancel-deletion',
       'DELETE /v1/account/delete-immediately',
+      'GET /v1/accounts/me',
       'GET /v1/accounts/:accountId',
     ],
   },
@@ -783,16 +789,21 @@ flow(
     const member = await team.addMember('member');
     const asMember = ctx.client.as(member);
 
-    await ctx.step('MEMBER reads the team deletion-status → 403 account.delete', async () => {
-      (await asMember.get('/v1/account/deletion-status')).status(403).body().has('$.action', 'account.delete');
+    // "Delete my account" deletes the PERSON (design.md §3.1 item 2): a team
+    // member leaves the team; the team is never deleted for them.
+    await ctx.step('MEMBER reads their own deletion status and plan: nothing pending; they would leave the team', async () => {
+      (await asMember.get('/v1/account/deletion-status')).status(200).body().has('$.has_pending_deletion', false);
+      const plan = (await asMember.get('/v1/account/deletion-plan')).status(200).json<{ delete_workspaces: string[]; leave_workspaces: string[] }>();
+      if (plan.delete_workspaces.length !== 0 || !plan.leave_workspaces.includes(team.id)) {
+        throw new Error(`member plan ${JSON.stringify(plan)}`);
+      }
     });
-    await ctx.step('MEMBER cannot request, cancel, or run deletion → 403 account.delete each', async () => {
-      (await asMember.post('/v1/account/request-deletion', { reason: 'ke2e member' }))
-        .status(403).body().has('$.action', 'account.delete');
-      (await asMember.post('/v1/account/cancel-deletion', {}))
-        .status(403).body().has('$.action', 'account.delete');
-      (await asMember.del('/v1/account/delete-immediately'))
-        .status(403).body().has('$.action', 'account.delete');
+    await ctx.step('MEMBER has nothing to cancel → 400', async () => {
+      (await asMember.post('/v1/account/cancel-deletion', {})).status(400);
+    });
+    await ctx.step('MEMBER deletes their account → 200: they leave the team, the team is untouched', async () => {
+      (await asMember.del('/v1/account/delete-immediately')).status(200).body().has('$.leave_workspaces', [team.id]);
+      (await asMember.get('/v1/accounts/me')).status(401);
     });
     await ctx.step('the team survives: OWNER reads it → 200', async () => {
       (await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId', { params: { accountId: team.id } })).status(200);
@@ -817,7 +828,7 @@ flow(
     global: true,
     requires: ['database'],
     timeoutMs: 120_000,
-    routes: ['POST /v1/projects/:projectId/sessions/:sessionId/prompts'],
+    routes: ['POST /v1/workspaces/:projectId/sessions/:sessionId/prompts'],
   },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
@@ -860,7 +871,7 @@ flow(
       );
       const project = await team.project({ managedGit: true });
       const params = { projectId: project.id, sessionId };
-      const promptPath = '/v1/projects/:projectId/sessions/:sessionId/prompts';
+      const promptPath = '/v1/workspaces/:projectId/sessions/:sessionId/prompts';
       await db.query(
         `INSERT INTO kortix.project_sessions
          (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility)

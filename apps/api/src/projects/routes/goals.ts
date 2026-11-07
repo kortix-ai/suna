@@ -1,5 +1,5 @@
 /**
- * Goals: `/v1/projects/:projectId/goals/*` (project flag `goals`).
+ * Goals: `/v1/workspaces/:workspaceId/goals/*`, legacy `/v1/projects/:workspaceId/goals/*` (project flag `goals`).
  *
  * The routes derive the caller (`GoalActor`) from the credential and hand
  * plain values to `projects/goals/service.ts`, which owns every rule. A
@@ -10,6 +10,7 @@
  * `404 goal_not_found`, `409 goal_conflict` (with the current goal), `422
  * goal_invalid` (with `violations`). Flag off: `403 feature_disabled`.
  */
+import { workspaceIdParam } from '../../shared/route-params';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   ActivateGoalRequestSchema,
@@ -48,7 +49,7 @@ import * as goals from '../goals/service';
 import { GoalError, getGoal, listGoalEvents, listGoals, type GoalRow } from '../goals/store';
 
 type GoalContextC = Context<AppEnv>;
-const projectParams = z.object({ projectId: z.string() });
+const projectParams = z.object({ workspaceId: z.string() });
 const goalParams = projectParams.extend({ goalId: z.string() });
 const GOAL_ERRORS = { 403: json(GoalErrorSchema, 'goal_forbidden or feature_disabled'), 404: json(GoalErrorSchema, 'goal_not_found'), 409: json(GoalErrorSchema, 'goal_conflict: the goal as it is now'), 422: json(GoalErrorSchema, 'goal_invalid, with violations') };
 
@@ -68,7 +69,7 @@ async function isProjectAdmin(c: GoalContextC, projectId: string): Promise<boole
 
 /** The project, the flag, and who calls. A Response when the request ends here. */
 async function scopeOf(c: GoalContextC): Promise<Scope | Response> {
-  const projectId = c.req.param('projectId') ?? '';
+  const projectId = workspaceIdParam(c) ?? '';
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'goal_not_found', message: 'Not found.' }, 404);
   const gate = requireFeatureFlag(c, loaded.row.metadata, 'goals');
@@ -182,7 +183,7 @@ export function registerGoalRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/goals',
+      path: '/{workspaceId}/goals',
       tags: ['goals'],
       summary: 'List the goals of a project',
       description: 'Goals the caller may read. A session sees only goals it owns or verifies (or did). Flag `goals`.',
@@ -210,7 +211,7 @@ export function registerGoalRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/goals',
+      path: '/{workspaceId}/goals',
       tags: ['goals'],
       summary: 'Create a goal',
       description:
@@ -253,7 +254,7 @@ export function registerGoalRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/goals/{goalId}',
+      path: '/{workspaceId}/goals/{goalId}',
       tags: ['goals'],
       summary: 'Read a goal',
       description: 'The goal and what the caller may do on it (`capabilities`). Flag `goals`.',
@@ -273,7 +274,7 @@ export function registerGoalRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/goals/{goalId}/events',
+      path: '/{workspaceId}/goals/{goalId}/events',
       tags: ['goals'],
       summary: "Read a goal's events",
       description: 'Newest first, 50 per page. Pass `next_cursor` back as `cursor`. Flag `goals`.',
@@ -294,7 +295,7 @@ export function registerGoalRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/goals/{goalId}',
+      path: '/{workspaceId}/goals/{goalId}',
       tags: ['goals'],
       summary: 'Edit a goal',
       description: 'Title, assigned person, space, agent, caps and heartbeat. Its creator, assigned person or a project admin. Flag `goals`.',
@@ -318,7 +319,7 @@ export function registerGoalRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/goals/{goalId}/criteria',
+      path: '/{workspaceId}/goals/{goalId}/criteria',
       tags: ['goals'],
       summary: "Set a goal's done criteria",
       description:
@@ -335,7 +336,7 @@ export function registerGoalRoutes(): void {
     projectsApp.openapi(
       createRoute({
         method: 'post',
-        path: `/{projectId}/goals/{goalId}/${action.verb}`,
+        path: `/{workspaceId}/goals/{goalId}/${action.verb}`,
         tags: ['goals'],
         summary: action.summary,
         description: `${action.who} Flag \`goals\`.`,

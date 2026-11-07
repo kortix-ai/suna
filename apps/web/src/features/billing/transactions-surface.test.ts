@@ -9,7 +9,7 @@ describe('account credit transactions surface', () => {
   test('describes session costs and exposes them when internal billing is disabled', () => {
     // The copy is catalog data now, so assert it as data rather than as text.
     expect(PANE_META.transactions?.description).toBe(
-      'Kortix charges and credit ledger for this account.',
+      'Kortix charges and credit ledger for this workspace.',
     );
 
     // The gate is still a source read: it is one line inside a hook whose

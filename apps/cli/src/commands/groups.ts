@@ -60,12 +60,12 @@ const HELP = help`Usage: kortix groups <subcommand> [options]
 
 Account groups — a named set of people you grant a role to once. group.read
 lists every group; without it you see your own groups and the groups on the
-projects you can read. create/rename/add need group.update or
+workspaces you can read. create/rename/add need group.update or
 group.members.manage plus the Enterprise \`rbac\` entitlement. Delete and
 remove-member are cleanup and are never entitlement-gated.
 
 Groups:
-  ls [--json]                       List groups with member + project counts.
+  ls [--json]                       List groups with member + workspace counts.
   create <name> [--description <t>] Create a group.
   set <group> [--name <n>]          Rename / re-describe a group.
       [--description <t>|--no-description]
@@ -77,7 +77,7 @@ Membership:
   remove <group> <user>             Remove one person.
 
 Reach:
-  projects <group> [--json]         Which projects this group reaches, and at
+  workspaces <group> [--json]       Which workspaces this group reaches, and at
                                     what role.
 
 Bind a group to a scope with \`kortix access grant --group <id|name> --role <key>\`;
@@ -87,7 +87,8 @@ Options:
   --name <n>          New group name (set).
   --description <t>   Description (create, set).
   --no-description    Clear the description (set).
-  --account <id>      Operate on this account (default: the linked project's account, else the active account).
+  --workspace <id>    The workspace (default: KORTIX_WORKSPACE_ID, then
+                      KORTIX_PROJECT_ID, the linked workspace, the default workspace).
   --host <name>       Operate against a non-default Kortix host.
   --json              Machine-readable output (read subcommands).
   -y, --yes           Skip the confirmation prompt.
@@ -100,7 +101,7 @@ Examples:
   kortix groups ls
   kortix groups create Engineering --description "Everyone who ships code"
   kortix groups add Engineering alice@corp.com bob@corp.com
-  kortix groups projects Engineering
+  kortix groups workspaces Engineering
   kortix access grant --group Engineering --role member --project 1a2b…
 `;
 
@@ -116,6 +117,7 @@ export async function runGroups(argv: string[]): Promise<number> {
   let clearDescription = false;
   try {
     f.account = takeFlagValue(rest, ['--account']);
+    f.workspace = takeFlagValue(rest, ['--workspace', '--project']);
     f.host = takeFlagValue(rest, ['--host']);
     f.name = takeFlagValue(rest, ['--name']);
     f.description = takeFlagValue(rest, ['--description', '--desc']);
@@ -127,7 +129,7 @@ export async function runGroups(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
+  const ctx = resolveAccountContext({ workspaceArg: f.workspace, accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
   const base = `${iamBase(ctx.accountId)}/groups`;
 
@@ -174,6 +176,7 @@ export async function runGroups(argv: string[]): Promise<number> {
       case 'remove':
         return await groupsRemove(ctx.client, ctx.accountId, base, positional[0], positional[1]);
 
+      case 'workspaces':
       case 'projects':
       case 'grants':
         return await groupsProjects(ctx.client, base, positional[0], json);
@@ -204,12 +207,12 @@ async function groupsLs(client: ApiClient, base: string, json: boolean): Promise
   const nameW = Math.max(...groups.map((g) => g.name.length), 4);
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('NAME', nameW)}   ${pad('MEMBERS', 7)}   ${pad('PROJECTS', 8)}   ${pad('SOURCE', 6)}   GROUP ID${C.reset}\n`,
+    `  ${C.dim}${pad('NAME', nameW)}   ${pad('MEMBERS', 7)}   ${pad('WORKSPACES', 10)}   ${pad('SOURCE', 6)}   GROUP ID${C.reset}\n`,
   );
   for (const g of groups) {
     process.stdout.write(
       `  ${pad(g.name, nameW)}   ${pad(String(g.member_count ?? 0), 7)}   ` +
-        `${pad(String(g.project_count ?? 0), 8)}   ${pad(g.source ?? 'local', 6)}   ` +
+        `${pad(String(g.project_count ?? 0), 10)}   ${pad(g.source ?? 'local', 6)}   ` +
         `${C.faded}${g.group_id}${C.reset}\n`,
     );
   }
@@ -420,15 +423,15 @@ async function groupsProjects(
   }
   if (grants.length === 0) {
     process.stdout.write(
-      `\n  ${C.dim}${group.name} reaches no projects. Grant one with ` +
-        `${C.reset}${C.cyan}kortix access grant --group ${group.group_id} --role member --project <id>${C.reset}\n\n`,
+      `\n  ${C.dim}${group.name} reaches no workspaces. Grant one with ` +
+        `${C.reset}${C.cyan}kortix access grant --group ${group.group_id} --role member --workspace <id>${C.reset}\n\n`,
     );
     return 0;
   }
-  const nameW = Math.max(...grants.map((g) => g.project_name.length), 7);
+  const nameW = Math.max(...grants.map((g) => g.project_name.length), 9);
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('PROJECT', nameW)}   ${pad('ROLE', 8)}   ${pad('EXPIRES', 10)}   PROJECT ID${C.reset}\n`,
+    `  ${C.dim}${pad('WORKSPACE', nameW)}   ${pad('ROLE', 8)}   ${pad('EXPIRES', 10)}   WORKSPACE ID${C.reset}\n`,
   );
   for (const g of grants) {
     process.stdout.write(
@@ -437,7 +440,7 @@ async function groupsProjects(
     );
   }
   process.stdout.write(
-    `\n  ${C.dim}${grants.length} project${grants.length === 1 ? '' : 's'}${C.reset}\n\n`,
+    `\n  ${C.dim}${grants.length} workspace${grants.length === 1 ? '' : 's'}${C.reset}\n\n`,
   );
   return 0;
 }
@@ -467,7 +470,7 @@ async function resolveGroup(
 async function emailMap(client: ApiClient, accountId: string): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   const members = await client
-    .get<AccountMemberRow[]>(`/accounts/${encodeURIComponent(accountId)}/members`)
+    .get<AccountMemberRow[]>(`/workspaces/${encodeURIComponent(accountId)}/members`)
     .catch(() => [] as AccountMemberRow[]);
   for (const m of members) if (m.email) out.set(m.user_id, m.email);
   return out;

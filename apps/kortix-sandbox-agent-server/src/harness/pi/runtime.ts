@@ -74,6 +74,7 @@ import { PI_HARNESS_VERSION } from './version'
 import { promptImages } from './images'
 import type { PiSessionSnapshot } from './session-log'
 import { flushSessionLogJournal, reliveSessionLogMessage } from '../shared/session-log-journal'
+import { workspaceIdFromEnv } from '@/lib/config/workspace-id'
 
 export type { CompiledAgent }
 
@@ -2794,7 +2795,7 @@ export class PiRuntime {
     return {
       id: this.rootId,
       slug: this.rootId,
-      projectID: (this.env.KORTIX_PROJECT_ID ?? '').trim() || this.sessionId,
+      projectID: workspaceIdFromEnv(this.env) || this.sessionId,
       directory: this.workspace,
       title: this.title,
       version: PI_HARNESS_VERSION,

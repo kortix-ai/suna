@@ -1,5 +1,5 @@
 import type { ApiClient } from '../api/client.ts';
-import { splitHelp } from '../command-argv.ts';
+import { splitHelp, fromWorkspaceAlias } from '../command-argv.ts';
 import {
   emitJson,
   fail,
@@ -54,15 +54,15 @@ Roles:
   rm <role>                           Delete a custom role.
 
 Assignments (legacy policy store — prefer \`kortix access grant\`):
-  assignments [--project <id>] [--json]   List policy bindings.
-  assign <role> --to <type>:<id> [opts]   Bind a role to a principal.
-  unassign <policy-id>                    Remove a binding.
+  assignments [--workspace <id>] [--json]  List policy bindings.
+  assign <role> --to <type>:<id> [opts]    Bind a role to a principal.
+  unassign <policy-id>                     Remove a binding.
 
 IAM as code:
-  export [--project <id>] [--out <file>]  Dump custom roles + bindings to TOML
-                                          (or JSON with --format json).
-  import <file>                           Apply a roles/policies file (creates
-                                          missing roles, then bulk-imports binds).
+  export [--workspace <id>] [--out <file>]  Dump custom roles + bindings to TOML
+                                            (or JSON with --format json).
+  import <file>                             Apply a roles/policies file (creates
+                                            missing roles, then bulk-imports binds).
 
 A <role> may be its key (e.g. "support_agent") or its role id.
 A principal is "member:<user-id>", "group:<group-id>", or "token:<sa-id>".
@@ -71,16 +71,15 @@ Options:
   --name <n>         Display name (create, edit).
   --desc <text>      Description (create, edit).
   --no-desc          Clear the description (edit).
-  --scope <s>        account|project — resource type of a created role,
-                     or the scope of an assignment (default: project, on
-                     --project or the linked project).
+  --scope <s>        account|workspace — resource type of a created role,
+                     or the scope of an assignment (default: workspace, on
+                     --project or the linked workspace).
   --actions <list>   Comma-separated action keys (create / set-actions).
   --to <type>:<id>   Principal for an assignment.
-  --project <id>     Project id — scope an assignment / filter / export.
+  --workspace <id>   Workspace id — scope an assignment / filter / export.
   --expires <iso>    Optional hard expiry for an assignment.
   --out <file>       Write export to a file (default: stdout).
   --format <f>       toml (default) | json — export format.
-  --account <id>     Operate on this account (default: active account).
   --json             Machine-readable output (read subcommands).
   -h, --help         Show this help.
 
@@ -88,9 +87,9 @@ Examples:
   kortix roles ls
   kortix roles permissions manager
   kortix roles create support_agent --name "Support Agent" \\
-    --scope project --actions project.read,project.session.start,project.trigger.fire
-  kortix roles assign support_agent --to member:<user-id> --project <project-id>
-  kortix roles assignments --project <project-id>
+    --scope workspace --actions project.read,project.session.start,project.trigger.fire
+  kortix roles assign support_agent --to member:<user-id> --workspace <id>
+  kortix roles assignments --workspace <id>
   kortix roles export --out policies.toml
   kortix roles import policies.toml
 `;
@@ -108,10 +107,10 @@ export async function runRoles(argv: string[]): Promise<number> {
     f.name = takeFlagValue(rest, ['--name']);
     f.desc = takeFlagValue(rest, ['--desc', '--description']);
     clearDesc = takeFlagBool(rest, ['--no-desc', '--no-description']);
-    f.scope = takeFlagValue(rest, ['--scope']);
+    f.scope = fromWorkspaceAlias(takeFlagValue(rest, ['--scope']));
     f.actions = takeFlagValue(rest, ['--actions']);
     f.to = takeFlagValue(rest, ['--to']);
-    f.project = takeFlagValue(rest, ['--project']);
+    f.project = takeFlagValue(rest, ['--project', '--workspace']);
     f.expires = takeFlagValue(rest, ['--expires']);
     f.out = takeFlagValue(rest, ['--out']);
     f.format = takeFlagValue(rest, ['--format']);
@@ -122,9 +121,9 @@ export async function runRoles(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
+  const ctx = resolveAccountContext({ workspaceArg: f.project, accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
-  const base = `/accounts/${ctx.accountId}/iam`;
+  const base = `/workspaces/${ctx.accountId}/iam`;
 
   try {
     switch (sub) {

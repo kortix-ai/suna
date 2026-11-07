@@ -11,7 +11,7 @@
  * render instead of after a second fetch.
  */
 
-import type { PermissionProbeInput, PermissionProbeTarget } from '@kortix/sdk';
+import type { PermissionProbeTarget } from '@kortix/sdk';
 import { PROJECT_ACTIONS } from './project-actions';
 import { useCan, useCans, type CanResult } from './use-permission';
 
@@ -24,15 +24,6 @@ export function projectPermissionTarget(
 ): Extract<PermissionProbeTarget, { resourceType: 'project' }> | undefined {
   if (!projectId) return undefined;
   return { resourceType: 'project', resourceId: projectId };
-}
-
-/** N actions against one project, as a probe list. */
-export function projectPermissionProbes(
-  projectId: string | undefined,
-  actions: readonly string[],
-): PermissionProbeInput[] {
-  const target = projectPermissionTarget(projectId);
-  return target ? actions.map((action) => ({ action, ...target })) : [];
 }
 
 /** Can the current user perform `action` on this project? */

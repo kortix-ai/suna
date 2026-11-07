@@ -39,7 +39,7 @@ import { GoalStarter } from './goal-starter';
 import { NewGoalModal } from './new-goal-modal';
 
 /**
- * /projects/[id]/goals — every goal the API lets the viewer read (their own,
+ * /workspaces/[id]/goals — every goal the API lets the viewer read (their own,
  * the ones assigned to them, the ones in folders shared with them, all of
  * them for a project admin), grouped by who acts
  * next: the goals that need the viewer, the ones with a problem, the ones the

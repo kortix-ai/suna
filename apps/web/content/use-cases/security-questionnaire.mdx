@@ -56,13 +56,13 @@ returns a filled draft for security to review before it goes back.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the questionnaire skill and the 15-minute trigger, and opens a change request for you to review. Prefer
 clicks? Choose **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a security questionnaire agent in this project.
+  code={`Set up a security questionnaire agent in this workspace.
 
 1. Create the agent agents/security-questionnaire.md. Its job is to draft responses to inbound security questionnaires from our vetted answers. It may use the Gmail, Google Drive and Google Sheets connectors.
 
@@ -84,7 +84,7 @@ clicks? Choose **Use this template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect the inbox where questionnaires
+Open **Connectors** in your workspace and connect the inbox where questionnaires
 arrive and the files they come in. Credentials are brokered server-side and
 never enter the agent's machine.
 
@@ -124,7 +124,7 @@ and the flagged rows before you let the schedule take over.
 The change request added this trigger to `kortix.yaml`. From now on the agent
 checks the label every 15 minutes, and each questionnaire runs in a new session
 on its own cloud computer. To change the interval, edit the cron line, or open
-**Triggers** in the project.
+**Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

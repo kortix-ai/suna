@@ -161,7 +161,7 @@ export function SessionPermissionPrompt({
   sessionControls = true,
 }: SessionPermissionPromptProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // Only the /projects/[id]/sessions/[sessionId] route has a project in scope —
+  // Only the /workspaces/[id]/sessions/[sessionId] route has a project in scope —
   // on plain /sessions/[id], `id` IS the session, so no config surface.
   const ids = useSessionIds();
   const projectId = ids.sessionId ? ids.projectId : undefined;

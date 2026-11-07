@@ -8,7 +8,7 @@ import {
 } from '@kortix/shared';
 
 import { withKortixScope } from '../api/sdk.ts';
-import { splitHelp } from '../command-argv.ts';
+import { splitHelp, fromWorkspaceAlias } from '../command-argv.ts';
 import {
   type AccountContext,
   emitJson,
@@ -50,19 +50,20 @@ Subcommands:
     --usage                         Credit usage summary.
     --days <n>                      Window for --summary / --usage. Default: 30.
   costs                             Spend over a window. --json.
-    --by project|session            Roll up by project or by session.
+    --by workspace|session          Roll up by workspace or by session.
                                     Omit for account totals + model breakdown.
-    --project <id>                  Scope to one project.
+    --workspace <id>                Scope to one workspace.
     --session <id>                  Scope the totals to one session.
     --owner <id>                    Filter sessions by owner (--by session).
     --since <iso> --until <iso>     Half-open [from, to) UTC. Default: 30 days.
     --sort <k>                      total_desc (default), total_asc, recent,
-                                    name_asc (--by project only).
-    --limit <n> --offset <n>        Paging for --by project|session.
+                                    name_asc (--by workspace only).
+    --limit <n> --offset <n>        Paging for --by workspace|session.
     --csv <file>                    Write the rows as CSV. Needs --by.
 
 Global options:
-  --account <id>     Operate on this account (default: the linked project's account, else the active account).
+  --workspace <id>   The workspace (default: KORTIX_WORKSPACE_ID, then
+                     KORTIX_PROJECT_ID, the linked workspace, the default workspace).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -70,7 +71,7 @@ Global options:
 Examples:
   kortix billing status
   kortix billing transactions --summary --days 7
-  kortix billing costs --by project --since 2026-08-01T00:00:00Z
+  kortix billing costs --by workspace --since 2026-08-01T00:00:00Z
   kortix billing costs --by session --csv sessions.csv
 `;
 
@@ -102,6 +103,25 @@ function integer(value: string | undefined, label: string): number | undefined {
   return n;
 }
 
+/** The costs-only and transactions-only flags, by the option a person types. */
+const COSTS_ONLY: ReadonlyArray<[keyof Flags, string]> = [
+  ['by', '--by'], ['session', '--session'], ['owner', '--owner'], ['since', '--since'], ['until', '--until'],
+  ['sort', '--sort'], ['csv', '--csv'],
+];
+const TRANSACTIONS_ONLY: ReadonlyArray<[keyof Flags, string]> = [
+  ['limit', '--limit'], ['offset', '--offset'], ['type', '--type'], ['days', '--days'],
+  ['summary', '--summary'], ['breakdown', '--breakdown'], ['usage', '--usage'],
+];
+
+/** The flags `sub` was given but never reads. `costs` reads its own set and is not checked here. */
+function flagsUnusedBy(sub: string | undefined, f: Flags): string[] {
+  const given = (list: ReadonlyArray<[keyof Flags, string]>) =>
+    list.filter(([key]) => f[key] !== undefined && f[key] !== false).map(([, flag]) => flag);
+  if (sub === 'status') return [...given(COSTS_ONLY), ...given(TRANSACTIONS_ONLY)];
+  if (sub === 'transactions' || sub === 'tx') return given(COSTS_ONLY);
+  return [];
+}
+
 export async function runBilling(argv: string[]): Promise<number> {
   const helpCode = splitHelp(argv, HELP);
   if (helpCode !== null) return helpCode;
@@ -112,8 +132,8 @@ export async function runBilling(argv: string[]): Promise<number> {
     f = {
       account: takeFlagValue(rest, ['--account']),
       host: takeFlagValue(rest, ['--host']),
-      by: takeFlagValue(rest, ['--by']),
-      project: takeFlagValue(rest, ['--project']),
+      by: fromWorkspaceAlias(takeFlagValue(rest, ['--by'])),
+      project: takeFlagValue(rest, ['--project', '--workspace']),
       session: takeFlagValue(rest, ['--session']),
       owner: takeFlagValue(rest, ['--owner']),
       since: takeFlagValue(rest, ['--since', '--from']),
@@ -133,9 +153,14 @@ export async function runBilling(argv: string[]): Promise<number> {
     return fail((err as Error).message);
   }
 
+  // A flag one subcommand consumes but another ignores is refused, never
+  // dropped: a dropped selector would answer for the wrong scope with exit 0.
+  const unused = flagsUnusedBy(sub, f);
+  if (unused.length > 0) return fail(`billing ${sub} does not take ${unused.join(', ')}.`);
+
   // In a session box, `costs --project` reads with the box's own project-bound token, no account.
   const projectToken = (sub === 'costs' || sub === 'cost') && f.project && !f.account && !f.host;
-  const ctx = (projectToken ? resolveProjectTokenContext() : null) ?? resolveAccountContext({ accountArg: f.account, hostArg: f.host });
+  const ctx = (projectToken ? resolveProjectTokenContext() : null) ?? resolveAccountContext({ workspaceArg: f.project, accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
 
   try {

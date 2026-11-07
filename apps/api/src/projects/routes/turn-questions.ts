@@ -34,6 +34,7 @@ import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { readJsonObject } from '../../shared/http-body';
 import { notifySessionEvent } from '../../notifications/session-push';
 import { askNotificationContext } from '../lib/notification-recipients';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerTurnQuestionsRoutes(): void {
   // POST /v1/projects/:projectId/turn-question
@@ -47,12 +48,12 @@ export function registerTurnQuestionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/turn-question',
+      path: '/{workspaceId}/turn-question',
       tags: ['projects'],
       summary: 'Ask the user a question from a turn',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         // Documents the relay body; the handler owns validation (its own 400s).
         body: { content: { 'application/json': { schema: TurnQuestionRelayBodySchema.or(AnyObject) } } },
       },
@@ -62,7 +63,7 @@ export function registerTurnQuestionsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
 
       // The session this credential is BOUND to, when it is a sandbox token.
       // Null for a human caller.
@@ -91,7 +92,7 @@ export function registerTurnQuestionsRoutes(): void {
           )
           .limit(1);
         if (!sandbox) {
-          return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+          return c.json({ error: 'sandbox token is not scoped to this workspace' }, 403);
         }
         callerSandboxSessionId = sandbox.sessionId ?? sandbox.sandboxId;
       } else {
@@ -359,15 +360,15 @@ export function registerTurnQuestionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/question',
+      path: '/{workspaceId}/sessions/{sessionId}/question',
       tags: ['sessions'],
       summary: 'Get the pending agent question of a session',
       ...auth,
-      request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), sessionId: z.string() }) },
       responses: { 200: json(AnyObject, 'Open question, or null'), ...errors(404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -398,18 +399,18 @@ export function registerTurnQuestionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/question',
+      path: '/{workspaceId}/sessions/{sessionId}/question',
       tags: ['sessions'],
       summary: 'Answer the pending agent question of a session',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
       responses: { 200: json(AnyObject, 'Answer delivered'), ...errors(400, 404, 409) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       // The `question` tool exists so the agent YIELDS TO A HUMAN. An
       // agent-session token is scoped to its own session, which is precisely the

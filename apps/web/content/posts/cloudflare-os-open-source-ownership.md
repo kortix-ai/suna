@@ -30,7 +30,7 @@ It also decides where you can take the product. Cloudflare's README points out t
 
 ## Your company's setup lives in a repo you can clone
 
-A Kortix project is a git repository. `kortix.yaml` at its root is the operating setup itself: which agents exist, what each may reach, which connectors and secrets they get, and what runs on a clock.
+A Kortix workspace is backed by a git repository. `kortix.yaml` at its root is the operating setup itself: which agents exist, what each may reach, which connectors and secrets they get, and what runs on a clock.
 
 ```yaml
 project:

@@ -133,7 +133,7 @@ const message = {
   title: 'Release notes',
   body: 'The agent has a question.',
   tag: 'question:ses-b',
-  url: '/projects/p1/sessions/ses-b?notification=n1',
+  url: '/workspaces/p1/sessions/ses-b?notification=n1',
   notificationId: 'n1',
   kind: 'question',
   type: 'question',
@@ -153,7 +153,7 @@ describe('sw.js push', () => {
           body: 'The agent has a question.',
           tag: 'question:ses-b',
           renotify: false,
-          data: { url: `${ORIGIN}/projects/p1/sessions/ses-b?notification=n1`, at: shownAt(0) },
+          data: { url: `${ORIGIN}/workspaces/p1/sessions/ses-b?notification=n1`, at: shownAt(0) },
           icon: '/favicon.svg',
         },
       },
@@ -163,21 +163,21 @@ describe('sw.js push', () => {
 
   // Safari removes the subscription after 3 pushes that show no notification.
   test('shows the message even when a focused tab shows that page', async () => {
-    windows = [client(`${ORIGIN}/projects/p1/sessions/ses-b`, true)];
+    windows = [client(`${ORIGIN}/workspaces/p1/sessions/ses-b`, true)];
     await push(message);
     expect(shown).toHaveLength(1);
   });
 
   test('shows the message whichever tab is open or focused', async () => {
-    windows = [client(`${ORIGIN}/projects/p1/sessions/ses-b`, false)];
+    windows = [client(`${ORIGIN}/workspaces/p1/sessions/ses-b`, false)];
     await push(message);
-    windows = [client(`${ORIGIN}/projects/p1/sessions/ses-a`, true)];
+    windows = [client(`${ORIGIN}/workspaces/p1/sessions/ses-a`, true)];
     await push(message);
     expect(shown).toHaveLength(2);
   });
 
   test('a later event with the same tag alerts again: the replacement is not silent', async () => {
-    const url = `${ORIGIN}/projects/p1/sessions/ses-b`;
+    const url = `${ORIGIN}/workspaces/p1/sessions/ses-b`;
     onScreen.set('question:ses-b', { data: { url, at: Date.now() - 60_000 } });
     await push(message);
     // A notification from an older worker carries no time: it is an earlier event too.
@@ -210,7 +210,7 @@ describe('sw.js push', () => {
 });
 
 describe('sw.js notificationclick', () => {
-  const target = `${ORIGIN}/projects/p1/sessions/ses-b?notification=n1`;
+  const target = `${ORIGIN}/workspaces/p1/sessions/ses-b?notification=n1`;
 
   test('closes the notification and opens a window when no tab is open', async () => {
     expect(await click(target)).toBe(true);
@@ -218,28 +218,38 @@ describe('sw.js notificationclick', () => {
   });
 
   test('focuses a tab already on the page and tells it which notification it opened', async () => {
-    windows = [client(`${ORIGIN}/projects/p1`), client(`${ORIGIN}/projects/p1/sessions/ses-b`)];
+    windows = [client(`${ORIGIN}/workspaces/p1`), client(`${ORIGIN}/workspaces/p1/sessions/ses-b`)];
     await click(target);
-    expect(focusedUrls).toEqual([`${ORIGIN}/projects/p1/sessions/ses-b`]);
+    expect(focusedUrls).toEqual([`${ORIGIN}/workspaces/p1/sessions/ses-b`]);
     expect(posted).toEqual([
-      { url: `${ORIGIN}/projects/p1/sessions/ses-b`, message: { type: 'kortix:notification-open', url: target } },
+      { url: `${ORIGIN}/workspaces/p1/sessions/ses-b`, message: { type: 'kortix:notification-open', url: target } },
     ]);
     expect(navigated).toEqual([]);
     expect(opened).toEqual([]);
   });
 
+  test('a payload with the pre-2026-11-06 /projects path finds the tab on its /workspaces page', async () => {
+    windows = [client(`${ORIGIN}/workspaces/p1/sessions/ses-b`)];
+    await click(`${ORIGIN}/projects/p1/sessions/ses-b?notification=n1`);
+    expect(focusedUrls).toEqual([`${ORIGIN}/workspaces/p1/sessions/ses-b`]);
+    expect(posted).toEqual([
+      { url: `${ORIGIN}/workspaces/p1/sessions/ses-b`, message: { type: 'kortix:notification-open', url: target } },
+    ]);
+    expect(opened).toEqual([]);
+  });
+
   test('navigates another tab of the app, then focuses it', async () => {
-    windows = [client('https://elsewhere.example.test/x'), client(`${ORIGIN}/projects/p1`)];
+    windows = [client('https://elsewhere.example.test/x'), client(`${ORIGIN}/workspaces/p1`)];
     await click(target);
     expect(navigated).toEqual([target]);
-    expect(focusedUrls).toEqual([`${ORIGIN}/projects/p1`]);
+    expect(focusedUrls).toEqual([`${ORIGIN}/workspaces/p1`]);
     expect(opened).toEqual([]);
     expect(posted).toEqual([]);
   });
 
   test('opens a window when the tab refuses to navigate: focus did not spend the click', async () => {
     windows = [
-      client(`${ORIGIN}/projects/p1`, false, async () => {
+      client(`${ORIGIN}/workspaces/p1`, false, async () => {
         throw new TypeError('not controlled');
       }),
     ];

@@ -57,14 +57,14 @@ the rest, it does nothing but note them for a human to look at.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the flag-cleanup skill and the
 weekly trigger, and opens a change request for you to review.
 Prefer clicks? Choose **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a weekly feature-flag cleanup agent in this project.
+  code={`Set up a weekly feature-flag cleanup agent in this workspace.
 
 1. Create the agent agents/feature-flag-cleanup.md. Its job is to remove feature flags in owner/repo that are provably safe to delete and open a pull request. It may use the GH_TOKEN secret.
 
@@ -85,7 +85,7 @@ Prefer clicks? Choose **Use this template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Add a GitHub token with repo access as the `GH_TOKEN` secret in your project.
+Add a GitHub token with repo access as the `GH_TOKEN` secret in your workspace.
 If your rollout state lives in a flag provider, connect it under
 **Connectors** so the agent can read it. Credentials are brokered server-side
 and never enter the agent's machine.
@@ -123,7 +123,7 @@ for review before you let the schedule take over.
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every Monday at 05:00, each run in a new session on its own cloud computer. The ledger in
 `memory/flag-cleanup-log.md` carries the state between runs.
-To change the time, edit the cron line, or open **Triggers** in the project.
+To change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

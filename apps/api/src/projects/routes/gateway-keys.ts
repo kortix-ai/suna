@@ -11,23 +11,24 @@ import {
 } from '../../llm-gateway/gateway-keys';
 import { publicGatewayBaseUrl } from '../../llm-gateway/public-url';
 import { config } from '../../config';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerGatewayKeysRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/gateway/keys',
+      path: '/{workspaceId}/gateway/keys',
       tags: ['gateway'],
       summary: 'List project LLM gateway API keys',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: { 200: json(z.any(), 'Gateway API keys'), ...errors(403, 404) },
     }),
     async (c: any) => {
       // Same escalation guard as project-credentials: a durable `kgw_` key minted
       // or revoked by an agent session outlives the session and carries no grant.
       if (isProjectSessionPrincipal(c)) return c.json({ error: 'Agent-session tokens cannot manage gateway keys' }, 403);
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       if (!(await projectCapabilityAllowed(
@@ -59,12 +60,12 @@ export function registerGatewayKeysRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/gateway/keys',
+      path: '/{workspaceId}/gateway/keys',
       tags: ['gateway'],
       summary: 'Create a project LLM gateway API key',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: {
           content: {
             'application/json': { schema: z.object({ name: z.string().min(1).max(255) }) },
@@ -79,7 +80,7 @@ export function registerGatewayKeysRoutes(): void {
       // Same escalation guard as project-credentials: a durable `kgw_` key minted
       // or revoked by an agent session outlives the session and carries no grant.
       if (isProjectSessionPrincipal(c)) return c.json({ error: 'Agent-session tokens cannot manage gateway keys' }, 403);
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       if (!(await projectCapabilityAllowed(
@@ -113,18 +114,18 @@ export function registerGatewayKeysRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/gateway/keys/{keyId}',
+      path: '/{workspaceId}/gateway/keys/{keyId}',
       tags: ['gateway'],
       summary: 'Revoke a project LLM gateway API key',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), keyId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string(), keyId: z.string().uuid() }),
       },
       responses: { 200: json(z.any(), 'Gateway API key revoked'), ...errors(403, 404) },
     }),
     async (c: any) => {
       if (isProjectSessionPrincipal(c)) return c.json({ error: 'Agent-session tokens cannot manage gateway keys' }, 403);
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const keyId = c.req.param('keyId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);

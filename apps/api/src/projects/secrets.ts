@@ -1,4 +1,4 @@
-import { connectors, projectSecrets, projectSecretTombstones, projects } from '@kortix/db';
+import { connectors, projectSecrets, projectSecretTombstones } from '@kortix/db';
 import type { Database } from '@kortix/db';
 import { and, desc, eq, gt, inArray, isNull, lt, or } from 'drizzle-orm';
 import { isGatewayManagedEnv } from '../llm-gateway/sandbox-credentials';
@@ -24,6 +24,7 @@ import {
 import { decryptNamedProjectSecret, encryptProjectSecret } from './secrets/envelope';
 import { projectSecretsRevision, resolveGrantedSecretSelection } from './secrets/grant-policy';
 import { mintSessionSecretHandle } from './secrets/handles';
+import { projectsView } from '../workspaces/rows';
 
 /**
  * Upsert the SHARED (owner_user_id IS NULL) row for a project secret to a new
@@ -117,8 +118,8 @@ export async function recordProjectSecretTombstone(
   name: string,
   tx: SecretWriteTx,
 ): Promise<void> {
-  await tx.select({ status: projects.status }).from(projects)
-    .where(eq(projects.projectId, projectId)).limit(1).for('update');
+  await tx.select({ status: projectsView.status }).from(projectsView)
+    .where(eq(projectsView.projectId, projectId)).limit(1).for('update');
   await tx.insert(projectSecretTombstones)
     .values({ projectId, name, deletedAt: new Date() })
     .onConflictDoUpdate({

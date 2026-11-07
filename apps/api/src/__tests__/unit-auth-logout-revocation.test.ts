@@ -8,7 +8,7 @@ const USER = '00000000-0000-4000-8000-00000000a001';
 const SECRET = 'synthetic-logout-secret-0123456789';
 process.env.SUPABASE_JWT_SECRET = SECRET;
 
-mock.module('../shared/db', () => ({ db: {}, hasDatabase: () => false }));
+mock.module('../shared/db', () => ({ withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(), db: {}, hasDatabase: () => false }));
 mock.module('../middleware/auth-audit', () => ({
   auditLoginFail: () => {}, auditLoginSuccess: () => {}, auditLogout: () => {}, auditSessionFirstSight: () => {},
 }));

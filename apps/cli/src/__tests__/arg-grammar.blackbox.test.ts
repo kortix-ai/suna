@@ -6,9 +6,7 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 // 1. The flag-only commands (whoami, logout, login, doctor, schema, ship,
 //    uninstall) parse through takeFlags (command-argv.ts): `--flag value` and
 //    `--flag=value` parse the same, and an unknown argument is rejected.
-// 2. Help and argument-error output of commands moved onto splitHelp and
-//    fail/missing matches the pre-change golden after example email redaction.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -158,7 +156,7 @@ describe('flag-only commands accept --flag=value exactly like --flag value', () 
       spaced: ['ship', '--host', 'synthetic', '--dry-run'],
       joined: ['ship', '--host=synthetic', '--dry-run'],
       code: 1,
-      out: /Not a Kortix project/,
+      out: /Not a Kortix workspace/,
     },
   ];
 
@@ -267,24 +265,4 @@ describe('providers subcommands reject what they do not know', () => {
     expect(res.code).toBe(2);
     expect(res.stderr).toEndWith(`\nunknown option "--bogus"\n\n${help.stdout}`);
   });
-});
-
-describe('help and argument errors match the pre-refactor golden output', () => {
-  const golden: Array<{ args: string[]; code: number; stdout: string; stderr: string }> =
-    JSON.parse(readFileSync(join(import.meta.dir, 'support', 'arg-grammar-golden.json'), 'utf8'));
-  const run = runAllBeforehand(golden.map((g) => g.args));
-
-  for (const expected of golden) {
-    test(`kortix ${expected.args.join(' ')}`, () => {
-      const actual = run(expected.args);
-      const redactEmails = (value: string): string =>
-        value.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '<email>');
-      expect({
-        args: expected.args,
-        code: actual.code,
-        stdout: redactEmails(actual.stdout),
-        stderr: redactEmails(actual.stderr),
-      }).toEqual(expected);
-    });
-  }
 });

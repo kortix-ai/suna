@@ -23,7 +23,7 @@ export interface ChannelCommandSpec {
 export const CHANNEL_COMMANDS = [
   { name: 'new', aliases: ['reset'], usage: '/new', description: "Start a new conversation and stop this chat's run" },
   { name: 'stop', aliases: ['cancel'], usage: '/stop', description: "Stop the agent's current run in this chat" },
-  { name: 'status', aliases: [], usage: '/status', description: "Show this chat's project, agent, model and session" },
+  { name: 'status', aliases: [], usage: '/status', description: "Show this chat's workspace, agent, model and session" },
   { name: 'model', aliases: ['models'], usage: '/model [id]', description: 'List the models, or switch this chat to one' },
   { name: 'agent', aliases: ['agents'], usage: '/agent [name]', description: 'List the agents, or switch this chat to one' },
   { name: 'help', aliases: ['start'], usage: '/help', description: 'List the commands' },

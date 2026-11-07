@@ -26,7 +26,7 @@ import { secretsLs } from './secrets-ls.ts';
 
 const HELP = help`Usage: kortix secrets <subcommand> [options]
 
-Manage encrypted secrets on the linked Kortix project.
+Manage encrypted secrets on the linked Kortix workspace.
 
 A secret has an IDENTIFIER (the name an agent's \`secrets\` grant references),
 a KEY (the env var it occupies in the sandbox), and a value. Leave the
@@ -39,7 +39,7 @@ Each secret has one EXPOSURE — can agent code read the value?
                for a credential the code must COMPUTE with (AWS SigV4, HMAC
                webhook signing, JWT assertions, SSH/PEM keys) and for anything
                that is not HTTPS.
-  enforced     EXPERIMENTAL — requires the project's \`secrets_egress\` feature
+  enforced     EXPERIMENTAL — requires the workspace's \`secrets_egress\` feature
                flag (Settings → Feature flags), on by default. The env var
                holds a HANDLE, not the value. Kortix substitutes the real value
                outside the sandbox, only on the approved hosts, and rewrites any
@@ -68,7 +68,7 @@ Subcommands:
                                     defaults to KEY. Use this whenever you
                                     HAVE the value — an agent included, when
                                     the human gave it in chat. Needs the
-                                    project's secret-write permission.
+                                    workspace's secret-write permission.
                                     Use \`KEY=-\` to read VALUE from stdin.
     --identifier <id>               Store under an explicit identifier (a second
     --id <id>                       value under the same KEY). One KEY=VALUE only.
@@ -84,7 +84,7 @@ Subcommands:
                                     session's agent will not receive a name.
     --show                          Re-show the unexpired link saved on this
                                     device for the same names, scope, host,
-                                    project and credential. Never mints.
+                                    workspace and credential. Never mints.
                                     Links minted elsewhere are not available.
                                     --scope runtime|connector  --expires <min>
                                     connector by default: server-side only,
@@ -94,12 +94,12 @@ Subcommands:
                                     session: pulls THIS session's secrets and
                                     grant now (the per-prompt sync, on
                                     demand). As a person: every active
-                                    sandbox of the project. Use after a secret
+                                    sandbox of the workspace. Use after a secret
                                     is set via the intake link, updated, or
                                     newly granted to the agent mid-session.
   delivery IDENTIFIER EXPOSURE      Set environment (default), enforced, or
                                     none. \`enforced\` is EXPERIMENTAL and needs
-                                    the project's \`secrets_egress\` feature flag
+                                    the workspace's \`secrets_egress\` feature flag
                                     (Settings → Feature flags). The stored names
                                     runtime|egress|broker|denied are accepted as
                                     aliases.
@@ -137,11 +137,11 @@ Subcommands:
   share IDENTIFIER                  Set WHO CAN USE the value (replaces it).
     --user <email|id|me>            A person. Repeat for more.
     --group <id>                    A group. Repeat for more.
-    --agent <name>                  An agent of this project. It uses the
+    --agent <name>                  An agent of this workspace. It uses the
                                     value in every one of its sessions,
                                     triggers included — anyone who can run
                                     the agent can use it through the agent.
-    --everyone                      Everyone in the project (the default).
+    --everyone                      Everyone in the workspace (the default).
                                     Shared with specific people, the value
                                     reaches only them — directly, or in their
                                     own private sessions. Never a shared
@@ -161,12 +161,12 @@ WIDENS one agent's list; to narrow or replace it, rewrite the whole set with
 \`kortix agents scope\`. There is no \`secrets revoke\` — the API has no route
 that removes a single identifier from a grant.
 
-The first \`grant\` on a project with no \`agents:\` block writes that block. From
-then on an agent the manifest does not list receives NO project secrets — the
+The first \`grant\` on a workspace with no \`agents:\` block writes that block. From
+then on an agent the manifest does not list receives NO workspace secrets — the
 command says so when it happens.
 
 Global options:
-  --project <id>     Operate on this project id (default: linked or
+  --workspace <id>   Operate on this workspace id (default: linked or
                      \$KORTIX_PROJECT_ID).
   -h, --help         Show this help.
 `;
@@ -180,7 +180,7 @@ export async function runSecrets(argv: string[]): Promise<number> {
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   try {
-    projectFlag = takeFlagValue(rest, ['--project']);
+    projectFlag = takeFlagValue(rest, ['--project', '--workspace']);
     hostFlag = takeFlagValue(rest, ['--host']);
   } catch (err) {
     return fail((err as Error).message);
@@ -277,7 +277,7 @@ async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {
   let sharedWith: Array<{ principal_type: 'user'; principal_id: string }> | undefined;
   if (onlyMe) {
     try {
-      const me = await ctx.client.get<{ user_id: string }>('/accounts/me');
+      const me = await ctx.client.get<{ user_id: string }>('/me');
       sharedWith = [{ principal_type: 'user', principal_id: me.user_id }];
     } catch (err) {
       return surfaceApiError(err);
@@ -292,7 +292,7 @@ async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {
         ? `${C.bold}${shownId}${C.reset} ${C.dim}→ ${p.key}${C.reset}`
         : `${C.bold}${p.key}${C.reset}`;
     try {
-      await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
+      await ctx.client.post<ProjectSecret>(`/workspaces/${ctx.projectId}/secrets`, {
         name: p.key,
         ...(identifier !== undefined ? { identifier } : {}),
         // Same two scopes as `secrets request`: connector keeps the value
@@ -322,7 +322,7 @@ async function secretsUnset(names: string[], opts: CtxOpts): Promise<number> {
   let okCount = 0;
   for (const name of names) {
     try {
-      await ctx.client.delete(`/projects/${ctx.projectId}/secrets/${encodeURIComponent(name)}`);
+      await ctx.client.delete(`/workspaces/${ctx.projectId}/secrets/${encodeURIComponent(name)}`);
       okCount += 1;
       process.stdout.write(`${status.ok(`removed ${C.bold}${name}${C.reset}`)}\n`);
     } catch (err) {
@@ -367,7 +367,7 @@ async function secretsSync(opts: CtxOpts, json = false): Promise<number> {
         agent_env_written: boolean;
         reason?: string;
       }>;
-    }>(`/projects/${ctx.projectId}/secrets/sync`, {});
+    }>(`/workspaces/${ctx.projectId}/secrets/sync`, {});
     if (json) {
       emitJson(result);
       return result.ok ? 0 : 1;
@@ -397,7 +397,7 @@ async function secretsSync(opts: CtxOpts, json = false): Promise<number> {
     );
     for (const target of result.results.filter((item) => item.status === 'failed')) {
       process.stderr.write(
-        `  ${C.dim}${target.session_id || 'project'}: ${target.reason ?? 'delivery verification failed'}${C.reset}\n`,
+        `  ${C.dim}${target.session_id || 'workspace'}: ${target.reason ?? 'delivery verification failed'}${C.reset}\n`,
       );
     }
     return 1;

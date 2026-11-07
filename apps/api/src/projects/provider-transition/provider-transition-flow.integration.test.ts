@@ -33,7 +33,7 @@ let accountId: string;
 async function freshProject(defaultProvider = 'daytona'): Promise<string> {
   const [row] = await db
     .insert(projects)
-    .values({ accountId, name: 'ptx', repoUrl: 'https://example.test/r.git', metadata: {} })
+    .values({ splitPending: true, accountId, name: 'ptx', repoUrl: 'https://example.test/r.git', metadata: {} })
     .returning();
   return row!.projectId;
 }

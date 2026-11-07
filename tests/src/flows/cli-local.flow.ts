@@ -214,8 +214,8 @@ flow('CREATE-1', { domain: 'cli', routes: [] }, async (ctx) => {
         const r = await sb.run(['mywidget']);
         check('exit 2', r.exitCode === 2, 2, r.exitCode);
         check(
-          'explains explicit init command',
-          /kortix init <name>/i.test(r.all),
+          'names the explicit create command',
+          /kortix workspaces create <name>/i.test(r.all),
           true,
           r.stderr.slice(0, 240),
         );
@@ -422,7 +422,7 @@ flow('LOGOUT-1', { domain: 'cli', routes: [] }, async (ctx) => {
 // These hit GET /accounts/me. They self-skip if the auth'd matrix isn't
 // provisioned (the OWNER PAT mint requires Supabase-admin world setup).
 
-flow('LOGIN-1', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) => {
+flow('LOGIN-1', { domain: 'cli', routes: ['GET /v1/me'] }, async (ctx) => {
   const pat = await ctx.fixtures.pat({
     name: ctx.fixtures.name('cli-login1'),
   });
@@ -449,7 +449,7 @@ flow('LOGIN-1', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) 
   }
 });
 
-flow('LOGIN-2', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) => {
+flow('LOGIN-2', { domain: 'cli', routes: ['GET /v1/me'] }, async (ctx) => {
   const pat = await ctx.fixtures.pat({
     name: ctx.fixtures.name('cli-login2'),
   });
@@ -495,7 +495,7 @@ flow('LOGIN-2', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) 
   });
 });
 
-flow('LOGIN-3', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) => {
+flow('LOGIN-3', { domain: 'cli', routes: ['GET /v1/me'] }, async (ctx) => {
   await ctx.step(
     'kortix login --token <bad valid-prefix> → /accounts/me 401 → exit 1',
     async () => {
@@ -530,7 +530,7 @@ flow('LOGIN-3', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) 
   );
 });
 
-flow('LOGIN-4', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) => {
+flow('LOGIN-4', { domain: 'cli', routes: ['GET /v1/me'] }, async (ctx) => {
   const pat = await ctx.fixtures.pat({
     name: ctx.fixtures.name('cli-login4'),
   });
@@ -562,7 +562,7 @@ flow('LOGIN-4', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) 
   );
 });
 
-flow('WHOAMI-1', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) => {
+flow('WHOAMI-1', { domain: 'cli', routes: ['GET /v1/me'] }, async (ctx) => {
   const pat = await ctx.fixtures.pat({
     name: ctx.fixtures.name('cli-whoami'),
   });

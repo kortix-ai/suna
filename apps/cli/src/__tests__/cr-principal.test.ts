@@ -83,7 +83,7 @@ function startHost(opts: { token: string; ownProject: string; number_: number })
       if (req.headers.get('authorization') !== `Bearer ${opts.token}`) {
         return Response.json({ error: 'Invalid PAT' }, { status: 401 });
       }
-      if (!url.pathname.startsWith(`/v1/projects/${opts.ownProject}/`)) {
+      if (!url.pathname.startsWith(`/v1/workspaces/${opts.ownProject}/`)) {
         return Response.json(
           {
             error: true,
@@ -93,7 +93,7 @@ function startHost(opts: { token: string; ownProject: string; number_: number })
           { status: 403 },
         );
       }
-      if (url.pathname === `/v1/projects/${opts.ownProject}/change-requests`) {
+      if (url.pathname === `/v1/workspaces/${opts.ownProject}/change-requests`) {
         if (req.method === 'GET') {
           return Response.json({
             change_requests: [changeRequest(opts.ownProject, opts.number_)],
@@ -219,7 +219,7 @@ describe('kortix cr resolves one principal (KRTX-1486)', () => {
     expect(configHost.calls).toEqual([
       {
         method: 'GET',
-        path: `/v1/projects/${LINKED_PROJECT}/change-requests`,
+        path: `/v1/workspaces/${LINKED_PROJECT}/change-requests`,
         token: CONFIG_TOKEN,
       },
     ]);
@@ -280,12 +280,12 @@ describe('kortix cr resolves one principal (KRTX-1486)', () => {
     expect(configHost.calls).toEqual([
       {
         method: 'POST',
-        path: `/v1/projects/${LINKED_PROJECT}/change-requests`,
+        path: `/v1/workspaces/${LINKED_PROJECT}/change-requests`,
         token: CONFIG_TOKEN,
       },
       {
         method: 'GET',
-        path: `/v1/projects/${LINKED_PROJECT}/change-requests/aaaaaaaa-0000-4000-8000-000000000003/diff`,
+        path: `/v1/workspaces/${LINKED_PROJECT}/change-requests/aaaaaaaa-0000-4000-8000-000000000003/diff`,
         token: CONFIG_TOKEN,
       },
     ]);

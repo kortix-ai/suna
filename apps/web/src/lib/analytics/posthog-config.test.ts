@@ -84,9 +84,9 @@ describe('readAnalyticsConsent', () => {
 
 describe('URL reduction', () => {
   test('private paths become route templates, locale prefix removed', () => {
-    expect(routeTemplate('/de/projects/9f1c/sessions/4a2b')).toBe('/projects/:id/sessions/:id');
-    expect(routeTemplate('/projects/9f1c/customize/agents/acme-sales-bot')).toBe(
-      '/projects/:id/customize/agents/:id',
+    expect(routeTemplate('/de/workspaces/9f1c/sessions/4a2b')).toBe('/workspaces/:id/sessions/:id');
+    expect(routeTemplate('/workspaces/9f1c/customize/agents/acme-sales-bot')).toBe(
+      '/workspaces/:id/customize/agents/:id',
     );
     expect(routeTemplate('/settings/billing')).toBe('/settings/billing');
   });
@@ -103,7 +103,7 @@ describe('URL reduction', () => {
   test('only campaign parameters survive the query, and never the hash', () => {
     expect(
       sanitizeUrl(
-        'https://kortix.com/auth?email=a%40b.com&returnUrl=%2Fprojects%2Fx&utm_source=youtube&gclid=g1#token',
+        'https://kortix.com/auth?email=a%40b.com&returnUrl=%2Fworkspaces%2Fx&utm_source=youtube&gclid=g1#token',
         ORIGIN,
       ),
     ).toBe('https://kortix.com/auth?utm_source=youtube&gclid=g1');
@@ -132,18 +132,18 @@ describe('scrubEvent', () => {
       {
         event: '$autocapture',
         properties: {
-          $current_url: 'https://kortix.com/projects/p1/spaces/q3-board-plan?x=1',
-          $pathname: '/projects/p1/spaces/q3-board-plan',
+          $current_url: 'https://kortix.com/workspaces/p1/spaces/q3-board-plan?x=1',
+          $pathname: '/workspaces/p1/spaces/q3-board-plan',
           title: 'Q3 board plan · Acme',
           $el_text: 'Acme layoffs.xlsx',
           $elements_chain:
-            'a.file-row:attr__class="file-row"attr__href="/projects/p1/files/Acme%20layoffs.xlsx"href="/projects/p1/files/Acme%20layoffs.xlsx"nth-child="2"nth-of-type="1"text="Acme layoffs.xlsx";div.list:nth-child="1"',
+            'a.file-row:attr__class="file-row"attr__href="/workspaces/p1/files/Acme%20layoffs.xlsx"href="/workspaces/p1/files/Acme%20layoffs.xlsx"nth-child="2"nth-of-type="1"text="Acme layoffs.xlsx";div.list:nth-child="1"',
         },
       },
       ORIGIN,
     );
-    expect(event.properties.$current_url).toBe('https://kortix.com/projects/:id/spaces/:id');
-    expect(event.properties.$pathname).toBe('/projects/:id/spaces/:id');
+    expect(event.properties.$current_url).toBe('https://kortix.com/workspaces/:id/spaces/:id');
+    expect(event.properties.$pathname).toBe('/workspaces/:id/spaces/:id');
     expect(event.properties.title).toBeUndefined();
     expect(event.properties.$el_text).toBeUndefined();
     const chain = String(event.properties.$elements_chain);
@@ -157,7 +157,7 @@ describe('scrubEvent', () => {
     const event = scrubEvent(
       {
         event: '$identify',
-        properties: { $current_url: 'https://kortix.com/projects/p1', $pathname: '/projects/p1' },
+        properties: { $current_url: 'https://kortix.com/workspaces/p1', $pathname: '/workspaces/p1' },
         $set_once: {
           $initial_current_url: 'https://kortix.com/auth?email=a%40b.com&utm_source=meta',
           $initial_pathname: '/connect/tok_1',

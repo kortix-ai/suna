@@ -4,6 +4,7 @@ import { runWithKortix } from '@kortix/sdk/server';
 import type { Auth } from './auth.ts';
 import { openKortixWebSocket } from './kortix-socket.ts';
 import { sdkBackendUrl } from '@kortix/shared/host-config';
+import { NO_WORKSPACE_CODE, NO_WORKSPACE_LINE } from './no-workspace.ts';
 
 export { sdkBackendUrl } from '@kortix/shared/host-config';
 
@@ -255,6 +256,14 @@ export async function cliDeviceRequest<T>(apiBase: string, path: 'start' | 'poll
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kortix-Client-Version': 'cli/dev' },
     body: JSON.stringify(body), signal,
   });
-  if (!response.ok) throw new DeviceRequestError(response.status);
+  if (!response.ok) {
+    // The approver belongs to no workspace yet (`409 no_workspace`): a key
+    // needs one, so name the two ways in instead of a bare status. Still a
+    // DeviceRequestError: the poll loop stops on a 4xx.
+    const refusal = await response.json().catch(() => null) as { code?: unknown; error?: unknown } | null;
+    const error = new DeviceRequestError(response.status);
+    if (refusal?.code === NO_WORKSPACE_CODE || refusal?.error === NO_WORKSPACE_CODE) error.message = NO_WORKSPACE_LINE;
+    throw error;
+  }
   return await response.json() as T;
 }

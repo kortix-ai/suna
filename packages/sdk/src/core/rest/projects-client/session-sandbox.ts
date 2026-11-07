@@ -12,9 +12,14 @@ import type { ProjectSession } from "./sessions";
 // team-membership coupling. Access gated by `project_members` only.
 // ---------------------------------------------------------------------------
 
+/** @deprecated Use `WorkspaceSessionSandboxStatus`. Kept permanently. */
 export type ProjectSessionSandboxStatus =
   "provisioning" | "active" | "stopped" | "error" | "archived";
 
+/** The workspace name of {@link ProjectSessionSandboxStatus}: the same type. */
+export type WorkspaceSessionSandboxStatus = ProjectSessionSandboxStatus;
+
+/** @deprecated Use `WorkspaceSessionSandbox`. Kept permanently. */
 export interface ProjectSessionSandbox {
   sandbox_id: string;
   session_id: string;
@@ -30,6 +35,9 @@ export interface ProjectSessionSandbox {
   created_at: string;
   updated_at: string;
 }
+
+/** The workspace name of {@link ProjectSessionSandbox}: the same type. */
+export type WorkspaceSessionSandbox = ProjectSessionSandbox;
 
 export type SessionStartStage =
   "provisioning" | "starting" | "ready" | "stopped" | "failed";
@@ -291,7 +299,7 @@ function postSessionStart(projectId: string, sessionId: string, options?: Sessio
   }
   const qs = search.size > 0 ? `?${search.toString()}` : "";
   return backendApi.post<SessionStartResult>(
-    `/projects/${projectId}/sessions/${sessionId}/start${qs}`,
+    `/workspaces/${projectId}/sessions/${sessionId}/start${qs}`,
     {},
     // Keep toasts quiet here. Terminal client errors are rendered by the host;
     // transient transport/server failures still yield null so polling can recover.
@@ -304,7 +312,7 @@ function postSessionStart(projectId: string, sessionId: string, options?: Sessio
  * the runtime pin server-side, returning ONE readiness payload to poll until
  * stage='ready'.
  */
-export async function startProjectSession(
+export async function startWorkspaceSession(
   projectId: string,
   sessionId: string,
   options?: SessionStartOptions,
@@ -322,13 +330,16 @@ export async function startProjectSession(
   return recordReadyRuntime(projectId, sessionId, response.data);
 }
 
+/** @deprecated Use `startWorkspaceSession`. Kept permanently. */
+export const startProjectSession = startWorkspaceSession;
+
 /**
- * {@link startProjectSession}, but every failed request rejects with the API
+ * {@link startWorkspaceSession}, but every failed request rejects with the API
  * error itself (`status`, `code`, and a 402's billing `detail` intact) instead
  * of yielding `null`. For a host that counts transient failures and shows one
  * error, or opens an upgrade prompt on a 402.
  */
-export async function startProjectSessionOrThrow(
+export async function startWorkspaceSessionOrThrow(
   projectId: string,
   sessionId: string,
   options?: SessionStartOptions,
@@ -337,6 +348,9 @@ export async function startProjectSessionOrThrow(
   if (!response.success || !response.data) throw response.error ?? new Error("Unable to start this session");
   return recordReadyRuntime(projectId, sessionId, response.data);
 }
+
+/** @deprecated Use `startWorkspaceSessionOrThrow`. Kept permanently. */
+export const startProjectSessionOrThrow = startWorkspaceSessionOrThrow;
 
 function recordReadyRuntime(projectId: string, sessionId: string, result: SessionStartResult): SessionStartResult {
   // Populate the shared session-runtime registry the instant a session goes

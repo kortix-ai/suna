@@ -150,7 +150,7 @@ export async function downloadTeamsFile(
     // The tenant comes from the install record the connect paths proved, not
     // from a project secret an admin can overwrite.
     const [tenant] = await provenTeamsTenants(projectId);
-    if (!tenant) return { ok: false, error: 'Teams not connected for this project', status: 404 };
+    if (!tenant) return { ok: false, error: 'Teams not connected for this workspace', status: 404 };
     const conversation = hostedContentConversation(parsed);
     if (!conversation) return { ok: false, error: 'invalid url', status: 400 };
     const gate = await gateChannelRead({ projectId, platform: 'teams', risk: 'read', ...conversation }, ownership);
@@ -408,7 +408,7 @@ async function uploadToTeamDrive(
 ): Promise<TeamsUploadResult | FileProxyError> {
   // The tenant comes from the proven install record, as on the download path.
   const [tenant] = await provenTeamsTenants(projectId);
-  if (!tenant) return { ok: false, error: 'Teams not connected for this project', status: 404 };
+  if (!tenant) return { ok: false, error: 'Teams not connected for this workspace', status: 404 };
   const creds = await loadTeamsBotCredentials(projectId);
   let token: string;
   try {

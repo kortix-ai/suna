@@ -72,47 +72,47 @@ beforeAll(async () => {
   const otherSession = await seedSession(other, crypto.randomUUID());
 
   await db.insert(chatInstalls).values([
-    { platform: 'slack', workspaceId: SHARED_WS, projectId: mine.project_id },
-    { platform: 'slack', workspaceId: SHARED_WS, projectId: other.project_id },
-    { platform: 'slack', workspaceId: SOLO_WS, projectId: solo.project_id },
-    { platform: 'teams', workspaceId: TENANT, projectId: mine.project_id },
-    { platform: 'teams', workspaceId: TENANT, projectId: other.project_id },
+    { platform: 'slack', platformTeamId: SHARED_WS, projectId: mine.project_id },
+    { platform: 'slack', platformTeamId: SHARED_WS, projectId: other.project_id },
+    { platform: 'slack', platformTeamId: SOLO_WS, projectId: solo.project_id },
+    { platform: 'teams', platformTeamId: TENANT, projectId: mine.project_id },
+    { platform: 'teams', platformTeamId: TENANT, projectId: other.project_id },
   ]);
   await db.insert(chatChannelBindings).values([
-    { platform: 'slack', workspaceId: SHARED_WS, channelId: C_MINE, projectId: mine.project_id },
-    { platform: 'slack', workspaceId: SHARED_WS, channelId: G_MINE, projectId: mine.project_id },
-    { platform: 'slack', workspaceId: SHARED_WS, channelId: C_OTHER, projectId: other.project_id },
-    { platform: 'slack', workspaceId: SHARED_WS, channelId: G_OTHER, projectId: other.project_id },
+    { platform: 'slack', platformTeamId: SHARED_WS, channelId: C_MINE, projectId: mine.project_id },
+    { platform: 'slack', platformTeamId: SHARED_WS, channelId: G_MINE, projectId: mine.project_id },
+    { platform: 'slack', platformTeamId: SHARED_WS, channelId: C_OTHER, projectId: other.project_id },
+    { platform: 'slack', platformTeamId: SHARED_WS, channelId: G_OTHER, projectId: other.project_id },
     // A picker is waiting: the row exists, no project owns the channel yet.
-    { platform: 'slack', workspaceId: SHARED_WS, channelId: C_PICKER, projectId: null },
+    { platform: 'slack', platformTeamId: SHARED_WS, channelId: C_PICKER, projectId: null },
     // Its project disconnected Slack; the binding stayed.
-    { platform: 'slack', workspaceId: SOLO_WS, channelId: C_GONE, projectId: gone.project_id },
-    { platform: 'teams', workspaceId: TENANT, channelId: `${CH};messageid=1`, projectId: mine.project_id },
-    { platform: 'teams', workspaceId: TENANT, channelId: `${CH};messageid=2`, projectId: other.project_id },
+    { platform: 'slack', platformTeamId: SOLO_WS, channelId: C_GONE, projectId: gone.project_id },
+    { platform: 'teams', platformTeamId: TENANT, channelId: `${CH};messageid=1`, projectId: mine.project_id },
+    { platform: 'teams', platformTeamId: TENANT, channelId: `${CH};messageid=2`, projectId: other.project_id },
     // Re-pointed to the other project while this project's session still runs it.
-    { platform: 'teams', workspaceId: TENANT, channelId: `${CH};messageid=6`, projectId: other.project_id },
-    { platform: 'teams', workspaceId: TENANT, channelId: `${CH_ONLY_OTHER};messageid=9`, projectId: other.project_id },
-    { platform: 'teams', workspaceId: TENANT, channelId: `${CH_MIXED_STORED};messageid=5`, projectId: mine.project_id },
-    { platform: 'teams', workspaceId: TENANT, channelId: `${CH_MIXED_STORED};messageid=7`, projectId: other.project_id },
+    { platform: 'teams', platformTeamId: TENANT, channelId: `${CH};messageid=6`, projectId: other.project_id },
+    { platform: 'teams', platformTeamId: TENANT, channelId: `${CH_ONLY_OTHER};messageid=9`, projectId: other.project_id },
+    { platform: 'teams', platformTeamId: TENANT, channelId: `${CH_MIXED_STORED};messageid=5`, projectId: mine.project_id },
+    { platform: 'teams', platformTeamId: TENANT, channelId: `${CH_MIXED_STORED};messageid=7`, projectId: other.project_id },
   ]);
   await db.insert(chatThreads).values([
     // Another project's thread inside this project's channel (a channel re-pointed with `/kortix switch`).
-    { platform: 'slack', workspaceId: SHARED_WS, threadId: T_OTHER_IN_MINE, projectId: other.project_id, sessionId: otherSession },
+    { platform: 'slack', platformTeamId: SHARED_WS, threadId: T_OTHER_IN_MINE, projectId: other.project_id, sessionId: otherSession },
     // This project's session posted into the other project's channel.
-    { platform: 'slack', workspaceId: SHARED_WS, threadId: T_MINE_IN_OTHER, projectId: mine.project_id, sessionId: mineSession },
+    { platform: 'slack', platformTeamId: SHARED_WS, threadId: T_MINE_IN_OTHER, projectId: mine.project_id, sessionId: mineSession },
     // A Teams thread whose session is the other project's and that has no binding.
-    { platform: 'teams', workspaceId: TENANT, threadId: `${CH};messageid=3`, projectId: other.project_id, sessionId: otherSession },
-    { platform: 'teams', workspaceId: TENANT, threadId: `${CH};messageid=6`, projectId: mine.project_id, sessionId: mineSession },
+    { platform: 'teams', platformTeamId: TENANT, threadId: `${CH};messageid=3`, projectId: other.project_id, sessionId: otherSession },
+    { platform: 'teams', platformTeamId: TENANT, threadId: `${CH};messageid=6`, projectId: mine.project_id, sessionId: mineSession },
     // The only trace of the other project in this channel is its session.
-    { platform: 'teams', workspaceId: TENANT, threadId: `${CH_SESSION_ONLY};messageid=8`, projectId: other.project_id, sessionId: otherSession },
+    { platform: 'teams', platformTeamId: TENANT, threadId: `${CH_SESSION_ONLY};messageid=8`, projectId: other.project_id, sessionId: otherSession },
   ]);
 });
 
 afterAll(async () => {
   const workspaces = [SHARED_WS, SOLO_WS, TENANT];
-  await db.delete(chatThreads).where(inArray(chatThreads.workspaceId, workspaces));
-  await db.delete(chatChannelBindings).where(inArray(chatChannelBindings.workspaceId, workspaces));
-  await db.delete(chatInstalls).where(inArray(chatInstalls.workspaceId, workspaces));
+  await db.delete(chatThreads).where(inArray(chatThreads.platformTeamId, workspaces));
+  await db.delete(chatChannelBindings).where(inArray(chatChannelBindings.platformTeamId, workspaces));
+  await db.delete(chatInstalls).where(inArray(chatInstalls.platformTeamId, workspaces));
   await db.delete(projectSessions).where(inArray(projectSessions.projectId, [mine.project_id, other.project_id]));
   await removeSeeded([mine, other, gone, solo]);
 });
@@ -121,18 +121,18 @@ describe('Slack, a workspace two projects share', () => {
   test("each project reads its own channel and is refused the other's", async () => {
     expect((await gate(mine.project_id, 'slack', 'get_history', { channel: C_MINE })).refusal).toBeNull();
     expect(refused(await gate(mine.project_id, 'slack', 'get_history', { channel: C_OTHER }))).toContain(
-      'belongs to another Kortix project',
+      'belongs to another Kortix workspace',
     );
     expect((await gate(other.project_id, 'slack', 'get_history', { channel: C_OTHER })).refusal).toBeNull();
     expect(refused(await gate(other.project_id, 'slack', 'get_history', { channel: C_MINE.toLowerCase() }))).toContain(
-      'belongs to another Kortix project',
+      'belongs to another Kortix workspace',
     );
   });
 
   test('a channel no project owns, including one with a picker waiting, is refused', async () => {
     for (const channel of [C_PICKER, `C0NEVERSEEN${RUN}`]) {
       expect(refused(await gate(mine.project_id, 'slack', 'get_history', { channel }))).toContain(
-        'connected to more than one Kortix project',
+        'connected to more than one Kortix workspace',
       );
     }
   });
@@ -143,7 +143,7 @@ describe('Slack, a workspace two projects share', () => {
       `Slack thread ${T_OTHER_IN_MINE}`,
     );
     expect(refused(await gate(other.project_id, 'slack', 'get_thread', { channel: C_OTHER, ts: T_MINE_IN_OTHER }))).toContain(
-      'belongs to another Kortix project',
+      'belongs to another Kortix workspace',
     );
     // No session owns this thread: the channel decides.
     expect((await gate(mine.project_id, 'slack', 'get_thread', { channel: C_MINE, ts: '1700000300.000300' })).refusal).toBeNull();
@@ -189,7 +189,7 @@ describe('Slack, a workspace one project has to itself', () => {
 
   test('a channel a disconnected project still owns stays refused', async () => {
     expect(refused(await gate(solo.project_id, 'slack', 'get_history', { channel: C_GONE }))).toContain(
-      'belongs to another Kortix project',
+      'belongs to another Kortix workspace',
     );
   });
 
@@ -215,13 +215,13 @@ describe('Teams, a tenant two projects share', () => {
 
   test('a channel only the other project has a conversation in, or none has, is refused', async () => {
     expect(refused(await gate(mine.project_id, 'teams', 'list_messages', { 'channel-id': CH_ONLY_OTHER }))).toContain(
-      'belongs to another Kortix project',
+      'belongs to another Kortix workspace',
     );
     expect(refused(await gate(mine.project_id, 'teams', 'list_messages', { 'channel-id': CH_QUIET }))).toContain(
       'Mention the bot in that channel',
     );
     expect(refused(await gate(mine.project_id, 'teams', 'list_messages', { 'channel-id': CH_SESSION_ONLY }))).toContain(
-      'belongs to another Kortix project',
+      'belongs to another Kortix workspace',
     );
     expect((await gate(other.project_id, 'teams', 'list_messages', { 'channel-id': CH_ONLY_OTHER })).refusal).toBeNull();
   });

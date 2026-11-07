@@ -6,7 +6,7 @@
  */
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { listProjectBranches, type ProjectBranchSession } from './git-history';
+import { listWorkspaceBranches, type ProjectBranchSession } from './git-history';
 
 let calls: { url: string }[] = [];
 
@@ -25,21 +25,21 @@ configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }
 const last = () => calls[calls.length - 1]!;
 
 test('no options: no query string (server applies its own default limit)', async () => {
-  await listProjectBranches('P1');
-  expect(last().url).toBe('http://test.local/projects/P1/branches');
+  await listWorkspaceBranches('P1');
+  expect(last().url).toBe('http://test.local/workspaces/P1/branches');
 });
 
 test('forwards q, limit, and includeSessionBranches as query params', async () => {
-  await listProjectBranches('P1', { q: 'feature', limit: 100, includeSessionBranches: true });
+  await listWorkspaceBranches('P1', { q: 'feature', limit: 100, includeSessionBranches: true });
   const url = new URL(last().url);
-  expect(url.pathname).toBe('/projects/P1/branches');
+  expect(url.pathname).toBe('/workspaces/P1/branches');
   expect(url.searchParams.get('q')).toBe('feature');
   expect(url.searchParams.get('limit')).toBe('100');
   expect(url.searchParams.get('include_session_branches')).toBe('true');
 });
 
 test('includeSessionBranches: false reaches the wire (the server includes them by default)', async () => {
-  await listProjectBranches('P1', { includeSessionBranches: false });
+  await listWorkspaceBranches('P1', { includeSessionBranches: false });
   const url = new URL(last().url);
   expect(url.searchParams.get('include_session_branches')).toBe('false');
 });
@@ -73,7 +73,7 @@ test("a session branch carries its session's label as the API serves it", async 
       { status: 200, headers: { 'content-type': 'application/json' } },
     ),
   ) as unknown as typeof fetch;
-  const listed = await listProjectBranches('P1');
+  const listed = await listWorkspaceBranches('P1');
   expect(listed.branches[0]?.session).toBeUndefined();
   expect(listed.branches[1]?.session).toEqual(label);
 });

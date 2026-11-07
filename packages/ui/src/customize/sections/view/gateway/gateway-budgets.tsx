@@ -508,13 +508,13 @@ function BudgetDialog({
   }) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tBudgets = useTranslations('gatewayBudgets');
   const periods = useLocalizedUiCatalog(PERIODS);
   const actions = useLocalizedUiCatalog(ACTIONS);
   const [limit, setLimit] = useState(() => budgetLimitInput(existing));
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>(existing?.period ?? 'month');
   const [action, setAction] = useState<'block' | 'warn'>(existing?.action ?? 'block');
 
-  const who = target.scope === 'project' ? 'this project' : (target.email ?? 'this member');
   const limitUsd = budgetLimitUsd(limit);
 
   return (
@@ -527,7 +527,9 @@ function BudgetDialog({
               : tI18nComplete.raw('text10dbcac3bc2c')}
           </ModalTitle>
           <ModalDescription>
-            {tI18nComplete.raw('texte80b27e5e39d')} {who}.
+            {target.scope === 'project' || !target.email
+              ? tBudgets('capWorkspace')
+              : tBudgets('capMember', { who: target.email })}
           </ModalDescription>
         </ModalHeader>
         <ModalBody className="space-y-4">

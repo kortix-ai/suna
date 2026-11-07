@@ -2,16 +2,16 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { ApiError } from '../../http/api/errors';
 import { configureKortix } from '../../http/config';
 import {
-  addProjectMemoryNote,
-  createProjectMemoryPage,
-  deleteProjectMemoryPage,
-  getProjectMemoryLayer,
-  getProjectMemoryPage,
+  addWorkspaceMemoryNote,
+  createWorkspaceMemoryPage,
+  deleteWorkspaceMemoryPage,
+  getWorkspaceMemoryLayer,
+  getWorkspaceMemoryPage,
   getSessionMemoryUsage,
-  listProjectMemoryHistory,
-  listProjectMemoryPages,
-  searchProjectMemory,
-  updateProjectMemoryPage,
+  listWorkspaceMemoryHistory,
+  listWorkspaceMemoryPages,
+  searchWorkspaceMemory,
+  updateWorkspaceMemoryPage,
   type ProjectMemoryLayer,
   type ProjectMemoryPage,
   type ProjectMemorySearchHit,
@@ -39,7 +39,7 @@ beforeEach(() => {
 const SPACE = '00000000-0000-4000-8000-000000000001';
 const PAGE = '00000000-0000-4000-8000-0000000000a1';
 const VERSION = '00000000-0000-4000-8000-0000000000b1';
-const base = 'http://test.local/v1/projects/P1/memory';
+const base = 'http://test.local/v1/workspaces/P1/memory';
 
 const layer: ProjectMemoryLayer = {
   layer_id: '00000000-0000-4000-8000-0000000000c1',
@@ -77,39 +77,39 @@ const page: ProjectMemoryPage = {
 
 test('getProjectMemoryLayer GETs the layer by key', async () => {
   nextResponse = { status: 200, body: layer };
-  expect(await getProjectMemoryLayer('P1', SPACE)).toEqual(layer);
+  expect(await getWorkspaceMemoryLayer('P1', SPACE)).toEqual(layer);
   expect(calls).toEqual([{ url: `${base}/layers/${SPACE}`, method: 'GET', body: undefined }]);
 });
 
 test('getProjectMemoryLayer reaches the Company layer by the key company', async () => {
   nextResponse = { status: 200, body: { ...layer, scope: 'company', space_id: null, name: 'Company' } };
-  await getProjectMemoryLayer('P1', 'company');
+  await getWorkspaceMemoryLayer('P1', 'company');
   expect(calls[0]!.url).toBe(`${base}/layers/company`);
 });
 
 test('listProjectMemoryPages GETs the layer pages and returns the array', async () => {
   const { body: _b, sources: _s, related: _r, version_no: _v, can_edit: _e, can_delete: _d, ...summary } = page;
   nextResponse = { status: 200, body: { pages: [summary], truncated: false } };
-  expect(await listProjectMemoryPages('P1', 'company')).toEqual([summary]);
+  expect(await listWorkspaceMemoryPages('P1', 'company')).toEqual([summary]);
   expect(calls).toEqual([{ url: `${base}/layers/company/pages`, method: 'GET', body: undefined }]);
 });
 
 test('listProjectMemoryPages filters by type', async () => {
   nextResponse = { status: 200, body: { pages: [], truncated: false } };
-  await listProjectMemoryPages('P1', SPACE, { type: 'other' });
+  await listWorkspaceMemoryPages('P1', SPACE, { type: 'other' });
   expect(calls.map((c) => c.url)).toEqual([`${base}/layers/${SPACE}/pages?type=other`]);
 });
 
 test('createProjectMemoryPage POSTs the input to the layer pages', async () => {
   nextResponse = { status: 201, body: page };
   const input = { type: 'people' as const, title: 'Priya', summary: 'Runs the Northwind launch' };
-  expect(await createProjectMemoryPage('P1', SPACE, input)).toEqual(page);
+  expect(await createWorkspaceMemoryPage('P1', SPACE, input)).toEqual(page);
   expect(calls).toEqual([{ url: `${base}/layers/${SPACE}/pages`, method: 'POST', body: input }]);
 });
 
 test('addProjectMemoryNote POSTs the sentence to the layer notes', async () => {
   nextResponse = { status: 201, body: { ...page, type: 'note' } };
-  const note = await addProjectMemoryNote('P1', SPACE, { text: 'Priya owns the launch', source_session_id: 'T1' });
+  const note = await addWorkspaceMemoryNote('P1', SPACE, { text: 'Priya owns the launch', source_session_id: 'T1' });
   expect(note.type).toBe('note');
   expect(calls).toEqual([
     { url: `${base}/layers/${SPACE}/notes`, method: 'POST', body: { text: 'Priya owns the launch', source_session_id: 'T1' } },
@@ -118,13 +118,13 @@ test('addProjectMemoryNote POSTs the sentence to the layer notes', async () => {
 
 test('getProjectMemoryPage GETs one page by id', async () => {
   nextResponse = { status: 200, body: page };
-  expect(await getProjectMemoryPage('P1', PAGE)).toEqual(page);
+  expect(await getWorkspaceMemoryPage('P1', PAGE)).toEqual(page);
   expect(calls).toEqual([{ url: `${base}/pages/${PAGE}`, method: 'GET', body: undefined }]);
 });
 
 test('updateProjectMemoryPage PATCHes the page with its base_version', async () => {
   nextResponse = { status: 200, body: { ...page, version_no: 4 } };
-  const updated = await updateProjectMemoryPage('P1', PAGE, { base_version: 3, body: '## Role\n- Owns QA' });
+  const updated = await updateWorkspaceMemoryPage('P1', PAGE, { base_version: 3, body: '## Role\n- Owns QA' });
   expect(updated.version_no).toBe(4);
   expect(calls).toEqual([
     { url: `${base}/pages/${PAGE}`, method: 'PATCH', body: { base_version: 3, body: '## Role\n- Owns QA' } },
@@ -133,13 +133,13 @@ test('updateProjectMemoryPage PATCHes the page with its base_version', async () 
 
 test('deleteProjectMemoryPage DELETEs the page and returns the deleted page id', async () => {
   nextResponse = { status: 200, body: { ok: true, version_id: VERSION } };
-  expect(await deleteProjectMemoryPage('P1', PAGE)).toEqual({ ok: true, version_id: VERSION });
+  expect(await deleteWorkspaceMemoryPage('P1', PAGE)).toEqual({ ok: true, version_id: VERSION });
   expect(calls).toEqual([{ url: `${base}/pages/${PAGE}`, method: 'DELETE', body: undefined }]);
 });
 
 test('listProjectMemoryHistory GETs the page history', async () => {
   nextResponse = { status: 200, body: { versions: [] } };
-  expect(await listProjectMemoryHistory('P1', PAGE)).toEqual({ versions: [] });
+  expect(await listWorkspaceMemoryHistory('P1', PAGE)).toEqual({ versions: [] });
   expect(calls).toEqual([{ url: `${base}/pages/${PAGE}/history`, method: 'GET', body: undefined }]);
 });
 
@@ -156,13 +156,13 @@ const hit: ProjectMemorySearchHit = {
 
 test('searchProjectMemory GETs memory/search with q and returns the hits', async () => {
   nextResponse = { status: 200, body: { hits: [hit] } };
-  expect(await searchProjectMemory('P1', { q: 'Priya' })).toEqual({ hits: [hit] });
+  expect(await searchWorkspaceMemory('P1', { q: 'Priya' })).toEqual({ hits: [hit] });
   expect(calls).toEqual([{ url: `${base}/search?q=Priya`, method: 'GET', body: undefined }]);
 });
 
 test('searchProjectMemory passes layer, type and limit, and encodes q', async () => {
   nextResponse = { status: 200, body: { hits: [] } };
-  await searchProjectMemory('P1', { q: 'launch & QA', layer: 'company', type: 'decisions', limit: 5 });
+  await searchWorkspaceMemory('P1', { q: 'launch & QA', layer: 'company', type: 'decisions', limit: 5 });
   expect(calls[0]!.url).toBe(`${base}/search?q=launch+%26+QA&layer=company&type=decisions&limit=5`);
 });
 
@@ -173,18 +173,18 @@ test('getSessionMemoryUsage GETs the thread memory-usage route', async () => {
   };
   nextResponse = { status: 200, body: usage };
   expect(await getSessionMemoryUsage('P1', 'T1')).toEqual(usage);
-  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/sessions/T1/memory-usage', method: 'GET', body: undefined }]);
+  expect(calls).toEqual([{ url: 'http://test.local/v1/workspaces/P1/sessions/T1/memory-usage', method: 'GET', body: undefined }]);
 });
 
 test.each([
-  ['searchProjectMemory', 400, 'invalid_input', () => searchProjectMemory('P1', { q: 'x' })],
+  ['searchProjectMemory', 400, 'invalid_input', () => searchWorkspaceMemory('P1', { q: 'x' })],
   ['getSessionMemoryUsage', 404, 'session_not_found', () => getSessionMemoryUsage('P1', 'T1')],
-  ['updateProjectMemoryPage', 409, 'version_conflict', () => updateProjectMemoryPage('P1', PAGE, { base_version: 2, body: 'x' })],
-  ['createProjectMemoryPage', 409, 'title_taken', () => createProjectMemoryPage('P1', SPACE, { type: 'people', title: 'Priya' })],
-  ['createProjectMemoryPage', 413, 'page_too_large', () => createProjectMemoryPage('P1', SPACE, { type: 'playbooks', title: 'Big', body: 'x' })],
-  ['addProjectMemoryNote', 422, 'secret_detected', () => addProjectMemoryNote('P1', SPACE, { text: 'a key' })],
-  ['getProjectMemoryLayer', 404, 'memory_not_found', () => getProjectMemoryLayer('P1', SPACE)],
-  ['getProjectMemoryLayer', 503, 'drive_storage_unavailable', () => getProjectMemoryLayer('P1', 'company')],
+  ['updateProjectMemoryPage', 409, 'version_conflict', () => updateWorkspaceMemoryPage('P1', PAGE, { base_version: 2, body: 'x' })],
+  ['createProjectMemoryPage', 409, 'title_taken', () => createWorkspaceMemoryPage('P1', SPACE, { type: 'people', title: 'Priya' })],
+  ['createProjectMemoryPage', 413, 'page_too_large', () => createWorkspaceMemoryPage('P1', SPACE, { type: 'playbooks', title: 'Big', body: 'x' })],
+  ['addProjectMemoryNote', 422, 'secret_detected', () => addWorkspaceMemoryNote('P1', SPACE, { text: 'a key' })],
+  ['getProjectMemoryLayer', 404, 'memory_not_found', () => getWorkspaceMemoryLayer('P1', SPACE)],
+  ['getProjectMemoryLayer', 503, 'drive_storage_unavailable', () => getWorkspaceMemoryLayer('P1', 'company')],
 ] as const)('%s rejects %i with ApiError code %s and never reaches the host error handler', async (_name, status, code, call) => {
   nextResponse = { status, body: { error: 'rejected', code, page_id: PAGE } };
   const error = await call().catch((e: unknown) => e);

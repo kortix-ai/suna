@@ -284,7 +284,7 @@ export async function conversationRefForSession(sessionId: string): Promise<Team
   const [thread] = await db
     .select({
       projectId: chatThreads.projectId,
-      tenantId: chatThreads.workspaceId,
+      tenantId: chatThreads.platformTeamId,
       conversationId: chatThreads.threadId,
     })
     .from(chatThreads)

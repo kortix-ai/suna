@@ -45,7 +45,7 @@ export function ReviewPage({ projectId }: { projectId: string }) {
 }
 
 /**
- * /projects/[id]/review: Review as its own page, beside the app sidebar and
+ * /workspaces/[id]/review: Review as its own page, beside the app sidebar and
  * outside Customize. The deck of what waits on the person leads Needs you.
  */
 export function ReviewStandalonePage({ projectId }: { projectId: string }) {

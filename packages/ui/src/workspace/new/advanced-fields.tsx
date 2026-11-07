@@ -50,7 +50,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 /**
- * The repository fields on `/new`: a git account manager, then the action.
+ * The repository fields on `/workspaces/new`: a git account manager, then the action.
  *
  * ## Whose account, then what to do there
  *
@@ -186,7 +186,7 @@ export function AdvancedFields({
       accountId={accountId}
       installUrl={installUrl}
       // Round trip: the setup page reads this path back on completion, so
-      // the user lands on `/new` with the same source AND the same account.
+      // the user lands on `/workspaces/new` with the same source AND the same account.
       returnPath={newWorkspaceReturnPath(state.source, accountId, connectComputer)}
     />
   ) : null;

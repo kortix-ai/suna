@@ -34,21 +34,21 @@ afterEach(() => {
 describe('markViewedSeen', () => {
   test('a session on screen in a window the person left stays unseen', () => {
     useTurnAttentionStore.setState({ unseen: ['s-1'] });
-    screen('/projects/p/sessions/s-1', { hidden: true, focused: false });
+    screen('/workspaces/p/sessions/s-1', { hidden: true, focused: false });
     markViewedSeen();
     expect(useTurnAttentionStore.getState().unseen).toEqual(['s-1']);
   });
 
   test('a visible window behind another app does not count as seen either', () => {
     useTurnAttentionStore.setState({ unseen: ['s-1'] });
-    screen('/projects/p/sessions/s-1', { hidden: false, focused: false });
+    screen('/workspaces/p/sessions/s-1', { hidden: false, focused: false });
     markViewedSeen();
     expect(useTurnAttentionStore.getState().unseen).toEqual(['s-1']);
   });
 
   test('back in the window, the session on screen is seen and only that one', () => {
     useTurnAttentionStore.setState({ unseen: ['s-1', 's-2'] });
-    screen('/projects/p/sessions/s-1', { hidden: false, focused: true });
+    screen('/workspaces/p/sessions/s-1', { hidden: false, focused: true });
     markViewedSeen();
     expect(useTurnAttentionStore.getState().unseen).toEqual(['s-2']);
   });

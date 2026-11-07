@@ -101,7 +101,7 @@ describe('cloudSpawnSession — create', () => {
     expect(result).toEqual({ sessionId: 'child-1', status: 'completed', text: 'Found 3 issues in the diff.', model: { providerID: 'kortix', modelID: 'default' } })
     expect(seen).toEqual([{ sessionId: 'child-1', model: { providerID: 'kortix', modelID: 'default' } }])
     const create = calls.find((c) => c.method === 'POST')!
-    expect(create.url).toBe('https://api.example.com/v1/projects/proj-1/sessions')
+    expect(create.url).toBe('https://api.example.com/v1/workspaces/proj-1/sessions')
     expect(create.headers.authorization).toBe('Bearer sess-token')
     expect(create.body).toEqual({
       initial_prompt: 'review the diff',
@@ -110,7 +110,7 @@ describe('cloudSpawnSession — create', () => {
       runtime_context: { 'kortix.subagent.depth': 1 },
     })
     const read = calls.find((c) => c.url.includes('/transcript'))!
-    expect(read.url).toBe('https://api.example.com/v1/projects/proj-1/sessions/child-1/transcript?limit=20&detail=full')
+    expect(read.url).toBe('https://api.example.com/v1/workspaces/proj-1/sessions/child-1/transcript?limit=20&detail=full')
     expect(read.headers.authorization).toBe('Bearer sess-token')
   })
 
@@ -180,7 +180,7 @@ describe('cloudSpawnSession — create', () => {
       error: 'child session did not settle within 1 min; the child session was stopped',
     })
     // The slot is freed only because the child no longer runs.
-    expect(calls.some((c) => c.method === 'POST' && c.url === 'https://api.example.com/v1/projects/proj-1/sessions/child-1/stop')).toBe(true)
+    expect(calls.some((c) => c.method === 'POST' && c.url === 'https://api.example.com/v1/workspaces/proj-1/sessions/child-1/stop')).toBe(true)
     expect(parent.live.count).toBe(0)
   })
 
@@ -296,7 +296,7 @@ describe('cloudSpawnSession — background', () => {
       runtime_context: { 'kortix.subagent.depth': 1 },
     })
     // No wait, no read-back: only the child list (the cap) and the create.
-    expect(calls.map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual(['GET /v1/projects/proj-1/sessions', 'POST /v1/projects/proj-1/sessions'])
+    expect(calls.map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual(['GET /v1/workspaces/proj-1/sessions', 'POST /v1/workspaces/proj-1/sessions'])
     expect(parent.live.count).toBe(0)
   })
 
@@ -332,7 +332,7 @@ describe('cloudSpawnSession — background', () => {
     const { impl, calls } = fakeApi({ rows: [own] })
     const result = await cloudSpawnSession(api(impl), { sessionId: 'child-7', title: 'x', agent: 'general', systemPrompt: '', prompt: 'now the tests' }, fast)
     expect(result).toMatchObject({ sessionId: 'child-7', status: 'started' })
-    expect(calls.find((c) => c.method === 'POST')!.url).toBe('https://api.example.com/v1/projects/proj-1/sessions/child-7/prompts')
+    expect(calls.find((c) => c.method === 'POST')!.url).toBe('https://api.example.com/v1/workspaces/proj-1/sessions/child-7/prompts')
     expect(calls.some((c) => c.url.includes('/transcript'))).toBe(false)
   })
 })
@@ -345,7 +345,7 @@ describe('cloudSpawnSession — task_id resume', () => {
     const result = await cloudSpawnSession(api(impl), { sessionId: 'child-7', title: 'x', agent: 'general', systemPrompt: '', prompt: 'and the tests?' }, fast)
     expect(result).toMatchObject({ sessionId: 'child-7', status: 'completed', text: 'follow-up done' })
     const prompt = calls.find((c) => c.method === 'POST')!
-    expect(prompt.url).toBe('https://api.example.com/v1/projects/proj-1/sessions/child-7/prompts')
+    expect(prompt.url).toBe('https://api.example.com/v1/workspaces/proj-1/sessions/child-7/prompts')
     expect(prompt.body.parts).toEqual([{ type: 'text', text: 'and the tests?' }])
     expect(typeof prompt.body.client_message_id).toBe('string')
     expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/sessions'))).toBe(false)
@@ -476,7 +476,7 @@ describe('cloudSpawnSession — names, teammates, forks', () => {
     }
     const free = fakeApi({ children: [{ ...holder, status: 'failed' }] })
     expect((await cloudSpawnSession(api(free.impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'go', background: true, handle: 'reviewer' }, fast)).status).toBe('started')
-    expect(free.calls.find((c) => c.method === 'POST')!.url).toBe('https://api.example.com/v1/projects/proj-1/sessions')
+    expect(free.calls.find((c) => c.method === 'POST')!.url).toBe('https://api.example.com/v1/workspaces/proj-1/sessions')
   })
 
   test('the name of a finished child is a follow-up to that child: no new session, the same session gets the prompt', async () => {
@@ -486,7 +486,7 @@ describe('cloudSpawnSession — names, teammates, forks', () => {
       const result = await cloudSpawnSession(api(impl), { title: 'Clean up', agent: 'general', systemPrompt: 'p', prompt: 'now remove the dead config', background: true, handle: 'Manifest-Upgrader' }, fast)
       expect(result).toEqual({ sessionId: 'child-9', status: 'started', text: '', model: { providerID: 'kortix', modelID: 'default' }, continued: true })
       const posts = calls.filter((c) => c.method === 'POST')
-      expect(posts.map((c) => c.url)).toEqual(['https://api.example.com/v1/projects/proj-1/sessions/child-9/prompts'])
+      expect(posts.map((c) => c.url)).toEqual(['https://api.example.com/v1/workspaces/proj-1/sessions/child-9/prompts'])
       expect(posts[0]!.body.parts).toEqual([{ type: 'text', text: 'now remove the dead config' }])
     }
   })
@@ -504,7 +504,7 @@ describe('cloudSpawnSession — names, teammates, forks', () => {
     const mate = fakeApi({ children: [finished], rows: [finished] })
     const resumed = await cloudSpawnSession(api(mate.impl), { title: 'x', agent: 'general', systemPrompt: '', prompt: 'one more source', teammate: { lead: PARENT, handle: 'researcher', instructions: 'You are a teammate.' } }, fast)
     expect(resumed).toMatchObject({ sessionId: 'child-9', status: 'started', continued: true })
-    expect(mate.calls.filter((c) => c.method === 'POST').map((c) => new URL(c.url).pathname)).toEqual(['/v1/projects/proj-1/sessions/child-9/prompts'])
+    expect(mate.calls.filter((c) => c.method === 'POST').map((c) => new URL(c.url).pathname)).toEqual(['/v1/workspaces/proj-1/sessions/child-9/prompts'])
 
     const fork = fakeApi({ children: [finished] })
     await expect(cloudSpawnSession(api(fork.impl), { title: 'x', agent: 'inline', systemPrompt: 'f', prompt: 'try B', background: true, fork: true, handle: 'researcher' }, fast)).rejects.toThrow(
@@ -577,7 +577,7 @@ describe('cloudStopChild — task_stop', () => {
     ]
     const { impl, calls } = fakeApi({ children })
     expect(await cloudStopChild(api(impl), { name: '@reviewer' })).toEqual({ sessionId: 'child-2', handle: 'reviewer', title: 'Review', stopped: true })
-    expect(calls.filter((c) => c.method === 'POST').map((c) => new URL(c.url).pathname)).toEqual(['/v1/projects/proj-1/sessions/child-2/stop'])
+    expect(calls.filter((c) => c.method === 'POST').map((c) => new URL(c.url).pathname)).toEqual(['/v1/workspaces/proj-1/sessions/child-2/stop'])
   })
 
   test('by id: only a child of this session; one that already ended is not stopped again', async () => {
@@ -701,14 +701,14 @@ describe('the router (front.ts) — routing', () => {
     expect(section).toContain(`${'d'.repeat(239)}…`)
   })
 
-  test('fetchFrontAgents reads /v1/projects/:id/detail with the box token, and answers null on a failure', async () => {
+  test('fetchFrontAgents reads /v1/workspaces/:id/detail with the box token, and answers null on a failure', async () => {
     const seen: Array<{ url: string; auth: string | null }> = []
     const ok = (async (url: string, init?: RequestInit) => {
       seen.push({ url, auth: new Headers(init?.headers).get('authorization') })
       return Response.json({ config: { agents: [{ name: 'researcher' }] } })
     }) as unknown as typeof fetch
     expect(await fetchFrontAgents({ apiUrl: 'http://api.test/v1/', projectId: 'proj 1', token: 'tok' }, ok)).toEqual([{ name: 'researcher' }])
-    expect(seen).toEqual([{ url: 'http://api.test/v1/projects/proj%201/detail', auth: 'Bearer tok' }])
+    expect(seen).toEqual([{ url: 'http://api.test/v1/workspaces/proj%201/detail', auth: 'Bearer tok' }])
     const down = (async () => new Response('no', { status: 503 })) as unknown as typeof fetch
     expect(await fetchFrontAgents({ apiUrl: 'http://api.test', projectId: 'p', token: 't' }, down)).toBeNull()
     const thrown = (async () => {
@@ -764,7 +764,7 @@ describe('cloudChildToolDetails: a child\'s saved tool details come from its ses
   test('returns the details of each completed call of the tool, oldest first, and reads only the log', async () => {
     const { impl, urls } = fake(PARENT)
     expect(await cloudChildToolDetails(api(impl), CHILD, 'workflow')).toEqual([{ run: 'doc-1' }])
-    expect(urls).toEqual([`/v1/projects/proj-1/sessions/${CHILD}`, `/v1/projects/proj-1/sessions/${CHILD}/log?limit=40`])
+    expect(urls).toEqual([`/v1/workspaces/proj-1/sessions/${CHILD}`, `/v1/workspaces/proj-1/sessions/${CHILD}/log?limit=40`])
   })
 
   test('a session that is not this session\'s child answers null and reads no log', async () => {

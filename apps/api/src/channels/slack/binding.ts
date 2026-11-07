@@ -14,7 +14,7 @@ export async function resolveWorkspaceIdForChannel(
   channelId: string,
 ): Promise<string | null> {
   const [row] = await db
-    .select({ workspaceId: chatChannelBindings.workspaceId })
+    .select({ workspaceId: chatChannelBindings.platformTeamId })
     .from(chatChannelBindings)
     .where(
       and(
@@ -97,7 +97,7 @@ export async function bindSlackThreadToSession(input: {
     .where(
       and(
         eq(chatThreads.platform, 'slack'),
-        eq(chatThreads.workspaceId, workspaceId),
+        eq(chatThreads.platformTeamId, workspaceId),
         eq(chatThreads.threadId, threadTs),
         eq(chatThreads.sessionId, owner.sessionId),
       ),

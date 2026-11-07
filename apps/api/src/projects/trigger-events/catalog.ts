@@ -1,5 +1,5 @@
 /** The app events a project connector can trigger on, from its provider's catalog. */
-import { connectorConnections, connectors, projects } from '@kortix/db';
+import { connectorConnections, connectors } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { defaultConnectionIdForConnector } from '../../connectors/credentials';
 import { logger } from '../../lib/logger';
@@ -13,6 +13,7 @@ import { MCP_SOURCE_ID, connectorEventApp, projectConnectorsOfApp } from './mcp-
 import { allEventSources, eventSourceFor, unknownSourceMessage } from './registry';
 import { connectionIdentity, resolveSource } from './subscriptions';
 import type { EventApp, EventTypeInfo } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 /** Provider event catalogs change rarely and cost several provider calls. */
 const EVENT_TYPE_CACHE_MS = 10 * 60_000;

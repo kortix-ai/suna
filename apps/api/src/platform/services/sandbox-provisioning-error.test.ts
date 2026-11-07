@@ -28,7 +28,7 @@ describe('classifySandboxProvisioningFailure', () => {
       transient: true,
     });
     expect(failure.userMessage).toBe(
-      'The sandbox provider is out of storage, so no new session can start on it. Try again later, or ask a project admin to switch the sandbox provider in Customize → Settings → Sandbox.',
+      'The sandbox provider is out of storage, so no new session can start on it. Try again later, or ask a workspace admin to switch the sandbox provider in Customize → Settings → Sandbox.',
     );
   });
 

@@ -341,7 +341,7 @@ test('dispose deletes listed uploads no send holds; a handed-off upload survives
   controller.dispose();
   await settle();
   expect(wire.requests.filter((request) => request.startsWith('DELETE'))).toEqual([
-    'DELETE https://api.test/projects/p/attachments/server-kept.txt',
+    'DELETE https://api.test/workspaces/p/attachments/server-kept.txt',
   ]);
   expect(kept).toBeString();
   expect((await controller.whenReady([sent!]))[0]?.attachment_id).toBe('server-sent.txt');
@@ -842,7 +842,7 @@ test('remove during initiation deletes the row the server already created', asyn
   const id = controller.add(new File(['abc'], 'a.txt'));
   await settle();
   // One initiation in flight, and no handle yet: nothing to delete by id.
-  expect(wire.requests).toEqual(['POST https://api.test/projects/p/attachments']);
+  expect(wire.requests).toEqual(['POST https://api.test/workspaces/p/attachments']);
 
   await controller.remove(id);
   expect(controller.getSnapshot().attachments).toEqual([]);
@@ -850,7 +850,7 @@ test('remove during initiation deletes the row the server already created', asyn
   wire.answer('handle');
   await settle();
   expect(wire.requests.filter((line) => line.startsWith('DELETE'))).toEqual([
-    'DELETE https://api.test/projects/p/attachments/attachment-1',
+    'DELETE https://api.test/workspaces/p/attachments/attachment-1',
   ]);
   // A removed file never sends its bytes, so the deferral costs no upload.
   expect(wire.requests.filter((line) => line.startsWith('PUT'))).toEqual([]);
@@ -922,7 +922,7 @@ test('remove deletes a restored upload; forget releases it, so dispose deletes n
   const [id] = removed.restore([{ attachment: metadata }]);
   await removed.remove(id!);
   await settle();
-  expect(wire.requests).toEqual(['DELETE https://api.test/projects/project-1/attachments/attachment-1']);
+  expect(wire.requests).toEqual(['DELETE https://api.test/workspaces/project-1/attachments/attachment-1']);
 
   wire.requests.length = 0;
   const kept = createPromptAttachmentController('project-1');

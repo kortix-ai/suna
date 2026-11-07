@@ -19,6 +19,11 @@ export interface EmailMessage {
   /** Defaults to the transport's configured sender (EMAIL_FROM). */
   from?: EmailAddress;
   replyTo?: string;
+  /**
+   * The same value on every attempt of one logical email. Resend drops a
+   * repeat within 24 h (`Idempotency-Key`); the other providers ignore it.
+   */
+  idempotencyKey?: string;
 }
 
 export type EmailSendResult =

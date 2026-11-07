@@ -12,6 +12,7 @@ import { Skeleton } from '../../../primitives/skeleton';
 import { errorToast, successToast } from '../../../primitives/toast';
 import { TypeToConfirmDialog } from '../../../primitives/type-to-confirm-dialog';
 import { ErrorState } from '../../../primitives/error-state';
+import { CopyRow } from '../../../access/access/copy-row';
 import {
   ProjectIconField,
   type ProjectIconValue,
@@ -27,10 +28,12 @@ import { PROJECT_LANDING_PATH } from '../../../internal/lib/onboarding/landing-d
 import { forgetLastProjectId } from '../../../internal/lib/onboarding/last-project-cookie';
 import { PROJECT_ACTIONS } from '../../../internal/lib/project-actions';
 import { useProjectCans } from '../../../internal/lib/use-project-can';
+import { useCan } from '../../../internal/lib/use-permission';
 import { useSettingsPanelStore } from '../../../internal/stores/settings-panel-store';
-import { TransferWorkspaceEntry } from './transfer-workspace-dialog';
+import { useLeaveWorkspace } from '../../../workspace/settings/use-leave-workspace';
+import { SplitNoticeBanner } from '../../../workspace/settings/split-notice-banner';
 import {
-  archiveProject,
+  deleteWorkspace,
   getProject,
   setDefaultReasoningEffort,
   updateProject,
@@ -63,11 +66,13 @@ const DEFAULT_EFFORT_AUTOMATIC = '';
 /** `medium` → `Medium` — same casing rule as the composer's effort selector. */
 const effortOptionLabel = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 export const DELETE_WORKSPACE_CONSEQUENCES = [
-  'Every session in this workspace, with its files, history, and outputs',
-  'All scheduled runs and triggers — they stop firing straight away',
-  'Every connected integration, secret, and API key scoped to this workspace',
-  'The Kortix-managed git repository for this workspace, with every commit in it',
-  'Access for everyone on the team — nobody can reach this workspace again',
+  'Every member loses access to this workspace',
+  'Triggers and scheduled runs stop firing',
+  'Its API keys and connected apps stop working',
+  // workspaces/lifecycle.ts closeWorkspace: a live Stripe subscription is set
+  // to cancel at period end; a restore reactivates it.
+  'A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it',
+  'After 14 days, its sessions, files, and Kortix-managed repository are erased',
 ] as const;
 
 /** Stated because it is true and because its absence would be read as a
@@ -75,7 +80,7 @@ export const DELETE_WORKSPACE_CONSEQUENCES = [
  *  upstream; repositories the user connected themselves are never touched
  *  (`apps/api/src/projects/routes/project-settings.ts`). */
 export const DELETE_WORKSPACE_REASSURANCE =
-  'Git repositories you connected yourself are not deleted. Any code already pushed to them stays where it is.';
+  'Git repositories you connected yourself are not deleted.';
 
 /**
  * A section label between two groups — plain small text, optionally one line
@@ -105,6 +110,13 @@ export interface GeneralTabViewProps {
    *  reason `generalFieldsSlot` is one — `GitView` owns its own
    *  `useQuery`/mutations, so it can't render under `renderToStaticMarkup`
    *  with no providers. */
+  /** The workspace id, shown with a copy button. */
+  workspaceId?: string;
+  /** The caller may leave (not the last owner). */
+  canLeave?: boolean;
+  onOpenLeaveDialog?: () => void;
+  /** The Leave confirmation (a container concern: it owns the mutation). */
+  leaveDialog?: ReactNode;
   /** Whether the Delete-workspace section shows at all — gated on
    *  `project.delete`, NOT the broader `project.settings.write` gate
    *  `generalFieldsSlot`'s fields use. Deleting and editing are separate
@@ -116,18 +128,25 @@ export interface GeneralTabViewProps {
   onCloseArchiveDialog?: () => void;
   onConfirmArchive?: () => void;
   isArchivePending?: boolean;
-  /** `TransferWorkspaceEntry` — the second danger-zone row and its dialog.
-   *  A slot for the same reason the others are: the dialog owns its own
-   *  accounts query and mutation, so it cannot render under
-   *  `renderToStaticMarkup` with no providers. Shares the Delete section's
-   *  `canDelete` gate — the API's source gate for a transfer is the same
-   *  destructive tier that gates delete. */
-  transferSlot?: ReactNode;
+  /**
+   * `all` (default): the whole tab. Workspace settings splits it in two rail
+   * rows: `settings` (General: name, icon, workspace id) and `danger` (Danger
+   * zone: Leave and Delete workspace, with their dialogs).
+   */
+  part?: GeneralTabPart;
 }
+
+export type GeneralTabPart = 'all' | 'settings' | 'danger';
 
 export interface GeneralTabCopy {
   loadFailed: string;
   retry: string;
+  workspaceId: string;
+  workspaceIdDescription: string;
+  leaveWorkspace: string;
+  leaveDescription: string;
+  leaveTitle: string;
+  leaveDialog: (name: string) => ReactNode;
   dangerZone: string;
   deleteWorkspace: string;
   deleteDescription: string;
@@ -140,16 +159,20 @@ export interface GeneralTabCopy {
 }
 
 const DEFAULT_GENERAL_COPY: GeneralTabCopy = {
-  loadFailed: 'Failed to load project',
+  loadFailed: 'Failed to load workspace',
   retry: 'Retry',
+  workspaceId: 'Workspace ID',
+  workspaceIdDescription: 'For the CLI, the API, and support.',
+  leaveWorkspace: 'Leave workspace',
+  leaveDescription: 'You lose access to this workspace. An admin can invite you again.',
+  leaveTitle: 'Leave workspace?',
+  leaveDialog: (name) => `You lose access to ${name}. An admin can invite you again.`,
   dangerZone: 'Danger zone',
   deleteWorkspace: 'Delete workspace',
-  deleteDescription:
-    'Removes this workspace and everything inside it, for every member. This cannot be undone.',
+  deleteDescription: 'Deletes this workspace for every member. You can restore it for 14 days.',
   deleteTitle: 'Delete workspace?',
-  deleteDialog: (name) =>
-    `This deletes ${name} for everyone with access to it. It cannot be undone.`,
-  consequencesTitle: 'You immediately lose:',
+  deleteDialog: (name) => `This deletes ${name} for every member. You can restore it for 14 days.`,
+  consequencesTitle: 'Straight away:',
   consequences: DELETE_WORKSPACE_CONSEQUENCES,
   reassurance: DELETE_WORKSPACE_REASSURANCE,
   keepWorkspace: 'Keep workspace',
@@ -168,6 +191,10 @@ export function GeneralTabView({
   errorMessage = '',
   onRetry = () => {},
   generalFieldsSlot,
+  workspaceId,
+  canLeave = false,
+  onOpenLeaveDialog = () => {},
+  leaveDialog,
   canDelete = true,
   workspaceName = '',
   archiveOpen = false,
@@ -175,11 +202,13 @@ export function GeneralTabView({
   onCloseArchiveDialog = () => {},
   onConfirmArchive = () => {},
   isArchivePending = false,
-  transferSlot,
+  part = 'all',
 }: GeneralTabViewProps) {
+  const showSettings = part !== 'danger';
+  const showDanger = part !== 'settings';
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
-      <SettingsTabHeader tab="general" />
+      {showSettings ? <SettingsTabHeader tab="general" /> : null}
 
       {isLoading ? (
         <div className="space-y-5">
@@ -199,11 +228,26 @@ export function GeneralTabView({
         />
       ) : (
         <>
-          {generalFieldsSlot}
-          {canDelete ? (
+          {showSettings ? generalFieldsSlot : null}
+          {showSettings && workspaceId ? (
+            <SettingsRowGroup>
+              <SettingsRow label={copy.workspaceId} description={copy.workspaceIdDescription}>
+                <CopyRow value={workspaceId} className="w-full max-w-80" />
+              </SettingsRow>
+            </SettingsRowGroup>
+          ) : null}
+          {showDanger && (canDelete || canLeave) ? (
             <section className="space-y-3">
               <SettingsSubsectionHeader title={copy.dangerZone} />
               <SettingsRowGroup>
+                {canLeave ? (
+                  <SettingsRow label={copy.leaveWorkspace} description={copy.leaveDescription}>
+                    <Button variant="outline" size="sm" onClick={onOpenLeaveDialog}>
+                      {copy.leaveWorkspace}
+                    </Button>
+                  </SettingsRow>
+                ) : null}
+                {canDelete ? (
                 <SettingsRow label={copy.deleteWorkspace} description={copy.deleteDescription}>
                   {/* Red text, not a filled button: the weight belongs to the
                       confirmation, not to the affordance that opens it. */}
@@ -216,13 +260,14 @@ export function GeneralTabView({
                     {copy.deleteWorkspace}
                   </Button>
                 </SettingsRow>
-                {transferSlot}
+                ) : null}
               </SettingsRowGroup>
             </section>
           ) : null}
         </>
       )}
 
+      {leaveDialog}
       <TypeToConfirmDialog
         open={archiveOpen}
         onOpenChange={(open) => {
@@ -543,13 +588,26 @@ function GeneralWorkspaceCard({
  *  and renders `GeneralTabView` with real data + slots. Only ever mounted
  *  while this tab is active (`SettingsTabPane` in `settings-panel.tsx`
  *  returns `null` otherwise), so nothing here fetches on panel open. */
-export function GeneralTab({ projectId }: { projectId: string }) {
+export function GeneralTab({
+  projectId,
+  slot,
+  part = 'all',
+}: {
+  projectId: string;
+  /** Which half Workspace settings shows (see `GeneralTabViewProps.part`). */
+  part?: GeneralTabPart;
+  /** Rendered after the name and icon, before the Danger zone: the workspace's
+   *  account settings (security policy) in Workspace settings › General. */
+  slot?: ReactNode;
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.workspace');
+  const tWorkspaces = useTranslations('workspaces.settings');
   const queryClient = useQueryClient();
   const router = useUiRouter();
   const viewerId = useUiViewerId();
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const leave = useLeaveWorkspace(projectId);
 
   const projectQuery = useQuery({
     queryKey: qk.project.summary(projectId),
@@ -563,7 +621,11 @@ export function GeneralTab({ projectId }: { projectId: string }) {
   // `manager` role label instead would have hidden Delete from a custom role
   // that holds `project.delete`, and shown it to one that does not.
   const caps = useProjectCans(projectId, GENERAL_TAB_ACTIONS);
-  const canDelete = caps[PROJECT_ACTIONS.PROJECT_DELETE]?.allowed === true;
+  // Deleting a workspace closes its account (billing, members, keys): the API
+  // also asks for the owner-only `account.delete`. Show Delete only to a
+  // person who holds both.
+  const closeAccount = useCan({ accountId: project?.account_id ?? undefined }, 'account.delete');
+  const canDelete = caps[PROJECT_ACTIONS.PROJECT_DELETE]?.allowed === true && closeAccount.allowed === true;
   const canEdit = caps[PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]?.allowed === true;
   const canEditEffort = canEdit;
 
@@ -571,7 +633,9 @@ export function GeneralTab({ projectId }: { projectId: string }) {
     mutationFn: () =>
       runProjectArchive(
         projectId,
-        { archiveProject },
+        // DELETE /v1/workspaces/:id closes the workspace: members lose access
+        // now, owners can restore it until `deletion_scheduled_for` (K2).
+        { archiveProject: (id: string) => deleteWorkspace(id) },
         // The archived project must stop being where `/` and the settings
         // exit land (JAY-729) — otherwise they redirect into a 404 gate.
         () => forgetLastProjectId(viewerId, projectId),
@@ -588,7 +652,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
           ),
       ),
     onSuccess: () => {
-      successToast(tI18nComplete('textdd9e881230eb'));
+      successToast(tWorkspaces('deletedToast'));
       // qk.projects.scope(): for a single-account user the archived
       // project's account IS the primary account qk.projects.list() (no
       // args) resolves to, so a precise invalidation would leave the
@@ -602,9 +666,16 @@ export function GeneralTab({ projectId }: { projectId: string }) {
 
   return (
     <GeneralTabView
+      part={part}
       copy={{
         loadFailed: t('loadFailed'),
         retry: t('retry'),
+        workspaceId: tWorkspaces('workspaceId'),
+        workspaceIdDescription: tWorkspaces('workspaceIdDescription'),
+        leaveWorkspace: tWorkspaces('leaveWorkspace'),
+        leaveDescription: tWorkspaces('leaveDescription'),
+        leaveTitle: tWorkspaces('leaveTitle'),
+        leaveDialog: (name) => tWorkspaces('leaveDialog', { name }),
         dangerZone: t('dangerZone'),
         deleteWorkspace: t('deleteWorkspace'),
         deleteDescription: t('deleteDescription'),
@@ -612,13 +683,15 @@ export function GeneralTab({ projectId }: { projectId: string }) {
         deleteDialog: (name) => t('deleteDialog', { name }),
         consequencesTitle: t('consequencesTitle'),
         consequences: [
-          t('consequences.sessions'),
+          t('consequences.access'),
           t('consequences.automation'),
           t('consequences.integrations'),
-          t('consequences.managedRepo'),
-          t('consequences.access'),
+          t('consequences.plan'),
+          t('consequences.sessions'),
         ],
-        reassurance: t('reassurance'),
+        // Deleting a workspace never deletes the person: their login stays,
+        // with 0 workspaces they land on create-or-join (FAQ, DEL-6).
+        reassurance: `${t('reassurance')} ${tWorkspaces('deleteKeepsLogin')}`,
         keepWorkspace: t('keepWorkspace'),
       }}
       isLoading={projectQuery.isLoading}
@@ -626,10 +699,19 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       errorMessage={(projectQuery.error as Error)?.message ?? ''}
       onRetry={() => projectQuery.refetch()}
       generalFieldsSlot={
-        project ? <GeneralWorkspaceCard project={project} canManage={canEdit} canManageEffort={canEditEffort} /> : undefined
+        project ? (
+          <>
+            <SplitNoticeBanner workspaceId={projectId} />
+            <GeneralWorkspaceCard project={project} canManage={canEdit} canManageEffort={canEditEffort} />
+            {slot}
+          </>
+        ) : undefined
       }
       // No git-repo slot: Git repo is its own Settings section since
       // 2026-09-03 (`project-settings-sections.ts`).
+      workspaceId={project?.project_id}
+      canLeave={leave.canLeave}
+      onOpenLeaveDialog={leave.open}
       canDelete={canDelete}
       workspaceName={project?.name}
       archiveOpen={archiveOpen}
@@ -637,12 +719,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       onCloseArchiveDialog={() => setArchiveOpen(false)}
       onConfirmArchive={() => archiveMutation.mutate()}
       isArchivePending={archiveMutation.isPending}
-      transferSlot={
-        <TransferWorkspaceEntry
-          projectId={projectId}
-          currentAccountId={project?.account_id}
-        />
-      }
+      leaveDialog={leave.dialog}
     />
   );
 }

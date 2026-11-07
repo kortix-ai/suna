@@ -51,13 +51,13 @@ let setupLinkThrows = false;
 beforeEach(() => {
   setupLinkThrows = false;
   api = startFakeApi((req, url) => {
-    if (req.method === 'POST' && url.pathname === '/v1/projects/proj-1/connect-requests') {
+    if (req.method === 'POST' && url.pathname === '/v1/workspaces/proj-1/connect-requests') {
       if (setupLinkThrows) return Response.json({ error: 'conflict' }, { status: 409 });
       return Response.json(setupLinkResponse);
     }
     if (
       req.method === 'POST' &&
-      url.pathname.startsWith('/v1/connectors/projects/proj-1/connectors/')
+      url.pathname.startsWith('/v1/connectors/workspaces/proj-1/connectors/')
     ) {
       return Response.json(providerResponse);
     }
@@ -76,7 +76,7 @@ test('mints the Kortix connect link the transcript renders as a button', async (
   const r = await mintConnectLink({ slug: 'gmail' });
   expect(r.url).toBe('https://dev.kortix.com/connect/ksl_abc');
   expect(r.url).not.toContain('composio.dev');
-  expect(api.requests[0].path).toBe('/v1/projects/proj-1/connect-requests');
+  expect(api.requests[0].path).toBe('/v1/workspaces/proj-1/connect-requests');
   expect(api.requests[0].body).toMatchObject({ slug: 'gmail' });
 });
 

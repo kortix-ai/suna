@@ -6,7 +6,6 @@ import {
   ApiError,
   PROVISION_IN_FLIGHT_CODE,
   PROVISION_STREAM_UNTERMINATED_CODE,
-  type KortixAccount,
   type KortixProject,
   type ProvisionPhase,
   type ProvisionProjectInput,
@@ -28,12 +27,6 @@ import {
   type CreateOrchestrationClient,
   type CreateWorkspaceClient,
 } from './use-create-workspace';
-
-const OWNER_ACCOUNT: KortixAccount = {
-  account_id: 'acct-owner',
-  name: 'Owner Co',
-  account_role: 'owner',
-};
 
 function fakeProject(id: string, accountId = 'acct-owner'): KortixProject {
   return {
@@ -89,161 +82,35 @@ describe('fingerprintOf', () => {
   });
 });
 
-describe('buildCreatePayload: account_id is always sent explicitly', () => {
-  test('MANDATORY: falls back to the first creatable account when the picker is hidden (state.accountId is null)', () => {
-    // This is the exact scenario `resolveAccountId`
-    // (apps/api/src/shared/resolve-account.ts:117-129) gets wrong if account_id
-    // is omitted: it picks the EARLIEST-JOINED membership with NO role check,
-    // which can be a DIFFERENT account than the single creatable one the
-    // picker hid. Omitting account_id here would 403.
-    const payload = buildCreatePayload(
-      { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: null },
-      [OWNER_ACCOUNT],
-      'key-1',
-      'user-1',
-    );
-    expect(payload.account_id).toBe('acct-owner');
-  });
-
-  test('prefers the explicitly picked account over the default, when that pick is one of creatableAccounts', () => {
-    // `userId: 'acct-owner'` anchors this list to the viewer (matches
-    // `OWNER_ACCOUNT`) so it is a normal multi-account list, not a FOREIGN
-    // one — the user is explicitly picking the OTHER account they can also
-    // create in (e.g. personal account owned, team account picked).
-    const picked: KortixAccount = {
-      account_id: 'acct-picked',
-      name: 'Picked Co',
-      account_role: 'owner',
-    };
-    const payload = buildCreatePayload(
-      { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-picked' },
-      [OWNER_ACCOUNT, picked],
-      'key-1',
-      'acct-owner',
-    );
-    expect(payload.account_id).toBe('acct-picked');
-  });
-
-  test('Task 2 item 3 (G2 fail closed): throws rather than send when the resolved account is NOT one of creatableAccounts', () => {
-    // Was previously "prefers the explicitly picked account over the
-    // creatableAccounts fallback" and asserted `accountId: 'acct-picked'`
-    // resolved even though `'acct-picked'` was absent from `[OWNER_ACCOUNT]`
-    // — trusting `state.accountId` unconditionally, with no check that it is
-    // an account the current user can actually create in. That is precisely
-    // the shape a stale/foreign `accountId` would take, so `buildCreatePayload`
-    // (via `resolveTargetAccountId`) now refuses to send it at all.
-    expect(() =>
-      buildCreatePayload(
-        { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-picked' },
-        [OWNER_ACCOUNT],
-        'key-1',
-        'user-1',
-      ),
-    ).toThrow();
+describe('buildCreatePayload: a managed create is a whole new workspace', () => {
+  test('sends new_workspace and never an account_id: the server reuses or creates the account', () => {
+    const payload = buildCreatePayload({ ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-owner' }, 'key-1');
+    expect(payload.new_workspace).toBe(true);
+    expect('account_id' in payload).toBe(false);
   });
 
   test('always carries the passed idempotency_key', () => {
-    const payload = buildCreatePayload(
-      { ...INITIAL_FORM_STATE, name: 'x' },
-      [OWNER_ACCOUNT],
-      'the-key',
-      'user-1',
-    );
-    expect(payload.idempotency_key).toBe('the-key');
+    expect(buildCreatePayload({ ...INITIAL_FORM_STATE, name: 'x' }, 'the-key').idempotency_key).toBe('the-key');
   });
 
   test('still delegates name-trimming and seed_starter to buildProvisionPayload', () => {
-    const payload = buildCreatePayload(
-      { ...INITIAL_FORM_STATE, name: '  suna-web  ' },
-      [OWNER_ACCOUNT],
-      'key-1',
-      'user-1',
-    );
+    const payload = buildCreatePayload({ ...INITIAL_FORM_STATE, name: '  suna-web  ' }, 'key-1');
     expect(payload.name).toBe('suna-web');
     expect(payload.seed_starter).toBe(true);
   });
 });
 
-describe('resolveTargetAccountId', () => {
-  test('an explicit pick present in creatableAccounts wins', () => {
-    expect(
-      resolveTargetAccountId(
-        { ...INITIAL_FORM_STATE, accountId: 'acct-owner' },
-        [OWNER_ACCOUNT],
-        'user-1',
-      ),
-    ).toBe('acct-owner');
+describe('resolveTargetAccountId — the account a GitHub source acts in', () => {
+  test('the owned empty account the create fills', () => {
+    expect(resolveTargetAccountId({ ...INITIAL_FORM_STATE, accountId: 'acct-owner' }, 'acct-owner')).toBe(
+      'acct-owner',
+    );
   });
 
-  test('identity match resolves the default when nothing is explicitly picked', () => {
-    const personal: KortixAccount = {
-      account_id: 'user-1',
-      name: "me's Account",
-      account_role: 'owner',
-    };
-    const team: KortixAccount = { account_id: 'acct-team', name: 'Acme', account_role: 'owner' };
-    expect(
-      resolveTargetAccountId(
-        { ...INITIAL_FORM_STATE, accountId: null },
-        [team, personal],
-        'user-1',
-      ),
-    ).toBe('user-1');
-  });
-
-  // Task 2's Tests section: "a member-only user with no owned account
-  // resolves to `undefined` rather than a stranger's account."
-  // `filterCreatableAccounts` excludes a member-role account entirely, so a
-  // member-only user's `creatableAccounts` is always `[]` — there is nothing
-  // to default into, and nothing was ever explicitly picked either.
-  test("a member-only user (empty creatableAccounts) resolves to undefined, never a stranger's account", () => {
-    expect(
-      resolveTargetAccountId({ ...INITIAL_FORM_STATE, accountId: null }, [], 'user-1'),
-    ).toBeUndefined();
-  });
-
-  test('G2 fail closed: throws when the resolved id is not one of creatableAccounts', () => {
-    expect(() =>
-      resolveTargetAccountId(
-        { ...INITIAL_FORM_STATE, accountId: 'acct-stale' },
-        [OWNER_ACCOUNT],
-        'user-1',
-      ),
-    ).toThrow();
-  });
-
-  test('G2 fail closed: throws for a FOREIGN accounts list even when the resolved id IS technically in it', () => {
-    // The gap this closes: a 2+-account list with none owned by the viewer
-    // still has an `is_primary_owner`/first-creatable default that resolves
-    // to SOME entry — and that entry is trivially "in creatableAccounts",
-    // since it came from that exact list. The plain membership check above
-    // cannot catch this; only asking whether the list itself is FOREIGN can.
-    const foreign1: KortixAccount = {
-      account_id: 'org-1',
-      name: 'Acme Inc',
-      account_role: 'admin',
-    };
-    const foreign2: KortixAccount = {
-      account_id: 'org-2',
-      name: 'Widgets Co',
-      account_role: 'admin',
-    };
-    expect(() =>
-      resolveTargetAccountId(
-        { ...INITIAL_FORM_STATE, accountId: null },
-        [foreign1, foreign2],
-        'user-1',
-      ),
-    ).toThrow();
-    // Even an EXPLICIT pick cannot escape a FOREIGN list — the whole list is
-    // untrustworthy, not just the default tier.
-    expect(() =>
-      resolveTargetAccountId(
-        { ...INITIAL_FORM_STATE, accountId: 'org-1' },
-        [foreign1, foreign2],
-        'user-1',
-      ),
-    ).toThrow();
+  test('fail closed: no account, or an account that is not the one the create fills', () => {
+    expect(() => resolveTargetAccountId({ ...INITIAL_FORM_STATE, accountId: null }, 'acct-owner')).toThrow();
+    expect(() => resolveTargetAccountId({ ...INITIAL_FORM_STATE, accountId: 'acct-stale' }, 'acct-owner')).toThrow();
+    expect(() => resolveTargetAccountId({ ...INITIAL_FORM_STATE, accountId: 'acct-owner' }, null)).toThrow();
   });
 });
 
@@ -346,10 +213,9 @@ describe('messageFor', () => {
 
   // ── Final-review FIX 2 ───────────────────────────────────────────────────
   //
-  // `messageFor`'s 403 branch used to fire for ANY 403, including
-  // `enforceProjectQuota`'s `project_limit_reached` (`apps/api/src/projects/
-  // lib/access.ts`) — telling a free-tier user (FREE_TIER_PROJECT_LIMIT = 1)
-  // who already has a project that they lack permissions they actually have.
+  // `messageFor`'s 403 branch used to fire for ANY 403, including an older
+  // API's `project_limit_reached` plan cap — telling a user who already had a
+  // project that they lacked permissions they actually had.
 
   test("FIX 2: maps a 403 project_limit_reached to the server's own quota message, not the owner/admin explanation", () => {
     const err = new ApiError(
@@ -541,7 +407,7 @@ describe('runCreate: the full create() orchestration', () => {
     const fingerprint = fingerprintOf(state);
     const sentKeys: string[] = [];
 
-    await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+    await runCreate(state, 'acct-owner', 'user-1', {
       ...noopClient(),
       runCreateAttempt: async (payload) => {
         sentKeys.push(payload.idempotency_key ?? '');
@@ -560,7 +426,7 @@ describe('runCreate: the full create() orchestration', () => {
     const order: string[] = [];
     const state = { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-owner' };
 
-    await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+    await runCreate(state, 'acct-owner', 'user-1', {
       attemptKeyFor,
       clearAttemptKey: (fingerprint) => {
         order.push('clearKey');
@@ -598,7 +464,7 @@ describe('runCreate: the full create() orchestration', () => {
     const err = new ApiError('Owner or admin role required', { status: 403 });
     const firstAttemptKeys: string[] = [];
 
-    const first = await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+    const first = await runCreate(state, 'acct-owner', 'user-1', {
       ...noopClient(),
       runCreateAttempt: async (payload) => {
         firstAttemptKeys.push(payload.idempotency_key ?? '');
@@ -612,7 +478,7 @@ describe('runCreate: the full create() orchestration', () => {
     // — must reuse the exact key the failed attempt sent, not mint a new one
     // (a fresh key here would mean a second upstream repo on retry).
     const retryKeys: string[] = [];
-    await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+    await runCreate(state, 'acct-owner', 'user-1', {
       ...noopClient(),
       now: () => 1_500,
       runCreateAttempt: async (payload) => {
@@ -630,7 +496,7 @@ describe('runCreate: the full create() orchestration', () => {
     let provisionCalls = 0;
     const idempotencyKeysSeen: string[] = [];
 
-    const result = await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+    const result = await runCreate(state, 'acct-owner', 'user-1', {
       attemptKeyFor: (fingerprint, now) => {
         mintCalls.push([fingerprint, now]);
         return attemptKeyFor(fingerprint, now);
@@ -684,7 +550,7 @@ describe('runCreate: the full create() orchestration', () => {
 
     await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: null },
-      [{ ...OWNER_ACCOUNT, account_id: 'acct-used' }],
+      null,
       'user-42',
       {
         ...noopClient(),
@@ -702,14 +568,14 @@ describe('runCreate: the full create() orchestration', () => {
    * The create's handoff contract (KRTX-1419): a successful create must land
    * the user on the project they just created — it stamps the project
    * onboarded (the same PATCH the onboarding chat's kickoff uses) and then
-   * navigates to `/projects/<id>`, which opens on the usual home.
+   * navigates to `/workspaces/<id>`, which opens on the usual home.
    */
   test('on success, stamps the project onboarded, then hands off to the project page', async () => {
     const stamps: string[] = [];
     const handoffs: string[] = [];
     const result = await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
-      [OWNER_ACCOUNT],
+      'acct-owner',
       'user-1',
       {
         ...noopClient(),
@@ -740,7 +606,7 @@ describe('runCreate: the full create() orchestration', () => {
     const handoffs: string[] = [];
     const result = await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
-      [OWNER_ACCOUNT],
+      'acct-owner',
       'user-1',
       {
         ...noopClient({ projectsCachedForAccount: () => [] }),
@@ -761,7 +627,7 @@ describe('runCreate: the full create() orchestration', () => {
     const stamps: string[] = [];
     const result = await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
-      [OWNER_ACCOUNT],
+      'acct-owner',
       'user-1',
       {
         ...noopClient({ projectsCachedForAccount: () => undefined }),
@@ -779,7 +645,7 @@ describe('runCreate: the full create() orchestration', () => {
     const stamps: string[] = [];
     const result = await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
-      [OWNER_ACCOUNT],
+      'acct-owner',
       'user-1',
       {
         ...noopClient({
@@ -805,7 +671,7 @@ describe('runCreate: the full create() orchestration', () => {
     const handoffs: string[] = [];
     const result = await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
-      [OWNER_ACCOUNT],
+      'acct-owner',
       'user-1',
       {
         ...noopClient(),
@@ -843,7 +709,7 @@ describe('runCreate: the full create() orchestration', () => {
 
     const result = await runCreate(
       { ...INITIAL_FORM_STATE, name: 'x', accountId: 'acct-owner' },
-      [OWNER_ACCOUNT],
+      'acct-owner',
       'user-1',
       {
         ...noopClient(),
@@ -866,22 +732,18 @@ describe('runCreate: the full create() orchestration', () => {
     expect(entered).toEqual([]);
   });
 
-  test('always resolves the account_id through buildCreatePayload — sends the fallback account even with no explicit pick', async () => {
+  test('a managed create sends new_workspace, never the account the form holds', async () => {
     const sentPayloads: ProvisionProjectInput[] = [];
-    await runCreate(
-      { ...INITIAL_FORM_STATE, name: 'x', accountId: null },
-      [OWNER_ACCOUNT],
-      'user-1',
-      {
-        ...noopClient(),
-        runCreateAttempt: async (payload) => {
-          sentPayloads.push(payload);
-          return fakeProject('created-account-id');
-        },
+    await runCreate({ ...INITIAL_FORM_STATE, name: 'x', accountId: null }, null, 'user-1', {
+      ...noopClient(),
+      runCreateAttempt: async (payload) => {
+        sentPayloads.push(payload);
+        return fakeProject('created-account-id');
       },
-    );
+    });
 
-    expect(sentPayloads[0]?.account_id).toBe('acct-owner');
+    expect((sentPayloads[0] as unknown as Record<string, unknown>)?.new_workspace).toBe(true);
+    expect(sentPayloads[0]?.account_id).toBeUndefined();
   });
 
   /**
@@ -904,7 +766,7 @@ describe('runCreate: the full create() orchestration', () => {
     let provisionCalls = 0;
     const created: unknown[] = [];
 
-    const result = await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+    const result = await runCreate(state, 'acct-owner', 'user-1', {
       ...noopClient(),
       runCreateAttempt: async () => {
         provisionCalls += 1;
@@ -941,7 +803,7 @@ describe('runCreate: the full create() orchestration', () => {
     let provisionCalls = 0;
     const imported: unknown[] = [];
 
-    const result = await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+    const result = await runCreate(state, 'acct-owner', 'user-1', {
       ...noopClient(),
       runCreateAttempt: async () => {
         provisionCalls += 1;
@@ -976,7 +838,7 @@ describe('runCreate: the full create() orchestration', () => {
     };
     const mintCalls: string[] = [];
 
-    await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+    await runCreate(state, 'acct-owner', 'user-1', {
       ...noopClient(),
       attemptKeyFor: (fingerprint, now) => {
         mintCalls.push(fingerprint);
@@ -1008,7 +870,7 @@ describe('runCreate: the full create() orchestration', () => {
       },
     ]) {
       const order: string[] = [];
-      const result = await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+      const result = await runCreate(state, 'acct-owner', 'user-1', {
         ...noopClient(),
         primeProjectCache: () => order.push('primeCache'),
         invalidateProjects: () => order.push('invalidate'),
@@ -1044,7 +906,7 @@ describe('runCreate: the full create() orchestration', () => {
         source: 'github-create' as const,
         installationId: '84',
       },
-      [OWNER_ACCOUNT],
+      'acct-owner',
       'user-1',
       {
         ...noopClient(),
@@ -1074,7 +936,7 @@ describe('runCreate: the full create() orchestration', () => {
 
       const result = await runCreate(
         { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-owner' },
-        [OWNER_ACCOUNT],
+        'acct-owner',
         'user-1',
         {
           ...noopClient(),
@@ -1104,7 +966,7 @@ describe('runCreate: the full create() orchestration', () => {
 
       const result = await runCreate(
         { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-owner' },
-        [OWNER_ACCOUNT],
+        'acct-owner',
         'user-1',
         {
           ...noopClient(),
@@ -1132,7 +994,7 @@ describe('runCreate: the full create() orchestration', () => {
           installationId: '84',
           repoFullName: 'acme/portal',
         },
-        [OWNER_ACCOUNT],
+        'acct-owner',
         'user-1',
         {
           ...noopClient(),
@@ -1153,7 +1015,7 @@ describe('runCreate: the full create() orchestration', () => {
           accountId: 'acct-owner',
           repoFullName: 'owner/portal',
         },
-        [OWNER_ACCOUNT],
+        'acct-owner',
         'user-1',
         {
           ...noopClient(),
@@ -1664,7 +1526,7 @@ describe('create-repo under a personal GitHub account', () => {
  * The API's edge middleware sends every 502 as a 503 with the body kept
  * (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES). Prod: create-repo
  * answered `503 {"error":"GitHub /user/repos failed (403): Resource not
- * accessible by integration"}` and `/new` said managed git is not set up.
+ * accessible by integration"}` and `/workspaces/new` said managed git is not set up.
  */
 describe('an edge-rewritten 502 (503 with an upstream error body)', () => {
   const err = () =>

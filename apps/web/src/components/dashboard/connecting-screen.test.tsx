@@ -18,7 +18,7 @@ mock.module('@/i18n/use-translations', () => ({ useTranslations: () => translate
 mock.module('@kortix/ui/i18n/ui-catalog/use-localized-ui-catalog', () => ({
   translateUiCatalogText: (_catalog: unknown, key: string) => key,
 }));
-mock.module('@kortix/ui/internal/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/projects' }));
+mock.module('@kortix/ui/internal/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/workspaces' }));
 mock.module('@phosphor-icons/react', () => ({
   WarningCircleIcon: passthrough,
   ArrowLeftIcon: passthrough,
@@ -56,7 +56,7 @@ test('an error renders the full-screen error view with the way back', async () =
   const html = JSON.stringify(renderer.toJSON());
   expect(html).toContain('boom');
   expect(html).toContain('inset-0');
-  expect(html).toContain('href":"/projects');
+  expect(html).toContain('href":"/workspaces');
   await act(async () => renderer.unmount());
 });
 

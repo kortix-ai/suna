@@ -13,7 +13,7 @@ import { createRoot, type Root } from 'react-dom/client';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
-const win = new Window({ url: 'http://localhost:3000/projects/p1/sessions/s1', width: 1440, height: 900 });
+const win = new Window({ url: 'http://localhost:3000/workspaces/p1/sessions/s1', width: 1440, height: 900 });
 const globals = globalThis as Record<string, unknown>;
 globals.window = win;
 globals.document = win.document;
@@ -99,7 +99,7 @@ describe('LocalhostLinkInterceptor — Kortix App links', () => {
 
 describe('LocalhostLinkInterceptor — artifact links', () => {
   const ARTIFACT_URL =
-    'http://localhost:3000/projects/00000000-0000-4000-8000-000000000001/artifacts/00000000-0000-4000-8000-000000000002';
+    'http://localhost:3000/workspaces/00000000-0000-4000-8000-000000000001/artifacts/00000000-0000-4000-8000-000000000002';
 
   test('on a session page, an artifact link opens in the session panel', () => {
     useSessionBrowserStore.getState().setActiveSessionId(PANEL_SESSION);

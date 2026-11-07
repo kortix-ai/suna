@@ -6,23 +6,24 @@
 // verbatim: the caller awaits it where it awaited the inline query, so every
 // request sends the same statements in the same order. Two functions that
 // differ only in predicate order stay two, because the order is in the SQL.
-import { accountMembers, accountMemberships, accounts, iamRoles, roleAssignments } from '@kortix/db';
+import { accountMembers, accountMemberships, iamRoles, roleAssignments } from '@kortix/db';
 import { type SQL, and, asc, count, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
+import { accountsView } from '../workspaces/rows';
 
 /** The accounts a user belongs to, with the fields the account switcher shows. */
 export function userAccountRows(userId: string) {
   return db
     .select({
       accountId: accountMembers.accountId,
-      name: accounts.name,
-      createdAt: accounts.createdAt,
-      updatedAt: accounts.updatedAt,
-      branding: accounts.branding,
+      name: accountsView.name,
+      createdAt: accountsView.createdAt,
+      updatedAt: accountsView.updatedAt,
+      branding: accountsView.branding,
     })
     .from(accountMembers)
-    .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
+    .innerJoin(accountsView, eq(accountMembers.accountId, accountsView.accountId))
     .where(eq(accountMembers.userId, userId));
 }
 
@@ -31,10 +32,10 @@ export function userAccountNameRows(userId: string) {
   return db
     .select({
       accountId: accountMembers.accountId,
-      name: accounts.name,
+      name: accountsView.name,
     })
     .from(accountMembers)
-    .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
+    .innerJoin(accountsView, eq(accountMembers.accountId, accountsView.accountId))
     .where(eq(accountMembers.userId, userId));
 }
 

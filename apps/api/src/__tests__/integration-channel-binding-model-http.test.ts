@@ -36,7 +36,7 @@ beforeAll(async () => {
   await insertIntoView(db, projectMembers, [{ accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' }]);
   const [row] = await db
     .insert(chatChannelBindings)
-    .values({ projectId: PROJECT, platform: 'slack', workspaceId: 'T-model-test', channelId: 'C-model-test', channelName: 'model-test' })
+    .values({ projectId: PROJECT, platform: 'slack', platformTeamId: 'T-model-test', channelId: 'C-model-test', channelName: 'model-test' })
     .returning({ bindingId: chatChannelBindings.bindingId });
   binding = row!.bindingId;
   secret = (await createAccountToken({ accountId: ACCOUNT, userId: MANAGER, projectId: PROJECT, name: 'channel-model-http-test' })).secretKey;

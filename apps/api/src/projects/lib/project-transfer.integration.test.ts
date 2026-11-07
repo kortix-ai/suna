@@ -27,6 +27,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   accountMemberships,
+  accountModelPreferences,
   accountSecretResources,
   accountSecretGrants,
   accountTokens,
@@ -48,9 +49,10 @@ import {
 import { and, eq, getTableName, getTableColumns, is, isNull, sql } from 'drizzle-orm';
 import { PgTable } from 'drizzle-orm/pg-core';
 import { db } from '../../shared/db';
-import { archiveProjectAndRevokeTokens } from './project-deletion';
+import { archiveProjectRow } from '../../workspaces/lifecycle';
 import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
 import { authorize } from '../../iam/authorize';
+import { getAccountModelDefaults } from '../../repositories/model-preferences';
 import { decryptProjectSecret, encryptProjectSecret } from '../secrets/envelope';
 import {
   PROJECT_TRANSFER_LEAVE_TABLES,
@@ -191,7 +193,7 @@ withDb('project transfer', () => {
 
   test('a transfer winning external deletion cleanup refuses the stale archive', async () => {
     await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
-    expect(await archiveProjectAndRevokeTokens(PROJECT_ID, SOURCE_ACCOUNT)).toBeUndefined();
+    expect(await archiveProjectRow(PROJECT_ID, SOURCE_ACCOUNT)).toBeUndefined();
     const [project] = await db.select().from(projects).where(eq(projects.projectId, PROJECT_ID));
     const [token] = await db.select().from(accountTokens).where(eq(accountTokens.tokenId, TOKEN_ID));
     expect(project?.status).toBe('active');
@@ -201,7 +203,7 @@ withDb('project transfer', () => {
   });
 
   test('archive revokes owned credentials and prevents a subsequent transfer', async () => {
-    const archived = await archiveProjectAndRevokeTokens(PROJECT_ID, SOURCE_ACCOUNT);
+    const archived = await archiveProjectRow(PROJECT_ID, SOURCE_ACCOUNT);
     expect(archived?.status).toBe('archived');
     expect(archived?.accountId).toBe(SOURCE_ACCOUNT);
     const [token] = await db.select().from(accountTokens).where(eq(accountTokens.tokenId, TOKEN_ID));
@@ -592,6 +594,146 @@ withDb('project transfer', () => {
     }
   });
 
+  test('a parked tool-call permission follows the project', async () => {
+    const { sessionPendingPermissions } = await import('@kortix/db');
+    const [parked] = await db.insert(sessionPendingPermissions).values({
+      accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, sessionId: SESSION_ID, requestId: 'synthetic-request',
+      tool: 'bash', permission: 'bash', argsHash: 'a'.repeat(64),
+    }).returning();
+    await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
+    const [moved] = await db.select().from(sessionPendingPermissions).where(eq(sessionPendingPermissions.id, parked!.id));
+    expect(moved?.accountId).toBe(TARGET_ACCOUNT);
+  });
+
+  test('App hosting rows follow the project by app_id and the site blobs are copied to the target prefix', async () => {
+    const { apps, appDeployments, appSiteFiles, appSiteBlobs, appVolumes, appRuntimes } = await import('@kortix/db');
+    const [app] = await db.insert(apps).values({
+      accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, slug: 'transfer-site', name: 'Transfer site', routeKey: 'xfer0001',
+    }).returning();
+    const [deployment] = await db.insert(appDeployments).values({
+      appId: app!.appId, version: 1, sourceKind: 'static', hostingType: 'static', runtimeVersion: 'synthetic', createdBy: OWNER_A,
+    }).returning();
+    const sha = 'b'.repeat(64);
+    const sharedSha = 'c'.repeat(64);
+    await db.insert(appSiteBlobs).values([
+      { accountId: SOURCE_ACCOUNT, sha256: sha, sizeBytes: 5 },
+      { accountId: SOURCE_ACCOUNT, sha256: sharedSha, sizeBytes: 3 },
+    ]);
+    await db.insert(appSiteFiles).values([
+      { deploymentId: deployment!.deploymentId, accountId: SOURCE_ACCOUNT, path: 'index.html', sha256: sha, sizeBytes: 5, contentType: 'text/html' },
+      { deploymentId: deployment!.deploymentId, accountId: SOURCE_ACCOUNT, path: 'a.css', sha256: sharedSha, sizeBytes: 3, contentType: 'text/css' },
+    ]);
+    const [volume] = await db.insert(appVolumes).values({
+      appId: app!.appId, accountId: SOURCE_ACCOUNT, name: 'data', sizeGb: 1, externalId: 'synthetic-volume-xfer',
+    }).returning();
+    const [runtime] = await db.insert(appRuntimes).values({
+      deploymentId: deployment!.deploymentId, accountId: SOURCE_ACCOUNT, provider: 'platinum',
+      externalId: 'synthetic-runtime-xfer', controlTokenHash: 'h'.repeat(64),
+    }).returning();
+    const objects = new Map<string, string>([[`${SOURCE_ACCOUNT}/${sha}`, 'hello'], [`${SOURCE_ACCOUNT}/${sharedSha}`, 'css']]);
+    const storage = {
+      put: async (key: string, body: Blob) => { objects.set(key, await body.text()); },
+      open: async (key: string) => (objects.has(key) ? new Blob([objects.get(key)!]).stream() : null),
+      remove: async (keys: string[]) => { for (const key of keys) objects.delete(key); },
+    };
+    try {
+      await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT }, { siteStorage: storage });
+      const files = await db.select().from(appSiteFiles).where(eq(appSiteFiles.deploymentId, deployment!.deploymentId));
+      expect(files.map((f) => f.accountId)).toEqual([TARGET_ACCOUNT, TARGET_ACCOUNT]);
+      const [movedVolume] = await db.select().from(appVolumes).where(eq(appVolumes.volumeId, volume!.volumeId));
+      const [movedRuntime] = await db.select().from(appRuntimes).where(eq(appRuntimes.runtimeId, runtime!.runtimeId));
+      expect(movedVolume?.accountId).toBe(TARGET_ACCOUNT);
+      expect(movedRuntime?.accountId).toBe(TARGET_ACCOUNT);
+      const targetBlobs = await db.select().from(appSiteBlobs).where(eq(appSiteBlobs.accountId, TARGET_ACCOUNT));
+      expect(targetBlobs.map((b) => b.sha256).sort()).toEqual([sha, sharedSha]);
+      // The source rows and objects stay for the source's other Apps and reclaim.
+      expect(await db.select().from(appSiteBlobs).where(eq(appSiteBlobs.accountId, SOURCE_ACCOUNT))).toHaveLength(2);
+      expect(objects.get(`${TARGET_ACCOUNT}/${sha}`)).toBe('hello');
+      expect(objects.get(`${TARGET_ACCOUNT}/${sharedSha}`)).toBe('css');
+      expect(objects.get(`${SOURCE_ACCOUNT}/${sha}`)).toBe('hello');
+    } finally {
+      await db.delete(appSiteBlobs).where(sql`${appSiteBlobs.accountId} IN (${SOURCE_ACCOUNT}, ${TARGET_ACCOUNT})`);
+    }
+  });
+
+  test('the open compute rows of the moved boxes bill the target; closed rows and other boxes stay', async () => {
+    const { sessionSandboxes, sandboxComputeSessions, apps, appDeployments, appRuntimes } = await import('@kortix/db');
+    const SANDBOX = '00000000-0000-4000-a000-00000000a150';
+    const OTHER_BOX = '00000000-0000-4000-a000-00000000a151';
+    // session_sandboxes.session_id is unique and an earlier test already gave SESSION_ID a box.
+    const METERED_SESSION = 'transfer-test-session-metered';
+    await db.insert(sessionSandboxes).values({
+      sandboxId: SANDBOX, sessionId: METERED_SESSION, accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, provider: 'platinum', externalId: 'sbx-metered',
+    });
+    const [app] = await db.insert(apps).values({
+      accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, slug: 'transfer-metered', name: 'Metered', routeKey: 'xfer0002',
+    }).returning();
+    const [deployment] = await db.insert(appDeployments).values({
+      appId: app!.appId, version: 1, sourceKind: 'static', hostingType: 'static', runtimeVersion: 'synthetic', createdBy: OWNER_A,
+    }).returning();
+    const [runtime] = await db.insert(appRuntimes).values({
+      deploymentId: deployment!.deploymentId, accountId: SOURCE_ACCOUNT, provider: 'platinum',
+      externalId: 'synthetic-runtime-metered', controlTokenHash: 'h'.repeat(64),
+    }).returning();
+    const spec = { provider: 'platinum' as const, cpuCores: 1, memoryGb: 1, diskGb: 1 };
+    const rows = await db.insert(sandboxComputeSessions).values([
+      { ...spec, accountId: SOURCE_ACCOUNT, sandboxId: SANDBOX, sessionId: METERED_SESSION },
+      { ...spec, accountId: SOURCE_ACCOUNT, sandboxId: SANDBOX, sessionId: METERED_SESSION, state: 'stopped', endedAt: new Date(Date.now() - 60_000).toISOString() },
+      { ...spec, accountId: SOURCE_ACCOUNT, sandboxId: runtime!.runtimeId, workloadType: 'app', appRuntimeId: runtime!.runtimeId },
+      { ...spec, accountId: SOURCE_ACCOUNT, sandboxId: OTHER_BOX },
+    ]).returning({ id: sandboxComputeSessions.id });
+    try {
+      await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
+      const after = await db.select({ id: sandboxComputeSessions.id, accountId: sandboxComputeSessions.accountId })
+        .from(sandboxComputeSessions).where(sql`${sandboxComputeSessions.id} IN (${sql.join(rows.map((r) => sql`${r.id}`), sql`, `)})`);
+      const accountOfRow = new Map(after.map((r) => [r.id, r.accountId]));
+      expect(rows.map((r) => accountOfRow.get(r.id))).toEqual([TARGET_ACCOUNT, SOURCE_ACCOUNT, TARGET_ACCOUNT, SOURCE_ACCOUNT]);
+    } finally {
+      await db.delete(sandboxComputeSessions).where(sql`${sandboxComputeSessions.id} IN (${sql.join(rows.map((r) => sql`${r.id}`), sql`, `)})`);
+    }
+  });
+
+  test('split_pending follows the account shape: cleared on both sides once each holds one project', async () => {
+    const SECOND = '00000000-0000-4000-a000-00000000a121';
+    await db.update(projects).set({ splitPending: true }).where(eq(projects.projectId, PROJECT_ID));
+    await db.insert(projects).values({
+      projectId: SECOND, accountId: SOURCE_ACCOUNT, name: 'Second', repoUrl: 'https://example.invalid/second.git', splitPending: true,
+    });
+    await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
+    const rows = await db.select({ projectId: projects.projectId, accountId: projects.accountId, splitPending: projects.splitPending })
+      .from(projects).where(sql`${projects.projectId} IN (${PROJECT_ID}, ${SECOND})`).orderBy(projects.projectId);
+    expect(rows).toEqual([
+      { projectId: PROJECT_ID, accountId: TARGET_ACCOUNT, splitPending: false },
+      { projectId: SECOND, accountId: SOURCE_ACCOUNT, splitPending: false },
+    ]);
+  });
+
+  test('the project default model follows the project; a stale target row for it is replaced; the target account default stays', async () => {
+    await db.insert(accountModelPreferences).values([
+      { accountId: SOURCE_ACCOUNT, scope: 'project', scopeKey: PROJECT_ID, model: 'synthetic-project-model' },
+      { accountId: SOURCE_ACCOUNT, scope: 'account', scopeKey: 'default', model: 'synthetic-source-default' },
+      // An earlier transfer and reverse left this row in the target.
+      { accountId: TARGET_ACCOUNT, scope: 'project', scopeKey: PROJECT_ID, model: 'synthetic-stale-model' },
+      { accountId: TARGET_ACCOUNT, scope: 'account', scopeKey: 'default', model: 'synthetic-target-default' },
+    ]);
+    await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
+    expect(await getAccountModelDefaults(TARGET_ACCOUNT, PROJECT_ID)).toMatchObject({
+      account: 'synthetic-target-default', projects: { [PROJECT_ID]: 'synthetic-project-model' },
+    });
+    const source = await getAccountModelDefaults(SOURCE_ACCOUNT);
+    expect(source.account).toBe('synthetic-source-default');
+    expect(PROJECT_ID in source.projects).toBe(false);
+  });
+
+  test('a target workspace that already has its project is refused with workspace_has_project, and nothing moves', async () => {
+    await db.insert(projects).values({
+      projectId: '00000000-0000-4000-a000-00000000a122', accountId: TARGET_ACCOUNT, name: 'Occupied', repoUrl: 'https://example.invalid/occupied.git',
+    });
+    await expect(transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT }))
+      .rejects.toMatchObject({ name: 'ProjectTransferError', code: 'workspace_has_project' });
+    expect(await accountOf('session', SESSION_ID)).toBe(SOURCE_ACCOUNT);
+  });
+
   test('every schema table carrying both account_id and project_id is classified', async () => {
     // The anti-drift guard: a new table that copies the owning account's id
     // next to the project id must be either moved by the transfer or kept
@@ -599,8 +741,11 @@ withDb('project transfer', () => {
     //
     // Introspected through drizzle's `is` guard: @kortix/db and apps/api
     // resolve the same drizzle copy here, so the class check holds.
-    const schema = await import('@kortix/db');
-    const moved = new Set(PROJECT_TRANSFER_TABLES.map((t) => getTableName(t)));
+    // The whole schema namespace, not only the names `@kortix/db` re-exports
+    // at its top level (`audit_activity_daily` is reachable only here).
+    const { schema } = await import('@kortix/db');
+    // `projects` moves first, through the workspaces store (moveProjectRowAccount).
+    const moved = new Set(['projects', ...PROJECT_TRANSFER_TABLES.map((t) => getTableName(t))]);
     const leave = new Set(Object.keys(PROJECT_TRANSFER_LEAVE_TABLES));
     const both: string[] = [];
     for (const exported of Object.values(schema)) {
@@ -610,14 +755,18 @@ withDb('project transfer', () => {
       const name = getTableName(exported);
       if ('accountId' in columns && 'projectId' in columns) both.push(name);
     }
-    expect(both.length).toBeGreaterThan(30);
-    for (const name of both) {
-      expect(moved.has(name) || leave.has(name)).toBe(true);
-    }
+    // design.md §1.3 counts 56 both-id tables (45 moved + 11 left) on 2026-11-05.
+    // design.md §1.3 counts 56 both-id tables (45 moved + 11 left) on 2026-11-05.
+    expect(both.length).toBeGreaterThanOrEqual(56);
+    // Listed by name, so a failure names the table to classify.
+    expect(both.filter((name) => !moved.has(name) && !leave.has(name)).sort()).toEqual([]);
+    expect(both.filter((name) => moved.has(name) && leave.has(name))).toEqual([]);
     // No stale classifications.
     const known = new Set(both);
-    for (const name of moved) expect(known.has(name)).toBe(true);
-    for (const name of leave) expect(known.has(name)).toBe(true);
+    expect([...moved].filter((name) => !known.has(name))).toEqual([]);
+    expect([...leave].filter((name) => !known.has(name))).toEqual([]);
+    expect(moved.has('session_pending_permissions')).toBe(true);
+    expect(leave.has('audit_activity_daily')).toBe(true);
     // The projects table itself moves.
     expect(moved.has('projects')).toBe(true);
     // The ledgers stay.

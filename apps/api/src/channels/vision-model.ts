@@ -94,11 +94,11 @@ export function capabilityReadsImages(model: CapabilityView | undefined): boolea
  */
 export const NO_VISION_NOTE = [
   '',
-  'IMPORTANT: no image-capable model is available in this project, so you',
+  'IMPORTANT: no image-capable model is available in this Kortix workspace, so you',
   'cannot see the attached image even after downloading it. Do not call `read`',
   'on it and do not look for OCR tools. Tell the user plainly that you cannot',
   'view images here, ask them to paste the text or describe it, and mention',
-  'that a project admin can enable an image-capable model.',
+  'that a workspace admin can enable an image-capable model.',
 ].join('\n');
 
 /** The cheap, synchronous check used on the channel hot path. */

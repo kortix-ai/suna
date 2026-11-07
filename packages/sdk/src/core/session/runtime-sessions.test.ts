@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ProjectRuntimeSession, ProjectSession } from '../rest/projects-client/sessions';
 import {
   directSubsessions,
-  projectSessionForRuntimeId,
+  workspaceSessionForRuntimeId,
   rootRuntimeSession,
   runtimeSessionsOf,
 } from './runtime-sessions';
@@ -85,13 +85,13 @@ describe('projectSessionForRuntimeId', () => {
   const b = session({ session_id: 'B', runtime_session_id: 'rootB', runtime_sessions: [conv('rootB')] });
 
   test('a session id or root pin, then any conversation of a row', () => {
-    expect(projectSessionForRuntimeId([a, b], 'A')?.session_id).toBe('A');
-    expect(projectSessionForRuntimeId([a, b], 'rootB')?.session_id).toBe('B');
-    expect(projectSessionForRuntimeId([a, b], 'childA')?.session_id).toBe('A');
+    expect(workspaceSessionForRuntimeId([a, b], 'A')?.session_id).toBe('A');
+    expect(workspaceSessionForRuntimeId([a, b], 'rootB')?.session_id).toBe('B');
+    expect(workspaceSessionForRuntimeId([a, b], 'childA')?.session_id).toBe('A');
   });
 
   test('null for null or an unknown id', () => {
-    expect(projectSessionForRuntimeId([a, b], null)).toBeNull();
-    expect(projectSessionForRuntimeId([a, b], 'nope')).toBeNull();
+    expect(workspaceSessionForRuntimeId([a, b], null)).toBeNull();
+    expect(workspaceSessionForRuntimeId([a, b], 'nope')).toBeNull();
   });
 });

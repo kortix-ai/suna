@@ -35,15 +35,15 @@ import { CUSTOMIZE_TAB_ID, useProjectSessionTabsStore } from '@/stores/project-s
  * Where a tab id actually lives.
  *
  * `CUSTOMIZE_TAB_ID` is a sentinel, not a session: interpolating it produced
- * `/projects/<id>/sessions/customize`, which is not a route. Closing the tab
+ * `/workspaces/<id>/sessions/customize`, which is not a route. Closing the tab
  * beside an open Customize tab therefore navigated to a 404. The prefetch
  * already skipped the sentinel; the push did not, so the two disagreed about
  * where the close was going.
  */
 function tabHref(projectId: string, tabId: string): string {
   return tabId === CUSTOMIZE_TAB_ID
-    ? `/projects/${projectId}/customize`
-    : `/projects/${projectId}/sessions/${tabId}`;
+    ? `/workspaces/${projectId}/customize`
+    : `/workspaces/${projectId}/sessions/${tabId}`;
 }
 
 export function isActiveProjectTab(
@@ -77,7 +77,7 @@ export function useCloseProjectTab(projectId: string) {
     const idx = tabs.indexOf(activeTabId);
     if (idx === -1) return;
     if (tabs.length === 1) {
-      router.prefetch(`/projects/${projectId}`);
+      router.prefetch(`/workspaces/${projectId}`);
       return;
     }
     // The close picks `remaining[min(idx, remaining.length - 1)]` — the next
@@ -98,7 +98,7 @@ export function useCloseProjectTab(projectId: string) {
       // navigation. In that case no store action opened its sentinel, but the
       // native Close Tab command must still leave the active surface.
       if (idx === -1) {
-        if (isActive && sessionId === CUSTOMIZE_TAB_ID) router.push(`/projects/${projectId}`);
+        if (isActive && sessionId === CUSTOMIZE_TAB_ID) router.push(`/workspaces/${projectId}`);
         return;
       }
 
@@ -112,7 +112,7 @@ export function useCloseProjectTab(projectId: string) {
       if (remaining.length === 0) {
         // nav-contract: prefetch-only — the destination is only chosen at close
         // time. The effect above warms it.
-        router.push(`/projects/${projectId}`);
+        router.push(`/workspaces/${projectId}`);
         startTransition(() => closeTab(projectId, sessionId));
         return;
       }

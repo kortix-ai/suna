@@ -263,11 +263,11 @@ describe('resolveBoundaryView', () => {
  */
 describe('gateEscapePath', () => {
   test('the escape from a failing project never targets that project', () => {
-    expect(gateEscapePath('/projects/p-1', 'p-1')).toBe(PROJECT_LANDING_PATH);
+    expect(gateEscapePath('/workspaces/p-1', 'p-1')).toBe(PROJECT_LANDING_PATH);
   });
 
   test('an escape to anywhere else is kept as-is', () => {
-    expect(gateEscapePath('/projects/p-2', 'p-1')).toBe('/projects/p-2');
+    expect(gateEscapePath('/workspaces/p-2', 'p-1')).toBe('/workspaces/p-2');
     expect(gateEscapePath(PROJECT_LANDING_PATH, 'p-1')).toBe(PROJECT_LANDING_PATH);
   });
 
@@ -405,10 +405,11 @@ describe('copy quality', () => {
 
   test('no internal navigation paths or product jargon reach the user', () => {
     // "Customize → Members" and "Kortix workspace" both shipped in the previous
-    // copy. Neither means anything to someone who cannot open the project.
+    // copy. Neither means anything to someone who cannot open the workspace.
+    // Since 2026-11-05 "workspace" is the product noun and "project" is retired.
     const banned = [
       /customize/i,
-      /workspace/i,
+      /\bprojects?\b/i,
       /→/,
       /viewer/i,
       /endpoint/i,

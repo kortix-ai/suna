@@ -35,7 +35,7 @@ describe('Open in Kortix', () => {
   test('a message in a channel thread opens that thread\'s session, found by its root', async () => {
     const r = JSON.stringify(await handleOpenInKortixAction(invoke(CHANNEL, { commandId: 'openInKortix', messagePayload: { id: 'reply-9', replyToId: 'root-1' } }), MANAGED));
     expect(r).toContain('"type":"continue"');
-    expect(r).toContain('https://app.example.test/projects/proj-1/sessions/sess-thread');
+    expect(r).toContain('https://app.example.test/workspaces/proj-1/sessions/sess-thread');
     expect(sessionLookups.map((l) => l.id)).toEqual([CHANNEL, `${CHANNEL};messageid=root-1`]);
   });
 

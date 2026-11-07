@@ -3,15 +3,15 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
   'A Kortix agent is a markdown persona with a deny-by-default reach into connectors, secrets and skills. A skill is the markdown that encodes how your company does one job. Both are files in your repo, versioned and reviewed.':
     'texte436179861c8',
   'About Kortix': 'text56d4e6956bc3',
-  'Browse skills, agents, and commands from every source. Add them to a Kortix project in one click.':
+  'Browse skills, agents, and commands from every source. Add them to a Kortix workspace in one click.':
     'text3d41d76bb5fb',
-  'Build with Kortix from the terminal: drive projects, sessions, and agents through the CLI and SDK, wire triggers and connectors, and land every change through a reviewed change request.':
+  'Build with Kortix from the terminal: drive workspaces, sessions, and agents through the CLI and SDK, wire triggers and connectors, and land every change through a reviewed change request.':
     'texte3c63340ccb1',
   'Careers at Kortix': 'text206d4796597e',
   'Company as Code': 'text6007b5baf3f3',
   'Connect 3,000+ apps, MCP servers, OpenAPI, GraphQL and raw HTTP once for the whole company. Agents reach them through one scoped token — credentials stay server-side, every action is allowed, gated, or blocked, and every call is logged.':
     'texta98d70820b62',
-  'Connect Slack or Microsoft Teams to a Kortix project and a message in a thread starts a session. The agent works on its own cloud computer and replies in the same thread. Email is in preview.':
+  'Connect Slack or Microsoft Teams to a Kortix workspace and a message in a thread starts a session. The agent works on its own cloud computer and replies in the same thread. Email is in preview.':
     'text94c8919486af',
   'Contact Kortix': 'text20c32c06512f',
   'Cron schedules and signed webhooks start Kortix sessions with nobody present. Each trigger names the agent it runs as, carries a prompt template, and lands its work through a change request a person approves.':
@@ -66,7 +66,7 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
   "Contact sales and book a demo": 'text228359b08506',
   "About": 'text4efca0d10c5f',
   "Legal": 'text4787eaf7c938',
-  "Marketplace: agents, skills and project templates": 'text9d2ac301f9b3',
+  "Marketplace: agents, skills and workspace templates": 'text9d2ac301f9b3',
   "Developers: CLI, SDK and API for AI agents": 'text9673e23783ee',
   "Careers": 'text7e658675b5ca',
   "Changelog": 'textead07c84baac',

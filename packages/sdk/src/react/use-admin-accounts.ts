@@ -577,6 +577,7 @@ export function useAdminAccountLedger(accountId: string | null, limit = 50) {
   });
 }
 
+/** @deprecated Use `AdminAccountWorkspace`. Kept permanently. */
 export interface AdminAccountProject {
   projectId: string;
   name: string;
@@ -591,7 +592,10 @@ export interface AdminAccountProject {
   lastSessionAt: string | null;
 }
 
-export function useAdminAccountProjects(accountId: string | null) {
+/** The workspace name of {@link AdminAccountProject}: the same type. */
+export type AdminAccountWorkspace = AdminAccountProject;
+
+export function useAdminAccountWorkspaces(accountId: string | null) {
   return useQuery<{ projects: AdminAccountProject[] }>({
     queryKey: ['admin', 'accounts', accountId, 'projects'],
     enabled: !!accountId,
@@ -604,6 +608,9 @@ export function useAdminAccountProjects(accountId: string | null) {
     },
   });
 }
+
+/** @deprecated Use `useAdminAccountWorkspaces`. Kept permanently. */
+export const useAdminAccountProjects = useAdminAccountWorkspaces;
 
 /**
  * The account's live Stripe subscription, exactly as Stripe reports it — what

@@ -98,7 +98,7 @@ export async function listReviewItems(
   const qs = q.toString();
   return unwrap(
     await backendApi.get<ReviewItemsPage>(
-      `/projects/${projectId}/review/items${qs ? `?${qs}` : ''}`,
+      `/workspaces/${projectId}/review/items${qs ? `?${qs}` : ''}`,
       // Background poll — keep failures with the query consumer, not the console.
       { showErrors: false },
     ),
@@ -120,7 +120,7 @@ export interface ReviewSummary {
  */
 export async function getReviewSummary(projectId: string) {
   return unwrap(
-    await backendApi.get<ReviewSummary>(`/projects/${projectId}/review/summary`, {
+    await backendApi.get<ReviewSummary>(`/workspaces/${projectId}/review/summary`, {
       // Background poll — keep failures with the query consumer, not the console.
       showErrors: false,
     }),
@@ -130,7 +130,7 @@ export async function getReviewSummary(projectId: string) {
 export async function getReviewItem(projectId: string, reviewItemId: string) {
   return unwrap(
     await backendApi.get<{ review_item: ApiReviewItem }>(
-      `/projects/${projectId}/review/items/${reviewItemId}`,
+      `/workspaces/${projectId}/review/items/${reviewItemId}`,
     ),
   );
 }
@@ -147,7 +147,7 @@ export async function submitReviewItem(
     session_id?: string;
   },
 ) {
-  return unwrap(await backendApi.post<ApiReviewItem>(`/projects/${projectId}/review/items`, input));
+  return unwrap(await backendApi.post<ApiReviewItem>(`/workspaces/${projectId}/review/items`, input));
 }
 
 export async function actReviewItem(
@@ -157,7 +157,7 @@ export async function actReviewItem(
 ) {
   return unwrap(
     await backendApi.post<ApiReviewItem>(
-      `/projects/${projectId}/review/items/${reviewItemId}/act`,
+      `/workspaces/${projectId}/review/items/${reviewItemId}/act`,
       input,
     ),
   );
@@ -186,7 +186,7 @@ export async function bulkActReviewItems(
           | 'not_bulk_actionable';
       }>;
     }>(
-      `/projects/${projectId}/review/bulk`,
+      `/workspaces/${projectId}/review/bulk`,
       input,
     ),
   );

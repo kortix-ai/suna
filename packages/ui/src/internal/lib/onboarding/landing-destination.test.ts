@@ -38,7 +38,7 @@ describe('isValidProjectId', () => {
 
 describe('projectPathFromId', () => {
   test('builds the project path for a valid id', () => {
-    expect(projectPathFromId(VALID)).toBe(`/projects/${VALID}`);
+    expect(projectPathFromId(VALID)).toBe(`/workspaces/${VALID}`);
   });
 
   test('returns null rather than a path for untrusted input', () => {
@@ -53,7 +53,7 @@ describe('resolveDefaultLandingPath', () => {
   const cookie = (userId: string, projectId: string) => `${userId}:${projectId}`;
 
   test('sends a remembered project straight to its page for its OWNER', () => {
-    expect(resolveDefaultLandingPath(cookie(USER_A, VALID), USER_A)).toBe(`/projects/${VALID}`);
+    expect(resolveDefaultLandingPath(cookie(USER_A, VALID), USER_A)).toBe(`/workspaces/${VALID}`);
   });
 
   test("REGRESSION: a different user never inherits the previous account's project", () => {
@@ -108,8 +108,8 @@ describe('parseAuthBounceOwner and parseLastProjectOwner must agree', () => {
       null,
       '',
       'not-a-cookie',
-      `${VALID}:/projects/abc`,
-      `${VALID}:${encodeURIComponent('/projects/abc?x=1')}`,
+      `${VALID}:/workspaces/abc`,
+      `${VALID}:${encodeURIComponent('/workspaces/abc?x=1')}`,
       'bare-legacy-value-no-colon',
       ':missing-owner',
       `${VALID}:`,

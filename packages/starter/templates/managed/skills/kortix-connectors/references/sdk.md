@@ -18,9 +18,9 @@ const connectors = process.env.KORTIX_PROJECT_ID
   : kortix.connectors;
 ```
 
-`backendUrl` must include the `/v1` prefix. Use the project handle when a
-project id is available. Use `kortix.connectors` only when a session-scoped
-token supplies the project context.
+`backendUrl` must include the `/v1` prefix. Use the workspace handle when a
+workspace id is available. Use `kortix.connectors` only when a session-scoped
+token supplies the workspace context.
 
 ## Methods
 
@@ -36,7 +36,7 @@ token supplies the project context.
   Call this whenever the workflow needs to know which/how many accounts are
   connected; never infer it from a single call's result.
 - `call(tool, args, { account })` invokes one Connector action. A connector
-  can hold several accounts (the project's shared one, plus each member's
+  can hold several accounts (the workspace's shared one, plus each member's
   own); omit `account` to use the default, or pass a label/id from
   `accounts()`, or the selector words `me` / `project`. The result's
   `account` field says which one actually ran — read it back rather than
@@ -69,7 +69,7 @@ for await (const page of crm.paginate('list_deals', { limit: 100 }, {
 `run` returns `output` and throws for everything else:
 
 - `ConnectorApprovalPendingError` (HTTP 202): `approvalUrl`, `executionId`.
-  Show the link to the human. Do not repeat the call. With a project-scoped
+  Show the link to the human. Do not repeat the call. With a workspace-scoped
   token, Approve runs the call once: the session resumes with the result, or
   a script reads `GET /v1/projects/:id/review/items/call:<executionId>` until
   `detail.run.state` is final. With any other token (no `runs_on_approval` in
@@ -191,7 +191,7 @@ const deals = await kortix.project(projectId).connector('crm').run('list_deals',
 
 The call runs as the viewer: shared accounts they may use and their own
 private accounts. With `--viewer identity` it answers `403
-viewer_api_disabled`. The viewer token reaches every project the viewer can
+viewer_api_disabled`. The viewer token reaches every workspace the viewer can
 read: always pass the App's own `projectId`.
 
 **App, server.** One client per request, never a stored token:
@@ -207,7 +207,7 @@ credential for App or backend code. A person creates a service account:
 
 ```sh
 kortix tokens service-accounts new crm-sync --description "Convex CRM sync"   # bearer prints once
-kortix access grant --service-account <id> --role member --project <project-id>
+kortix access grant --service-account <id> --role member --workspace <workspace-id>
 npx convex env set KORTIX_API_URL https://api.kortix.com/v1
 npx convex env set KORTIX_PROJECT_ID <project-id>
 npx convex env set KORTIX_API_KEY <kortix_sa_…>
@@ -240,17 +240,17 @@ export const syncDeals = internalAction({
   runtime.
 - The service account reaches only shared accounts nobody narrowed. A
   private or narrowed account answers `403 connector_not_connected`.
-- Without a project role, every call answers `403`.
+- Without a workspace role, every call answers `403`.
 - Anyone with the deployment admin key reads the bearer from the Convex env.
 - `kortix tokens service-accounts disable <id>` revokes it: calls answer `401`.
 
-For a server App job, store the bearer as a project secret and map it in
+For a server App job, store the bearer as a workspace secret and map it in
 `kortix.yaml` (`apps.<slug>.secrets: { CRM_SYNC_TOKEN: <secret-name> }`).
 Names that start with `KORTIX_` are reserved and fail validation.
 
 **External program or CI.** A personal access token acts as its owner,
-private accounts included. Bind it to one project:
-`kortix tokens new crm-export --project <project-id> --expires 90d`.
+private accounts included. Bind it to one workspace:
+`kortix tokens new crm-export --workspace <workspace-id> --expires 90d`.
 
 ## Safety rules
 

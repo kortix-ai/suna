@@ -14,6 +14,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
+import { ensureOwnedAccount } from '../helpers/accounts';
 
 const enabled = process.env.E2E_ENABLE_BILLING_JOURNEY === '1';
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
@@ -22,10 +23,6 @@ const password = 'BillingJourney123!';
 const api = createApiJsonClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
-interface AccountSummary {
-  account_id: string;
-  personal_account?: boolean;
-}
 
 interface CheckoutResult {
   checkout_url: string;
@@ -114,9 +111,7 @@ test.describe
       const email = `billing-browser-${Date.now()}-${randomUUID().slice(0, 8)}@example.test`;
       user = await createAuthUser(email, authOptions);
       session = await signIn(email, authOptions);
-      const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
-      const account = accounts.find((candidate) => candidate.personal_account) ?? accounts[0];
-      accountId = account?.account_id ?? '';
+      accountId = await ensureOwnedAccount(api, session.access_token);
       expect(accountId).toBeTruthy();
     });
 
@@ -141,7 +136,7 @@ test.describe
       page,
     }) => {
       await installBrowserSessionDirect(
-        page, session, `/new?accountId=${accountId}&accountTab=billing`, authOptions,
+        page, session, `/workspaces/new?accountId=${accountId}&accountTab=billing`, authOptions,
       );
       await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
       // One tier dropdown (`CreditTierSelect`) on a fixed ladder; it opens on the $200 tier.
@@ -167,7 +162,7 @@ test.describe
       // brand-new account with NO project can sit on: `/projects` auto-creates
       // a first project and `router.replace`s into it, which would drop the
       // query and never open the hub.
-      const billingUrl = `/new?accountId=${accountId}&accountTab=billing`;
+      const billingUrl = `/workspaces/new?accountId=${accountId}&accountTab=billing`;
       await installBrowserSessionDirect(page, session, billingUrl, authOptions);
       // The pane heading is "Plan", not "Billing". `?tab=billing` is still the
       // param, and "Billing" is still the nav GROUP label, but the pane itself

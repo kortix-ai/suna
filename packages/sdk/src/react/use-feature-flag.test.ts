@@ -22,7 +22,7 @@ mock.module('../core/rest/projects-client', () => ({
     rowCalls.push(projectId);
     return { project_id: projectId };
   },
-  getProjectDetail: async (projectId: string) => {
+  getWorkspaceDetail: async (projectId: string) => {
     detailCalls.push(projectId);
     return { project: { project_id: projectId } };
   },

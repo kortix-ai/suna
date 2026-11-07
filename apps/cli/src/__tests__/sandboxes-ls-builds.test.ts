@@ -89,10 +89,10 @@ beforeEach(() => {
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
-      if (url.pathname === `/v1/projects/${PROJECT_ID}/sandbox-templates`) {
+      if (url.pathname === `/v1/workspaces/${PROJECT_ID}/sandbox-templates`) {
         return Response.json({ items: templates, default_slug: defaultSlug });
       }
-      if (url.pathname === `/v1/projects/${PROJECT_ID}/snapshots`) {
+      if (url.pathname === `/v1/workspaces/${PROJECT_ID}/snapshots`) {
         return Response.json({ builds });
       }
       return Response.json({ error: 'not found' }, { status: 404 });

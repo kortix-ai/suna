@@ -153,17 +153,17 @@ test('Apps CRUD uses the project-scoped API contract', async () => {
   );
 
   expect(await listApps('project-1')).toEqual([app]);
-  expect(last()).toMatchObject({ method: 'GET', url: 'http://backend.test/v1/projects/project-1/apps' });
+  expect(last()).toMatchObject({ method: 'GET', url: 'http://backend.test/v1/workspaces/project-1/apps' });
 
   await createApp('project-1', { slug: 'demo', name: 'Demo' });
   expect(last()).toMatchObject({
     method: 'POST',
-    url: 'http://backend.test/v1/projects/project-1/apps',
+    url: 'http://backend.test/v1/workspaces/project-1/apps',
     body: { slug: 'demo', name: 'Demo' },
   });
 
   await getApp('project-1', 'app-1');
-  expect(last().url).toBe('http://backend.test/v1/projects/project-1/apps/app-1');
+  expect(last().url).toBe('http://backend.test/v1/workspaces/project-1/apps/app-1');
 
   await updateApp('project-1', 'app-1', { name: 'Renamed' });
   expect(last()).toMatchObject({ method: 'PATCH', body: { name: 'Renamed' } });
@@ -199,18 +199,18 @@ test('an App names the Apps it uses and the Apps that use it; create and update 
 
   const update: UpdateAppInput = { uses: [] };
   await updateApp('project-1', 'app-1', update);
-  expect(last()).toMatchObject({ method: 'PATCH', url: 'http://backend.test/v1/projects/project-1/apps/app-1', body: { uses: [] } });
+  expect(last()).toMatchObject({ method: 'PATCH', url: 'http://backend.test/v1/workspaces/project-1/apps/app-1', body: { uses: [] } });
 });
 
 test('getAppAuthEnv: issuer, audience and the key set inline as a data: URL (a backend that fetches nothing verifies offline)', async () => {
   const keys = { keys: [{ kty: 'EC', kid: 'k1', crv: 'P-256', x: 'x', y: 'y' }] };
   responses.push(
-    { body: { app_id: 'app-2', auth: { issuer: 'https://api.test/v1/projects/project-1', audience: 'app-2', jwks_uri: 'https://api.test/v1/projects/project-1/jwks.json' } } },
+    { body: { app_id: 'app-2', auth: { issuer: 'https://api.test/v1/workspaces/project-1', audience: 'app-2', jwks_uri: 'https://api.test/v1/workspaces/project-1/jwks.json' } } },
     { body: keys },
   );
   const env = await getAppAuthEnv('project-1', 'app-2');
-  expect(last().url).toBe('http://backend.test/v1/projects/project-1/jwks.json');
-  expect(env.KORTIX_AUTH_ISSUER).toBe('https://api.test/v1/projects/project-1');
+  expect(last().url).toBe('http://backend.test/v1/workspaces/project-1/jwks.json');
+  expect(env.KORTIX_AUTH_ISSUER).toBe('https://api.test/v1/workspaces/project-1');
   expect(env.KORTIX_AUTH_AUDIENCE).toBe('app-2');
   const prefix = 'data:application/json;base64,';
   expect(env.KORTIX_AUTH_JWKS.startsWith(prefix)).toBe(true);
@@ -232,9 +232,9 @@ test('an App carries its capabilities and sign-in values; no kind, no instance',
     app_id: 'app-2',
     capabilities: ['deployments', 'rollback', 'preview', 'sleep', 'member_tokens'],
     auth: {
-      issuer: 'https://api.test/v1/projects/project-1',
+      issuer: 'https://api.test/v1/workspaces/project-1',
       audience: 'app-2',
-      jwks_uri: 'https://api.test/v1/projects/project-1/jwks.json',
+      jwks_uri: 'https://api.test/v1/workspaces/project-1/jwks.json',
     },
     hosting_type: 'sandbox',
   } as App;
@@ -272,7 +272,7 @@ test('App access reads, updates, and creates a browser exchange URL through proj
   expect(await getAppAccess('project-1', 'app-1')).toEqual(policy);
   expect(last()).toMatchObject({
     method: 'GET',
-    url: 'http://backend.test/v1/projects/project-1/apps/app-1/access',
+    url: 'http://backend.test/v1/workspaces/project-1/apps/app-1/access',
   });
 
   expect(await updateAppAccess('project-1', 'app-1', {
@@ -282,14 +282,14 @@ test('App access reads, updates, and creates a browser exchange URL through proj
   })).toEqual({ ...policy, revision: 5 });
   expect(last()).toMatchObject({
     method: 'PATCH',
-    url: 'http://backend.test/v1/projects/project-1/apps/app-1/access',
+    url: 'http://backend.test/v1/workspaces/project-1/apps/app-1/access',
     body: { mode: 'restricted', member_ids: policy.member_ids, viewer_token_scope: 'api' },
   });
 
   expect(await createAppAccessSession('project-1', 'app-1')).toEqual(session);
   expect(last()).toMatchObject({
     method: 'POST',
-    url: 'http://backend.test/v1/projects/project-1/apps/app-1/access-session',
+    url: 'http://backend.test/v1/workspaces/project-1/apps/app-1/access-session',
     body: {},
   });
 });
@@ -310,7 +310,7 @@ test('artifact registration, finalization, and deployment preserve the wire spec
   });
   expect(last()).toMatchObject({
     method: 'POST',
-    url: 'http://backend.test/v1/projects/project-1/apps/artifacts/artifact-1/finalize',
+    url: 'http://backend.test/v1/workspaces/project-1/apps/artifacts/artifact-1/finalize',
   });
 
   await createAppDeployment('project-1', 'app-1', {
@@ -392,7 +392,7 @@ test('deployment inspection, logs, lifecycle, and rollback use bound identifiers
   await getAppDeployment('project-1', 'app-1', 'deployment-1');
   await getAppDeploymentLogs('project-1', 'app-1', 'deployment-1', { after: 3, limit: 50 });
   expect(last().url).toBe(
-    'http://backend.test/v1/projects/project-1/apps/app-1/deployments/deployment-1/logs?after=3&limit=50',
+    'http://backend.test/v1/workspaces/project-1/apps/app-1/deployments/deployment-1/logs?after=3&limit=50',
   );
   await startApp('project-1', 'app-1');
   await stopApp('project-1', 'app-1');
@@ -410,7 +410,7 @@ test('listAppAgents reads the agents whose kortix.yaml `apps:` grant names the A
   expect(await listAppAgents('project-1', 'app-1')).toEqual(agents);
   expect(last()).toMatchObject({
     method: 'GET',
-    url: 'http://backend.test/v1/projects/project-1/apps/app-1/agents',
+    url: 'http://backend.test/v1/workspaces/project-1/apps/app-1/agents',
   });
 });
 
@@ -422,7 +422,7 @@ test('deleteApp returns how many deployment images the delete freed', async () =
 
   expect(last()).toMatchObject({
     method: 'DELETE',
-    url: 'http://backend.test/v1/projects/project-1/apps/app-1',
+    url: 'http://backend.test/v1/workspaces/project-1/apps/app-1',
   });
   expect(result).toEqual({ ok: true, images });
 });
@@ -439,7 +439,7 @@ test('deleteAppDeployment deletes one deployment and reports its image outcome',
 
   expect(last()).toMatchObject({
     method: 'DELETE',
-    url: 'http://backend.test/v1/projects/project-1/apps/app-1/deployments/deployment-1',
+    url: 'http://backend.test/v1/workspaces/project-1/apps/app-1/deployments/deployment-1',
   });
   expect(result).toEqual(deleted);
 });
@@ -523,7 +523,7 @@ test('createAppToken mints a sign-in token for the App naming the caller', async
   responses.push({ body: minted });
 
   expect(await createAppToken('project-1', 'app-1')).toEqual(minted);
-  expect(last()).toMatchObject({ method: 'POST', url: 'http://backend.test/v1/projects/project-1/apps/app-1/token' });
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://backend.test/v1/workspaces/project-1/apps/app-1/token' });
 });
 
 test('an external App: created and moved by external_url, carried on the App', async () => {
@@ -567,10 +567,10 @@ test('listAppEvents reads the App event log with its filters and cursor', async 
   responses.push({ body: page }, { body: { events: [], next_cursor: null } });
 
   expect(await listAppEvents('project-1', 'app-1')).toEqual(page);
-  expect(last()).toMatchObject({ method: 'GET', url: 'http://backend.test/v1/projects/project-1/apps/app-1/events' });
+  expect(last()).toMatchObject({ method: 'GET', url: 'http://backend.test/v1/workspaces/project-1/apps/app-1/events' });
   await listAppEvents('project-1', 'app-1', { limit: 20, cursor: 'c2', status: 'unmatched', trigger: 'handle-reply', id: 'test-1' });
   expect(last().url).toBe(
-    'http://backend.test/v1/projects/project-1/apps/app-1/events?limit=20&cursor=c2&status=unmatched&trigger=handle-reply&id=test-1',
+    'http://backend.test/v1/workspaces/project-1/apps/app-1/events?limit=20&cursor=c2&status=unmatched&trigger=handle-reply&id=test-1',
   );
 });
 
@@ -581,7 +581,7 @@ test('sendAppTestEvent posts one event or a batch to the test route and returns 
   expect(await sendAppTestEvent('project-1', 'app-1', { name: 'reply.received', id: 'msg-1', data: { subject: 'Hi' } })).toEqual(answer);
   expect(last()).toMatchObject({
     method: 'POST',
-    url: 'http://backend.test/v1/projects/project-1/apps/app-1/events/test',
+    url: 'http://backend.test/v1/workspaces/project-1/apps/app-1/events/test',
     body: { name: 'reply.received', id: 'msg-1', data: { subject: 'Hi' } },
   });
   await sendAppTestEvent('project-1', 'app-1', { events: [{ name: 'a' }, { name: 'b' }] });
@@ -589,10 +589,10 @@ test('sendAppTestEvent posts one event or a batch to the test route and returns 
 });
 
 test('getAppEventCredentials reads the URL and token an App posts with', async () => {
-  responses.push({ body: { url: 'http://backend.test/v1/projects/project-1/apps/app-1/events', token: 'a'.repeat(64) } });
+  responses.push({ body: { url: 'http://backend.test/v1/workspaces/project-1/apps/app-1/events', token: 'a'.repeat(64) } });
   expect(await getAppEventCredentials('project-1', 'app-1')).toEqual({
-    url: 'http://backend.test/v1/projects/project-1/apps/app-1/events',
+    url: 'http://backend.test/v1/workspaces/project-1/apps/app-1/events',
     token: 'a'.repeat(64),
   });
-  expect(last()).toMatchObject({ method: 'GET', url: 'http://backend.test/v1/projects/project-1/apps/app-1/events/credentials' });
+  expect(last()).toMatchObject({ method: 'GET', url: 'http://backend.test/v1/workspaces/project-1/apps/app-1/events/credentials' });
 });

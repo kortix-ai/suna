@@ -84,7 +84,7 @@ export function DesktopUrlPrompt() {
             id="desktop-custom-frontend-url"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="https://kortix.your-company.com/projects"
+            placeholder="https://kortix.your-company.com/workspaces"
             disabled={busy}
             autoFocus
             onKeyDown={(e) => {

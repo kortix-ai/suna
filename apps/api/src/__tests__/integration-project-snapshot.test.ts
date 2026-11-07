@@ -109,6 +109,7 @@ beforeAll(async () => {
   projectId = crypto.randomUUID();
   projectIds.push(projectId);
   await db.insert(projects).values({
+    splitPending: true,
     projectId,
     accountId,
     name: 'snapshot-integration',
@@ -284,7 +285,7 @@ describe('project snapshot producer (real DB + real bucket)', () => {
   test('a row built as an older layout is a cache miss that re-queues under the current format', async () => {
     const staleProject = crypto.randomUUID();
     projectIds.push(staleProject);
-    await db.insert(projects).values({ projectId: staleProject, accountId, name: 'snapshot-stale', repoUrl: remote, defaultBranch: 'main' });
+    await db.insert(projects).values({ splitPending: true, projectId: staleProject, accountId, name: 'snapshot-stale', repoUrl: remote, defaultBranch: 'main' });
     await db.insert(projectSnapshotArchives).values({
       projectId: staleProject,
       ref: 'main',
@@ -366,7 +367,7 @@ describe('project snapshot producer (real DB + real bucket)', () => {
   test('a failed upload leaves no readiness behind and is retried, not published partially', async () => {
     const thirdProject = crypto.randomUUID();
     projectIds.push(thirdProject);
-    await db.insert(projects).values({ projectId: thirdProject, accountId, name: 'snapshot-fail', repoUrl: remote, defaultBranch: 'main' });
+    await db.insert(projects).values({ splitPending: true, projectId: thirdProject, accountId, name: 'snapshot-fail', repoUrl: remote, defaultBranch: 'main' });
     await db.insert(projectGitConnections).values({
       accountId,
       projectId: thirdProject,

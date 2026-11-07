@@ -21,18 +21,18 @@ describe('readSourceParam', () => {
 
 describe('newWorkspaceReturnPath', () => {
   test('carries a GitHub source back from /github/setup', () => {
-    expect(newWorkspaceReturnPath('github-import')).toBe('/new?source=github-import');
+    expect(newWorkspaceReturnPath('github-import')).toBe('/workspaces/new?source=github-import');
     // …and the account, so a multi-account user comes back to the account
     // they were creating in, not their personal one.
     expect(newWorkspaceReturnPath('github-import', 'acct-1')).toBe(
-      '/new?source=github-import&account=acct-1',
+      '/workspaces/new?source=github-import&account=acct-1',
     );
-    expect(newWorkspaceReturnPath('managed', 'acct-1')).toBe('/new?account=acct-1');
-    expect(newWorkspaceReturnPath('github-create')).toBe('/new?source=github-create');
+    expect(newWorkspaceReturnPath('managed', 'acct-1')).toBe('/workspaces/new?account=acct-1');
+    expect(newWorkspaceReturnPath('github-create')).toBe('/workspaces/new?source=github-create');
   });
 
   test('adds no param for the default source', () => {
-    expect(newWorkspaceReturnPath('managed')).toBe('/new');
+    expect(newWorkspaceReturnPath('managed')).toBe('/workspaces/new');
   });
 
   test('round-trips through readSourceParam', () => {
@@ -45,7 +45,7 @@ describe('newWorkspaceReturnPath', () => {
 
 test('GitHub setup round trip preserves computer pairing intent', () => {
   expect(newWorkspaceReturnPath('github-import', 'acct-1', true)).toBe(
-    '/new?source=github-import&account=acct-1&connect=computer',
+    '/workspaces/new?source=github-import&account=acct-1&connect=computer',
   );
-  expect(newWorkspaceReturnPath('managed', 'acct-1', false)).toBe('/new?account=acct-1');
+  expect(newWorkspaceReturnPath('managed', 'acct-1', false)).toBe('/workspaces/new?account=acct-1');
 });

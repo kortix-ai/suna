@@ -25,6 +25,7 @@ import type { FlowContext, Principal } from '../core/types';
 import { asPlatformAdmin } from '../fixtures/enterprise-access';
 import { PASSWORD } from '../fixtures/principals';
 import { passwordGrant, refreshGrant, ssoFixtureToken } from '../fixtures/supabase';
+import { withDb } from '../fixtures/chat';
 
 async function saveProvider(
   ctx: FlowContext,
@@ -199,10 +200,10 @@ flow(
       'PUT /v1/admin/api/accounts/:id/sso-domain-verification',
       'POST /v1/accounts/:accountId/members',
       'GET /v1/accounts/:accountId/members',
-      'GET /v1/account-invites',
-      'GET /v1/account-invites/:inviteId',
-      'POST /v1/account-invites/:inviteId/accept',
-      'POST /v1/account-invites/:inviteId/decline',
+      'GET /v1/invites',
+      'GET /v1/invites/:inviteId',
+      'POST /v1/invites/:inviteId/accept',
+      'POST /v1/invites/:inviteId/decline',
       'GET /v1/accounts/:accountId',
     ],
   },
@@ -235,20 +236,20 @@ flow(
     });
 
     await ctx.step('the SSO identity cannot list, read, accept, or decline the invite', async () => {
-      const list = await sso.get('/v1/account-invites');
+      const list = await sso.get('/v1/invites');
       list.status(200);
       const ids = list.json<{ invites: Array<{ invite_id: string }> }>().invites.map((i) => i.invite_id);
       if (ids.includes(inviteId)) throw new Error('an unverified SSO email listed the invite');
-      (await sso.get('/v1/account-invites/:inviteId', { params: { inviteId } }))
+      (await sso.get('/v1/invites/:inviteId', { params: { inviteId } }))
         .status(200)
         .body()
         .has('$.email_matches_caller', false)
         .has('$.account_id', null);
-      (await sso.post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+      (await sso.post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } }))
         .status(403)
         .body()
         .has('$.code', 'sso_email_domain_unverified');
-      (await sso.post('/v1/account-invites/:inviteId/decline', {}, { params: { inviteId } }))
+      (await sso.post('/v1/invites/:inviteId/decline', {}, { params: { inviteId } }))
         .status(403)
         .body()
         .has('$.code', 'sso_email_domain_unverified');
@@ -265,11 +266,11 @@ flow(
     await ctx.step('once the IdP account verifies the invitee domain, the same SSO identity lists and accepts the invite', async () => {
       await saveProvider(ctx, idpTeam.id, { supabaseProviderId, domain: inviteeDomain });
       (await operatorVerifies(ctx, idpTeam.id, true)).status(200).body().has('$.domain_verified', true);
-      const list = await sso.get('/v1/account-invites');
+      const list = await sso.get('/v1/invites');
       list.status(200);
       const ids = list.json<{ invites: Array<{ invite_id: string }> }>().invites.map((i) => i.invite_id);
       if (!ids.includes(inviteId)) throw new Error('a verified SSO email must list its invite');
-      (await sso.post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+      (await sso.post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } }))
         .status(200)
         .body()
         .has('$.account_id', inviter.id)
@@ -480,11 +481,14 @@ flow(
 
 // SSO-5 — SAML belongs to an organization. On a personal account its owner
 // could register an IdP that asserts any address (an operator's, say); Supabase
-// creates a separate SSO user for it (KRTX-1715).
+// creates a separate SSO user for it (KRTX-1715). Sign-up no longer creates
+// personal accounts (Workspaces D3), so the flow seeds a LEGACY one (account id
+// == user id) in the database, the shape every pre-D3 user still holds.
 flow(
   'SSO-5',
   {
     domain: 'iam',
+    requires: ['database'],
     routes: [
       'GET /v1/accounts',
       'GET /v1/accounts/:accountId/iam/sso/provider',
@@ -493,13 +497,19 @@ flow(
     ],
   },
   async (ctx) => {
-    const owner = ctx.client.as(ctx.P.OWNER);
-    let personal = '';
-    await ctx.step("the owner's personal account is the one whose id is their user id", async () => {
+    const legacy = await ctx.fixtures.user({ label: 'SSO-5', noAccount: true });
+    const owner = ctx.client.as(legacy);
+    const personal = legacy.userId!;
+    await ctx.step("a legacy personal account (its id is its owner's user id) is listed for its owner", async () => {
+      await withDb(ctx, async (db) => {
+        await db.query('INSERT INTO kortix.accounts (account_id, name) VALUES ($1, $2)', [personal, ctx.fixtures.name('legacy-personal')]);
+        await db.query("INSERT INTO kortix.account_members (account_id, user_id, account_role) VALUES ($1, $1, 'owner')", [personal]);
+      });
       const r = await owner.get('/v1/accounts');
       r.status(200);
-      personal = r.json<Array<{ account_id: string }>>().find((a) => a.account_id === ctx.P.OWNER.userId)?.account_id ?? '';
-      if (!personal) throw new Error('the owner has no personal account');
+      if (!r.json<Array<{ account_id: string }>>().some((a) => a.account_id === personal)) {
+        throw new Error('the seeded personal account is not listed');
+      }
     });
 
     await ctx.step('setting up SAML on it → 403 sso_personal_account, on both routes', async () => {
@@ -533,7 +543,7 @@ flow(
 async function reads(client: Client, accountId: string, projectId: string): Promise<string> {
   return [
     (await client.get('/v1/accounts/:accountId', { params: { accountId } })).statusCode,
-    (await client.get('/v1/projects/:projectId', { params: { projectId } })).statusCode,
+    (await client.get('/v1/workspaces/:projectId', { params: { projectId } })).statusCode,
   ].join();
 }
 
@@ -582,7 +592,9 @@ async function auditAfters(ctx: FlowContext, accountId: string, action: string, 
         query: { action, limit: '50' },
       });
       r.status(200);
-      return r.json<{ events: Array<{ action: string; after: Record<string, unknown> | null }> }>().events.filter((e) => e.action === action);
+      // The handler's domain event carries `after`; the request row of the same
+      // route (its audit label) carries none and is not what these steps count.
+      return r.json<{ events: Array<{ action: string; after: Record<string, unknown> | null }> }>().events.filter((e) => e.action === action && e.after !== null);
     },
     { until: (found) => found.length >= count, timeoutMs: 15_000, intervalMs: 500, description: `${count} ${action} audit event(s)` },
   );
@@ -606,7 +618,7 @@ flow(
       'PUT /v1/admin/api/accounts/:id/sso-domain-verification',
       'POST /v1/auth/refresh',
       'GET /v1/accounts/:accountId',
-      'GET /v1/projects/:projectId',
+      'GET /v1/workspaces/:projectId',
       'GET /v1/accounts/:accountId/audit',
       'DELETE /v1/accounts/:accountId/iam/sso/provider',
     ],
@@ -668,7 +680,7 @@ flow(
       for (const [label, client] of [['PAT', pat], ['GoTrue password grant', grant]] as const) {
         await settledReads(client, team.id, project.id, '403,403', `${label} after verification`);
         (await client.get('/v1/accounts/:accountId', { params })).status(403).body().has('$.code', 'sso_required');
-        (await client.get('/v1/projects/:projectId', { params: { projectId: project.id } }))
+        (await client.get('/v1/workspaces/:projectId', { params: { projectId: project.id } }))
           .status(403)
           .body()
           .has('$.code', 'sso_required');
@@ -717,7 +729,7 @@ flow(
       'POST /v1/auth/sign-in/password',
       'POST /v1/auth/refresh',
       'GET /v1/accounts/:accountId',
-      'GET /v1/projects/:projectId',
+      'GET /v1/workspaces/:projectId',
       'GET /v1/accounts/:accountId/audit',
       'DELETE /v1/accounts/:accountId/iam/sso/provider',
     ],

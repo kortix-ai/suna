@@ -79,7 +79,7 @@ function mockApi(extra?: (url: string) => Response | undefined) {
     requests.push(url);
     const custom = extra?.(url);
     if (custom) return custom;
-    if (url === 'https://api.test/v1/accounts/me') {
+    if (url === 'https://api.test/v1/me') {
       return new Response(
         JSON.stringify({ user_id: 'user_1', email: 'user@example.test', accounts: ACCOUNTS }),
         { status: 200, headers: JSON_HEADERS },
@@ -121,7 +121,7 @@ describe('kortix accounts', () => {
     mockApi();
     const code = await runAccounts(['ls']);
     expect(code).toBe(0);
-    expect(requests).toEqual(['https://api.test/v1/accounts/me']);
+    expect(requests).toEqual(['https://api.test/v1/me']);
     const out = stripAnsi(stdout);
     expect(out).toContain('Personal');
     expect(out).toContain('Kortix');
@@ -205,12 +205,12 @@ describe('kortix projects use', () => {
     { project_id: '', account_id: 'account_2', name: 'Beta' },
   ]) {
     test(`rejects an invalid project response: ${JSON.stringify(body)}`, async () => {
-      mockApi((url) => url.endsWith('/projects/proj_x')
+      mockApi((url) => url.endsWith('/workspaces/proj_x')
         ? new Response(JSON.stringify(body), { status: 200, headers: JSON_HEADERS })
         : undefined);
       const before = loadConfig();
       expect(await runProjects(['use', 'proj_x'])).toBe(1);
-      expect(stripAnsi(stderr)).toContain('Invalid project response');
+      expect(stripAnsi(stderr)).toContain('Invalid workspace response');
       if (body && 'error' in body && typeof body.error === 'string') expect(stderr).toContain(body.error);
       expect(stderr).not.toContain('TypeError');
       expect(loadConfig()).toEqual(before);
@@ -220,7 +220,7 @@ describe('kortix projects use', () => {
 
   test('sets the default project and switches the active account to its account', async () => {
     mockApi((url) => {
-      if (url === 'https://api.test/v1/projects/proj_x') {
+      if (url === 'https://api.test/v1/workspaces/proj_x') {
         return new Response(
           JSON.stringify({
             project_id: 'proj_x',
@@ -243,25 +243,54 @@ describe('kortix projects use', () => {
     const code = await runProjects(['use', 'proj_x']);
     expect(code).toBe(0);
     // The by-id GET is NOT account-scoped (the project may be in any account).
-    expect(requests).toContain('https://api.test/v1/projects/proj_x');
+    expect(requests).toContain('https://api.test/v1/workspaces/proj_x');
     // Default project recorded …
     expect(defaultProject()).toEqual({ project_id: 'proj_x', account_id: 'account_2', name: 'Beta' });
     // … and the active account followed it to Kortix (account_2).
     expect(activeAccount()).toEqual({ id: 'account_2', slug: 'kortix', name: 'Kortix' });
     const out = stripAnsi(stdout);
-    expect(out).toContain('Default project: Beta');
-    expect(out).toContain('now active');
+    expect(out).toContain('Default workspace: Beta');
+    expect(out).not.toContain('account →');
+  });
+});
+
+describe('kortix workspaces use <name>', () => {
+  const beta = {
+    project_id: 'proj_x', account_id: 'account_2', name: 'Beta', state: 'active',
+    repo_url: 'https://github.com/x/beta.git', default_branch: 'main', manifest_path: 'kortix.yaml', status: 'active',
+    last_opened_at: null, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
+  };
+  test('a name that is not an id picks the one workspace with that name', async () => {
+    mockApi((url) => {
+      if (url === 'https://api.test/v1/workspaces/beta') return new Response(JSON.stringify({ error: 'Workspace not found' }), { status: 404, headers: JSON_HEADERS });
+      if (url === 'https://api.test/v1/workspaces') return new Response(JSON.stringify([beta]), { status: 200, headers: JSON_HEADERS });
+      return undefined;
+    });
+    expect(await runProjects(['use', 'beta'])).toBe(0);
+    expect(defaultProject()).toEqual({ project_id: 'proj_x', account_id: 'account_2', name: 'Beta' });
+  });
+
+  test('a name shared by two workspaces is refused with both ids; nothing changes', async () => {
+    mockApi((url) => {
+      if (url === 'https://api.test/v1/workspaces/beta') return new Response(JSON.stringify({ error: 'Workspace not found' }), { status: 404, headers: JSON_HEADERS });
+      if (url === 'https://api.test/v1/workspaces') return new Response(JSON.stringify([beta, { ...beta, project_id: 'proj_y' }]), { status: 200, headers: JSON_HEADERS });
+      return undefined;
+    });
+    const before = loadConfig();
+    expect(await runProjects(['use', 'beta'])).toBe(1);
+    expect(stripAnsi(stderr)).toContain('proj_x, proj_y');
+    expect(loadConfig()).toEqual(before);
   });
 });
 
 describe('kortix projects use (picker)', () => {
   test('rejects a bad /projects list and one bad row without touching state', async () => {
-    mockApi((url) => url === 'https://api.test/v1/projects' || url === 'https://api.test/v1/projects?account_id=account_1'
+    mockApi((url) => url === 'https://api.test/v1/workspaces' || url === 'https://api.test/v1/workspaces?account_id=account_1'
       ? new Response(JSON.stringify([{ project_id: 'proj_x', account_id: 'account_2', name: 'Beta' }, {}]), { status: 200, headers: JSON_HEADERS })
       : undefined);
     const before = loadConfig();
     expect(await runProjects(['use'])).toBe(1);
-    expect(stripAnsi(stderr)).toContain('Invalid project response');
+    expect(stripAnsi(stderr)).toContain('Invalid workspace response');
     expect(stderr).not.toContain('TypeError');
     expect(loadConfig()).toEqual(before);
     expect(stdout).toBe('');
@@ -318,7 +347,7 @@ describe('kortix projects use --host', () => {
    *  a call that rides the active host fails the test. */
   function mockOtherProject(): void {
     mockApi((url) => {
-      if (url === 'https://api.other/v1/projects/proj_other') {
+      if (url === 'https://api.other/v1/workspaces/proj_other') {
         return new Response(JSON.stringify(OTHER_PROJECT), { status: 200, headers: JSON_HEADERS });
       }
       return undefined;
@@ -331,7 +360,7 @@ describe('kortix projects use --host', () => {
 
     const code = await runProjects(['use', 'proj_other', '--host', 'other']);
     expect(code).toBe(0);
-    expect(requests).toEqual(['https://api.other/v1/projects/proj_other']);
+    expect(requests).toEqual(['https://api.other/v1/workspaces/proj_other']);
     // The default project binds to the NAMED host entry, not the active one.
     const cfg = loadConfig();
     expect(cfg.hosts.other?.default_project).toEqual({
@@ -353,7 +382,7 @@ describe('kortix projects use --host', () => {
 
     const code = await runProjects(['use', 'proj_other', '--host', 'other']);
     expect(code).toBe(0);
-    expect(requests).toEqual(['https://api.other/v1/projects/proj_other']);
+    expect(requests).toEqual(['https://api.other/v1/workspaces/proj_other']);
   });
 
   test('ignores the sandbox env file when --host names a logged-in host', async () => {
@@ -376,7 +405,7 @@ describe('kortix projects use --host', () => {
 
     const code = await runProjects(['use', 'proj_other', '--host', 'other']);
     expect(code).toBe(0);
-    expect(requests).toEqual(['https://api.other/v1/projects/proj_other']);
+    expect(requests).toEqual(['https://api.other/v1/workspaces/proj_other']);
     // The default binds on the named host's entry, not the ambient env host.
     expect(loadConfig().hosts.other?.default_project).toEqual({
       project_id: 'proj_other',
@@ -388,13 +417,13 @@ describe('kortix projects use --host', () => {
   test('switches the named host active account, not the ambient one', async () => {
     writeTwoHostConfig();
     mockApi((url) => {
-      if (url === 'https://api.other/v1/projects/proj_other') {
+      if (url === 'https://api.other/v1/workspaces/proj_other') {
         return new Response(
           JSON.stringify({ ...OTHER_PROJECT, account_id: 'account_10' }),
           { status: 200, headers: JSON_HEADERS },
         );
       }
-      if (url === 'https://api.other/v1/accounts/me') {
+      if (url === 'https://api.other/v1/me') {
         return new Response(
           JSON.stringify({
             user_id: 'user_9',
@@ -410,8 +439,8 @@ describe('kortix projects use --host', () => {
     const code = await runProjects(['use', 'proj_other', '--host', 'other']);
     expect(code).toBe(0);
     expect(requests).toEqual([
-      'https://api.other/v1/projects/proj_other',
-      'https://api.other/v1/accounts/me',
+      'https://api.other/v1/workspaces/proj_other',
+      'https://api.other/v1/me',
     ]);
     const cfg = loadConfig();
     expect(cfg.hosts.other?.account_id).toBe('account_10');
@@ -439,20 +468,52 @@ describe('kortix projects use --host', () => {
     const code = await runProjects(['unset', '--host', 'other']);
     expect(code).toBe(0);
     expect(loadConfig().hosts.other?.default_project).toBeUndefined();
-    expect(stripAnsi(stdout)).toContain('Cleared the default project');
+    expect(stripAnsi(stdout)).toContain('Cleared the default workspace');
   });
 });
 
-describe('kortix projects ls scoping', () => {
-  test('scopes the list to the active account', async () => {
+describe('kortix workspaces ls', () => {
+  test('lists every workspace across every account, flat', async () => {
     mockApi((url) => {
-      if (url.startsWith('https://api.test/v1/projects')) {
-        return new Response(JSON.stringify([]), { status: 200, headers: JSON_HEADERS });
+      const u = new URL(url);
+      if (u.pathname === '/v1/workspaces') {
+        const account = u.searchParams.get('account_id');
+        return new Response(
+          JSON.stringify(
+            account === 'account_2'
+              ? [{ project_id: 'proj_b', account_id: 'account_2', name: 'Beta', repo_url: '', default_branch: 'main', manifest_path: 'kortix.yaml', status: 'active', updated_at: new Date().toISOString() }]
+              : [],
+          ),
+          { status: 200, headers: JSON_HEADERS },
+        );
       }
       return undefined;
     });
     const code = await runProjects(['ls', '--json']);
     expect(code).toBe(0);
-    expect(requests).toEqual(['https://api.test/v1/projects?account_id=account_1']);
+    expect(requests[0]).toBe('https://api.test/v1/me');
+    // One unscoped read first (a current server lists every workspace); this
+    // mock answers like an older server (no `state`), so the CLI reads each
+    // account.
+    expect([...requests.slice(1)].sort()).toEqual([
+      'https://api.test/v1/workspaces',
+      'https://api.test/v1/workspaces?account_id=account_1',
+      'https://api.test/v1/workspaces?account_id=account_2',
+    ]);
+    expect(JSON.parse(stdout).map((p: { project_id: string }) => p.project_id)).toEqual(['proj_b']);
+  });
+
+  test('--account scopes the list to one account (deprecated flag)', async () => {
+    mockApi((url) =>
+      url.startsWith('https://api.test/v1/workspaces')
+        ? new Response(JSON.stringify([]), { status: 200, headers: JSON_HEADERS })
+        : undefined,
+    );
+    const code = await runProjects(['ls', '--json', '--account', 'account_1']);
+    expect(code).toBe(0);
+    expect(requests).toEqual([
+      'https://api.test/v1/me',
+      'https://api.test/v1/workspaces?account_id=account_1',
+    ]);
   });
 });

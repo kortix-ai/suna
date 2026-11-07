@@ -3,9 +3,9 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 /**
  * An existing account must not inherit somebody else's bounce.
  *
- * Live report: A's session ends on `/projects/<A>`; anything returns the
+ * Live report: A's session ends on `/workspaces/<A>`; anything returns the
  * browser there logged out (Back, a bookmark, a second tab), so middleware
- * writes `/auth?redirect=/projects/<A>`. B signs in on that screen and lands on
+ * writes `/auth?redirect=/workspaces/<A>`. B signs in on that screen and lands on
  * A's "Request access" page — B is an EXISTING user, which is precisely the
  * population the signup-only guard excludes, and the project shell's 403
  * self-heal is ownership-scoped so it parks B there instead of bouncing home.
@@ -15,7 +15,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
  * `signup-destination.test.ts` exists beside it.
  */
 
-const A_PROJECT = '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c';
+const A_PROJECT = '/workspaces/319395c1-9c3f-41b4-ac6c-9539a12dbb7c';
 const USER_A = '11111111-1111-1111-1111-111111111111';
 const USER_B = '22222222-2222-2222-2222-222222222222';
 

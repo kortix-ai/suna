@@ -11,7 +11,7 @@ import { platformConfig } from '../../http/config';
 import { safeEnv } from '../../http/env';
 import { stripTrailingSlashes } from '../../../platform/strings';
 import {
-  listProjectSessions,
+  listWorkspaceSessions,
   listProjects,
   type KortixProject,
   type ProjectSession,
@@ -113,7 +113,7 @@ export async function listProjectSessionSandboxes(): Promise<Array<{
   }> = [];
 
   for (const project of projects) {
-    const sessions = await listProjectSessions(project.project_id).catch(() => []);
+    const sessions = await listWorkspaceSessions(project.project_id).catch(() => []);
     for (const session of sessions) {
       // Derive runtime info from the session row — do NOT call /start here, or
       // listing would wake every sandbox across every project. The single-session

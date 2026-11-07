@@ -170,7 +170,7 @@ export default function InviteScreen() {
 
   const backToProjects = (
     <Button size="lg" variant="secondary" className="rounded-full" onPress={leave}>
-      <Text>{t('invites.backToProjects', 'Back to projects')}</Text>
+      <Text>{t('invites.backToWorkspaces', 'Back to workspaces')}</Text>
     </Button>
   );
 
@@ -202,7 +202,7 @@ export default function InviteScreen() {
         title={t('invites.directoryTitle', 'Sign in with single sign-on')}
         body={t(
           'invites.directoryBody',
-          "Your organization's directory added you to this account. Open this invite in a browser and sign in with your organization's single sign-on, or ask an account admin to resend the invite.",
+          "Your organization's directory added you to this workspace. Open this invite in a browser and sign in with your organization's single sign-on, or ask a workspace admin to resend the invite.",
         )}>
         {backToProjects}
       </Message>
@@ -239,23 +239,24 @@ export default function InviteScreen() {
   } else {
     const project = invite.projects?.[0] ?? null;
     const inviter = invite.inviter_email;
-    const lead = project
-      ? inviter
-        ? t('invites.invitedYouToProject', { defaultValue: '{{inviter}} invited you to a project.', inviter })
-        : t('invites.invitedToProject', 'You have been invited to a project.')
-      : inviter
-        ? t('invites.invitedYouToTeam', { defaultValue: '{{inviter}} invited you to join a team.', inviter })
-        : t('invites.invitedToTeam', 'You have been invited to join a team.');
-    const join = project
-      ? t('invites.joinProject', {
-          defaultValue: "You'll join {{project}} as {{role}}.",
-          project: project.name,
-          role: project.role === 'manager' ? t('invites.roleManager', 'a manager') : t('invites.roleMember', 'a member'),
+    const workspaceName = project?.name || invite.account_name || '';
+    const lead = inviter
+      ? t('invites.invitedYouToWorkspace', { defaultValue: '{{inviter}} invited you to a workspace.', inviter })
+      : t('invites.invitedToWorkspace', 'You have been invited to a workspace.');
+    const role = project
+      ? project.role === 'manager'
+        ? t('invites.roleManager', 'a manager')
+        : t('invites.roleMember', 'a member')
+      : invite.initial_role === 'admin'
+        ? t('invites.roleAdmin', 'an admin')
+        : t('invites.roleMember', 'a member');
+    const join = workspaceName
+      ? t('invites.joinWorkspace', {
+          defaultValue: "You'll join {{workspace}} as {{role}}.",
+          workspace: workspaceName,
+          role,
         })
-      : t('invites.joinAccount', {
-          defaultValue: "You'll join this account as {{role}} and see projects the owner gives you access to.",
-          role: invite.initial_role === 'admin' ? t('invites.roleAdmin', 'an admin') : t('invites.roleMember', 'a member'),
-        });
+      : t('invites.joinThisWorkspace', { defaultValue: "You'll join this workspace as {{role}}.", role });
     const busy = accept.isPending || decline.isPending;
     content = (
       <Message

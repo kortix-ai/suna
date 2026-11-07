@@ -16,7 +16,7 @@ import { cn } from '@kortix/ui';
  *  - `projects/start/loading.tsx` — the navigation Suspense boundary.
  *  - `projects/start/page.tsx` — the client frame, while the landing
  *    destination resolves.
- *  - `project-access-boundary.tsx` — every hard refresh of `/projects/<id>`
+ *  - `project-access-boundary.tsx` — every hard refresh of `/workspaces/<id>`
  *    and of a session route, while Supabase resolves the session and the
  *    first `getProject` is in flight.
  *  - `projects/[id]/loading.tsx` with `fill="pane"` — navigation to the

@@ -105,7 +105,7 @@ const DEFAULT_EMAIL_CONNECTOR = 'kortix_email';
 const EMAIL_FLAG = 'email_channel';
 
 function emailOffLine(flag: string): string {
-  return `off for this project — the ${flag} feature flag is off. Turn it on: kortix projects features enable ${flag}`;
+  return `off for this workspace — the ${flag} feature flag is off. Turn it on: kortix workspaces features enable ${flag}`;
 }
 
 const OWN_KEY_NEEDED =
@@ -175,7 +175,7 @@ export async function emailCommand(
   const slug = extra.connector ?? DEFAULT_EMAIL_CONNECTOR;
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/channels/email`;
+  const base = `/workspaces/${ctx.projectId}/channels/email`;
   const q = `?connector_slug=${encodeURIComponent(slug)}`;
 
   try {
@@ -285,7 +285,7 @@ export async function emailCommand(
             return 0;
           }
           if (sub === 'default') {
-            await ctx.client.put(`/projects/${ctx.projectId}/connections/${encodeURIComponent(inbox.connection_id)}/default`, {});
+            await ctx.client.put(`/workspaces/${ctx.projectId}/connections/${encodeURIComponent(inbox.connection_id)}/default`, {});
             if (json) {
               emitJson({ ok: true, connection_id: inbox.connection_id });
               return 0;

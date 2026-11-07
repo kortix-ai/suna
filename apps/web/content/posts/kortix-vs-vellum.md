@@ -83,7 +83,7 @@ The hosted version is the part with an expiry. Plans run $30, $100 or $200 a mon
 
 Pick Vellum if you are one person who will run the harness yourself, on a Mac, a Windows PC or a VPS, and you accept owning the model keys and the backups. The files are plain text, so a move is a copy and a config edit.
 
-Pick Kortix when the assistant has to outlive one person's machine, or when two people have to agree on what it may do. The paid plan starts at $50 a month with unlimited members sharing one credit pool. The free plan gives one project 500 credits a month ([Kortix pricing](https://kortix.com/pricing)).
+Pick Kortix when the assistant has to outlive one person's machine, or when two people have to agree on what it may do. The paid plan starts at $50 a month with unlimited members sharing one credit pool. The free plan gives your first workspace 500 credits a month ([Kortix pricing](https://kortix.com/pricing)).
 
 If you are still drawing the line between a personal assistant and a company system, [personal AI agents vs a company OS](/blog/personal-ai-agents-vs-company-os) covers the same question across other tools. [Kortix vs OpenClaw](/blog/kortix-vs-openclaw) takes the single-operator case further.
 

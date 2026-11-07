@@ -54,7 +54,7 @@ import {
   createSessionPrompt,
   isSessionStartError,
   sessionStartKey,
-  startProjectSession,
+  startWorkspaceSession,
 } from '../core/rest/projects-client';
 import { RuntimeNotReadyError, getClient } from '../core/runtime/client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
@@ -89,8 +89,8 @@ import {
 } from './use-runtime-sessions';
 import { mintSessionWireMessageId } from './use-runtime-sessions/messages';
 import { unwrap } from './use-runtime-sessions/shared';
-import { useProjectConfig } from './use-project-config';
-import { useProjectModels } from './use-project-models';
+import { useWorkspaceConfig } from './use-project-config';
+import { useWorkspaceModels } from './use-project-models';
 import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks, type SessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
@@ -1305,7 +1305,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       // A background tab that shows the session ready does not poll: the poll
       // only keeps a box alive for nobody. The next visible fetch revalidates.
       if (mode === 'skip' && previous) return previous;
-      const next = await startProjectSession(projectId, sessionId, {
+      const next = await startWorkspaceSession(projectId, sessionId, {
         waitMs,
         repositoryMode,
         // The keep-alive poll must report a user Stop or an idle park, never
@@ -1840,9 +1840,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const runtimeActionReady = switched && !!rootSessionId;
 
   // 7. Server-side capabilities + per-session picks (all pre-runtime — no sandbox).
-  const models = useProjectModels(projectId);
+  const models = useWorkspaceModels(projectId);
   const agents = useVisibleAgents({ projectId });
-  const config = useProjectConfig(projectId);
+  const config = useWorkspaceConfig(projectId);
   const picks = useSessionPicks(sessionId);
 
   // 8. Mutations. A prompt creates a durable row; retrying the POST would

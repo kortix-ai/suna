@@ -91,17 +91,17 @@ export function registerAgentCapabilitiesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/capabilities',
+      path: '/{workspaceId}/capabilities',
       tags: ['projects'],
       summary: "List the project's tools, skills and extensions",
       description:
         'Every tool, skill and extension an agent of this project can be given: the built-in ones (with the feature flag a skill needs) and the ones kortix.yaml registers.',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: { 200: json(ProjectCapabilitiesSchema, 'The project capability catalog'), ...errors(400, 403, 404) },
     }),
     async (c) => {
-      const { projectId } = c.req.valid('param');
+      const { workspaceId: projectId } = c.req.valid('param');
       const out = await projectCatalog(c, projectId, null);
       if ('error' in out && out.error) return c.json(out.error.body, out.error.status);
       const { agent: _agent, ...catalog } = out.catalog!;
@@ -112,15 +112,15 @@ export function registerAgentCapabilitiesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/agents/{agentName}/capabilities',
+      path: '/{workspaceId}/agents/{agentName}/capabilities',
       tags: ['projects'],
       summary: "List an agent's tools, skills and extensions",
       ...auth,
-      request: { params: z.object({ projectId: z.string(), agentName: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), agentName: z.string() }) },
       responses: { 200: json(CapabilitiesSchema, 'The agent capability catalog'), ...errors(400, 403, 404) },
     }),
     async (c) => {
-      const { projectId, agentName } = c.req.valid('param');
+      const { workspaceId: projectId, agentName } = c.req.valid('param');
       const out = await projectCatalog(c, projectId, agentName);
       if ('error' in out && out.error) return c.json(out.error.body, out.error.status);
       return c.json(out.catalog!, 200);

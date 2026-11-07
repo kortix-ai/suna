@@ -45,7 +45,7 @@ mock.module('../../providers/ui-provider', () => ({
   ...provider,
   useUiSearchParams: () => new URLSearchParams(tabParam ? { tab: tabParam } : {}),
   useUiRouter: () => ({ push: () => {}, replace: () => {} }),
-  useUiPathname: () => '/projects/p1/spaces/sales',
+  useUiPathname: () => '/workspaces/p1/spaces/sales',
 }));
 
 const { SpacePage, visibleSpaceTabs } = await import('./space-page');

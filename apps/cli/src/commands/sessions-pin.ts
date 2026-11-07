@@ -41,11 +41,11 @@ Only a person can pin or archive. An agent's session token, an API key and a
 service account get 403.
 
 Options:
-  --project <id>   Project of the sessions (default: linked).
-  --host <name>    Host of the sessions.
-  --json           Print one result per session: session_id, project_id,
-                   ok, pinned_at, archived_at (or error).
-  -h, --help       Show this help.
+  --workspace <id>  Workspace of the sessions (default: linked).
+  --host <name>     Host of the sessions.
+  --json            Print one result per session: session_id, project_id,
+                    ok, pinned_at, archived_at (or error).
+  -h, --help        Show this help.
 
 Examples:
   kortix sessions pin 3f2a91c0
@@ -63,7 +63,7 @@ export async function runSessionsListState(verb: ListStateVerb, argv: string[]):
   const flags = takeFlags(argv, USAGE, (rest) => {
     const parsed = {
       json: takeFlagBool(rest, ['--json']),
-      projectArg: takeFlagValue(rest, ['--project']),
+      projectArg: takeFlagValue(rest, ['--project', '--workspace']),
       hostArg: takeFlagValue(rest, ['--host']),
       ids: rest.filter((arg) => !arg.startsWith('-')),
     };
@@ -97,7 +97,7 @@ export async function runSessionsListState(verb: ListStateVerb, argv: string[]):
     const { client, projectId, session } = located.located;
     try {
       const state = await client.put<Pick<ProjectSession, 'pinned_at' | 'archived_at'>>(
-        `/projects/${projectId}/sessions/${session.session_id}/${route}`,
+        `/workspaces/${projectId}/sessions/${session.session_id}/${route}`,
         body,
       );
       results.push({

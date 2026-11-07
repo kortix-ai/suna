@@ -13,9 +13,9 @@ afterEach(() => configureKortix({ backendUrl: '', getToken: async () => null }))
 
 const send = {
   GET: () => backendApi.get('/drives/synthetic-drive/files?path=%2Fgone'),
-  POST: () => backendApi.post('/connectors/projects/synthetic-project/call', {}),
+  POST: () => backendApi.post('/connectors/workspaces/synthetic-project/call', {}),
   PATCH: () => backendApi.patch('/chrome/connections/synthetic-browser', {}),
-  DELETE: () => backendApi.delete('/projects/synthetic-project/sessions/synthetic-session'),
+  DELETE: () => backendApi.delete('/workspaces/synthetic-project/sessions/synthetic-session'),
 } as const;
 
 for (const [method, status, expectedReports] of [

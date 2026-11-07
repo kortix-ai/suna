@@ -190,10 +190,10 @@ describe('helpers', () => {
 
   test('webGoalUrl opens the goal by its id; without one, the legacy scope/slug link', () => {
     expect(webGoalUrl('https://dev.kortix.com/', 'p1', { goalId: 'g 1', scope: 'company', slug: 'a b' })).toBe(
-      'https://dev.kortix.com/projects/p1/goals/g%201',
+      'https://dev.kortix.com/workspaces/p1/goals/g%201',
     );
     expect(webGoalUrl('https://dev.kortix.com/', 'p1', { scope: 'company', slug: 'a b' })).toBe(
-      'https://dev.kortix.com/projects/p1/goals/company/a%20b',
+      'https://dev.kortix.com/workspaces/p1/goals/company/a%20b',
     );
   });
 });

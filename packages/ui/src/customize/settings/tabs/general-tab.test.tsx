@@ -19,6 +19,12 @@ describe('GeneralTabView', () => {
         copy={{
           loadFailed: 'Пројекат није могао да се учита',
           retry: 'Покушај поново',
+          workspaceId: 'ID радног простора',
+          workspaceIdDescription: 'За CLI и API.',
+          leaveWorkspace: 'Напусти радни простор',
+          leaveDescription: 'Губите приступ.',
+          leaveTitle: 'Напустити?',
+          leaveDialog: (name) => `Губите приступ простору ${name}.`,
           dangerZone: 'Опасна зона',
           deleteWorkspace: 'Избриши радни простор',
           deleteDescription: 'Уклања радни простор за све чланове.',
@@ -68,6 +74,23 @@ describe('GeneralTabView', () => {
     expect(out).not.toContain('Automatic');
   });
 
+  test('shows the workspace id and a Leave row when the caller may leave', () => {
+    const out = renderToStaticMarkup(<GeneralTabView workspaceId="ws-synthetic-1" canLeave />);
+    expect(out).toContain('Workspace ID');
+    expect(out).toContain('ws-synthetic-1');
+    expect(out).toContain('Leave workspace');
+    expect(out.indexOf('Leave workspace')).toBeLessThan(out.indexOf('Delete workspace'));
+  });
+
+  test('the last owner gets no Leave row', () => {
+    const out = renderToStaticMarkup(<GeneralTabView workspaceId="ws-synthetic-1" canLeave={false} />);
+    expect(out).not.toContain('Leave workspace');
+  });
+
+  test('says the workspace can be restored for 14 days', () => {
+    expect(renderToStaticMarkup(<GeneralTabView />)).toContain('You can restore it for 14 days.');
+  });
+
   test('renders a Delete workspace row with a destructive action by default', () => {
     const out = renderToStaticMarkup(<GeneralTabView />);
     expect(out).toContain('Delete workspace');
@@ -109,23 +132,8 @@ describe('GeneralTabView', () => {
     expect(out).not.toContain('Delete workspace');
   });
 
-  test('the transfer slot renders inside the danger zone, after the Delete row', () => {
-    const out = renderToStaticMarkup(
-      <GeneralTabView transferSlot={<div>transfer-marker</div>} />,
-    );
-    expect(out).toContain('transfer-marker');
-    // Transfer shares the Delete section's gate — the API's source gate for a
-    // transfer is the same destructive tier — so the slot must live inside
-    // the danger-zone group, not beside it.
-    expect(out.indexOf('transfer-marker')).toBeGreaterThan(out.indexOf('Delete workspace'));
-    expect(out.indexOf('transfer-marker')).toBeGreaterThan(
-      out.indexOf('data-slot="settings-row-group"'),
-    );
-  });
-
-  test('the transfer slot is absent when canDelete is false', () => {
-    const out = renderToStaticMarkup(<GeneralTabView canDelete={false} transferSlot={<div>transfer-marker</div>} />);
-    expect(out).not.toContain('transfer-marker');
+  test('offers no Transfer: one workspace is one account and its project', () => {
+    expect(renderToStaticMarkup(<GeneralTabView />)).not.toContain('Transfer');
   });
 
   test('does not render the experimental feature list — that lives in ExperimentalTab', () => {

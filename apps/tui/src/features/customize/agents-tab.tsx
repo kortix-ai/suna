@@ -18,7 +18,7 @@ import { matchesCustomizeBinding } from './keys.ts';
 import { useProjectDetailState } from './use-project-detail.ts';
 
 /** The web's fallback when an agent declares no `model:` frontmatter. */
-export const DEFAULT_MODEL_TEXT = 'Uses the project default';
+export const DEFAULT_MODEL_TEXT = 'Uses the workspace default';
 
 export interface AgentRowData {
   name: string;
@@ -106,7 +106,7 @@ export function AgentsTabView({
         // The default agent carries the same star the web card shows.
         glyph: row.isDefault ? '★' : ' ',
         label: row.description ? `${row.name} · ${row.description}` : row.name,
-        right: row.enabled ? (row.model ?? 'project default') : 'Disabled',
+        right: row.enabled ? (row.model ?? 'workspace default') : 'Disabled',
         dim: !row.enabled,
       })),
     [rows],
@@ -133,7 +133,7 @@ export function AgentsTabView({
     return (
       <DetailPane
         title={current.name}
-        right={current.isDefault ? 'project default' : ''}
+        right={current.isDefault ? 'workspace default' : ''}
         width={width}
       >
         <Field label="Mode" value={current.mode ?? 'primary'} />
@@ -169,7 +169,7 @@ export function AgentsTabView({
         width={width}
         emptyText="No agents yet. Add agents/<name>.md and declare it under agents: in kortix.yaml."
       />
-      {rows.length > 0 ? <text fg={theme.faint}>Enter details · ★ project default</text> : null}
+      {rows.length > 0 ? <text fg={theme.faint}>Enter details · ★ workspace default</text> : null}
     </box>
   );
 }

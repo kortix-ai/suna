@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { getProjectModelAccess, setProjectModelAccess } from './model-access';
+import { getWorkspaceModelAccess, setWorkspaceModelAccess } from './model-access';
 
 const policy = { disabledProviders: ['kortix'], disabledModels: ['openai/gpt-test'] };
 let calls: { url: string; method: string; body: unknown; headers: Headers }[] = [];
@@ -18,23 +18,23 @@ beforeEach(() => {
 });
 
 test('reads project access through authenticated SDK transport', async () => {
-  expect(await getProjectModelAccess('project-1')).toEqual(policy);
-  expect(calls[0].url).toContain('/projects/project-1/model-access');
+  expect(await getWorkspaceModelAccess('project-1')).toEqual(policy);
+  expect(calls[0].url).toContain('/workspaces/project-1/model-access');
   expect(calls[0].headers.get('authorization')).toBe('Bearer test-token');
 });
 
 test('changes one provider without replacing model preferences', async () => {
-  expect(await setProjectModelAccess('project-1', { target: 'provider', id: 'kortix', enabled: false })).toEqual(policy);
+  expect(await setWorkspaceModelAccess('project-1', { target: 'provider', id: 'kortix', enabled: false })).toEqual(policy);
   expect(calls[0].method).toBe('PUT');
   expect(calls[0].body).toEqual({ target: 'provider', id: 'kortix', enabled: false });
 });
 
 test('re-enables a model with its full nested wire id', async () => {
-  await setProjectModelAccess('project-1', { target: 'model', id: 'openrouter/vendor/model', enabled: true });
+  await setWorkspaceModelAccess('project-1', { target: 'model', id: 'openrouter/vendor/model', enabled: true });
   expect(calls[0].body).toEqual({ target: 'model', id: 'openrouter/vendor/model', enabled: true });
 });
 
 test('propagates a rejected default disable', async () => {
   status = 409;
-  await expect(setProjectModelAccess('project-1', { target: 'provider', id: 'kortix', enabled: false })).rejects.toThrow();
+  await expect(setWorkspaceModelAccess('project-1', { target: 'provider', id: 'kortix', enabled: false })).rejects.toThrow();
 });

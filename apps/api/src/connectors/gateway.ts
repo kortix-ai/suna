@@ -1912,7 +1912,7 @@ function teamsReadConsentHint(connector: GatewayConnector, result: ExecResult): 
   return (
     'Kortix cannot read messages in this team yet: the Kortix app in the team has no permission to read them. ' +
     'A team owner updates the app in Teams (the team → ⋯ → Manage team → Apps → Update) and accepts the new permission. ' +
-    'If no update is offered, a Teams admin first publishes the latest app from the Kortix project ' +
+    'If no update is offered, a Teams admin first publishes the latest app from the Kortix workspace ' +
     '(Connectors → Channels → Microsoft Teams). '
   );
 }

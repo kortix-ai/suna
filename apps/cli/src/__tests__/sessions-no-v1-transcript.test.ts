@@ -66,13 +66,13 @@ async function run(args: string[], log: () => Response) {
     fetch(request) {
       const path = new URL(request.url).pathname;
       paths.push(path);
-      if (path === '/v1/accounts/me') return Response.json({ accounts: [] });
-      if (path === `/v1/projects/${projectId}/sessions`) return Response.json([row]);
-      if (path === `/v1/projects/${projectId}/sessions/${sessionId}`) return Response.json(row);
-      if (path === `/v1/projects/${projectId}/sessions/${sessionId}/log`) return log();
+      if (path === '/v1/me') return Response.json({ accounts: [] });
+      if (path === `/v1/workspaces/${projectId}/sessions`) return Response.json([row]);
+      if (path === `/v1/workspaces/${projectId}/sessions/${sessionId}`) return Response.json(row);
+      if (path === `/v1/workspaces/${projectId}/sessions/${sessionId}/log`) return log();
       // A session-bound token cannot read the project detail.
-      if (path === `/v1/projects/${projectId}/detail`) return Response.json({ error: 'Forbidden' }, { status: 403 });
-      if (path === `/v1/projects/${projectId}/sessions/${sessionId}/transcript`) {
+      if (path === `/v1/workspaces/${projectId}/detail`) return Response.json({ error: 'Forbidden' }, { status: 403 });
+      if (path === `/v1/workspaces/${projectId}/sessions/${sessionId}/transcript`) {
         return Response.json({ available: true, reason: null, source: 'mirror', complete: true, message_count: 0, messages: [] });
       }
       return Response.json({ error: 'Not found' }, { status: 404 });

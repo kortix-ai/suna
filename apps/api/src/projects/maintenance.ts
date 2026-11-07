@@ -1,4 +1,4 @@
-import { changeRequests, projectSessions, projects } from '@kortix/db';
+import { changeRequests, projectSessions } from '@kortix/db';
 import { and, asc, eq, inArray, lt, ne, or, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { tickRunningComputeCharges } from '../billing/services/compute-metering';
@@ -36,6 +36,7 @@ import {
   reconcileOrphanComputeSessions,
   reconcileStuckActiveSessions,
 } from './sandbox-reaper';
+import { projectsView } from '../workspaces/rows';
 
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
 const DEFAULT_MAINTENANCE_INTERVAL_MS = 5 * 60 * 1000;
@@ -171,13 +172,13 @@ export async function selectExpiredSessionBranches(now: Date) {
       baseRef: projectSessions.baseRef,
       metadata: projectSessions.metadata,
       accountId: projectSessions.accountId,
-      projectId: projects.projectId,
-      repoUrl: projects.repoUrl,
-      defaultBranch: projects.defaultBranch,
-      manifestPath: projects.manifestPath,
+      projectId: projectsView.projectId,
+      repoUrl: projectsView.repoUrl,
+      defaultBranch: projectsView.defaultBranch,
+      manifestPath: projectsView.manifestPath,
     })
     .from(projectSessions)
-    .innerJoin(projects, eq(projectSessions.projectId, projects.projectId))
+    .innerJoin(projectsView, eq(projectSessions.projectId, projectsView.projectId))
     .where(
       and(
         or(
@@ -191,7 +192,7 @@ export async function selectExpiredSessionBranches(now: Date) {
             sql`strpos(${projectSessions.branchName}, ${projectSessions.sessionId}) > 0`,
           ),
         ),
-        ne(projectSessions.branchName, projects.defaultBranch),
+        ne(projectSessions.branchName, projectsView.defaultBranch),
         // Exclude the NEVER-deletable classes at the query so they can't
         // occupy batch slots forever and starve deletable rows: a skipped row
         // never gets a db.update, so its updatedAt stays < cutoff and it

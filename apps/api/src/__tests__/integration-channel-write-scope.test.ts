@@ -63,14 +63,14 @@ beforeAll(async () => {
     });
   }
   await db.insert(chatChannelBindings).values([
-    { platform: 'slack', workspaceId: WS, channelId: C_MINE, projectId: mine.project_id },
-    { platform: 'slack', workspaceId: WS, channelId: C_OTHER, projectId: other.project_id },
+    { platform: 'slack', platformTeamId: WS, channelId: C_MINE, projectId: mine.project_id },
+    { platform: 'slack', platformTeamId: WS, channelId: C_OTHER, projectId: other.project_id },
     // A person's DM with the bot, bound to the other project.
-    { platform: 'slack', workspaceId: WS, channelId: D_OTHER, projectId: other.project_id },
+    { platform: 'slack', platformTeamId: WS, channelId: D_OTHER, projectId: other.project_id },
   ]);
   await db.insert(chatThreads).values([
-    { platform: 'slack', workspaceId: WS, threadId: T_OTHER, projectId: other.project_id, sessionId: otherSession },
-    { platform: 'slack', workspaceId: WS, threadId: T_MINE, projectId: mine.project_id, sessionId: mineSession },
+    { platform: 'slack', platformTeamId: WS, threadId: T_OTHER, projectId: other.project_id, sessionId: otherSession },
+    { platform: 'slack', platformTeamId: WS, threadId: T_MINE, projectId: mine.project_id, sessionId: mineSession },
   ]);
   // An account owner counts as a manager of the project (connector.write).
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: mine.account_id, accountRole: 'owner' });
@@ -93,10 +93,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const tokenId of tokenIds) await db.execute(sql`delete from kortix.account_tokens where token_id = ${tokenId}`);
-  await db.delete(chatThreads).where(inArray(chatThreads.workspaceId, [WS, FOREIGN_WS]));
-  await db.delete(chatChannelBindings).where(eq(chatChannelBindings.workspaceId, WS));
+  await db.delete(chatThreads).where(inArray(chatThreads.platformTeamId, [WS, FOREIGN_WS]));
+  await db.delete(chatChannelBindings).where(eq(chatChannelBindings.platformTeamId, WS));
   for (const project of [mine, other]) await deleteSlackInstall(project.project_id);
-  await db.delete(chatInstalls).where(inArray(chatInstalls.workspaceId, [WS, FOREIGN_WS]));
+  await db.delete(chatInstalls).where(inArray(chatInstalls.platformTeamId, [WS, FOREIGN_WS]));
   await db.delete(projectSessions).where(inArray(projectSessions.projectId, [mine.project_id, other.project_id]));
   await removeSeeded([mine, other, bare]);
 });
@@ -293,7 +293,7 @@ describe('Telegram writes stay in the chat that started or is bound to the sessi
     await db.update(projectSessions).set({ metadata: { source: 'trigger' } }).where(eq(projectSessions.sessionId, boundSession));
     await db.insert(chatThreads).values({
       platform: 'telegram',
-      workspaceId: BOT,
+      platformTeamId: BOT,
       threadId: `${GROUP}:42`,
       projectId: mine.project_id,
       sessionId: boundSession,
@@ -301,7 +301,7 @@ describe('Telegram writes stay in the chat that started or is bound to the sessi
   });
 
   afterAll(async () => {
-    await db.delete(chatThreads).where(eq(chatThreads.workspaceId, BOT));
+    await db.delete(chatThreads).where(eq(chatThreads.platformTeamId, BOT));
   });
 
   const gate = async (sessionId: string | null, actionPath: string, args: Record<string, unknown>) =>
@@ -398,7 +398,7 @@ describe('Telegram writes stay in the chat that started or is bound to the sessi
 
     test("the chats of every session in the lineage add up: a bound child of a chat's session writes to both", async () => {
       const child = await withMetadata({ source: 'agent', spawned_by_session: chatSession });
-      await db.insert(chatThreads).values({ platform: 'telegram', workspaceId: BOT, threadId: `${GROUP}:43`, projectId: mine.project_id, sessionId: child });
+      await db.insert(chatThreads).values({ platform: 'telegram', platformTeamId: BOT, threadId: `${GROUP}:43`, projectId: mine.project_id, sessionId: child });
       expect(await gate(child, 'send_message', { chat_id: GROUP, text: 'a' })).toBeNull();
       expect(await gate(child, 'send_message', { chat_id: OWN_CHAT, text: 'a' })).toBeNull();
       expect((await gate(child, 'send_message', { chat_id: OTHER_CHAT, text: 'a' }))?.message).toBe(

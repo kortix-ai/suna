@@ -304,14 +304,14 @@ flow(
 // routes (projects-misc.flow.ts).
 flow(
   'MKTP-11',
-  { domain: 'projects', routes: ['POST /v1/projects/:projectId/marketplace/install-session'] },
+  { domain: 'projects', routes: ['POST /v1/workspaces/:projectId/marketplace/install-session'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step('ANON → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post(
-          '/v1/projects/:projectId/marketplace/install-session',
+          '/v1/workspaces/:projectId/marketplace/install-session',
           { id: KNOWN_ITEM_ID },
           { params: { projectId: p.id } },
         );
@@ -321,7 +321,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/marketplace/install-session',
+          '/v1/workspaces/:projectId/marketplace/install-session',
           { id: KNOWN_ITEM_ID },
           { params: { projectId: NOPE } },
         );
@@ -331,7 +331,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/marketplace/install-session',
+          '/v1/workspaces/:projectId/marketplace/install-session',
           {},
           { params: { projectId: p.id } },
         );
@@ -341,7 +341,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/marketplace/install-session',
+          '/v1/workspaces/:projectId/marketplace/install-session',
           { id: 'nope-' + NOPE },
           { params: { projectId: p.id } },
         );
@@ -351,7 +351,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
-          '/v1/projects/:projectId/marketplace/install-session',
+          '/v1/workspaces/:projectId/marketplace/install-session',
           { id: KNOWN_ITEM_ID },
           { params: { projectId: p.id } },
         );

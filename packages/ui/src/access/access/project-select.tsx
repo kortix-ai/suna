@@ -34,7 +34,7 @@ export interface ProjectSelectEmptyText {
 const DEFAULT_EMPTY_TEXT: Required<ProjectSelectEmptyText> = {
   none: 'No projects in this account yet.',
   allExcluded: 'Already attached to every project you can manage.',
-  noneEligible: 'You need Manager access on a project to attach a group to it.',
+  noneEligible: 'You need Manager access on a workspace to attach a group to it.',
 };
 
 /** Sentinel for the optional "every project" row — never a real project id. */
@@ -78,7 +78,7 @@ export function ProjectSelect({
   excludeIds,
   allOptionLabel,
   disabled,
-  placeholder = 'Choose a project',
+  placeholder = 'Choose a workspace',
   emptyText,
   enabled = true,
   requireAction,

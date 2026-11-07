@@ -10,7 +10,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { requestClientKey } from '../middleware/client-ip';
-import { connectorConnections, connectors, projectSecrets, projectSessions, projects } from '@kortix/db';
+import { connectorConnections, connectors, projectSecrets, projectSessions } from '@kortix/db';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { type Context, type Next } from 'hono';
@@ -41,6 +41,7 @@ import { composioConfigured, composioToolkitLogo } from '../connectors/composio'
 import { connectorConnectedPrompt, notifyConnectorSession } from '../connectors/notify-session';
 import { readJsonObject } from '../shared/http-body';
 import { rethrowDatabaseError } from '../shared/database-errors';
+import { projectsView } from '../workspaces/rows';
 
 // The connector half of the notification moved to connectors/notify-session.ts so the
 // in-session Connect button's finalize can reuse it. Re-exported: this module is where
@@ -171,18 +172,18 @@ async function lookupLinkRequester(projectId: string, uid: string): Promise<{ id
 
 async function projectAccount(projectId: string): Promise<string | null> {
   const [row] = await db
-    .select({ accountId: projects.accountId })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ accountId: projectsView.accountId })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   return row?.accountId ?? null;
 }
 
 async function projectName(projectId: string): Promise<string> {
   const [row] = await db
-    .select({ name: projects.name })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ name: projectsView.name })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   return row?.name ?? 'this project';
 }
@@ -217,8 +218,8 @@ setupLinksPublicApp.openapi(createRoute({
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
   if (resolved.payload.kind !== 'secret') return c.json({ error: 'Wrong link type' }, 400);
 
-  const [project] = await db.select({ name: projects.name, status: projects.status })
-    .from(projects).where(eq(projects.projectId, resolved.projectId)).limit(1);
+  const [project] = await db.select({ name: projectsView.name, status: projectsView.status })
+    .from(projectsView).where(eq(projectsView.projectId, resolved.projectId)).limit(1);
   if (!project || project.status === 'archived') {
     return c.json({ error: 'This link is unavailable' }, 404);
   }
@@ -284,8 +285,8 @@ setupLinksPublicApp.openapi(createRoute({
   const result = await withDbTransaction(async () => {
     // The archive UPDATE takes the same row lock: either all values commit
     // before deletion, or this submission sees archived and writes nothing.
-    const [project] = await db.select({ status: projects.status }).from(projects)
-      .where(eq(projects.projectId, resolved.projectId)).limit(1).for('update');
+    const [project] = await db.select({ status: projectsView.status }).from(projectsView)
+      .where(eq(projectsView.projectId, resolved.projectId)).limit(1).for('update');
     if (!project || project.status === 'archived') {
       return c.json({ error: 'This link is unavailable' }, 404);
     }

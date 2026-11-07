@@ -68,7 +68,7 @@ export const SIDEBAR_KEYS: readonly Binding[] = [
     id: 'sidebar.new',
     scope: 'sidebar',
     chords: [{ key: 'n' }],
-    description: 'Create a session in this project.',
+    description: 'Create a session in this workspace.',
   },
   {
     id: 'sidebar.confirm',

@@ -129,7 +129,7 @@ export function resolveHost(env: Env = process.env): ResolvedHost | null {
       backendUrl: sdkBackendUrl(url ?? 'https://api.kortix.com'),
       token: fromEnv.token,
       accountId: env.KORTIX_ACCOUNT_ID?.trim() ?? '',
-      defaultProjectId: env.KORTIX_PROJECT_ID?.trim() || undefined,
+      defaultProjectId: env.KORTIX_WORKSPACE_ID?.trim() || env.KORTIX_PROJECT_ID?.trim() || undefined,
       userEmail: '',
       source: 'env',
       envVar: fromEnv.envVar,

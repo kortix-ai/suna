@@ -19,27 +19,27 @@ mock.module('@tanstack/react-query', () => ({
 }));
 
 const {
-  useAddProjectSpaceMembers,
-  useJoinProjectSpace,
-  useLeaveProjectSpace,
-  useProjectSpaceMembers,
-  useRemoveProjectSpaceMember,
-  useAddProjectSpaceLink,
+  useAddWorkspaceSpaceMembers,
+  useJoinWorkspaceSpace,
+  useLeaveWorkspaceSpace,
+  useWorkspaceSpaceMembers,
+  useRemoveWorkspaceSpaceMember,
+  useAddWorkspaceSpaceLink,
   useChannelsOnboarding,
   useMarkChannelsOnboarding,
-  useProjectSpaceGeneralNotice,
+  useWorkspaceSpaceGeneralNotice,
   usePrivateChannelsAvailable,
-  useCreateProjectSpace,
-  useOpenProjectDm,
-  usePinProjectSpaceLink,
-  useProjectSpaceApps,
-  useProjectSpaceLinks,
-  useProjectSpaces,
-  useRemoveProjectSpaceLink,
-  useSetProjectSpaceTabs,
-  useUpdateProjectSpace,
-  useProjectSpaceProactive,
-  useSetProjectSpaceProactive,
+  useCreateWorkspaceSpace,
+  useOpenWorkspaceDm,
+  usePinWorkspaceSpaceLink,
+  useWorkspaceSpaceApps,
+  useWorkspaceSpaceLinks,
+  useWorkspaceSpaces,
+  useRemoveWorkspaceSpaceLink,
+  useSetWorkspaceSpaceTabs,
+  useUpdateWorkspaceSpace,
+  useWorkspaceSpaceProactive,
+  useSetWorkspaceSpaceProactive,
 } = await import('./use-project-spaces');
 const { qk } = await import('./query-keys');
 const { configureKortix } = await import('../core/http/config');
@@ -61,31 +61,31 @@ beforeEach(() => {
 
 describe('useProjectSpaces', () => {
   test('reads the spaces list under qk.project.spaces', async () => {
-    const query = useProjectSpaces('P1') as any;
+    const query = useWorkspaceSpaces('P1') as any;
     expect(query.queryKey).toEqual(qk.project.spaces('P1'));
     expect(query.enabled).toBe(true);
     expect(await query.queryFn()).toEqual([]);
-    expect(calls[0]).toMatchObject({ method: 'GET', url: 'http://test.local/projects/P1/spaces' });
+    expect(calls[0]).toMatchObject({ method: 'GET', url: 'http://test.local/workspaces/P1/spaces' });
   });
 
   test('is disabled without a project id or when the caller disables it', () => {
-    expect((useProjectSpaces(null) as any).enabled).toBe(false);
-    expect((useProjectSpaces('P1', { enabled: false }) as any).enabled).toBe(false);
+    expect((useWorkspaceSpaces(null) as any).enabled).toBe(false);
+    expect((useWorkspaceSpaces('P1', { enabled: false }) as any).enabled).toBe(false);
   });
 });
 
 describe('space mutations', () => {
   test('create, update and dm call their routes and invalidate the spaces list', async () => {
-    const create = useCreateProjectSpace('P1') as any;
-    const update = useUpdateProjectSpace('P1') as any;
-    const dm = useOpenProjectDm('P1') as any;
+    const create = useCreateWorkspaceSpace('P1') as any;
+    const update = useUpdateWorkspaceSpace('P1') as any;
+    const dm = useOpenWorkspaceDm('P1') as any;
     await create.mutationFn({ name: 'Design' });
     await update.mutationFn({ spaceId: 'S1', input: { archived: true } });
     await dm.mutationFn('kortix');
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
-      'POST http://test.local/projects/P1/spaces',
-      'PATCH http://test.local/projects/P1/spaces/S1',
-      'POST http://test.local/projects/P1/spaces/dm',
+      'POST http://test.local/workspaces/P1/spaces',
+      'PATCH http://test.local/workspaces/P1/spaces/S1',
+      'POST http://test.local/workspaces/P1/spaces/dm',
     ]);
     expect(calls.map((c) => c.body)).toEqual([{ name: 'Design' }, { archived: true }, { agent_name: 'kortix' }]);
     create.onSuccess();
@@ -100,10 +100,10 @@ describe('space mutations', () => {
 
 describe('useSetProjectSpaceTabs', () => {
   test('PUTs the whole tab list and waits for the spaces list to refetch', async () => {
-    const setTabs = useSetProjectSpaceTabs('P1') as any;
+    const setTabs = useSetWorkspaceSpaceTabs('P1') as any;
     const tabs = [{ id: 'notes', title: 'Notes', kind: 'file', ref: '/Company/Channels/general/notes.md' }];
     await setTabs.mutationFn({ spaceId: 'S1', tabs });
-    expect(calls).toEqual([{ url: 'http://test.local/projects/P1/spaces/S1/tabs', method: 'PUT', body: { tabs } }]);
+    expect(calls).toEqual([{ url: 'http://test.local/workspaces/P1/spaces/S1/tabs', method: 'PUT', body: { tabs } }]);
     const pending = setTabs.onSuccess();
     expect(pending).toBeInstanceOf(Promise);
     expect(refetched).toEqual([]);
@@ -114,19 +114,19 @@ describe('useSetProjectSpaceTabs', () => {
 
 describe('Proactive (spaces_proactive)', () => {
   test('reads one space\'s watcher settings under its own key, disabled without ids or when the caller disables it', async () => {
-    const query = useProjectSpaceProactive('P1', 'S1') as any;
+    const query = useWorkspaceSpaceProactive('P1', 'S1') as any;
     expect(query.queryKey).toEqual([...qk.project.spaceProactive('P1', 'S1')]);
     expect(query.enabled).toBe(true);
     await query.queryFn();
-    expect(calls).toEqual([{ url: 'http://test.local/projects/P1/spaces/S1/proactive', method: 'GET', body: undefined }]);
-    expect((useProjectSpaceProactive('P1', null) as any).enabled).toBe(false);
-    expect((useProjectSpaceProactive('P1', 'S1', { enabled: false }) as any).enabled).toBe(false);
+    expect(calls).toEqual([{ url: 'http://test.local/workspaces/P1/spaces/S1/proactive', method: 'GET', body: undefined }]);
+    expect((useWorkspaceSpaceProactive('P1', null) as any).enabled).toBe(false);
+    expect((useWorkspaceSpaceProactive('P1', 'S1', { enabled: false }) as any).enabled).toBe(false);
   });
 
   test('a change PUTs only the fields given and refreshes that key', async () => {
-    const set = useSetProjectSpaceProactive('P1', 'S1') as any;
+    const set = useSetWorkspaceSpaceProactive('P1', 'S1') as any;
     await set.mutationFn({ enabled: true });
-    expect(calls).toEqual([{ url: 'http://test.local/projects/P1/spaces/S1/proactive', method: 'PUT', body: { enabled: true } }]);
+    expect(calls).toEqual([{ url: 'http://test.local/workspaces/P1/spaces/S1/proactive', method: 'PUT', body: { enabled: true } }]);
     await set.onSuccess();
     expect(refetched).toEqual([[...qk.project.spaceProactive('P1', 'S1')]]);
   });
@@ -137,9 +137,9 @@ describe('space mutations wait for the refetch', () => {
     const key = [...qk.project.spaces('P1')];
     const onboarding = [...qk.project.channelsOnboarding('P1')];
     for (const [hook, keys] of [
-      [useCreateProjectSpace('P1'), [key, onboarding]],
-      [useUpdateProjectSpace('P1'), [key]],
-      [useOpenProjectDm('P1'), [key, onboarding]],
+      [useCreateWorkspaceSpace('P1'), [key, onboarding]],
+      [useUpdateWorkspaceSpace('P1'), [key]],
+      [useOpenWorkspaceDm('P1'), [key, onboarding]],
     ] as const) {
       refetched = [];
       const pending = (hook as any).onSuccess();
@@ -153,15 +153,15 @@ describe('space mutations wait for the refetch', () => {
 
 describe('#general turned-on-again line', () => {
   test('reads general_notice from the spaces route under the spaces key, so a spaces refresh refreshes it', async () => {
-    const query = useProjectSpaceGeneralNotice('P1') as any;
+    const query = useWorkspaceSpaceGeneralNotice('P1') as any;
     expect(query.queryKey).toEqual(qk.project.spaceGeneralNotice('P1'));
     const prefix = qk.project.spaces('P1');
     expect(query.queryKey.slice(0, prefix.length)).toEqual([...prefix]);
     expect(query.queryKey).not.toEqual(prefix);
     expect(await query.queryFn()).toBeNull();
-    expect(calls[0]).toMatchObject({ method: 'GET', url: 'http://test.local/projects/P1/spaces' });
-    expect((useProjectSpaceGeneralNotice(null) as any).enabled).toBe(false);
-    expect((useProjectSpaceGeneralNotice('P1', { enabled: false }) as any).enabled).toBe(false);
+    expect(calls[0]).toMatchObject({ method: 'GET', url: 'http://test.local/workspaces/P1/spaces' });
+    expect((useWorkspaceSpaceGeneralNotice(null) as any).enabled).toBe(false);
+    expect((useWorkspaceSpaceGeneralNotice('P1', { enabled: false }) as any).enabled).toBe(false);
   });
 });
 
@@ -173,7 +173,7 @@ describe('private channels availability', () => {
     expect(query.queryKey.slice(0, prefix.length)).toEqual([...prefix]);
     expect(query.queryKey).not.toEqual(prefix);
     expect(await query.queryFn()).toBe(false);
-    expect(calls[0]).toMatchObject({ method: 'GET', url: 'http://test.local/projects/P1/spaces' });
+    expect(calls[0]).toMatchObject({ method: 'GET', url: 'http://test.local/workspaces/P1/spaces' });
     expect((usePrivateChannelsAvailable(null) as any).enabled).toBe(false);
   });
 });
@@ -185,7 +185,7 @@ describe('Channels onboarding', () => {
     expect(query.queryKey.slice(0, qk.project.scope('P1').length)).toEqual([...qk.project.scope('P1')]);
     expect(query.enabled).toBe(true);
     await query.queryFn();
-    expect(calls[0]).toMatchObject({ method: 'GET', url: 'http://test.local/projects/P1/onboarding/channels' });
+    expect(calls[0]).toMatchObject({ method: 'GET', url: 'http://test.local/workspaces/P1/onboarding/channels' });
     expect((useChannelsOnboarding(undefined) as any).enabled).toBe(false);
     expect((useChannelsOnboarding('P1', { enabled: false }) as any).enabled).toBe(false);
   });
@@ -194,7 +194,7 @@ describe('Channels onboarding', () => {
     const mark = useMarkChannelsOnboarding('P1') as any;
     await mark.mutationFn('get_started.dismissed');
     expect(calls).toEqual([
-      { method: 'POST', url: 'http://test.local/projects/P1/onboarding/channels/marks', body: { mark: 'get_started.dismissed' } },
+      { method: 'POST', url: 'http://test.local/workspaces/P1/onboarding/channels/marks', body: { mark: 'get_started.dismissed' } },
     ]);
     await mark.onSuccess();
     expect(invalidated).toEqual([[...qk.project.channelsOnboarding('P1')]]);
@@ -208,8 +208,8 @@ describe('Channels onboarding', () => {
 
 describe('channel tabs', () => {
   test('apps and links read per channel: links under the spaces key, Apps under the App list key', async () => {
-    const apps = useProjectSpaceApps('P1', 'S1') as any;
-    const links = useProjectSpaceLinks('P1', 'S1') as any;
+    const apps = useWorkspaceSpaceApps('P1', 'S1') as any;
+    const links = useWorkspaceSpaceLinks('P1', 'S1') as any;
     const scope = [...qk.project.spaces('P1')];
     expect(links.queryKey.slice(0, scope.length)).toEqual(scope);
     const appsScope = [...qk.project.apps('P1')];
@@ -221,24 +221,24 @@ describe('channel tabs', () => {
     await apps.queryFn();
     await links.queryFn();
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
-      'GET http://test.local/projects/P1/spaces/S1/apps',
-      'GET http://test.local/projects/P1/spaces/S1/links',
+      'GET http://test.local/workspaces/P1/spaces/S1/apps',
+      'GET http://test.local/workspaces/P1/spaces/S1/links',
     ]);
   });
 
   test('is disabled without a channel id', () => {
-    expect((useProjectSpaceApps('P1', null) as any).enabled).toBe(false);
-    expect((useProjectSpaceLinks('P1', undefined) as any).enabled).toBe(false);
+    expect((useWorkspaceSpaceApps('P1', null) as any).enabled).toBe(false);
+    expect((useWorkspaceSpaceLinks('P1', undefined) as any).enabled).toBe(false);
   });
 
   test('adding or removing a link refetches the links', async () => {
-    const add = useAddProjectSpaceLink('P1', 'S1') as any;
-    const remove = useRemoveProjectSpaceLink('P1', 'S1') as any;
+    const add = useAddWorkspaceSpaceLink('P1', 'S1') as any;
+    const remove = useRemoveWorkspaceSpaceLink('P1', 'S1') as any;
     await add.mutationFn({ url: 'https://example.test', title: 'Ex' });
     await remove.mutationFn('L1');
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
-      'POST http://test.local/projects/P1/spaces/S1/links',
-      'DELETE http://test.local/projects/P1/spaces/S1/links/L1',
+      'POST http://test.local/workspaces/P1/spaces/S1/links',
+      'DELETE http://test.local/workspaces/P1/spaces/S1/links/L1',
     ]);
     expect(calls[0]!.body).toEqual({ url: 'https://example.test', title: 'Ex' });
     await add.onSuccess();
@@ -248,12 +248,12 @@ describe('channel tabs', () => {
   });
 
   test('pinning or unpinning a link PATCHes it and refetches the links', async () => {
-    const pin = usePinProjectSpaceLink('P1', 'S1') as any;
+    const pin = usePinWorkspaceSpaceLink('P1', 'S1') as any;
     await pin.mutationFn({ linkId: 'L1', pinned: true });
     await pin.mutationFn({ linkId: 'L1', pinned: false });
     expect(calls.map((c) => `${c.method} ${c.url} ${JSON.stringify(c.body)}`)).toEqual([
-      'PATCH http://test.local/projects/P1/spaces/S1/links/L1 {"pinned":true}',
-      'PATCH http://test.local/projects/P1/spaces/S1/links/L1 {"pinned":false}',
+      'PATCH http://test.local/workspaces/P1/spaces/S1/links/L1 {"pinned":true}',
+      'PATCH http://test.local/workspaces/P1/spaces/S1/links/L1 {"pinned":false}',
     ]);
     await pin.onSuccess();
     expect(invalidated).toEqual([[...qk.project.spaceLinks('P1', 'S1')]]);
@@ -262,30 +262,30 @@ describe('channel tabs', () => {
 
 describe('channel members', () => {
   test('read the members route under the spaces key, so a spaces refresh refreshes the roster', async () => {
-    const query = useProjectSpaceMembers('P1', 'S1') as any;
+    const query = useWorkspaceSpaceMembers('P1', 'S1') as any;
     expect(query.queryKey).toEqual(qk.project.spaceMembers('P1', 'S1'));
     const prefix = qk.project.spaces('P1');
     expect(query.queryKey.slice(0, prefix.length)).toEqual([...prefix]);
     expect(query.enabled).toBe(true);
     await query.queryFn();
-    expect(calls[0]).toMatchObject({ method: 'GET', url: 'http://test.local/projects/P1/spaces/S1/members' });
-    expect((useProjectSpaceMembers('P1', null) as any).enabled).toBe(false);
+    expect(calls[0]).toMatchObject({ method: 'GET', url: 'http://test.local/workspaces/P1/spaces/S1/members' });
+    expect((useWorkspaceSpaceMembers('P1', null) as any).enabled).toBe(false);
   });
 
   test('add, remove, join and leave call their routes and refetch the spaces list (members and is_member)', async () => {
-    const add = useAddProjectSpaceMembers('P1', 'S1') as any;
-    const remove = useRemoveProjectSpaceMember('P1', 'S1') as any;
-    const join = useJoinProjectSpace('P1', 'S1') as any;
-    const leave = useLeaveProjectSpace('P1', 'S1') as any;
+    const add = useAddWorkspaceSpaceMembers('P1', 'S1') as any;
+    const remove = useRemoveWorkspaceSpaceMember('P1', 'S1') as any;
+    const join = useJoinWorkspaceSpace('P1', 'S1') as any;
+    const leave = useLeaveWorkspaceSpace('P1', 'S1') as any;
     await add.mutationFn(['U2']);
     await remove.mutationFn('U2');
     await join.mutationFn();
     await leave.mutationFn();
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
-      'POST http://test.local/projects/P1/spaces/S1/members',
-      'DELETE http://test.local/projects/P1/spaces/S1/members/U2',
-      'POST http://test.local/projects/P1/spaces/S1/join',
-      'DELETE http://test.local/projects/P1/spaces/S1/members/me',
+      'POST http://test.local/workspaces/P1/spaces/S1/members',
+      'DELETE http://test.local/workspaces/P1/spaces/S1/members/U2',
+      'POST http://test.local/workspaces/P1/spaces/S1/join',
+      'DELETE http://test.local/workspaces/P1/spaces/S1/members/me',
     ]);
     expect(calls[0]!.body).toEqual({ user_ids: ['U2'] });
     for (const hook of [add, remove, join, leave]) await hook.onSuccess();

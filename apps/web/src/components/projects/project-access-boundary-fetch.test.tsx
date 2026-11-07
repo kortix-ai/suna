@@ -13,12 +13,13 @@ mock.module('@/lib/auth/use-signed-out-redirect', () => ({ useSignedOutRedirect:
 mock.module('@kortix/ui/internal/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: null }) }));
 mock.module('@kortix/ui/internal/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/' }));
 mock.module('next/navigation', () => ({
-  usePathname: () => '/projects/deleted-project',
+  usePathname: () => '/workspaces/deleted-project',
   useParams: () => ({ sessionId: 'synthetic-session' }),
   useRouter: () => ({ push: () => {} }),
   useSearchParams: () => new URLSearchParams(),
 }));
 mock.module('@/i18n/use-translations', () => ({
+  useLocale: () => 'en',
   useTranslations: () =>
     Object.assign((key: string) => key, { raw: (key: string) => key, rich: (key: string) => key }),
 }));
@@ -73,7 +74,7 @@ test(`a deleted project stays quiet across revisit (seeded=${seeded})`, async ()
   });
   await act(async () => tree?.unmount());
   await mount();
-  expect(urls).toEqual(['http://api.test/v1/projects/deleted-project']);
+  expect(urls).toEqual(['http://api.test/v1/workspaces/deleted-project']);
   expect(reports).toHaveLength(0);
 });
 
@@ -146,7 +147,7 @@ test('a forbidden project offers access request without speculative reads', asyn
   });
   expect(JSON.stringify(tree?.toJSON())).toContain('projectAccessBoundary.privateHeading');
   expect(JSON.stringify(tree?.toJSON())).not.toContain('PRIVATE PROJECT CONTENT');
-  expect(urls).toEqual(['http://api.test/v1/projects/private-project']);
+  expect(urls).toEqual(['http://api.test/v1/workspaces/private-project']);
 });
 
 test('a kept project renders at once while its access read is held, and shell reads start once it answers', async () => {
@@ -177,7 +178,7 @@ test('a kept project renders at once while its access read is held, and shell re
     jest.advanceTimersByTime(100);
   });
   expect(JSON.stringify(tree?.toJSON())).toContain('KEPT PROJECT');
-  expect(urls).toEqual(['http://api.test/v1/projects/kept-project']);
+  expect(urls).toEqual(['http://api.test/v1/workspaces/kept-project']);
   await act(async () => {
     answer();
   });

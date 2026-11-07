@@ -35,14 +35,14 @@ const connected: ClaudeSubscriptionConnected = { connected: true, secret_id: '00
 test('getClaudeSubscription GETs whether the caller can use a Claude account here', async () => {
   next = { status: 200, body: status };
   expect(await getClaudeSubscription('p1')).toEqual(status);
-  expect(last()).toEqual({ url: 'http://test.local/projects/p1/claude-subscription', method: 'GET', body: undefined });
+  expect(last()).toEqual({ url: 'http://test.local/workspaces/p1/claude-subscription', method: 'GET', body: undefined });
 });
 
 test('startClaudeSubscriptionLogin POSTs login/start with no body fields when the caller names none', async () => {
   const started = { flow_id: '00000000-0000-4000-8000-000000000001', authorize_url: 'https://claude.com/cai/oauth/authorize?x=1', expires_at: '2026-10-31T03:10:00.000Z' };
   next = { status: 200, body: started };
   expect(await startClaudeSubscriptionLogin('p1')).toEqual(started);
-  expect(last()).toEqual({ url: 'http://test.local/projects/p1/claude-subscription/login/start', method: 'POST', body: {} });
+  expect(last()).toEqual({ url: 'http://test.local/workspaces/p1/claude-subscription/login/start', method: 'POST', body: {} });
 });
 
 test('startClaudeSubscriptionLogin sends the account name and sharing like a ChatGPT sign-in', async () => {
@@ -60,13 +60,13 @@ test('startClaudeSubscriptionLogin reconnects an existing account by its id', as
 test('completeClaudeSubscriptionLogin POSTs the flow id and the pasted code, and returns the stored account id', async () => {
   next = { status: 200, body: connected };
   expect(await completeClaudeSubscriptionLogin('p1', { flowId: 'f1', code: 'abc#def' })).toEqual(connected);
-  expect(last()).toEqual({ url: 'http://test.local/projects/p1/claude-subscription/login/complete', method: 'POST', body: { flow_id: 'f1', code: 'abc#def' } });
+  expect(last()).toEqual({ url: 'http://test.local/workspaces/p1/claude-subscription/login/complete', method: 'POST', body: { flow_id: 'f1', code: 'abc#def' } });
 });
 
 test('setClaudeSubscriptionToken PUTs a pasted token with the account name and sharing', async () => {
   next = { status: 200, body: connected };
   expect(await setClaudeSubscriptionToken('p1', 'sk-ant-oat01-x', { resourceLabel: 'Laptop', sharing: { mode: 'private', ownerId: 'u1' } })).toEqual(connected);
-  expect(last()).toEqual({ url: 'http://test.local/projects/p1/claude-subscription/token', method: 'PUT', body: { token: 'sk-ant-oat01-x', resource_label: 'Laptop', sharing: { mode: 'private', ownerId: 'u1' } } });
+  expect(last()).toEqual({ url: 'http://test.local/workspaces/p1/claude-subscription/token', method: 'PUT', body: { token: 'sk-ant-oat01-x', resource_label: 'Laptop', sharing: { mode: 'private', ownerId: 'u1' } } });
 });
 
 test('a refused code rejects with the server message', async () => {

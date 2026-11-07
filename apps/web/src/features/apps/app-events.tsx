@@ -312,7 +312,7 @@ function EventRow({
           </pre>
           {row.session_id ? (
             <Button variant="ghost" size="xs" className="text-muted-foreground -ml-2 flex w-fit gap-1.5 text-xs" asChild>
-              <Link href={`/projects/${projectId}/sessions/${row.session_id}`}>
+              <Link href={`/workspaces/${projectId}/sessions/${row.session_id}`}>
                 <ArrowSquareOutIcon className="size-3 shrink-0" />
                 {t.raw('textb205bb47f81a')}
               </Link>

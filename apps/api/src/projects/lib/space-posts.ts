@@ -18,7 +18,7 @@
 // own threads, `spaceAccessFor`), or a private space the person owns (a
 // `dm` row: their personal space, or their private space with an agent), from a private
 // session that works only for them (`threadWorksOnlyForPerson`).
-import { projectSessions, projectSpaceMembers, projects } from '@kortix/db';
+import { projectSessions, projectSpaceMembers } from '@kortix/db';
 import { isMyKortixAgentName, SPACE_POST_SUMMARY } from '@kortix/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Actor } from '../../iam/actor';
@@ -37,6 +37,7 @@ import { mentionTokens } from './mentions';
 import { loadProjectRosterIds } from './project-access-view';
 import { isWatcherOfSpace } from './space-watch/store';
 import { resolveUserIdentities } from './user-identity';
+import { projectsView } from '../../workspaces/rows';
 
 /** Session metadata: the agent that wrote a top-level post (its name), when it was not the thread's agent. */
 export const CHAT_ROOT_AUTHOR_KEY = 'chat_root_author';
@@ -77,9 +78,9 @@ export async function notifyMessageMentions(input: {
   try {
     if (!input.text.includes('@')) return [];
     const [row] = await db
-      .select({ accountId: projects.accountId, spaceId: projectSessions.spaceId })
+      .select({ accountId: projectsView.accountId, spaceId: projectSessions.spaceId })
       .from(projectSessions)
-      .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+      .innerJoin(projectsView, eq(projectsView.projectId, projectSessions.projectId))
       .where(and(eq(projectSessions.sessionId, input.sessionId), eq(projectSessions.projectId, input.projectId)))
       .limit(1);
     if (!row?.spaceId) return [];
@@ -347,7 +348,7 @@ async function topLevelThreadIn(projectId: string, spaceId: string, sessionId: s
 /** The project's agent names, for `@agent` mentions; [] when the manifest cannot be read. */
 async function projectAgentNames(projectId: string): Promise<string[]> {
   try {
-    const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
     if (!row) return [];
     return (await loadProjectAgents(row)).specs.map((spec) => spec.name);
   } catch {

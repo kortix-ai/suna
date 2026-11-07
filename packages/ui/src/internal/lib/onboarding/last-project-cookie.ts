@@ -69,7 +69,7 @@ export function forgetLastProjectId(userId: string | null | undefined, projectId
  * user had open, else the landing door that resolves one.
  *
  * Use this for every implicit destination — post-flow returns, the logo, the
- * marketing "launch app" CTA. Never send those to `/projects`: the list is a
+ * marketing "launch app" CTA. Never send those to `/workspaces`: the list is a
  * place the user chooses to visit, not a place the app drops them.
  *
  * Pass the CURRENT user's id. Omitting it is safe (you get the door) but loses

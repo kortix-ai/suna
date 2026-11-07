@@ -56,6 +56,35 @@ interface AccountToken {
   created_at: string;
   revoked_at?: string | null;
   secret_key?: string;
+  /** What the key may do inside its creator's role. Absent on older APIs (= full). */
+  scope?: 'full' | 'read' | 'custom';
+  workspace_permissions?: string[] | null;
+  /** True for the CLI login: each use moves the expiry out again. */
+  expiry_renews?: boolean;
+}
+
+/**
+ * Parse `--scope`: `full`, `read`, or a comma-separated list of permissions
+ * (either spelling, e.g. `workspace.session.read,workspace.session.start`).
+ * Null for an empty value.
+ */
+export function parseScopeFlag(input: string): 'full' | 'read' | string[] | null {
+  const value = input.trim();
+  if (value === 'full' || value === 'read') return value;
+  const list = value.split(',').map((p) => p.trim()).filter(Boolean);
+  return list.length > 0 ? list : null;
+}
+
+/** The SCOPE column of a key row. */
+function scopeLabel(t: AccountToken): string {
+  if (t.scope === 'custom') return `custom (${t.workspace_permissions?.length ?? 0})`;
+  return t.scope ?? 'full';
+}
+
+/** The EXPIRES column of a key row. */
+function expiryLabel(t: AccountToken): string {
+  if (!t.expires_at) return 'never';
+  return t.expiry_renews ? `${t.expires_at.slice(0, 10)} (renews on use)` : t.expires_at.slice(0, 10);
 }
 
 interface ServiceAccount {
@@ -83,18 +112,21 @@ interface ConnectedApp {
 
 const HELP = help`Usage: kortix tokens <subcommand> [options]
 
-Non-interactive credentials for this account. Reads need token.read. Every
+A key that acts as you, an agent or a bot: \`kortix keys\`.
+
+Non-interactive credentials for this workspace. Reads need token.read. Every
 member may mint and revoke their OWN personal keys (token.personal.create,
 token.personal.revoke). Service accounts and other people's keys need
 token.create / token.revoke.
 
 Personal API keys — act as YOU, and die with your membership:
-  ls [--mine] [--all] [--json]      List the account's keys that still
+  ls [--mine] [--all] [--json]      List the workspace's keys that still
                                     authenticate. --mine narrows to the ones
                                     you minted yourself; --mine --all lists
                                     your revoked keys too.
   new <name> [--expires <when>]     Mint a key. The secret prints ONCE.
-      [--project <id>]              Bind the key to one project (it can never
+      [--scope read|full|<list>]    Default expiry: 90 days; at most 365.
+      [--workspace <id>]            Bind the key to one workspace (it can never
                                     reach another).
   rm <token-id> [-y] [--force]      Revoke a key; delete it if already revoked.
                                     Refuses the key this CLI is signed in
@@ -123,11 +155,16 @@ Options:
   --all               ls --mine: also list your keys that cannot
                       authenticate (revoked, or revoked_at stamped on a row
                       still reading active). Without --mine it changes
-                      nothing: the account list holds live keys only.
-  --expires <when>    ISO-8601, or a forward span: 30d, 12h, 6w, 1y.
-  --project <id>      new: bind the key to one project.
+                      nothing: the workspace list holds live keys only.
+  --expires <when>    ISO-8601, a forward span (30d, 12h, 6w, 1y), or
+                      never (only where the workspace key policy allows it).
+                      Omitted: 90 days.
+  --scope <s>         new: what the key may do inside your role. full (the
+                      default), read (every *.read permission; GET only), or a
+                      comma-separated permission list. A scoped key is a
+                      workspace key of the selected workspace.
+  --workspace <id>    new: bind the key to one workspace.
   --description <t>   service-accounts new: what this identity is for.
-  --account <id>      Operate on this account (default: the active account).
   --host <name>       Operate against a non-default Kortix host.
   --json              Machine-readable output. List rows of both kinds
                       carry a shared \`id\`.
@@ -137,6 +174,8 @@ Options:
 Examples:
   kortix tokens ls --mine
   kortix tokens new ci-deploy --expires 90d
+  kortix tokens new dashboard --scope read --expires 30d
+  kortix tokens new runner --scope workspace.session.read,workspace.session.start
   kortix tokens new laptop --project 1a2b… --expires 2027-01-01
   kortix tokens apps ls
   kortix tokens service-accounts new nightly-reporter --description "Cron"
@@ -159,7 +198,8 @@ export async function runTokens(argv: string[]): Promise<number> {
     f.account = takeFlagValue(rest, ['--account']);
     f.host = takeFlagValue(rest, ['--host']);
     f.expires = takeFlagValue(rest, ['--expires']);
-    f.project = takeFlagValue(rest, ['--project']);
+    f.scope = takeFlagValue(rest, ['--scope', '--scopes']);
+    f.project = takeFlagValue(rest, ['--project', '--workspace']);
     f.description = takeFlagValue(rest, ['--description', '--desc']);
     json = takeFlagBool(rest, ['--json']);
     mine = takeFlagBool(rest, ['--mine']);
@@ -171,8 +211,10 @@ export async function runTokens(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  let expiresAt: string | undefined;
-  if (f.expires !== undefined) {
+  let expiresAt: string | null | undefined;
+  if (f.expires !== undefined && f.expires.trim() === 'never') {
+    expiresAt = null;
+  } else if (f.expires !== undefined) {
     const iso = resolveExpiry(f.expires);
     if (!iso)
       return fail(
@@ -182,6 +224,7 @@ export async function runTokens(argv: string[]): Promise<number> {
   }
 
   const ctx = resolveAccountContext({
+    workspaceArg: f.project,
     accountArg: f.account,
     hostArg: f.host,
     accountOptional: sub === 'apps',
@@ -233,13 +276,13 @@ export async function runTokens(argv: string[]): Promise<number> {
         const keyW = Math.max(...visible.map((t) => t.public_key.length), 6);
         process.stdout.write('\n');
         process.stdout.write(
-          `  ${C.dim}${pad('NAME', nameW)}   ${pad('PUBLIC KEY', keyW)}   ${pad('STATUS', 7)}   ${pad('EXPIRES', 10)}   TOKEN ID${C.reset}\n`,
+          `  ${C.dim}${pad('NAME', nameW)}   ${pad('PUBLIC KEY', keyW)}   ${pad('STATUS', 7)}   ${pad('SCOPE', 10)}   ${pad('EXPIRES', 10)}   TOKEN ID${C.reset}\n`,
         );
         for (const t of visible) {
           const state = t.status === 'active' ? t.status : `${C.yellow}${t.status}${C.reset}`;
           process.stdout.write(
-            `  ${pad(t.name, nameW)}   ${pad(t.public_key, keyW)}   ${pad(state, 7)}   ` +
-              `${pad(t.expires_at ? t.expires_at.slice(0, 10) : 'never', 10)}   ${C.faded}${t.token_id}${C.reset}\n`,
+            `  ${pad(t.name, nameW)}   ${pad(t.public_key, keyW)}   ${pad(state, 7)}   ${pad(scopeLabel(t), 10)}   ` +
+              `${pad(expiryLabel(t), 10)}   ${C.faded}${t.token_id}${C.reset}\n`,
           );
         }
         const count =
@@ -254,15 +297,24 @@ export async function runTokens(argv: string[]): Promise<number> {
       case 'create': {
         const name = positional[0];
         if (!name) return missing('a key name');
-        // account_id rides in the BODY: this route resolves the account from
-        // the body, not the query string, and would otherwise fall back to the
-        // caller's earliest-joined account.
-        const token = await ctx.client.post<AccountToken>('/accounts/tokens', {
-          name,
-          account_id: ctx.accountId,
-          ...(expiresAt ? { expires_at: expiresAt } : {}),
-          ...(f.project ? { project_id: f.project } : {}),
-        });
+        const scopes = f.scope !== undefined ? parseScopeFlag(f.scope) : undefined;
+        if (scopes === null) return fail('--scope needs full, read, or a comma-separated list of permissions.');
+        // A scoped key is a workspace key: it mints under the workspace. Without
+        // --scope the older route keeps its meaning (a personal key unless
+        // --workspace binds it). account_id rides in the BODY there: that route
+        // resolves the account from the body, not the query string.
+        const token = scopes !== undefined
+          ? await ctx.client.post<AccountToken>(`/workspaces/${encodeURIComponent(f.project ?? ctx.accountId)}/tokens`, {
+              name,
+              scopes,
+              ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}),
+            })
+          : await ctx.client.post<AccountToken>('/accounts/tokens', {
+              name,
+              account_id: ctx.accountId,
+              ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}),
+              ...(f.project ? { project_id: f.project } : {}),
+            });
         if (json) {
           emitJson(token);
           return 0;
@@ -273,11 +325,10 @@ export async function runTokens(argv: string[]): Promise<number> {
           `${status.warn('This is the only time the secret is shown. Store it now.')}\n`,
         );
         process.stdout.write(`  ${C.dim}token_id ${C.reset}${token.token_id}\n`);
-        process.stdout.write(
-          `  ${C.dim}expires  ${C.reset}${token.expires_at ? token.expires_at.slice(0, 10) : 'never'}\n`,
-        );
+        process.stdout.write(`  ${C.dim}expires  ${C.reset}${expiryLabel(token)}\n`);
+        process.stdout.write(`  ${C.dim}scope    ${C.reset}${scopeLabel(token)}\n`);
         if (token.project_id) {
-          process.stdout.write(`  ${C.dim}project  ${C.reset}${token.project_id}\n`);
+          process.stdout.write(`  ${C.dim}workspace  ${C.reset}${token.project_id}\n`);
         }
         return 0;
       }
@@ -295,7 +346,7 @@ export async function runTokens(argv: string[]): Promise<number> {
         return await serviceAccounts(ctx.client, saBase, positional, {
           json,
           yes,
-          expiresAt,
+          expiresAt: expiresAt ?? undefined,
           description: f.description,
         });
 
@@ -321,7 +372,7 @@ async function revokeToken(
   // calling token; a failed probe never blocks the revoke.
   if (!opts.force) {
     const me = await client
-      .get<{ token_context?: { token_id?: string | null } }>('/accounts/me')
+      .get<{ token_context?: { token_id?: string | null } }>('/me')
       .catch(() => null);
     if (me?.token_context?.token_id === tokenId) {
       process.stderr.write(

@@ -268,6 +268,17 @@ const envSchema = z.object({
   // deletes nothing; `execute` runs the deletion routine; `off` stops the tick.
   // ACCOUNT_DELETION_SWEEP_PAUSED forces dry_run.
   RETENTION_ERASURE_MODE: z.enum(['off', 'dry_run', 'execute']).optional().default('dry_run'),
+  // The workspace split (workspaces/split/): splits each project of a legacy
+  // multi-project account into its own workspace. `off` stops the tick,
+  // `dry_run` writes the plan into kortix.workspace_split_runs and moves
+  // nothing, `apply` moves one project per transaction. Unset: `dry_run` on a
+  // cloud deployment (INTERNAL_KORTIX_ENV set explicitly), `off` locally and on
+  // self-host. A `workspace_split` row in kortix.platform_settings
+  // (`{"mode": "..."}`) overrides it at runtime.
+  WORKSPACE_SPLIT_MODE: z.preprocess(
+    (value) => (typeof value === 'string' ? value.trim().toLowerCase().replace('-', '_') : value),
+    z.enum(['off', 'dry_run', 'apply']).optional(),
+  ),
   RETENTION_ERASURE_AFTER_DAYS: optInt(80).refine((days) => days >= 0, {
     message: 'Must be 0 or more days: the retention backstop never erases an account before its date',
   }),
@@ -414,10 +425,11 @@ const envSchema = z.object({
   // shared/platform-roles.ts's isPlatformAdmin). Deliberately narrower than
   // the removed KORTIX_SINGLE_ACCOUNT_MODE: signups still work, teams/orgs
   // still fully function, SSO/JIT still lands users in their org — only the
-  // CREATION of new accounts by ordinary users is gated. The personal-account
-  // bootstrap path (bootstrapPersonalAccount, called directly from GET
-  // /v1/accounts on first login) does NOT route through this gate — every
-  // user still gets their own landing account. Off by default (cloud is
+  // CREATION of new accounts by ordinary users is gated: POST /v1/accounts and
+  // a new workspace (`new_workspace: true` on POST /v1/projects/provision)
+  // that would need a new account answer 403 `account_creation_restricted`.
+  // No account is created at sign-up (Workspaces D3), so on such a
+  // deployment a new user joins through an invite. Off by default (cloud is
   // unaffected); the self-host CLI defaults this to 'true'
   // (SHARED_FEATURE_FLAG_DEFAULTS) since a VPS operator usually wants to be
   // the only one who can spin up new organizations. The frontend mirrors this
@@ -1431,6 +1443,8 @@ export const config = {
   ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
   RETENTION_ERASURE_MODE: env.RETENTION_ERASURE_MODE,
   RETENTION_ERASURE_AFTER_DAYS: env.RETENTION_ERASURE_AFTER_DAYS,
+  WORKSPACE_SPLIT_MODE: (env.WORKSPACE_SPLIT_MODE
+    ?? (process.env.INTERNAL_KORTIX_ENV ? 'dry_run' : 'off')) as 'off' | 'dry_run' | 'apply',
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS.split(',')
     .map((host) => host.trim())

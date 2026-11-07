@@ -16,7 +16,7 @@ import { RUNTIME_SESSION_PARAM } from './session-spawn-urls';
  * appears to work; the URL only betrays itself on reload or Back, which land on
  * a 404.
  *
- * Every caller sits inside `/projects/[id]/...`, so the project id is always
+ * Every caller sits inside `/workspaces/[id]/...`, so the project id is always
  * available from the route. Build the honest URL and the address bar, Back,
  * reload, and "copy link" all agree with what is on screen.
  */

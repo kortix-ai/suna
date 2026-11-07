@@ -104,7 +104,7 @@ import { useProfileEditor } from '@/hooks/useProfileEditor';
 import { haptics } from '@/lib/haptics';
 import { useRefetchOnOpen } from '@/components/session/use-refetch-on-open';
 import { useCans, useProjectApps } from '@kortix/sdk/react';
-import { useAccounts, useProject, useProjectSessionsPaged } from '@/lib/projects/hooks';
+import { useProject, useProjectSessionsPaged } from '@/lib/projects/hooks';
 import { NAV_ACTIONS, REVIEW_ACCESS, appsRowVisible, navAccessAllowed } from '@/lib/session/nav-access';
 import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
 import type { ProjectSession } from '@/lib/projects/projects-client';
@@ -283,14 +283,8 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
   const showReview = navAccessAllowed(navCans, REVIEW_ACCESS);
   const showApps = appsRowVisible(navCans, appsQuery.data?.length);
 
-  // The switcher row's project tile, name, and account line: the project's
-  // own account, not necessarily the globally selected one — a deep link can
-  // open a project in an account other than the one the user last picked.
+  // The switcher row's workspace tile and name.
   const { data: project } = useProject(projectId);
-  const accountsQuery = useAccounts();
-  const projectAccountId = project?.account_id ?? null;
-  const projectAccountName =
-    accountsQuery.data?.find((account) => account.account_id === projectAccountId)?.name ?? '';
   const openSwitcher = useCallback(() => {
     haptics.tap();
     onOpenSwitcher();
@@ -849,12 +843,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
         (centre 30pt, label 52pt). Nav and session rows are px-4 inside a
         4pt column (px-2 -mx-1); Previous Chats is px-3 inside px-2. */}
     <View className="flex-1 bg-chrome-background" style={{ paddingTop: insets.top }}>
-      <SwitcherRow
-        projectName={project?.name ?? ''}
-        accountName={projectAccountName}
-        ringColor={chrome}
-        onPress={openSwitcher}
-      />
+      <SwitcherRow projectName={project?.name ?? ''} onPress={openSwitcher} />
 
       <View className="flex-1">
         <DrawerOpenContext.Provider value={open}>

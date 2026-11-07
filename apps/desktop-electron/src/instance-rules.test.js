@@ -8,7 +8,7 @@ const {
   checkInstanceChoice,
 } = require('./instance-rules');
 
-const INSTANCE = 'https://kortix.acme.com/projects';
+const INSTANCE = 'https://kortix.acme.com/workspaces';
 const reachable = async () => ({ status: 200 });
 const unreachable = async () => {
   throw new Error('net::ERR_NAME_NOT_RESOLVED');
@@ -29,15 +29,15 @@ describe('normalizeInstanceUrl', () => {
   });
 
   it('adds http:// to a bare loopback host', () => {
-    expect(normalizeInstanceUrl('localhost:3000')).toEqual({ ok: true, url: 'http://localhost:3000/projects' });
-    expect(normalizeInstanceUrl('127.0.0.1:3000')).toEqual({ ok: true, url: 'http://127.0.0.1:3000/projects' });
+    expect(normalizeInstanceUrl('localhost:3000')).toEqual({ ok: true, url: 'http://localhost:3000/workspaces' });
+    expect(normalizeInstanceUrl('127.0.0.1:3000')).toEqual({ ok: true, url: 'http://127.0.0.1:3000/workspaces' });
   });
 
   it('keeps an explicit scheme, port, and path', () => {
-    expect(normalizeInstanceUrl(' http://10.0.0.5:8080 ')).toEqual({ ok: true, url: 'http://10.0.0.5:8080/projects' });
-    expect(normalizeInstanceUrl('https://kortix.acme.com/projects/abc')).toEqual({
+    expect(normalizeInstanceUrl(' http://10.0.0.5:8080 ')).toEqual({ ok: true, url: 'http://10.0.0.5:8080/workspaces' });
+    expect(normalizeInstanceUrl('https://kortix.acme.com/workspaces/abc')).toEqual({
       ok: true,
-      url: 'https://kortix.acme.com/projects/abc',
+      url: 'https://kortix.acme.com/workspaces/abc',
     });
   });
 
@@ -66,16 +66,16 @@ describe('normalizeInstanceUrl', () => {
 
 describe('describeDefaultInstance', () => {
   it('names Kortix Cloud for kortix.com hosts', () => {
-    expect(describeDefaultInstance('https://kortix.com/projects')).toEqual({ title: 'Kortix Cloud', host: 'kortix.com' });
-    expect(describeDefaultInstance('https://dev.kortix.com/projects')).toEqual({
+    expect(describeDefaultInstance('https://kortix.com/workspaces')).toEqual({ title: 'Kortix Cloud', host: 'kortix.com' });
+    expect(describeDefaultInstance('https://dev.kortix.com/workspaces')).toEqual({
       title: 'Kortix Cloud',
       host: 'dev.kortix.com',
     });
   });
 
   it('falls back to a neutral title for any other default', () => {
-    expect(describeDefaultInstance('http://localhost:3000/projects')).toEqual({ title: 'Default', host: 'localhost:3000' });
-    expect(describeDefaultInstance('https://evilkortix.com/projects')).toEqual({ title: 'Default', host: 'evilkortix.com' });
+    expect(describeDefaultInstance('http://localhost:3000/workspaces')).toEqual({ title: 'Default', host: 'localhost:3000' });
+    expect(describeDefaultInstance('https://evilkortix.com/workspaces')).toEqual({ title: 'Default', host: 'evilkortix.com' });
     expect(describeDefaultInstance('garbage')).toEqual({ title: 'Default', host: 'garbage' });
   });
 });

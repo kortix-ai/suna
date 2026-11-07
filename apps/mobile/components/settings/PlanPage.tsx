@@ -143,7 +143,7 @@ function PlanActionButton({
 
   const label = {
     current: t('plans.currentPlan', 'Current plan'),
-    'ask-owner': t('plans.askOwner', 'Ask an account owner to upgrade'),
+    'ask-owner': t('plans.askOwner', 'Ask a workspace owner or admin to upgrade'),
     'contact-sales': t('plans.contactSales', 'Contact sales'),
     upgrade: t('plans.upgradeTo', { defaultValue: 'Upgrade to {{plan}}', plan: planName }),
     switch: t('plans.switchTo', { defaultValue: 'Switch to {{plan}}', plan: planName }),

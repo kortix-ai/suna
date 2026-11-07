@@ -54,14 +54,14 @@ the counterparty.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the contract playbook skill and the trigger,
 and opens a change request for you to review. Prefer clicks? Choose **Use this
 template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a contract review agent in this project.
+  code={`Set up a contract review agent in this workspace.
 
 1. Create the agent agents/contract-review.md. Its job is to give each new contract a first-pass review. It may use the Google Drive, Google Docs and Slack connectors.
 
@@ -83,7 +83,7 @@ template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect the place your contracts live,
+Open **Connectors** in your workspace and connect the place your contracts live,
 your document editor and Slack. Credentials are brokered server-side and never enter the agent's machine.
 
 <ToolList>
@@ -122,7 +122,7 @@ playbook before you let the schedule take over.
 The change request added this trigger to `kortix.yaml`. From now on the agent
 checks the folder every 15 minutes, each run in a new session on its own cloud
 computer.
-To change the time, edit the cron line, or open **Triggers** in the project.
+To change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

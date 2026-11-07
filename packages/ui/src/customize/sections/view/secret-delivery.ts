@@ -168,7 +168,7 @@ export function connectorBindingOptions(
       description = 'This connector manages authentication through its platform connection.';
     } else if (connector.credentialSource === 'stored') {
       disabled = true;
-      description = 'Disconnect the stored connector credential before using a project secret.';
+      description = 'Disconnect the stored connector credential before using a workspace secret.';
     } else if (connector.secretIdentifier && !selected) {
       disabled = true;
       description = `Already uses ${connector.secretIdentifier}. Unbind it there first.`;

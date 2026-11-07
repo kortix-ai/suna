@@ -49,7 +49,7 @@ Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Free to sta
 
 ## Merge is a grant, not a habit
 
-Session work reaches `main` through a change request. Merge is default-deny for agents. A person with `project.gitops.merge` reads the change request and merges it. A session can merge a change request it opened only when its agent's grant in `kortix.yaml` includes `project.gitops.merge`, and the starter agent ships with every permission, so the first job on a new project is to take the merge away from the agents that should not have it.
+Session work reaches `main` through a change request. Merge is default-deny for agents. A person with `project.gitops.merge` reads the change request and merges it. A session can merge a change request it opened only when its agent's grant in `kortix.yaml` includes `project.gitops.merge`, and the starter agent ships with every permission, so the first job on a new workspace is to take the merge away from the agents that should not have it.
 
 ```yaml
 kortix_version: 2
