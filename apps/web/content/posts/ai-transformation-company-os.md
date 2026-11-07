@@ -11,6 +11,7 @@ cover: /banner.png
 canonical: https://kortix.com/blog/ai-transformation-company-os
 readingTime: 6
 lead: AI transformation is past the demo phase. The hard part now is not proving that an agent can draft a report, inspect a spreadsheet, or update a CRM record. The hard part is giving every client, department, and delivery team a **repeatable operating layer** where agents, context, connectors, policy, and review live together. That is what a company OS is for.
+updated: "2026-11-06"
 ---
 
 Kortix is the open-source **AI Management System**: a workforce of agents does real work, and everything that defines the system is files in one git repo you own. For consultancies, that matters because the deliverable is no longer a single chatbot. The deliverable is a governed project the client can keep running after the pilot. If you want the full product spine first, read [Introducing Kortix](/blog/introducing-kortix).
@@ -39,8 +40,7 @@ acme-ai-workspace/
 ├─ agents/                  # role-specific agents: finance, support, sales, legal
 ├─ skills/                  # repeatable client playbooks and workflows
 ├─ memory/                  # durable company context and decisions
-├─ harnesses/opencode/
-│  └─ commands/             # approved operating motions
+├─ commands/               # approved operating motions
 ├─ artifacts/               # reports, briefs, packets, launch plans
 └─ docs/                    # source-of-truth operating docs
 ```

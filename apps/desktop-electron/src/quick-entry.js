@@ -109,6 +109,30 @@ function statusIcon(status) {
   return statusIcons.get(status);
 }
 
+/** The bar and its dim: frameless, transparent windows above every app. `extra.webPreferences` cannot drop the hardened ones. */
+function overlayWindowOptions(extra = {}) {
+  return {
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    // macOS: a non-activating panel. It takes keys over a full-screen app,
+    // on every Space, and does not bring the Kortix window forward.
+    ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
+    title: 'Quick Entry',
+    ...extra,
+    webPreferences: { ...extra.webPreferences, contextIsolation: true, nodeIntegration: false, sandbox: true },
+  };
+}
+
 /**
  * @param {{
  *   dir: string,
@@ -152,32 +176,13 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
   }
 
   function createWindow() {
-    const bar = new BrowserWindow({
-      width: WIDTH,
-      height,
-      show: false,
-      frame: false,
-      transparent: true,
-      backgroundColor: '#00000000',
-      hasShadow: false,
-      resizable: false,
-      movable: false,
-      minimizable: false,
-      maximizable: false,
-      fullscreenable: false,
-      skipTaskbar: true,
-      alwaysOnTop: true,
-      // macOS: a non-activating panel. It takes keys over a full-screen app,
-      // on every Space, and does not bring the Kortix window forward.
-      ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
-      title: 'Quick Entry',
-      webPreferences: {
-        preload: path.join(__dirname, 'quick-entry-preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
+    const bar = new BrowserWindow(
+      overlayWindowOptions({
+        width: WIDTH,
+        height,
+        webPreferences: { preload: path.join(__dirname, 'quick-entry-preload.js') },
+      }),
+    );
     // Right-click in the prompt: paste, spelling, copy (KRTX-2555).
     attachContextMenu(bar.webContents, { Menu, shell, clipboard, getWindow: () => bar });
     // Clicking anywhere else, the dim included, dismisses the bar. The typed text stays.
@@ -226,23 +231,7 @@ function setupQuickEntry({ dir, openMainWindow, getMainWindow }) {
   /** Dim the display behind the bar. A click on the dim focuses it, which dismisses the bar, as Esc does. */
   function showScrim(bounds) {
     if (!scrim || scrim.isDestroyed()) {
-      scrim = new BrowserWindow({
-        show: false,
-        frame: false,
-        transparent: true,
-        backgroundColor: '#00000000',
-        hasShadow: false,
-        resizable: false,
-        movable: false,
-        minimizable: false,
-        maximizable: false,
-        fullscreenable: false,
-        skipTaskbar: true,
-        alwaysOnTop: true,
-        ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
-        title: 'Quick Entry',
-        webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
-      });
+      scrim = new BrowserWindow(overlayWindowOptions());
       scrim.on('focus', () => dismiss());
       scrim.loadURL(SCRIM_HTML).catch(() => {});
     }

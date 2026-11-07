@@ -69,6 +69,7 @@ import { agentLabel, liveReplyCount, replyRole, spaceRoster, threadIsWorking } f
 import { CHAT_TAB, openTabId } from './space-tab-list';
 import { AddTabMenu, type SpaceFile, StoredTabPanel, StoredTabTrigger, useSpaceTabs } from './space-tabs';
 import { SpaceTimeline, useSpaceThreads, type SpaceThreads } from './space-timeline-view';
+import { SessionDriveFilesScope } from '../../internal/files/session-drive-files';
 
 /** The search and filter keys of the Threads and Links tabs. */
 const TAB_FILTER_PARAMS = ['q', 'status', 'by', 'agent', 'active', 'pinned', 'added'] as const;
@@ -850,7 +851,7 @@ function SpaceComposer({
   // A channel's agents lead its picker; the first one the project still offers starts a new thread.
   const visible = useVisibleAgents({ projectId });
   const projectConfig = useProjectConfig(projectId);
-  const projectDefault = projectConfig?.default_agent ?? projectConfig?.open_code_default_agent ?? null;
+  const projectDefault = projectConfig?.default_agent ?? null;
   // A member with no agent grant still posts here with the channel's agents.
   const runnable = useMemo(() => channelRunnableAgents(space, projectDefault), [space, projectDefault]);
   const offered = useMemo(
@@ -1019,6 +1020,8 @@ function ThreadPanel({
   );
   return (
     <aside aria-label={t('threadTitle')} data-thread-panel="" className="bg-background flex min-h-0 w-full flex-1 flex-col">
+      {/* A link to a file in the thread folder (`/drives/…`, a worker's result) opens through this thread's drive mounts. */}
+      <SessionDriveFilesScope projectId={projectId} sessionId={sessionId} />
       <div className="kx-titlebar-row relative flex shrink-0 items-center gap-2 border-b px-2">
         <div className="kx-titlebar-tabs flex h-12 min-w-0 flex-1 items-center px-3">
           <div className="flex min-w-0 items-baseline gap-2">

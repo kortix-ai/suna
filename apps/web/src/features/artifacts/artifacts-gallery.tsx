@@ -2,11 +2,18 @@
 
 import {
   PROJECT_WIDE_SPACE,
+  getArtifactCommentContext,
   type Artifact,
   type ArtifactListScope,
   type ManifestSpace,
 } from '@kortix/sdk';
-import { prefetchArtifact, useArtifactMutations, useArtifacts, useProjectConfig } from '@kortix/sdk/react';
+import {
+  prefetchArtifact,
+  useArtifactMutations,
+  useArtifacts,
+  useFeatureFlag,
+  useProjectConfig,
+} from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@kortix/ui/button';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
@@ -30,8 +37,8 @@ import { InputGroupSearch, InputGroupSearchClear, InputGroupSearchIcon, InputGro
 import Loading from '@kortix/ui/loading';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import Hint from '@kortix/ui/hint';
 import { errorToast, successToast } from '@kortix/ui/toast';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@kortix/ui/tooltip';
 import {
   ALL_SPACES,
   ProjectPageHeader,
@@ -68,6 +75,7 @@ import {
   relativeTime,
 } from './artifact-meta';
 import { ShareArtifactDialog } from './share-artifact-dialog';
+import { useArtifactUnshare } from './use-artifact-unshare';
 
 const SCOPES: ArtifactListScope[] = ['all', 'mine', 'shared', 'pinned'];
 
@@ -193,11 +201,29 @@ export function ArtifactsGallery({ projectId }: { projectId: string }) {
                 }
                 description={q || scope !== 'all' || space !== ALL_SPACES ? undefined : t('emptyHint')}
                 action={
-                  space !== ALL_SPACES ? (
+                  // Each empty view offers its way out: clear the filters, show every space, or
+                  // start the first doc.
+                  q || scope !== 'all' ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setQ('');
+                        setScope('all');
+                      }}
+                    >
+                      {t('clearFilters')}
+                    </Button>
+                  ) : space !== ALL_SPACES ? (
                     <Button size="sm" variant="outline" onClick={() => setSpace(ALL_SPACES)}>
                       {t('showAll')}
                     </Button>
-                  ) : undefined
+                  ) : (
+                    <Button size="sm" variant="outline" className="gap-1.5" onClick={newDoc}>
+                      <PlusIcon className="size-4" />
+                      {t('newDoc')}
+                    </Button>
+                  )
                 }
               />
             ) : (
@@ -293,7 +319,15 @@ const ArtifactCard = memo(function ArtifactCard({
   const locale = useLocale();
   const mutations = useArtifactMutations(projectId);
   const [sharing, setSharing] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  // Stop sharing deletes the artifact's comments: the confirm counts them first, as the viewer's does.
+  const commentsFlag = useFeatureFlag(projectId, 'artifact_comments').enabled;
+  const artifactsFlag = useFeatureFlag(projectId, 'artifacts').enabled;
+  const commentsOn = commentsFlag && artifactsFlag;
+  const removal = useArtifactUnshare(
+    commentsOn
+      ? async () => (await getArtifactCommentContext(projectId, artifact.artifact_id)).comment_count
+      : undefined,
+  );
   const VisIcon = VISIBILITY_ICON[artifact.visibility];
   const href = artifactHref(projectId, artifact.artifact_id);
   const queryClient = useQueryClient();
@@ -345,14 +379,15 @@ const ArtifactCard = memo(function ArtifactCard({
               {space ? ` · ${space}` : null}
             </span>
             <span aria-hidden>·</span>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="relative z-10 flex shrink-0" aria-label={t(`visibility.${artifact.visibility}`)}>
-                  <VisIcon weight="fill" className="size-3.5" aria-hidden />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>{t(`visibility.${artifact.visibility}`)}</TooltipContent>
-            </Tooltip>
+            <Hint label={t(`visibility.${artifact.visibility}`)} side="top" sideOffset={4}>
+              <span
+                role="img"
+                className="relative z-10 flex shrink-0"
+                aria-label={t(`visibility.${artifact.visibility}`)}
+              >
+                <VisIcon weight="fill" className="size-3.5" aria-hidden />
+              </span>
+            </Hint>
             {artifact.pinned ? <PushPinIcon weight="fill" className="size-3.5 shrink-0" aria-label={t('pinned')} /> : null}
             {/* Below the card link on purpose: a click opens the Artifact, and the viewer opens its comments while threads are open. */}
             {artifact.open_thread_count ? (
@@ -408,7 +443,7 @@ const ArtifactCard = memo(function ArtifactCard({
                   </DropdownMenuSub>
                 ) : null}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
+                <DropdownMenuItem variant="destructive" onSelect={() => void removal.prepare()}>
                   <XCircleIcon /> {t('remove')}
                 </DropdownMenuItem>
               </>
@@ -418,16 +453,38 @@ const ArtifactCard = memo(function ArtifactCard({
       </div>
       {sharing ? <ShareArtifactDialog projectId={projectId} artifact={artifact} open onOpenChange={setSharing} /> : null}
       <ConfirmDialog
-        open={deleting}
-        onOpenChange={setDeleting}
+        open={removal.open}
+        onOpenChange={(open) => {
+          if (!open) removal.close();
+        }}
         title={t('removeTitle')}
-        description={t('removeHint')}
+        description={
+          <div className="space-y-3">
+            <p>{t('removeHint')}</p>
+            {removal.status === 'loading' ? <Loading className="size-4" /> : null}
+            {removal.status === 'error' ? (
+              <ErrorState
+                size="sm"
+                title={t('discussion.commentsLoadError')}
+                action={
+                  <Button size="sm" variant="outline" onClick={() => void removal.prepare()}>
+                    {t('discussion.retry')}
+                  </Button>
+                }
+              />
+            ) : null}
+            {removal.status === 'ready' && removal.count > 0 ? (
+              <p>{t('discussion.unshareComments', { count: removal.count })}</p>
+            ) : null}
+          </div>
+        }
         confirmLabel={t('remove')}
         confirmVariant="destructive"
         isPending={mutations.remove.isPending}
+        confirmDisabled={removal.status !== 'ready'}
         onConfirm={async () => {
           await mutations.remove.mutateAsync(artifact.artifact_id);
-          setDeleting(false);
+          removal.close();
           successToast(t('removed'));
         }}
       />

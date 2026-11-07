@@ -210,7 +210,7 @@ describe('repointRetiredSessionModel', () => {
 // BEFORE the box ever boots, so the session runs on the first turn instead of
 // throwing — the exact "gets re-pointed and runs" contract.
 describe('buildSessionSandboxEnvVars — session open re-points a retired pin before the box ever boots', () => {
-  test('the returned KORTIX_OPENCODE_MODEL is the re-pointed replacement, not the dead id', async () => {
+  test('the returned KORTIX_MODEL is the re-pointed replacement, not the dead id', async () => {
     const sessionId = await seedSessionWithModel('kortix/deepseek-v4-flash-0731');
 
     const env = await buildSessionSandboxEnvVars({
@@ -224,6 +224,6 @@ describe('buildSessionSandboxEnvVars — session open re-points a retired pin be
       sessionModel: 'kortix/deepseek-v4-flash-0731',
     });
 
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/glm-5.3-flash');
+    expect(env.KORTIX_MODEL).toBe('kortix/glm-5.3-flash');
   });
 });

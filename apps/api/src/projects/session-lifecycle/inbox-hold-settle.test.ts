@@ -163,8 +163,8 @@ describe('settleInboxHoldAfterStop', () => {
 
 /**
  * The settle's re-abort is part of the Stop the user pressed. It reaches
- * OpenCode without passing the sandbox proxy that stamps `UserStop`, and it
- * usually reaches OpenCode FIRST: the hold route starts it before the client
+ * the runtime without passing the sandbox proxy that stamps `UserStop`, and it
+ * usually reaches the runtime FIRST: the hold route starts it before the client
  * sends its own abort. An unstamped re-abort closed the user's own turn as
  * `failed` with a bare `MessageAbortedError`, and the web showed "This turn
  * stopped before it finished. No reason was reported." (prod 2026-09-25).

@@ -12,7 +12,7 @@ import { CaretRightIcon } from '@phosphor-icons/react';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import type { UiTranslator } from '@/i18n/translator';
 import type { AppSelect } from './apps-view';
-import { appLastEventAt } from './app-events';
+import { appCrashedSince, appLastEventAt, appSilentSince, clockTime } from './app-events';
 
 /**
  * The Apps that run rather than get opened: a poller, a bot, a backend.
@@ -103,8 +103,15 @@ function BackgroundRow({
   const status = appStatus(app, t);
   // A watcher that only posts events gets no requests: its last event is its activity.
   const lastEvent = appLastEventAt(app, triggers);
+  // A watcher's health first: down past its restart budget, or silent past its window.
+  const crashed = appCrashedSince(app, triggers);
+  const silent = appSilentSince(app, triggers);
   const activity = app.external_url || !app.active_deployment_id
     ? null
+    : crashed
+      ? t('text1ade727f7313', { value0: clockTime(crashed, locale) })
+    : silent
+      ? t('text7b5f87420cb2', { value0: clockTime(lastEvent ?? silent, locale) })
     : app.last_request_at
       ? t('text08f59056870d', { value0: relativeTime(app.last_request_at, locale) })
       : lastEvent

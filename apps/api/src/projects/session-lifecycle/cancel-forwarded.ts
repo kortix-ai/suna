@@ -23,7 +23,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { isPgBroadcastListening, waitForLifecycleCommandSettle } from '../../shared/pg-broadcast';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
-import { readSessionMessageTip, resolveSessionOpencodeEndpoint, retractRuntimeMessage, type RetractOutcome } from './runtime-client';
+import { readSessionMessageTip, resolveSessionRuntimeEndpoint, retractRuntimeMessage, type RetractOutcome } from './runtime-client';
 import { reachedPlacement, strandedPlacement, type PlacementTipMessage } from './forwarded-placement';
 import { deleteInboxRowsWithAttachmentGrace, inboxScope } from './inbox-rows';
 import { wireMessageIdMatches } from './wire-id-match';
@@ -107,7 +107,7 @@ export async function cancelForwardedPrompt(
     .filter((id, i, all): id is string => typeof id === 'string' && !!id && all.indexOf(id) === i);
   if (targetIds.length === 0) return { outcome: 'not_forwarded' };
 
-  const resolved = await resolveSessionOpencodeEndpoint(sessionId, row.actorUserId);
+  const resolved = await resolveSessionRuntimeEndpoint(sessionId, row.actorUserId);
   if (!resolved) {
     logger.warn('[cancel-forwarded] endpoint unresolved', { session_id: sessionId, prompt_id: promptId });
     return { outcome: 'unreachable' };

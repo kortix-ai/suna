@@ -5,7 +5,7 @@ import { createElement, type ReactNode } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { useSyncStore } from '../browser/stores/sync-store';
-import { useRuntimeMessages, useSession, useSessionMessages } from './opencode';
+import { useRuntimeMessages, useSession, useSessionMessages } from './runtime-hooks';
 import { qk } from './query-keys';
 
 /**

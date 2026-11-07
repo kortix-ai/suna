@@ -8,7 +8,6 @@ import { and, eq } from 'drizzle-orm';
 import { getProvider, type ProviderName } from '../../platform/providers';
 import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { readFileSync } from 'node:fs';
-import { RUNTIME_VERSIONS as runtimeVersions } from '@kortix/shared/runtime-versions';
 import { runtimeAssetsManifest, runtimeEntrypointPath, type RuntimeAssetsManifest } from '../../runtime-assets/manifest';
 import { projectSessions, projects } from '@kortix/db';
 import { sql } from 'drizzle-orm';
@@ -272,7 +271,6 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
         return null;
       }
     },
-    pnpmVersion: () => (typeof (runtimeVersions as { pnpm?: unknown }).pnpm === 'string' ? ((runtimeVersions as { pnpm: string }).pnpm) : null),
     rotateKortixToken: () => mintReplacementServiceKey(row),
     commitKortixToken: (secret, rotatedOnBox) => commitReplacementServiceKey(row, secret, rotatedOnBox),
     exec: async (command, timeoutMs) => {

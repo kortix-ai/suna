@@ -6,10 +6,6 @@ describe('ignoredAgentSettings', () => {
     expect(ignoredAgentSettings('pi')).toEqual(['options', 'color']);
   });
 
-  test('OpenCode applies every setting', () => {
-    expect(ignoredAgentSettings('opencode')).toEqual(['codemode']);
-  });
-
   test('an unknown harness applies none', () => {
     expect(ignoredAgentSettings('other')).toEqual(Object.keys(AGENT_SETTING_HARNESSES) as AgentSetting[]);
   });

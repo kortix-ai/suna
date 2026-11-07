@@ -181,7 +181,7 @@ export async function sendUpstreamAttempt(
   let upstream: Response;
   try {
     // Begin after every pre-prompt refusal point, but before the first byte
-    // can reach OpenCode. A fast session.idle can now delete this record;
+    // can reach the runtime. A fast session.idle can now delete this record;
     // the success path below promotes it with a token CAS and cannot revive
     // a turn that already ended.
     const turnLifecycleStart = await turn.begin();
@@ -242,13 +242,13 @@ export async function respondFromUpstream(
   const { sandboxId, method, remainingPath, origin, access, sandboxAuthored, upstreamPort, promptDelivery, promptDedupeKey, ptl, record, turnIdentity, turn, isSseEventStreamRequest } = req;
   void markSandboxUsed(sandboxId);
   // A 2xx confirms acceptance. A 5xx on a non-replayable turn is ambiguous:
-  // OpenCode may hold the message even though the response was lost. Both
+  // the runtime may hold the message even though the response was lost. Both
   // cases must preserve the turn. A definitive 4xx abandons delivery.
   if (upstream.ok || (turnIdentity && upstream.status >= 500)) {
     await turn.accept();
   } else {
     await turn.abandon();
-    // A definitive 4xx never reached OpenCode's queue: free the claim so a
+    // A definitive 4xx never reached the runtime's queue: free the claim so a
     // same-key retry delivers instead of answering `duplicate` for 10 minutes.
     if (promptDedupeKey && upstream.status < 500) releasePromptDelivery(promptDedupeKey);
   }

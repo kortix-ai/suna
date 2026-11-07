@@ -1,8 +1,9 @@
 /**
  * Large connector results go to a file; the model gets a path and a summary.
  *
- * OpenCode truncates any tool output above 50 KB / 2000 lines and shows the
- * model only the head. A list query (a Linear GraphQL page, a CRM export) is
+ * The agent harness (pi) truncates any tool output above 50 KB / 2000 lines
+ * (`DEFAULT_MAX_BYTES` / `DEFAULT_MAX_LINES`, pi's `core/tools/truncate`) and
+ * shows the model only part of it. A list query (a Linear GraphQL page, a CRM export) is
  * often larger, so the model received cut-off JSON and improvised. Saved as a
  * file, the result is worked through with jq or bun instead of read whole.
  */

@@ -11,7 +11,7 @@ function stripTrailingSlashes(s: string): string {
 /**
  * The backend base URL.
  *
- * CONTROL traffic — the OpenCode/daemon REST channel on port 8000 — routes
+ * CONTROL traffic — the daemon REST channel on port 8000 — routes
  * through the path proxy, `/v1/p/{sandboxId}/{port}/*`, and stays there: it is
  * a programmatic transport with a per-request bearer token, not a browser
  * surface, so a per-preview origin buys it nothing and would put turn delivery
@@ -35,7 +35,7 @@ export function getDefaultSandboxUrl(): string {
 
 /**
  * Derive the proxy URL for a cloud sandbox by its provider sandbox id, for a
- * given sandbox port. Defaults to 8000 (the OpenCode server). Always computed
+ * given sandbox port. Defaults to 8000 (the daemon). Always computed
  * fresh — never persisted — so route renames can't go stale.
  */
 export function getSandboxServerUrl(sandboxId: string, port = 8000): string {
@@ -45,7 +45,7 @@ export function getSandboxServerUrl(sandboxId: string, port = 8000): string {
 /**
  * Derive the authenticated proxy URL for a sandbox port by its provider
  * sandbox id (a project session's `external_id`). Defaults to 8000 (the
- * OpenCode server); pass any other sandbox port (e.g. a dev server the agent
+ * daemon); pass any other sandbox port (e.g. a dev server the agent
  * started) to get the same authenticated `/p/{externalId}/{port}` proxy for
  * it — this is what session-scoped port forwarding (`SessionHandle.sandboxPortUrl`)
  * builds on. Pure function of the id — no dependency on the active server —
@@ -64,10 +64,10 @@ export function getSandboxUrlForExternalId(externalId: string, port = 8000): str
  * `/v1/p/{externalId}/{port}` route. Pure function of the token — no
  * dependency on the active server.
  *
- * The backend blocks the opencode API port (8000) on this route
+ * The backend blocks the daemon API port (8000) on this route
  * (`PUBLIC_SHARE_BLOCKED_PORTS` in `apps/api/src/shared/session-public-shares.ts`)
  * — this only ever reaches a shared preview port or the file share, never a
- * session's opencode `/session`/`/session/:id/message` API.
+ * session's runtime `/session`/`/session/:id/message` API.
  */
 export function getPublicShareUrlForToken(token: string, port: number): string {
   return `${getBackendUrl()}/p/public-share/${token}/${port}`;

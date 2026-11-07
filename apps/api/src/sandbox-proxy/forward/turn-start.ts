@@ -41,11 +41,11 @@ import {
 } from '../prompt-dedupe';
 import { recordSessionActivity } from '../../projects/session-activity';
 import { MEMORY_TURN_SYSTEM_MAX_CHARS } from '@kortix/api-contract';
-import { isMemoryTurnRoute, memoryChannelsOn, myKortixTurnMemory, turnSystemText, withMemoryTurn, withThreadFiles, withoutClientSystem } from '../../memory/turn-body';
+import { isMemoryTurnRoute, memoryChannelsOn, myKortixTurnMemory, turnSystemText, withMemoryTurn, withNoReply, withSpaceAgents, withThreadFiles, withoutClientSystem } from '../../memory/turn-body';
 import { isMyKortixAgentName } from '@kortix/shared';
 import { logger } from '../../lib/logger';
 import { isPlatinumConfigured } from '../../shared/platinum';
-import { chatThreadBoardTurn, missingClaudeSubscription, notifyMessageMentions, sessionModelPin, sessionWhereTurn } from '../../projects/surface';
+import { chatThreadBoardTurn, messageAddressesOnlyPeople, missingClaudeSubscription, notifyMessageMentions, sessionModelPin, sessionSpaceAgents, sessionWhereTurn } from '../../projects/surface';
 import type { ForwardRequest, ForwardState } from './context';
 
 // Turn-start preparation on the forward path: runtime convergence before the
@@ -80,7 +80,7 @@ export interface TurnLifecycle {
 }
 
 // `deadline_at` is the idle-stop clock. This separate record is the durable
-// fact that a specific OpenCode turn is active. It is created immediately
+// fact that a specific runtime turn is active. It is created immediately
 // before the first upstream delivery attempt, promoted only after a confirmed
 // or ambiguous acceptance, and removed by matching terminal evidence.
 export function createTurnLifecycle(
@@ -113,10 +113,10 @@ export function createTurnLifecycle(
     try {
       turnLifecycleAccepted = await acceptSandboxTurn({ externalId: sandboxId }, turnToken);
     } catch (error) {
-      // OpenCode already accepted this non-idempotent request. Do not convert a
+      // The runtime already accepted this non-idempotent request. Do not convert a
       // post-delivery database outage into a failed send or delete the durable
       // `delivering` record. The provider-neutral reaper probes that exact
-      // token-bound record and promotes it when OpenCode reports the turn live.
+      // token-bound record and promotes it when the daemon reports the turn live.
       console.error(
         `[turn-lifecycle] acceptance persistence failed for ${sandboxId}; reaper will reconcile delivery`,
         error,
@@ -154,7 +154,7 @@ export function claimPromptDeliveryOnce(input: {
   origin: string;
 }): { promptDedupeKey: string | null } | { response: Response } {
   const { promptDelivery, incomingHeaders, sandboxId, record, requestBody, origin } = input;
-  // Dedupe OpenCode prompt delivery up-front. Claim a stable key before the retry
+  // Dedupe prompt delivery up-front. Claim a stable key before the retry
   // loop so a duplicate inbound prompt cannot enqueue the user message twice.
   //
   // The key is held in an OUTER binding so the give-up path below can release it
@@ -239,8 +239,8 @@ export async function convergeTurnStartRuntime(input: {
     prefetchedIngress.catch(() => undefined);
   }
   const requestedModelId = requestedPromptManagedModelId(requestBody, incomingHeaders);
-  // The BINARIES must not block either: the daemon, the CLI, the overlay and
-  // OpenCode are ~96 MB / ~104 MB / ~373 KB / ~167 MB. This returns
+  // The BINARIES must not block either: the daemon, the CLI and the overlay
+  // are ~96 MB / ~104 MB / ~373 KB. This returns
   // synchronously, never throws, and adds no network call to a box the API last
   // saw current — it reads two in-process maps; a cold memo fires a detached
   // health read. Do not await it.
@@ -265,8 +265,8 @@ export async function convergeTurnStartRuntime(input: {
   // The repair was attempted and DEFINITIVELY did not land for the process
   // about to answer this turn — `declined` (a turn was live, or the
   // verified swap did not boot) or `no-gateway` (the box could not even
-  // fetch the live lineup). Forwarding anyway is a guaranteed OpenCode
-  // `500 UnknownError` with no cause named (2026-09-26: reproduced three
+  // fetch the live lineup). Forwarding anyway fails the turn with no cause
+  // named (2026-09-26, on OpenCode: a `500 UnknownError` reproduced three
   // times, different opaque refs, no signal a client or an operator could
   // act on). Refuse HERE instead, with the one fact that actually explains
   // it — the model, and why the repair could not confirm it — so the
@@ -308,7 +308,7 @@ export async function syncEnvBeforeTurnStart(
   const { record, sandboxId, port, userId, origin, serviceKey, access, incomingHeaders, promptDedupeKey } = req;
   const requestedAgent = requestedPromptAgent(state.requestBody, incomingHeaders);
   // Authorization runs before the dedupe claim. Drop only the legacy
-  // 'default' sentinel so OpenCode resolves its own `default_agent` (the
+  // 'default' sentinel so the runtime resolves the manifest's `default_agent` (the
   // real default the session booted with). A *concrete* requested agent
   // stays on the authorized switch path: the caller's grant decides, and
   // the pre-prompt env sync re-scopes box and token to that agent.
@@ -339,7 +339,7 @@ export async function syncEnvBeforeTurnStart(
     // `200 {"deduplicated":true}` and the message would be silently lost.
     //
     // Safe by construction: `runPrePromptEnvSync` talks to the DAEMON's
-    // /kortix/env, never to opencode's session endpoints, and it runs
+    // /kortix/env, never to the box's `/session/...` endpoints, and it runs
     // strictly before the upstream fetch — so nothing was delivered and a
     // re-delivery cannot double-enqueue. `promptDeliveryMayHaveReachedUpstream`
     // keeps that honest for the one path that could contradict it: a retry
@@ -386,11 +386,21 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
     });
     return null;
   });
-  // Thread files (`chat`): the person's message as a file, and every session of the thread told its folder.
-  const thread = await threadFilesForTurn(req, state.requestBody);
+  // Thread files (`chat`): every session of the thread told its folder and how to read the conversation (its session log).
+  const thread = await threadFilesForTurn(req);
   if (thread?.files) state.requestBody = withThreadFiles(state.requestBody, thread.files);
+  // A space's agents are a boundary: the router of a thread routes only to them (kortixd front-space.ts).
+  if (where?.space) {
+    const spaceAgents = await sessionSpaceAgents(sessionId).catch((error: unknown) => {
+      logger.warn('[turn] turn start forwarded without its space agents', { session_id: sessionId, error: error instanceof Error ? error.message : String(error) });
+      return null;
+    });
+    if (spaceAgents) state.requestBody = withSpaceAgents(state.requestBody, spaceAgents);
+  }
   // A person's message in a channel notifies the people it @mentions, off the turn's path.
-  if (where?.space?.kind === 'channel' && req.userId && !req.sandboxAuthored) void notifyPersonMentions(req, state.requestBody);
+  if (where?.space?.kind === 'channel' && req.userId && !req.sandboxAuthored) {
+    void notifyPersonMentions(req, state.requestBody);
+  }
   const put = (parts: readonly (string | null | undefined)[]) => {
     const system = turnSystemText(where?.system ?? null, [thread?.system, ...parts]);
     if (system) state.requestBody = withMemoryTurn(state.requestBody, { system });
@@ -435,6 +445,40 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
   }
 }
 
+/**
+ * A person's message in a channel thread that @mentions only other people
+ * (`messageAddressesOnlyPeople`) is for them: the body is marked no-reply, so
+ * the message joins the thread and no turn runs. Runs before the turn identity
+ * is read (`extractTurnIdentity`), so the ledger starts no turn for it. `chat`
+ * off, a sandbox's own request, any other route or any failure: the body as it is.
+ */
+export async function markMessageForPeople(input: {
+  record: SandboxRecord;
+  userId: string | null | undefined;
+  sandboxAuthored: boolean;
+  method: string;
+  path: string;
+  body: ArrayBuffer | undefined;
+}): Promise<ArrayBuffer | undefined> {
+  if (input.sandboxAuthored || !input.userId || !isMemoryTurnRoute(input.method, input.path)) return input.body;
+  try {
+    const { personMessageOf } = await import('../../memory/thread-files');
+    const message = personMessageOf(input.body);
+    if (!message?.text.includes('@')) return input.body;
+    if (!(await memoryChannelsOn(input.record.projectId))) return input.body;
+    const where = await sessionWhereTurn(input.record.projectId, input.record.sessionId);
+    if (where?.space?.kind !== 'channel') return input.body;
+    const forPeople = await messageAddressesOnlyPeople({ accountId: input.record.accountId, projectId: input.record.projectId, authorId: input.userId, text: message.text });
+    return forPeople ? withNoReply(input.body, input.path) : input.body;
+  } catch (error) {
+    logger.warn('[space-posts] the message was forwarded as a prompt; its mentions were not read', {
+      session_id: input.record.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return input.body;
+  }
+}
+
 /** The people a person's message @mentions get a notification (`notifyMessageMentions`); `chat` off: nothing. Never throws. */
 async function notifyPersonMentions(req: ForwardRequest, body: ArrayBuffer | undefined): Promise<void> {
   try {
@@ -458,11 +502,11 @@ async function notifyPersonMentions(req: ForwardRequest, body: ArrayBuffer | und
 }
 
 /** The thread-files turn of a session in a space (`memory/thread-files.ts`), or null: `chat` off, no space, any failure. */
-async function threadFilesForTurn(req: ForwardRequest, body: ArrayBuffer | undefined) {
+async function threadFilesForTurn(req: ForwardRequest) {
   try {
     if (!(await memoryChannelsOn(req.record.projectId))) return null;
-    const [{ threadFilesTurn }, { authorName }] = await Promise.all([import('../../memory/thread-files'), import('../../memory/layers')]);
-    return await threadFilesTurn({ sessionId: req.record.sessionId, userId: req.sandboxAuthored ? null : req.userId ?? null, body, authorName });
+    const { threadFilesTurn } = await import('../../memory/thread-files');
+    return await threadFilesTurn({ sessionId: req.record.sessionId });
   } catch (error) {
     logger.warn('[thread-files] turn start forwarded without thread files', {
       session_id: req.record.sessionId,
@@ -505,7 +549,7 @@ export async function placePromptWireId(
     sandboxAuthored ||
     state.effectiveMessageId !== null ||
     !isPromptWireIdRepairPath(remainingPath) ||
-    // No client id, nothing to place — OpenCode mints, and the read is
+    // No client id, nothing to place — the runtime mints, and the read is
     // skipped entirely so a plain body pays nothing.
     clientWireId === null
   ) return;

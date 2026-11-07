@@ -23,7 +23,11 @@ import { createTickSingleFlight } from '../core/session/single-flight';
 import { openSessionControlStream } from '../core/session/control-stream';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
-import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
+import { mintSessionWireMessageId } from './use-runtime-sessions/messages';
+import type { SessionPromptReason } from '../core/wire-values';
+
+/** Stop parked the row (`SESSION_PROMPT_REASONS`). */
+const HELD_REASON: SessionPromptReason = 'held';
 
 /**
  * The session's SERVER-SIDE prompt inbox.
@@ -188,7 +192,7 @@ export function applyInboxObservation(
  * one GET later — a GET `applyInboxObservation` may legitimately discard.
  */
 export function releaseHeldPrompts(prompts: readonly SessionPrompt[]): SessionPrompt[] {
-  return prompts.map((prompt) => (prompt.reason === 'held' ? { ...prompt, reason: null } : prompt));
+  return prompts.map((prompt) => (prompt.reason === HELD_REASON ? { ...prompt, reason: null } : prompt));
 }
 
 /** The rows with ONE row's text replaced — `edit`'s optimistic write, so the
@@ -429,7 +433,7 @@ export function reconcileOptimisticPrompts(
  * URL from ever being built for a session that has no project.
  *
  * Not every session has one. A sub-session (the "Agent · general: …" panel
- * `SubSessionModal` opens over the transcript) is a local OpenCode child:
+ * `SubSessionModal` opens over the transcript) is a local runtime child:
  * `SessionChat` renders it with a `sessionId` and nothing else — no project id,
  * no project session id — and there is no server-side inbox to read. Both ids
  * are then genuinely `undefined`, and `listSessionPrompts` interpolates them

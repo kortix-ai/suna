@@ -5,7 +5,7 @@
  * 204 means "the request arrived", never "the message exists". Between the
  * drain and the runtime sits the sandbox provider's edge, which DISCARDS a
  * body over its size ceiling — and whose retry answers `200` for a request
- * OpenCode never saw. The drain read that 200 as delivery, closed the row
+ * the runtime never saw. The drain read that 200 as delivery, closed the row
  * `forwarded`, and the user's prompt ceased to exist: no message, no turn, no
  * error, and an inbox row reporting success.
  *

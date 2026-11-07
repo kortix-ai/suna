@@ -6,10 +6,11 @@ const writes: unknown[] = [];
 const searches: string[] = [];
 const products: unknown[] = [];
 const invoices: unknown[] = [];
-mock.module('../../shared/db', () => ({ db: {
+mock.module('../../shared/db', () => ({ withDbTransaction: <T>(fn: () => Promise<T>) => fn(), db: {
   select: () => ({ from: () => ({ where: () => ({ limit: async () => offer.collection === 'invoice' ? [] : [offer] }) }) }),
   insert: () => ({ values: () => ({ returning: async () => [offer] }) }),
-  update: () => ({ set: (patch: unknown) => { writes.push(patch); return { where: async () => undefined }; } }),
+  // A status write is a compare-and-set that reads its row back (`.returning()`).
+  update: () => ({ set: (patch: unknown) => { writes.push(patch); return { where: () => Object.assign(Promise.resolve(undefined), { returning: async () => [] }) }; } }),
 } }));
 mock.module('../../shared/stripe', () => ({ getStripe: () => ({
   products: {

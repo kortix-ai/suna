@@ -1,4 +1,6 @@
 import { sessionLifecycleCommands } from '@kortix/db';
+import { goalPromptRefusal } from '../goals/admission';
+
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
@@ -17,6 +19,7 @@ import { MAX_LIVE_PLACEMENT_REPAIRS, hasLaterForwardedSibling, recordRepairedFor
 import { MAX_RUNTIME_UNREACHABLE_RETRIES, markCommandFailed, parkPromptForUnreachableRuntime, markCommandForwarded, requeueForAdmission, requeueUnlandedPrompt, markCommandSucceeded, type SessionLifecycleCommandRow, type QueuedContinueSessionPayload } from './store';
 import type { PromptOverridesWire, PromptPartWire } from './prompt-payload';
 import { DELIVERY_FAILURE_COPY, type SessionDeliveryOutcome, type SessionInvocationSource } from './types';
+
 
 const NOT_LANDED_RETRY_DELAY_MS = 2_000;
 type Status = 'succeeded' | 'queued' | 'failed';
@@ -115,8 +118,8 @@ async function repairPlacement(row: SessionLifecycleCommandRow, wireMessageId: s
  * A continuation that names no model (approval resume, connector connected,
  * secret submitted, auto-recovery, a trigger without its own model) runs on the
  * agent/model/variant of the session's newest turn that named one. Without
- * this OpenCode falls back to the default agent's own `model:` pin, which can
- * be a model the user no longer uses or the gateway cannot serve.
+ * this the runtime falls back to its default model (`KORTIX_MODEL`, else the
+ * agent's own `model:` pin), which can be a model the user no longer uses or the gateway cannot serve.
  */
 export async function continuationOverrides(
   sessionId: string,
@@ -171,13 +174,17 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         materializationKey: row.commandId,
         ...(noReply ? { noReply } : {}),
         ...(payload.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
-        ...(payload.opencodeEnv ? { opencodeEnv: payload.opencodeEnv } : {}),
         ...(payload.clientMessageId ? {} : { queuedAt: row.createdAt }),
       }, attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId, tl,
-      payload.clientMessageId || row.source === 'system:artifact-comment' ? async () => {
+      async () => {
+        // Nothing runs in a session that works a goal while a person has paused or closed
+        // that goal, or the project's goals flag is off, whoever queued the prompt (the
+        // engine, a heartbeat, or the session itself). A non-goal session is unaffected.
+        const refusal = await goalPromptRefusal(row.sessionId!);
+        if (refusal) throw new PromptDeliveryRefused(409, 'goal_not_running', refusal);
         if (payload.clientMessageId) await assertInboxDeliveryActive(row);
         if (row.source === 'system:artifact-comment') return refreshArtifactCommentQueuedPrompt(row, overrides?.model ?? undefined);
-      } : undefined);
+      });
       tl.mark('delivered');
       if (delivery !== 'delivered') break;
       // A repair round re-sends after round 0's forward closed the claim.
@@ -257,7 +264,7 @@ export async function deliverSteer(row: SessionLifecycleCommandRow, payload: Que
   try {
     if (payload.clientMessageId) await assertInboxDeliveryActive(row);
     const target = await awakeDeliveryTarget(sessionId);
-    if (!target?.externalId || !target.opencodeSessionId) throw new SteerNotTaken('turn_ended');
+    if (!target?.externalId || !target.runtimeSessionId) throw new SteerNotTaken('turn_ended');
     if (row.source === 'system:artifact-comment') {
       const fresh = await refreshArtifactCommentQueuedPrompt(row);
       promptText = fresh.text;
@@ -266,7 +273,7 @@ export async function deliverSteer(row: SessionLifecycleCommandRow, payload: Que
     const wireMessageId = payload.remintOnDelivery
       ? await steerWireMessageId(row, payload, target.externalId)
       : payload.wireMessageId!;
-    const delivery = await postPrompt(target.externalId, target.opencodeSessionId, promptText, row.actorUserId!, sessionId,
+    const delivery = await postPrompt(target.externalId, target.runtimeSessionId, promptText, row.actorUserId!, sessionId,
       `${attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId}:steer`, {
         ...(payload.parts?.length ? { parts: payload.parts } : {}),
         wireMessageId, materializationKey: row.commandId,

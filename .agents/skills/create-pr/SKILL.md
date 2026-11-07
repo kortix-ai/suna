@@ -54,9 +54,9 @@ not apply. Never fill one with "N/A".
 - One fact per sentence. No filler, no sales tone, no restating the title. The **How to
   communicate** rules in `AGENTS.md` apply.
 - Say what is **not** affected when a reviewer would plausibly worry: migrations, IAM,
-  billing, the other harness (OpenCode or pi), self-host, mobile, desktop, prod data.
-- Separate what you proved from what you believe. "Tested on pi" and "OpenCode takes the
-  same path, not tested" are two different claims.
+  billing, old OpenCode transcripts, self-host, mobile, desktop, prod data.
+- Separate what you proved from what you believe. "Tested on Platinum" and "Daytona takes
+  the same path, not tested" are two different claims.
 - Explain a design choice only when the reviewer would otherwise ask "why not the obvious
   way?". One or two sentences.
 

@@ -36,25 +36,10 @@ const ALLOWED_FETCH_ORIGINS = [
  * `scope: 'all'` rules run on every file, tests included — importing an
  * internal or forbidden module is wrong in a test too.
  * `scope: 'source'` rules run on non-test files only: test files stand up mock
- * OpenCode servers and mock proxy URLs on purpose, so the path/URL shapes are
+ * runtime servers and mock proxy URLs on purpose, so the path/URL shapes are
  * fixtures there, not hand-rolled transport.
  */
 const RULES = [
-  {
-    scope: 'all',
-    rule: 'opencode-package',
-    pattern: /['"]@opencode-ai\/sdk(?:\/[^'"]*)?['"]/gi,
-    message: 'CLI code must not import the OpenCode SDK.',
-  },
-  {
-    scope: 'all',
-    rule: 'opencode-sdk-name',
-    // Every OpenCode-named @kortix/sdk export is a deprecated alias of a
-    // `Runtime*` name (packages/sdk/src/runtime-terminology.test.ts).
-    pattern:
-      /import\s+(?:type\s+)?\{[^}]*\b\w*open_?code\w*\b[^}]*\}\s*from\s*['"]@kortix\/sdk(?:\/[^'"]*)?['"]/gi,
-    message: 'Import the neutral (Runtime*) @kortix/sdk name, not its OpenCode-named alias.',
-  },
   {
     scope: 'all',
     rule: 'sdk-internal-import',
@@ -63,10 +48,11 @@ const RULES = [
   },
   {
     scope: 'source',
-    rule: 'opencode-rest-path',
+    // The session runtime's REST routes on the box (kortixd serves them).
+    rule: 'runtime-rest-path',
     pattern:
       /\/(?:global\/event|prompt_async)|['"`]\/(?:session|permission|question)(?=['"`?])|['"`]\/(?:session\/[^'"`\s]+\/(?:abort|command|message|prompt)|(?:permission|question)\/[^'"`\s]+\/(?:reply|reject))/gi,
-    message: 'CLI code must not construct OpenCode REST paths.',
+    message: 'CLI code must not construct session runtime REST paths.',
   },
   {
     scope: 'source',
@@ -192,21 +178,8 @@ export function scanCliBoundary(root = CLI_SOURCE_ROOT) {
   });
 }
 
-/**
- * `apps/tui` renders through this package's session seam, so it shares the two
- * OpenCode rules. Its own transport rules are not checked here.
- */
-const TUI_SOURCE_ROOT = join(dirname(APP_ROOT), 'tui', 'src');
-const TUI_RULES = new Set(['opencode-package', 'opencode-sdk-name']);
-
-export function scanTuiBoundary(root = TUI_SOURCE_ROOT) {
-  return scanCliBoundary(root)
-    .filter((violation) => TUI_RULES.has(violation.rule))
-    .map((violation) => ({ ...violation, file: `apps/tui/src/${violation.file}` }));
-}
-
 function run() {
-  const violations = [...scanCliBoundary(), ...scanTuiBoundary()];
+  const violations = scanCliBoundary();
   if (violations.length === 0) {
     console.log('CLI SDK boundary: 0 violations.');
     return;

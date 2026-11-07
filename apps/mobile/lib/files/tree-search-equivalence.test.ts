@@ -74,7 +74,7 @@ function makeRandom(seed: number) {
 const NFD_ECOLE = 'e\u0301cole';
 const SEGMENTS = [
   'src', 'Src', 'app', 'apps', 'App', 'lib', 'components', 'docs', 'README', 'readme', 'index', '.kortix',
-  '.opencode', 'node_modules', 'a', 'B', 'résumé', 'Zeta', 'zeta', 'my-file', 'my_file', 'my file', 'v1.2',
+  '.github', 'node_modules', 'a', 'B', 'résumé', 'Zeta', 'zeta', 'my-file', 'my_file', 'my file', 'v1.2',
   '10', '2', 'ÉCOLE', 'école', NFD_ECOLE, 'test', 'Test', 'tests', '_private', '-dash', 'x', 'Y',
 ];
 const EXTENSIONS = ['', '.ts', '.tsx', '.md', '.json', '.TS', '.min.js', '.png'];

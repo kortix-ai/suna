@@ -20,8 +20,8 @@ export interface SessionTranscriptDeps {
     sessionId: string,
     limit: number,
     before?: string | null,
-    /** A sub-agent's OpenCode session; null reads the root. */
-    opencodeSessionId?: string | null,
+    /** A sub-agent's runtime session; null reads the root. */
+    runtimeSessionId?: string | null,
   ) => Promise<MirrorSnapshot | null>;
 }
 
@@ -83,7 +83,7 @@ export async function buildSessionTranscriptSyncEnvelope(
     requireCurrentRoot?: boolean;
     /** A `next_cursor` from a previous window — read the window older than it. */
     before?: string | null;
-    /** A sub-agent's OpenCode session inside this session: its own saved
+    /** A sub-agent's runtime session inside this session: its own saved
      *  transcript. Omitted: the root conversation. */
     child?: string | null;
   },
@@ -143,10 +143,10 @@ async function readMirrorSafely(
   sessionId: string,
   limit: number,
   before?: string | null,
-  opencodeSessionId?: string | null,
+  runtimeSessionId?: string | null,
 ): Promise<MirrorSnapshot | null> {
   try {
-    return await readStoredTranscriptWindow({ sessionId, limit, before, opencodeSessionId });
+    return await readStoredTranscriptWindow({ sessionId, limit, before, runtimeSessionId });
   } catch (err) {
     // A cursor the caller supplied is the caller's error, not a mirror
     // failure, and swallowing it here would answer "nothing was captured" for

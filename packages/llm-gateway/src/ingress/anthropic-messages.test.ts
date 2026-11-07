@@ -659,16 +659,32 @@ describe('chatSseToAnthropicSse', () => {
     expect(deltas.filter((entry) => entry.data.index === 1).map((entry) => entry.data.delta?.partial_json).join('')).toBe('{"b":2}');
   });
 
-  test('translates a mid-stream OpenAI error frame into an Anthropic error event without dropping the connection', async () => {
+  // Anthropic's `error` event is terminal: a failed turn never also reads
+  // as `end_turn` + `message_stop`, even when the relay's [DONE] follows.
+  test('a mid-stream OpenAI error frame ends the stream with an Anthropic error event', async () => {
     const openai = encodeSse(
-      chunk({ role: 'assistant', content: '' }),
+      chunk({ role: 'assistant', content: 'half' }),
       `data: ${JSON.stringify({ error: { message: 'Overloaded', type: 'overloaded_error' } })}\n\n`,
+      'data: [DONE]\n\n',
     );
 
     const events = await collectAnthropicEvents(chatSseToAnthropicSse(openai));
-    const errorEvent = events.find((e) => e.event === 'error');
-    expect(errorEvent?.data.error).toEqual({ type: 'overloaded_error', message: 'Overloaded' });
-    expect(events.at(-1)?.event).toBe('message_stop');
+    const names = events.map((e) => e.event);
+    expect(events.at(-1)?.event).toBe('error');
+    expect(events.at(-1)?.data.error).toEqual({ type: 'overloaded_error', message: 'Overloaded' });
+    expect(names).not.toContain('message_stop');
+    expect(names).not.toContain('message_delta');
+    // The open text block is closed before the error.
+    expect(names.filter((n) => n === 'content_block_start').length).toBe(names.filter((n) => n === 'content_block_stop').length);
+  });
+
+  test('a gateway error code never leaks as an Anthropic error type', async () => {
+    const openai = encodeSse(
+      `data: ${JSON.stringify({ error: { message: 'cut', type: 'upstream_incomplete_stream' } })}\n\n`,
+      'data: [DONE]\n\n',
+    );
+    const events = await collectAnthropicEvents(chatSseToAnthropicSse(openai));
+    expect(events.at(-1)?.data.error?.type).toBe('api_error');
   });
 
   // Claude Code sizes the context window and triggers auto-compaction from the

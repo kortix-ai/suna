@@ -1,7 +1,7 @@
 /**
  * The compiled agent config in the daemon's own env.
  *
- * OpenCode, git, every PTY and every other child inherit `process.env`, and
+ * git, every PTY and every other child inherit `process.env`, and
  * Linux refuses to exec a child whose env holds one `NAME=VALUE\0` over 131,072
  * bytes. On Platinum prod (7 days to 2026-10-14) every create whose
  * `KORTIX_COMPILED_AGENT_CONFIG` crossed that line never booted. The API now

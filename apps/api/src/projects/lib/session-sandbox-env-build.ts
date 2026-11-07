@@ -53,7 +53,7 @@ export { proxyGitUrl };
 
 
 
-import { sessionChannelEnvFromMetadata, sessionSpaceEnv } from './session-channel-env';
+import { sessionChannelEnvFromMetadata, sessionParentEnv, sessionSpaceEnv } from './session-channel-env';
 
 
 
@@ -71,14 +71,17 @@ import { resolveSessionPersonalOwner } from './personal-resources';
 
 
 /**
- * Re-derive persisted channel env so every cold reprovision restores it, and
- * the channel or DM the session is a thread of (`chat` on).
+ * Re-derive persisted channel env so every cold reprovision restores it, the
+ * channel or DM the session is a thread of (`chat` on), and the session that
+ * started this one (`KORTIX_PARENT_SESSION_ID`: the agent reads its
+ * conversation with `kortix sessions log`).
  */
 async function buildSessionChannelEnv(sessionId: string): Promise<Record<string, string>> {
   try {
     const [row] = await db
       .select({
         metadata: projectSessions.metadata,
+        parentSessionId: projectSessions.parentSessionId,
         projectMetadata: projects.metadata,
         spaceId: projectSpaces.spaceId,
         kind: projectSpaces.kind,
@@ -94,7 +97,7 @@ async function buildSessionChannelEnv(sessionId: string): Promise<Record<string,
       row?.spaceId && row.kind && resolveFeatureFlag(row.projectMetadata, 'chat')
         ? { spaceId: row.spaceId, kind: row.kind, slug: row.slug, dmAgentName: row.dmAgentName }
         : null;
-    return { ...sessionChannelEnvFromMetadata(row?.metadata), ...sessionSpaceEnv(space) };
+    return { ...sessionChannelEnvFromMetadata(row?.metadata), ...sessionSpaceEnv(space), ...sessionParentEnv(row) };
   } catch (err) {
     console.warn('[session-env] failed to restore channel binding', {
       sessionId,
@@ -504,8 +507,8 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
       frontendUrl: sandboxFrontendBaseUrl(),
       // Concrete session model after explicit → agent → project → account →
       // platform resolution — re-pointed above when the runtime lineup
-      // retired it. The sandbox uses it for the first OpenCode turn and as
-      // the session's OpenCode config default.
+      // retired it. The sandbox uses it for the first turn and as the
+      // runtime's default model.
       sessionModel,
       compiledAgentConfig,
       piPackages: manifestPackages,

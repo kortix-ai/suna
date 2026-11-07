@@ -122,10 +122,20 @@ impl AudioStatus {
     }
 }
 
+/// A recorder heartbeat older than this gates audio. Longer than the 60 s a
+/// private (PII-redacting) capture may hold the engine call, so a slow capture
+/// does not cut the microphone in the middle of a call.
+pub const RECORDER_SILENT_GATE_MS: i64 = 90_000;
+
 /// Why audio is not recording right now, or None when it should record.
 /// Audio follows the screen recorder: off, paused, a locked screen, low disk
 /// and a sync backlog stop it. Inactivity (no keyboard or mouse input) does not:
 /// a call you only listen to is recorded.
+///
+/// Fails closed. The last known `locked`, `low_disk` or `sync_backlog` gates at
+/// any age: a stalled recorder must not turn the microphone back on at a
+/// locked screen. No recorder status yet is `starting`. A heartbeat silent for
+/// [`RECORDER_SILENT_GATE_MS`] is `paused`.
 pub fn gate(s: &Settings, recorder: Option<&RecorderStatus>, now: i64) -> Option<&'static str> {
     if !s.audio.enabled {
         return Some("off");
@@ -137,11 +147,14 @@ pub fn gate(s: &Settings, recorder: Option<&RecorderStatus>, now: i64) -> Option
             "paused"
         });
     }
-    let fresh = recorder.filter(|r| now - r.updated_at_ms < 15_000);
-    match fresh.map(|r| r.state.as_str()) {
-        Some("locked") => Some("locked"),
-        Some("low_disk") => Some("low_disk"),
-        Some("sync_backlog") => Some("sync_backlog"),
+    let Some(r) = recorder else {
+        return Some("starting");
+    };
+    match r.state.as_str() {
+        "locked" => Some("locked"),
+        "low_disk" => Some("low_disk"),
+        "sync_backlog" => Some("sync_backlog"),
+        _ if now - r.updated_at_ms >= RECORDER_SILENT_GATE_MS => Some("paused"),
         _ => None,
     }
 }
@@ -1252,7 +1265,7 @@ mod tests {
         let now = 1_800_000_000_000;
         assert_eq!(gate(&s, None, now), Some("off"), "off by default");
         s.audio.enabled = true;
-        assert_eq!(gate(&s, None, now), None);
+        assert_eq!(gate(&s, None, now), Some("starting"), "no recorder status yet: no audio");
         let rec = |state: &str| RecorderStatus {
             state: state.into(),
             updated_at_ms: now,
@@ -1266,12 +1279,26 @@ mod tests {
         assert_eq!(gate(&s, Some(&rec("excluded")), now), None);
         assert_eq!(gate(&s, Some(&rec("locked")), now), Some("locked"));
         assert_eq!(gate(&s, Some(&rec("low_disk")), now), Some("low_disk"));
+        assert_eq!(gate(&s, Some(&rec("recording")), now), None);
         let mut stale = rec("locked");
-        stale.updated_at_ms = now - 60_000;
+        stale.updated_at_ms = now - 600_000;
         assert_eq!(
             gate(&s, Some(&stale), now),
+            Some("locked"),
+            "a stalled recorder last seen at a locked screen keeps the mic off"
+        );
+        let mut slow = rec("recording");
+        slow.updated_at_ms = now - 60_000;
+        assert_eq!(
+            gate(&s, Some(&slow), now),
             None,
-            "a stale heartbeat does not gate"
+            "a 60 s private capture does not cut the mic"
+        );
+        slow.updated_at_ms = now - RECORDER_SILENT_GATE_MS;
+        assert_eq!(
+            gate(&s, Some(&slow), now),
+            Some("paused"),
+            "a silent recorder fails closed"
         );
         s.paused_until_ms = Some(now + 1000);
         assert_eq!(gate(&s, None, now), Some("paused"));

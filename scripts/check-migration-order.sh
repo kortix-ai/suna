@@ -18,11 +18,36 @@
 # fork checkout with no origin/dev pushed a duplicate of an old migration past
 # this guard without a word (#9360).
 #
-# Usage: pre-push stdin ("<local ref> <local sha> <remote ref> <remote sha>").
+# A pull request into dev runs no CI (only label-gated workflows may), and a
+# merge with `gh pr merge` runs no hook. So a branch pushed while dev's newest
+# migration was older, then merged after dev got a newer one, passes this
+# guard. Close that gap at merge time:
+#   sh scripts/check-migration-order.sh --pr <number>   # before gh pr merge
+#   sh scripts/check-migration-order.sh --head <rev>    # any commit
+# Both fetch origin dev first and check the commit as if it were pushed. The
+# contributing skill runs `--pr` before every merge that adds a migration.
+#
+# Usage: pre-push stdin ("<local ref> <local sha> <remote ref> <remote sha>"),
+# or --head <rev>, or --pr <number>.
 set -e
 
 zero=0000000000000000000000000000000000000000
 dir=packages/db/migrations
+case "${1:-}" in
+  --pr|--head)
+    [ -n "${2:-}" ] || { echo "migration-order: $1 needs a value" >&2; exit 2; }
+    [ -n "${MIGRATION_ORDER_NO_FETCH:-}" ] || git fetch -q origin dev 2>/dev/null \
+      || echo "migration-order: could not fetch origin dev; checking against the local ref" >&2
+    if [ "$1" = --pr ]; then
+      git fetch -q origin "refs/pull/$2/head" || { echo "migration-order: could not fetch pull request #$2" >&2; exit 2; }
+      rev=$(git rev-parse FETCH_HEAD)
+    else
+      rev=$(git rev-parse --verify "$2^{commit}") || exit 2
+    fi
+    printf 'refs/heads/check %s refs/heads/check %s\n' "$rev" "$zero" | sh "$0"
+    exit $?
+    ;;
+esac
 newest() {
   git ls-tree --name-only "$1" -- "$dir/" \
     | sed -En 's#.*/([0-9]{17})_.*\.(sql|concurrent\.ts)$#\1#p' | sort -n | tail -1

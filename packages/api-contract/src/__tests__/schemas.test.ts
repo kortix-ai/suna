@@ -163,6 +163,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       voice_call: false,
       chat_input: false,
       chat_front: false,
+      spaces_proactive: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -878,6 +879,7 @@ describe('envelopes', () => {
       'voice_call',
       'chat_input',
       'chat_front',
+      'spaces_proactive',
     ]);
   });
 
@@ -1251,7 +1253,7 @@ describe('session scope contracts', () => {
       connector_bindings_inherit_unbound: true,
       applied_live: true,
       detail:
-        'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.',
+        'Applied to the running sandbox now — the agent runtime and new shells see the new scope.',
     };
     expect(SessionScopeSchema.parse(value)).toEqual(value);
   });

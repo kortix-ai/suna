@@ -158,6 +158,10 @@ export async function loadTriggersForResponse(
       silent_since: runtimeBySlug.get(spec.slug)?.alertSource === 'silence'
         ? (runtimeBySlug.get(spec.slug)?.alertFailingSince?.toISOString() ?? null)
         : null,
+      // The always-on App it names is down past its restart budget (app-health-alerts.ts).
+      crashed_since: runtimeBySlug.get(spec.slug)?.alertSource === 'crash'
+        ? (runtimeBySlug.get(spec.slug)?.alertFailingSince?.toISOString() ?? null)
+        : null,
       app: spec.app ?? null,
       target: spec.target ?? null,
       event: spec.event

@@ -12,8 +12,8 @@ import { forwardedSql, notStopPausedSql } from './delivery-state';
  * The other end of a FORWARDED prompt.
  *
  * `markCommandForwarded` leaves the row open on purpose: handing a prompt to
- * OpenCode is not the same as OpenCode running it. OpenCode persists the user
- * message and queues its execution behind whatever turn is in flight, so the
+ * the runtime is not the same as the runtime running it. The runtime persists
+ * the user message and queues its execution behind whatever turn is in flight, so the
  * only thing that can say the prompt was actually consumed is the
  * `kortix.session_turns` ledger naming its wire id. Until then the row keeps
  * reading `delivering`, which is what holds the composer's working state.
@@ -301,7 +301,7 @@ export async function reconcileForwardedPrompts(
     const expired = now.getTime() - row.updatedAt.getTime() >= INBOX_FORWARD_CONFIRM_MAX_MS;
 
     // A turn that is RUNNING, or that ran to an ending, consumed the prompt.
-    // `active` counts: the ledger only opens an active row once OpenCode has
+    // `active` counts: the ledger only opens an active row once the runtime has
     // accepted the delivery, which is the moment the message became the
     // transcript's rather than the inbox's.
     const ran =
@@ -330,11 +330,11 @@ export async function reconcileForwardedPrompts(
       continue;
     }
 
-    // A ledger row still `delivering` is OpenCode HOLDING this message behind
+    // A ledger row still `delivering` is the runtime HOLDING this message behind
     // the turn in front of it — the flagship mid-turn case, and the p99 turn
     // (~78 min, `sandbox-deadline-policy.ts`) is eight times this ceiling.
     // Force-closing there deletes a pending message from the user's queue while
-    // OpenCode is still going to run it, and raises an error-level log on a
+    // the runtime is still going to run it, and raises an error-level log on a
     // completely healthy flow.
     //
     // The wait is bounded by the LEDGER, not by this sweep: when the box parks,

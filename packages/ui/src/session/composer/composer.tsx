@@ -24,6 +24,7 @@ import {
   memo,
   Suspense,
   useCallback,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -114,6 +115,7 @@ import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, hostSlashActions, localizedSlashActions, slashActionShown, type SlashAction } from './menus/slash-actions';
 import type { SlashFile } from './menus/slash-files';
+import { outsideAgentMentions, SpaceMentionContext } from './menus/space-mentions';
 import { promptHistoryEntries, stepPromptHistory } from './prompt-history';
 import { QuoteList } from './quote-list';
 import { createSubmitLatch } from './submit-latch';
@@ -600,6 +602,15 @@ function ComposerImpl(props: SessionChatInputProps) {
   const tThreads = useTranslations('threads');
 
   const dockId = `composer-slash-dock-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
+
+  // Inside a space (flag `chat`): the agents a sent message named from outside
+  // it. Mentioning one never adds it; the line above the card asks first.
+  const spaceMentions = useContext(SpaceMentionContext);
+  const spaceMentionsRef = useRef(spaceMentions);
+  useEffect(() => {
+    spaceMentionsRef.current = spaceMentions;
+  }, [spaceMentions]);
+  const [outsideAsk, setOutsideAsk] = useState<string[]>([]);
 
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   // Synchronous mirror of `attachedFiles`, for the one reader that cannot
@@ -1819,6 +1830,8 @@ function ComposerImpl(props: SessionChatInputProps) {
       // right after the paint (`deliverAfterPaint`), so the next Send never waits
       // behind them. The host releases the uploads after its POST; a send it keeps
       // on screen as failed still holds them for its Retry.
+      const outside = spaceMentionsRef.current ? outsideAgentMentions(spaceMentionsRef.current, trimmed) : [];
+      if (outside.length > 0) setOutsideAsk(outside);
       await runComposerSend({
         submission: attachmentSubmission,
         controller: promptAttachments,
@@ -2156,6 +2169,10 @@ function ComposerImpl(props: SessionChatInputProps) {
     quotes,
     quoteListLabels,
     handleRemoveQuote,
+    spaceAsk:
+      outsideAsk.length > 0 && spaceMentions?.renderOutsideAsk
+        ? spaceMentions.renderOutsideAsk(outsideAsk[0]!, () => setOutsideAsk((list) => list.slice(1)))
+        : null,
   };
 
   return (

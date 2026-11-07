@@ -262,9 +262,10 @@ export function releaseWhenResponseEnds(response: Response, release: () => void)
  * The canonical 413 for an over-limit body, shared by every ingress.
  *
  * DIGIT-FREE ON PURPOSE, and this is the reason it is a function rather than
- * something each host formats itself. 413 is terminal, but OpenCode 1.18.14+
- * decides retryability by running /429|500|502|503|504|524/i over the WHOLE
- * response body — so a byte count that merely CONTAINS "500" makes the client
+ * something each host formats itself. 413 is terminal, but the runtime decides
+ * retryability by matching status codes in the WHOLE response body (OpenCode
+ * 1.18.14+ ran /429|500|502|503|504|524/i unanchored; pi-ai matches a
+ * standalone code) — so a byte count that CONTAINS "500" makes the client
  * re-upload an over-limit body five times, which is the opposite of what a size
  * limit is for. The exact sizes belong in the server log, never in this body.
  *
@@ -291,7 +292,7 @@ export function requestTooLargeResponse(requestId = 'req_ingress'): Response {
  * one when the other is true either wedges a legitimate caller in a permanent
  * retry loop or makes it give up on work that was about to succeed.
  *
- * Digit-free for the same reason as the 413: OpenCode decides retryability by
+ * Digit-free for the same reason as the 413: the runtime decides retryability by
  * regexing the response body, and `retryAfterSeconds` below is the structured
  * channel for that, not prose.
  */

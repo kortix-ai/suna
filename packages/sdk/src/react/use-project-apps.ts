@@ -91,7 +91,14 @@ export function useProjectApps(projectId: string | null | undefined) {
   });
   const remove = useMutation({
     mutationFn: (appId: string) => deleteApp(projectId as string, appId),
-    onSuccess: invalidate,
+    onSuccess: (_deleted: unknown, appId: string) => {
+      // The deleted App's own queries (access, deployments, events) sit under
+      // the list key; refetched, each answers 404 while its detail closes.
+      const list = projectAppsKey(projectId);
+      void queryClient.invalidateQueries({ queryKey: list, predicate: (q) => q.queryKey[list.length] !== appId });
+      // A delete takes the triggers that name the App.
+      return queryClient.invalidateQueries({ queryKey: qk.project.triggers(projectId ?? '') });
+    },
   });
 
   return { ...query, create, update, start, stop, remove };
@@ -105,11 +112,14 @@ export function useProjectApps(projectId: string | null | undefined) {
 export function useAppEvents(
   projectId: string | null | undefined,
   appId: string | null | undefined,
-  options: { enabled?: boolean; limit?: number } = {},
+  /** `id`: only the rows of that event (one per trigger it reached), as a trigger run links to it. */
+  options: { enabled?: boolean; limit?: number; id?: string | null } = {},
 ) {
+  const id = options.id || null;
   return useQuery({
-    queryKey: appEventsKey(projectId, appId),
-    queryFn: () => listAppEvents(projectId as string, appId as string, { limit: options.limit ?? 20 }),
+    // Under the log's key: a test event or an App mutation refreshes it too.
+    queryKey: id ? [...appEventsKey(projectId, appId), { id }] : appEventsKey(projectId, appId),
+    queryFn: () => listAppEvents(projectId as string, appId as string, { limit: options.limit ?? 20, ...(id ? { id } : {}) }),
     enabled: !!projectId && !!appId && options.enabled !== false,
     ...contract('inventory'),
     refetchInterval: 10_000,

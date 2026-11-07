@@ -1,7 +1,7 @@
 /**
  * Grouping and labelling rules for the model picker. Pure.
  *
- * The gateway serves its whole catalog through ONE synthetic `kortix` opencode
+ * The gateway serves its whole catalog through ONE synthetic `kortix`
  * provider, so `FlatModel.providerName` always reads "Kortix" and cannot group
  * anything. The real provider rides on `FlatModel.provider`; a stale baked
  * catalog that predates that field is recovered by splitting the namespaced

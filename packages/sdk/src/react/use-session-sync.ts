@@ -30,7 +30,7 @@ import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-
 import { hasOnlyCacheSourcedMessages, useSyncStore } from '../browser/stores/sync-store';
 import { useCurrentRuntime } from './use-current-runtime';
 import { selectSessionRows } from './session-transcript-subscription';
-import { canQueryRuntimeSession } from './use-opencode-sessions';
+import { canQueryRuntimeSession } from './use-runtime-sessions';
 
 export { loadSessionExportMessages, loadSessionRuntimeStatus, loadSessionTranscriptMessages };
 
@@ -71,7 +71,7 @@ interface UseSessionSyncOptions {
   mirror?: SessionTranscriptSyncEnvelope | null;
   /**
    * Stable Kortix `(projectId, sessionId)` scope for disk transcript ownership.
-   * This prevents equal OpenCode ids in different sandboxes from sharing data.
+   * This prevents equal runtime session ids in different sandboxes from sharing data.
    */
   kortixSessionScope?: string;
   /**
@@ -244,11 +244,11 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   //
   // It is not the disk mirror returning. That one was deleted because its
   // freshness test read the transcript's SHAPE and a Stop moves none of it, so
-  // a stopped thread painted as still running. This payload carries OpenCode's
+  // a stopped thread painted as still running. This payload carries the runtime's
   // `info` VERBATIM — `time.completed` and `error` included — and the server
   // writes it BECAUSE a turn ended, so there is no client-side freshness test
   // left to get wrong. `shouldHydrateFromMirror` additionally refuses a mirror
-  // captured from a different OpenCode root, which the scope-keyed disk cache
+  // captured from a different runtime root, which the scope-keyed disk cache
   // could not check.
   //
   // Painted with `source: 'cache'`, so the store's existing settle rule owns
@@ -362,7 +362,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // FINISHED turn from a running one. Its write gate was structural (message
   // count, total part count, tail id), and the two changes that end a turn move
   // none of those: `time.completed` stamped on the tail message, and the `error`
-  // an abort stamps. A normal turn escaped by accident, because OpenCode
+  // an abort stamps. A normal turn escaped by accident, because the runtime
   // appends a `step-finish` part and that moves the part count — but a STOP
   // appends no part at all. So the disk copy of a stopped thread held an
   // assistant message with neither `time.completed` nor `error`, which

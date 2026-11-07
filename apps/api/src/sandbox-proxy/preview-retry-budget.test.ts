@@ -52,7 +52,7 @@ describe('/file/import', () => {
   });
 });
 
-// `message`, `command` and `summarize` are OpenCode's blocking turn endpoints:
+// `message`, `command` and `summarize` are the box's blocking turn endpoints:
 // the response is emitted only when the whole turn (or summary) is done. Capped
 // at the generic 15s connect window, a healthy 20-40s turn is aborted and its
 // non-idempotent body re-POSTed. `/command` was missing until 2026-08-11 (one

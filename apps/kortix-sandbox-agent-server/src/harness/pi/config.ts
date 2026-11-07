@@ -40,11 +40,12 @@ const EnvironmentSchema = z.object({
   // First backoff of a transient model-error retry (transient-retry.ts). Tests shorten it.
   KORTIX_PI_TURN_RETRY_BASE_MS: z.coerce.number().int().positive().optional(),
   KORTIX_PI_NO_PROGRESS_MS: z.coerce.number().int().positive().optional(),
+  KORTIX_PI_STOP_SETTLE_MS: z.coerce.number().int().positive().optional(),
   // The session agent's codemode (`off`, `on` or `only`, codemode.ts), sent by the API. Absent or invalid: the
   // compiled agent's `codemode`, else `on` (runtime.ts `codemode`).
   KORTIX_PI_CODEMODE: z.enum(['off', 'on', 'only']).optional().catch(undefined),
   // The session agent's context handling (`agents.<name>.context`), sent by the API only when it is
-  // `summary`: pi's own summary compaction. Absent or invalid: `record` (extensions/context-record.ts).
+  // `summary`: pi's own summary compaction. Absent or invalid: `record` (extensions/context-record.ts: a reset onto the stored session log).
   KORTIX_PI_CONTEXT: z.enum(['record', 'summary']).optional().catch(undefined),
   // Cloud subagent guardrails (cloud-subagent.ts): children one parent waits on at
   // once, and the depth a cloud child may still delegate from. Invalid: the default.
@@ -66,6 +67,8 @@ export interface PiEnvironment {
   piPackagesDir: string
   piTurnRetryBaseMs: number
   piNoProgressMs: number
+  /** How long Stop and a runtime stop wait for the running work to settle before they let go of it. */
+  piStopSettleMs: number
   piCodemode?: 'off' | 'on' | 'only'
   /** `record`: a full context resets onto the searchable record; `summary`: pi's own compaction. */
   piContext: 'record' | 'summary'
@@ -83,6 +86,9 @@ export interface PiEnvironment {
 export const DEFAULT_WORKFLOW_MAX_AGENTS = 50
 export const DEFAULT_WORKFLOW_MAX_CONCURRENT = 8
 
+/** Stop waits this long for a turn whose tool ignores the abort signal. */
+export const DEFAULT_PI_STOP_SETTLE_MS = 10_000
+
 export const DEFAULT_PI_AGENT_DIR = '/opt/kortix/pi-agent'
 
 export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
@@ -99,6 +105,7 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     KORTIX_PI_PACKAGES_DIR: env.KORTIX_PI_PACKAGES_DIR,
     KORTIX_PI_TURN_RETRY_BASE_MS: env.KORTIX_PI_TURN_RETRY_BASE_MS?.trim() || undefined,
     KORTIX_PI_NO_PROGRESS_MS: env.KORTIX_PI_NO_PROGRESS_MS?.trim() || undefined,
+    KORTIX_PI_STOP_SETTLE_MS: env.KORTIX_PI_STOP_SETTLE_MS?.trim() || undefined,
     KORTIX_PI_CODEMODE: env.KORTIX_PI_CODEMODE?.trim() || undefined,
     KORTIX_PI_CONTEXT: env.KORTIX_PI_CONTEXT?.trim() || undefined,
     KORTIX_PI_CLOUD_SUBAGENTS_MAX: env.KORTIX_PI_CLOUD_SUBAGENTS_MAX?.trim() || undefined,
@@ -116,6 +123,7 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     piPackagesDir: parsed.KORTIX_PI_PACKAGES_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi-packages'),
     piTurnRetryBaseMs: parsed.KORTIX_PI_TURN_RETRY_BASE_MS ?? TURN_RETRY_DEFAULT_BASE_MS,
     piNoProgressMs: parsed.KORTIX_PI_NO_PROGRESS_MS ?? 10 * 60_000,
+    piStopSettleMs: parsed.KORTIX_PI_STOP_SETTLE_MS ?? DEFAULT_PI_STOP_SETTLE_MS,
     piCodemode: parsed.KORTIX_PI_CODEMODE,
     piContext: parsed.KORTIX_PI_CONTEXT ?? 'record',
     piCloudSubagentsMax: parsed.KORTIX_PI_CLOUD_SUBAGENTS_MAX ?? DEFAULT_MAX_LIVE_CLOUD_SUBAGENTS,

@@ -1,5 +1,7 @@
 /**
- * Placing a forwarded prompt INTO a live OpenCode turn, and proving it landed.
+ * Placing a forwarded prompt INTO a live turn, and proving it landed. The
+ * ordering rules below are OpenCode's. A runtime that keeps message ids (pi,
+ * `RUNTIME_STABLE_MESSAGE_ID_CAPABILITY`) goes through `keepsWireIdOnStableRuntime`.
  *
  * HOW THE LOOP DECIDES "is the latest user message answered?" — AND THAT IT
  * DEPENDS ON THE BOX'S OPENCODE VERSION. `opencode` is baked into the sandbox

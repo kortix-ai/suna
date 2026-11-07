@@ -5,7 +5,7 @@ date: "2026-09-11"
 canonical: "https://kortix.com/blog/how-to-build-reliable-ai-agent-workflows"
 author: "team"
 tags: ["Field notes"]
-updated: "2026-10-02"
+updated: "2026-11-06"
 slug: "/how-to-build-reliable-ai-agent-workflows"
 ---
 Reliable AI agent workflows fail in ways a generic retry does not fix: a tool reports success while returning an error payload, an upstream schema drifts, or a loop has no exit. Treat reliability as engineering around the model. Name each failure mode, attach one control, and instrument the signal that proves the control holds. Kortix is the open-source platform that supplies those primitives, from a sandbox per session to a review gate on every change.
@@ -58,11 +58,14 @@ Read those signals per step. Emit one span for each step with its inputs, output
 Kortix is the open-source AI Management System: agents, shared skills, company memory and connectors live in one git repo you own. A session runs an agent in an isolated sandbox on its own branch, and the agent opens a change request a human reviews and merges ([Kortix docs](https://kortix.com/docs)). Per-agent grants scope connectors, secrets and skills, connector credentials are brokered server-side so raw keys never enter the machine, and a full audit trail records what ran ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)). Kortix is open source (Elastic License 2.0): self-host, read and modify the code.
 
 ```yaml
-# kortix.yaml: governance only; agent behavior lives in .kortix/opencode/agents/
-kortix_version: 2
+# kortix.yaml: one block per agent holds its behavior, its grants and its prompt file
 default_agent: workflow-runner
+skills:
+  reliability-checks: skills/reliability-checks
 agents:
   workflow-runner:
+    prompt_file: agents/workflow-runner.md
+    tools: "*"
     connectors: [github]
     secrets: []
     skills: [reliability-checks]
@@ -70,6 +73,7 @@ triggers:
   - slug: nightly-run
     type: cron
     agent: workflow-runner
+    cron: "0 0 2 * * *"
     prompt: |
       Validate every tool result against its schema, stop after five
       iterations, and open a change request instead of writing to main.

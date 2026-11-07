@@ -566,7 +566,6 @@ const FileCard = memo(function FileCard({
 /** Descriptions for elevated system directories */
 const ELEVATED_DIR_META: Record<string, { description: string }> = {
   '.kortix': { description: 'Project config, tasks, context' },
-  '.opencode': { description: 'Agents, skills, commands' },
 };
 
 interface DriveGridViewProps {

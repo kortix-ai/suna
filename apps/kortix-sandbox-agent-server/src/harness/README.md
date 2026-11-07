@@ -744,7 +744,10 @@ parked runs on the agent's re-run of the same call: apps/api matches its
 Every new message parks every open ask at once (`parkOpenAsks`: a prompt, a
 steer, synthetic or not), and so does `POST /kortix/runtime/asks/park`, which
 the prompt inbox calls when a queued row waits behind a turn that holds a live
-ask. Abort and the turn end park what is left. A workflow run approval is the
+ask. Abort and the turn end park what is left. A permission ask is registered
+before its relay answers, as a question is: a Stop or a steer during a slow
+relay parks it, and an ask parked there never reaches the wire
+(`permission.asked` is sent only once the relay leaves it open). A workflow run approval is the
 one ask that is not parkable: it resolves as dismissed and the run is not
 started.
 
@@ -904,7 +907,7 @@ resolves the same root and restores the transcript from
 `$KORTIX_RUNTIME_STATE_DIR/pi/<session>.json`. The root's title stays
 `New session`, also after a restore: the session title is Kortix's
 (`metadata.name`, generated from the first prompt), and the API drops the
-placeholder (`isPlaceholderOpencodeTitle`).
+placeholder title.
 
 Config it reads (all set by apps/api for every session, harness-neutral values):
 `KORTIX_MODEL` (the resolved session model), `KORTIX_COMPILED_AGENT_CONFIG`
@@ -926,6 +929,31 @@ variant, and its `model` when the prompt names none. A prompt that picks none
 runs on the session's agent. A pick of a subagent, a disabled
 agent or an unknown name is logged and runs on the session's agent. pi
 packages and extensions stay the ones the session booted with.
+
+**Is a turn running.** `PiRuntime.busy()` is the one answer, and every
+consumer reads it: the daemon self-update (`configureRuntimeConvergence`
+`turnInFlight`), the memory guard, the reaper's turn probe
+(`/kortix/health?turn=1`) and config convergence (`idle()` is `!busy()`).
+It is true while a turn runs or is queued, while a `/summarize` runs, and
+while a same-session subagent runs. It derives from the turn queue
+(`PiRuntime.work`, one token per admitted item) and the active turn, never
+from the last `session.status` frame: pi's `agent_end` emits `idle` while a
+turn still compacts, and that frame does not clear it. A prompt still loading
+its images, or queued behind the running work, is in flight for the probe.
+`reconfigure()` runs on the same serial queue, so a prompt admitted during
+it runs on the whole new config.
+
+**Stop is bounded.** `abort()` waits up to `KORTIX_PI_STOP_SETTLE_MS`
+(10 s) for the turn to settle. A tool that ignores its abort signal no longer
+holds Stop, the memory guard or a restart: a runtime stop that times out
+abandons the work (the turns end `aborted`, the queue starts empty, a late
+end of the abandoned turn writes nothing). Daemon shutdown waits at most
+`SHUTDOWN_HARNESS_STOP_MS` (20 s) for the harness and then exits, so the
+supervisor restarts it.
+
+**A failed start at boot.** Boot tries the start 3 times (2 s, then 10 s
+apart, `startRuntimeAtBoot`). After the last failure readiness reports
+`runtime_start_failed` with the message, not `pi_not_ready`.
 
 ### kortix.yaml
 
@@ -1414,27 +1442,24 @@ builtin extension `kortix-context-record`).** It answers pi's
 `session_before_compact` hook for every trigger (threshold, overflow,
 `/summarize`) with its own compaction, and pi makes no model call:
 
-- The record: every entry of the root thread, word for word, in
-  `<KORTIX_PI_STATE_DIR>/records/<pi session id>.log` (dir `0700`, file `0600`,
-  a `.gitignore` of `*`, outside `/workspace`). One JSON header line per entry
-  (`{"n":12,"kind":"result","time":"…","name":"bash","for":"call_3","exit":"ok"}`;
-  kinds `user`, `assistant`, `thinking`, `call`, `result`, `error`, `event`,
-  `model`, `reset`), then its text. An image is one line; pi's system prompt
-  entry is left out. Written at session start (a restored log included), at
-  every settled run, and inside the hook.
+- The source: the session log the API stores (`GET .../sessions/:id/log`),
+  journaled at every turn end and every 5 s during a turn. Nothing is copied
+  into a file. `kortix sessions log <KORTIX_SESSION_ID> --json` reads it, plus
+  the open turn live from this box.
 - The reset: no `firstKeptEntryId`, so pi keeps no earlier entry. Its text
-  gives the record's path and format, tells the model to read exact lines with
-  the `grep` and `read` tools (not the shell) when it needs them, repeats the person's latest message (up to 8,000
+  names the command that reads the log, tells the model to read exact lines
+  when it needs them, repeats the person's latest message (up to 8,000
   characters), and adds a mid-turn note when the reset lands inside a tool
-  chain or an overflow retry. `details` is `{ kind: 'record', path, entries }`.
+  chain or an overflow retry. `details` is `{ kind: 'record', session, entries }`
+  (`entries`: the branch's messages).
 - The wire: the marker part gains `mode: 'record'`, `tokens_before` and
   `entries` when the reset lands (re-published at `compaction_end`), and the
-  session-log block carries `mode` and `entries`. A failed record write
-  returns nothing from the hook, so pi's summary keeps the session going.
-- The agent's `context: summary` (kortix.yaml, sent as `KORTIX_PI_CONTEXT`)
-  leaves the extension out: pi's own summary compaction below then runs.
+  session-log block carries `mode` and `entries`.
+- The agent's `context: summary` (kortix.yaml, sent as `KORTIX_PI_CONTEXT`),
+  or a daemon with no `KORTIX_SESSION_ID`, leaves the extension out: pi's own
+  summary compaction below then runs.
 
-pi's own compaction (an agent with `context: summary`, or a failed record write) runs on demand (`POST /session/:id/summarize`),
+pi's own compaction (an agent with `context: summary`, or no Kortix session) runs on demand (`POST /session/:id/summarize`),
 when the context nears the model's window, and when a model request overflows
 it or a reply is cut by the length limit (pi then retries that request once;
 the failed attempt's error is withheld from the wire and lands on the message
@@ -1525,6 +1550,30 @@ own token (`pi/extensions/control-plane.ts`), so every call acts as this
 session for its person. No tool waits on another session: each call is one
 API request (at most `CONTROL_PLANE_CALL_TIMEOUT_MS`, 10 s), and a person's
 message during the turn is steered in at the next step as always.
+
+### Session ids, and context by retrieval
+
+Every agent's system prompt carries a `## Session ids` section
+(`sessionIdsSection`, `pi/runtime.ts`): `session_id`, `project_id`,
+`parent_session_id` (the session that started it, `KORTIX_PARENT_SESSION_ID`)
+and `space_id`, plus the read command `kortix sessions log <session_id> -n 50`.
+A subagent inside the session (`session: "same"`) names the session's main
+conversation as its parent. The ids never change during a session, so the
+section keeps the prompt cache valid.
+
+A subagent does not get a copy of its parent's conversation. Its parent writes
+the task and the facts it depends on, and the subagent reads the rest from the
+parent's session log when it needs it. The API lets a session token read every
+session up its spawn chain (`metadata.spawned_by_session`, written only when a
+box creates its own child; `isSpawnAncestor`,
+`apps/api/src/projects/lib/session-visibility.ts`), as a reader, never an
+owner, and only on the read routes (`GET …/sessions/:id`, `GET …/sessions/:id/log`):
+a prompt, a permission answer or any other write to a parent stays `404`. The
+box's live log stays closed too (`403` on `/p/<box>/8000/kortix/runtime/log`);
+the CLI reads the stored log, which the box journals every 5 s during a turn.
+A person-set `parent_session_id` grants no read. `fork: true` (a full
+copy) stays opt-in: a copy is a large input, and it does not reuse the
+parent's prompt cache, because the `agent` tool text differs by depth.
 
 | Tool | Where | What |
 | --- | --- | --- |

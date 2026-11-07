@@ -60,6 +60,8 @@ export function sessionSourceText(source: string | null, triggerSlug: string | n
     return kind ? `a ${kind === 'cron' ? 'scheduled' : oneLine(kind, 30)} trigger${slug}` : `a trigger${slug}`;
   }
   if (source === 'system:chat-post') return 'Kortix (it started this thread itself)';
+  if (source === 'system:space-watcher') return 'Kortix, watching this space for the person it works for';
+  if (source === 'system:goal') return 'Kortix, working a goal for the person it belongs to';
   if (source === 'system' || source.startsWith('system:')) return 'Kortix (system)';
   // Channel sources carry their bot or inbox after a colon: `telegram:<bot>`, `email:<inbox>`.
   return SURFACES[source.split(':')[0]] ?? null;

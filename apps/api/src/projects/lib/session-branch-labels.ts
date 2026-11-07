@@ -7,7 +7,7 @@ import { projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 import { isSessionBranchName } from '../git/branches';
 import type { GitBranchInfo } from '../git/types';
-import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
+import { isPlaceholderSessionTitle, runtimeRootTitleFromSnapshot } from './session-title-placeholder';
 import { loadSessionUserStates } from './session-user-state';
 
 export interface BranchSessionLabel {
@@ -36,7 +36,7 @@ export interface SessionBranchRow {
 /** `serializeSession`'s `name`: a rename, then the runtime's root title, then the generated title. */
 export function sessionBranchTitle(row: SessionBranchRow): string | null {
   const customName = typeof row.customName === 'string' ? row.customName : null;
-  const autoName = typeof row.name === 'string' && !isPlaceholderOpencodeTitle(row.name) ? row.name : null;
+  const autoName = typeof row.name === 'string' && !isPlaceholderSessionTitle(row.name) ? row.name : null;
   return customName ?? runtimeRootTitleFromSnapshot(row.snapshot, row.runtimeSessionId) ?? autoName;
 }
 

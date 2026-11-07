@@ -19,6 +19,7 @@ export * from './markdown-math';
 export * from './session-attachments';
 export * from './file-tags';
 export * from './tag-blocks';
+export * from './html';
 export * from './trigger-event';
 export * from './reminder-prompt';
 export * from './peer-message-prompt';

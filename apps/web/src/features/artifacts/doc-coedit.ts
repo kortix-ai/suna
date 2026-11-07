@@ -51,6 +51,7 @@
 import {
   createArtifactDocSync,
   type ArtifactDocBase,
+  type ArtifactDocPage,
   type ArtifactDocSeed,
   type ArtifactDocSync,
   type ArtifactDocSyncOptions,
@@ -1011,6 +1012,25 @@ export function createDocCoedit(deps: DocCoeditDeps) {
 }
 
 export type DocCoeditSession = ReturnType<typeof createDocCoedit>;
+
+/**
+ * A read-only viewer shows the shared doc only while it is not behind the file. Only a leader
+ * merges an outside edit (an agent's write) into the doc, and a viewer never leads: with no
+ * editor open, the doc keeps the old text until its state is reset (idle 10 min). So the doc is
+ * current when an editor holds the lease (it merges within seconds), or when the last flush is
+ * the file version the viewer knows. Otherwise the viewer shows the file and asks again
+ * (`waitForSeed`). A file the Files mount re-versioned with the same text reads as behind too:
+ * the viewer then shows that same text from the file, without live edits, until an editor opens.
+ */
+export function viewerMayGoLive(
+  doc: Pick<ArtifactDocPage, 'seeded' | 'flushed' | 'lease'>,
+  entryVersion: string | null,
+  now: number,
+): boolean {
+  if (!doc.seeded) return false;
+  if (doc.lease && Date.parse(doc.lease.expires_at) > now) return true;
+  return !!doc.flushed && entryVersion !== null && doc.flushed.version === entryVersion;
+}
 
 /**
  * A read-only viewer of a doc nobody seeded shows the file; it asks every

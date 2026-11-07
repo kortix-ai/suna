@@ -15,7 +15,7 @@
 import { useMemo } from 'react';
 import type { ClassifiedPart, TurnError } from '../../core/turns';
 import { classifyTurn } from '../../core/turns';
-import type { MessageWithParts } from '../use-opencode-sessions';
+import type { MessageWithParts } from '../use-runtime-sessions';
 
 export interface TurnView {
   /** The original message this view was classified from — kept around so a

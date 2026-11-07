@@ -1,5 +1,5 @@
 /**
- * The ports opencode can be listening on inside a sandbox.
+ * The ports OpenCode listens on inside a box that still runs an old OpenCode daemon.
  *
  * It is a PAIR, not a single port. The daemon's verified reload boots the new
  * opencode on the idle half, proves it serves, and only then swaps to it and
@@ -20,26 +20,26 @@
  *     Counting the other half would let a session keep itself alive, which is
  *     the self-renewal the bounded-lifetime design exists to prevent.
  *
- * Kept in sync with `KORTIX_OPENCODE_INTERNAL_PORT` / `KORTIX_OPENCODE_STANDBY_PORT`
- * in the daemon's config.ts. These are the deployed defaults; the daemon allows
- * overrides, but nothing in this repo sets them.
+ * These are the defaults of the OpenCode-era daemon (`KORTIX_OPENCODE_INTERNAL_PORT`
+ * / `KORTIX_OPENCODE_STANDBY_PORT` in its config.ts, since deleted). Nothing in
+ * this repo overrode them.
  */
 
 /**
  * Live half by default — the port opencode boots on.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted".
  */
 export const OPENCODE_PRIMARY_PORT = 4096;
 
 /**
  * Idle half — becomes live after a verified reload swaps onto it.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted".
  */
 export const OPENCODE_STANDBY_PORT = 4097;
 
 /**
  * Every port opencode may be serving the session API on.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted".
  */
 export const OPENCODE_PORTS: ReadonlySet<number> = new Set([
   OPENCODE_PRIMARY_PORT,
@@ -48,7 +48,7 @@ export const OPENCODE_PORTS: ReadonlySet<number> = new Set([
 
 /**
  * True when this port carries opencode's session API, on either half.
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted".
  */
 export function isOpencodePort(port: number): boolean {
   return OPENCODE_PORTS.has(port);

@@ -62,7 +62,7 @@ if (SENTRY_DSN) {
       // promise rejections — drop them all here.
       'Server URL not ready',
       'sandbox is still loading',
-      // The daemon's not-ready 503, in every spelling (code, pi, OpenCode).
+      // The daemon's not-ready 503, in every spelling the SDK knows.
       ...RUNTIME_NOT_READY_MARKERS,
       // Expected billing-gate HTTP 402 outcomes (insufficient credits / no
       // account / subscription required — the exact strings emitted by

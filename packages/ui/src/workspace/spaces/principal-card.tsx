@@ -235,6 +235,7 @@ export function PrincipalRow({
   name,
   secondary,
   tag,
+  actions,
   onOpened,
 }: {
   projectId: string;
@@ -246,15 +247,20 @@ export function PrincipalRow({
   secondary?: string | null;
   /** A muted tag at the row's end ("You", "Default"). */
   tag?: string | null;
+  /** The row's own menu at its end, beside the card trigger (a button never nests in one). */
+  actions?: ReactNode;
   onOpened?: () => void;
 }) {
   return (
-    <li>
+    <li className={actions ? 'hover:bg-hover flex items-center rounded-md pr-1' : undefined}>
       <PrincipalHover
         projectId={projectId}
         principal={principal}
         onOpened={onOpened}
-        className="hover:bg-hover flex min-h-9 w-full items-center gap-2.5 rounded-md px-2 py-1"
+        className={cn(
+          'flex min-h-9 w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1',
+          actions ? 'flex-1' : 'hover:bg-hover',
+        )}
       >
         <span className="flex size-7 shrink-0 items-center justify-center">{avatar}</span>
         <span className="flex min-w-0 flex-1 flex-col">
@@ -263,6 +269,7 @@ export function PrincipalRow({
         </span>
         {tag ? <span className="text-muted-foreground shrink-0 text-xs">{tag}</span> : null}
       </PrincipalHover>
+      {actions}
     </li>
   );
 }
@@ -402,7 +409,7 @@ function AgentProfile({ projectId, name }: { projectId: string; name: string }) 
   const spaces = useProjectSpaces(projectId);
   const personalName = usePersonalSpaceName();
   const agent = config?.agents.find((item) => item.name === name);
-  const projectDefault = config?.default_agent ?? config?.open_code_default_agent ?? null;
+  const projectDefault = config?.default_agent ?? null;
   // The spaces it works in: channels that list it, and the person's own space for My Kortix.
   const memberOf = (spaces.data ?? []).filter(
     (space) => !space.archived_at && (space.kind === 'channel' ? !!space.agents?.includes(name) : isPersonalSpace(space) && isMyKortixAgentName(name)),

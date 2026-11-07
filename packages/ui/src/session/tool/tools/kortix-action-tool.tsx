@@ -44,7 +44,7 @@ import {
 } from '@phosphor-icons/react';
 import { useContext, useMemo } from 'react';
 import { MULTI_AGENT_ICON, multiAgentBody, PeerSendRow, runningKey } from './multi-agent-tool-bodies';
-import { parsePeerSend } from './multi-agent-tool-data';
+import { parsePeerSend } from '@kortix/sdk';
 import {
   KORTIX_PLATFORM_TOOLS,
   isReadAction,

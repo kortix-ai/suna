@@ -13,6 +13,7 @@
 import { connectorActions, connectorConnections, connectors, tunnelConnections } from '@kortix/db';
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { connectConnection, revokeConnections } from './connection-status';
 import type { ActionBinding, NormalizedAction, Risk } from './types';
 import cuaDriverTools from './cua-driver-tools.generated.json';
 
@@ -355,18 +356,17 @@ export async function attachComputerConnection(
   const rows = await tx.select().from(connectorConnections).where(owner);
   const hasDefault = rows.some((row) => row.isDefault);
   const reactivate = async (row: ConnectionRow) => {
-    const [updated] = await tx
-      .update(connectorConnections)
-      .set({
+    // A person pairs the machine now: a deliberate reconnect.
+    const updated = await connectConnection(
+      row.connectionId,
+      {
         tunnelId: input.tunnelId,
-        status: 'active',
         // An active account was not revoked: offboarding's reason no longer holds.
-        metadata: sql`${connectorConnections.metadata} - 'revokedReason'`,
+        metadata: sql`${connectorConnections.metadata} - 'revokedReason' - 'revokedAt'`,
         ...(hasDefault ? {} : { isDefault: true }),
-        updatedAt: new Date(),
-      })
-      .where(eq(connectorConnections.connectionId, row.connectionId))
-      .returning();
+      },
+      tx,
+    );
     return { connection: updated!, created: false };
   };
 
@@ -428,28 +428,20 @@ export async function attachComputerConnection(
  * number of accounts revoked.
  */
 export async function revokeComputersOfDepartedOwner(accountId: string, userId: string): Promise<number> {
-  const revoked = await db
-    .update(connectorConnections)
-    .set({
-      status: 'revoked',
-      isDefault: false,
-      metadata: sql`${connectorConnections.metadata} || '{"revokedReason":"owner_left"}'::jsonb`,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(connectorConnections.accountId, accountId),
-        ne(connectorConnections.status, 'revoked'),
-        inArray(
-          connectorConnections.tunnelId,
-          db
-            .select({ tunnelId: tunnelConnections.tunnelId })
-            .from(tunnelConnections)
-            .where(eq(tunnelConnections.ownerUserId, userId)),
-        ),
+  const revoked = await revokeConnections(
+    and(
+      eq(connectorConnections.accountId, accountId),
+      ne(connectorConnections.status, 'revoked'),
+      inArray(
+        connectorConnections.tunnelId,
+        db
+          .select({ tunnelId: tunnelConnections.tunnelId })
+          .from(tunnelConnections)
+          .where(eq(tunnelConnections.ownerUserId, userId)),
       ),
-    )
-    .returning({ connectionId: connectorConnections.connectionId });
+    ),
+    { set: { isDefault: false }, metadata: { revokedReason: 'owner_left' } },
+  );
   return revoked.length;
 }
 

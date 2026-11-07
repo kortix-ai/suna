@@ -9,7 +9,7 @@ import { WIRE_ID_TIME_SCALE } from '../wire-message-id';
  * bespoke fetch blocks must leave each of these exactly as it was.
  *
  * The signed proxy endpoint resolves through the real `runtime-client` and its
- * real helpers; `opencode-mapping` and the db row are the only stubs, plus the
+ * real helpers; `runtime-session-mapping` and the db row are the only stubs, plus the
  * `fetch` that stands in for the box.
  */
 
@@ -42,12 +42,15 @@ let closedTurns: string[] = [];
 
 mock.module('../../shared/db', () => ({
   hasDatabase: () => true,
+  // Statically imported by modules this graph loads; no test path runs it.
+  withDbTransaction: async <T>(fn: () => Promise<T>) => fn(),
+  afterDbCommit: (fn: () => void) => fn(),
   db: {
     select: (projection?: Record<string, unknown>) => ({
       from: () => ({
         where: () => ({
           limit: async () =>
-            projection && 'opencodeSessionId' in projection
+            projection && 'runtimeSessionId' in projection
               ? sessionRow
                 ? [sessionRow]
                 : []
@@ -58,10 +61,10 @@ mock.module('../../shared/db', () => ({
   },
 }));
 
-const realOpencodeMapping = await import('../opencode-mapping');
-mock.module('../opencode-mapping', () => ({
-  ...realOpencodeMapping,
-  sandboxOpencodeEndpoint: async () => ({
+const realRuntimeMapping = await import('../runtime-session-mapping');
+mock.module('../runtime-session-mapping', () => ({
+  ...realRuntimeMapping,
+  sandboxRuntimeEndpoint: async () => ({
     url: `https://box.test/p/${EXTERNAL_ID}/8000`,
     headers: { 'x-kortix': '1' },
   }),
@@ -87,7 +90,7 @@ const { cancelForwardedPrompt } = await import('./cancel-forwarded');
 beforeEach(() => {
   selectResults = [inboxRow];
   sessionRow = {
-    opencodeSessionId: OC_SESSION_ID,
+    runtimeSessionId: OC_SESSION_ID,
     sandboxUrl: `https://box.test/p/${EXTERNAL_ID}/8000/`,
     accountId: 'acct-1',
     projectId: 'proj-1',

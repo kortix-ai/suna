@@ -1,7 +1,7 @@
 /** Activation for provider-migration transitions (red-team #1/#2): generation
  *  CAS + lease fence + atomic pin writes, split out of
  *  provider-transition-store.ts (CAS contract on activateWithCas). */
-import { and, eq, inArray, lt, ne } from 'drizzle-orm';
+import { and, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import { providerTransitions, projects, type Database } from '@kortix/db';
 import { metadataMerge } from '../lib/metadata-merge';
 import { auditProviderTransition, type ProviderTransitionAuditRow } from './provider-transition-audit';
@@ -120,10 +120,16 @@ async function activateInTransaction(
     .where(eq(providerTransitions.transitionId, args.transitionId))
     .returning(TRANSITION_AUDIT_COLUMNS);
 
-  // Any lower-generation live transition can never win now.
+  // Any lower-generation live transition can never win now. The epoch bump
+  // fences the runners still driving them.
   await tx
     .update(providerTransitions)
-    .set({ status: 'superseded', heartbeatAt: null, updatedAt: args.now })
+    .set({
+      status: 'superseded',
+      heartbeatAt: null,
+      leaseEpoch: sql`COALESCE(${providerTransitions.leaseEpoch}, 0) + 1`,
+      updatedAt: args.now,
+    })
     .where(
       and(
         eq(providerTransitions.projectId, args.projectId),
@@ -205,9 +211,16 @@ export async function setPinWithGenerationBump(
       .update(projects)
       .set({ metadata: metadataMerge(patch, deleteKeys), sandboxProviderGeneration: newGen, updatedAt: args.now })
       .where(eq(projects.projectId, args.projectId));
+    // The epoch bump fences any runner still driving a cancelled row (see
+    // reserveSwitchTransition's supersede).
     await tx
       .update(providerTransitions)
-      .set({ status: 'cancelled', heartbeatAt: null, updatedAt: args.now })
+      .set({
+        status: 'cancelled',
+        heartbeatAt: null,
+        leaseEpoch: sql`COALESCE(${providerTransitions.leaseEpoch}, 0) + 1`,
+        updatedAt: args.now,
+      })
       .where(and(eq(providerTransitions.projectId, args.projectId), inArray(providerTransitions.status, LIVE_TRANSITION_STATUSES)));
     return { generation: newGen };
   });

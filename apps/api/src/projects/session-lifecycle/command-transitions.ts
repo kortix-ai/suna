@@ -1,3 +1,4 @@
+import type { SessionPromptAdmissionReason } from '@kortix/api-contract';
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { releaseCreateClaims } from '../../channels/core/threads';
@@ -38,7 +39,7 @@ import { heldSql, notHeldSql, notStopPausedSql, stopPausedOnDeliverySql } from '
  * Reading a display marker to make a correctness decision is how the id got
  * sent stale; the payload merge (`||`) is the durable half.
  */
-export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
+export type InboxAdmissionReason = Extract<SessionPromptAdmissionReason, 'older_prompt_pending' | 'turn_active'>;
 
 /** True when a lease write matched its row; logs the loss otherwise. */
 function appliedUnderLease(lease: CommandLease, write: string, rows: unknown[]): boolean {
@@ -268,10 +269,10 @@ export async function markCommandSucceeded(
 }
 
 /**
- * The row went to OpenCode. It is NOT finished.
+ * The row went to the runtime. It is NOT finished.
  *
  * `markCommandSucceeded` used to run here, and "succeeded" was a lie in the one
- * way that matters to the person watching: OpenCode PERSISTS a prompt and
+ * way that matters to the person watching: the runtime PERSISTS a prompt and
  * queues its execution behind the turn in flight, so between the POST and the
  * turn there is a real interval in which the message exists, belongs to the
  * transcript, and has not run. Closing the row there left the composer with
@@ -303,7 +304,7 @@ export async function markCommandSucceeded(
  * the POST started, and that is the abort's job, not this row's.
  *
  * A `noReply` delivery (the non-final row of a released Stop batch) closes
- * `delivered` here, at once: OpenCode persisted the message and started no turn,
+ * `delivered` here, at once: the runtime persisted the message and started no turn,
  * so no ledger turn will ever confirm it, and leaving it `forwarded` would sit
  * in `delivering` until the sweep force-closed it. The stop mark above still
  * wins over it.

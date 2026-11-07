@@ -85,16 +85,6 @@ export const sdkBoundaryConfig = {
         {
           patterns: [
             {
-              group: [
-                '*opencode*',
-                '**/opencode*',
-                '**/*opencode*',
-                '@opencode-ai/sdk',
-                '@opencode-ai/sdk/*',
-              ],
-              message: 'apps/web imports must use runtime-neutral @kortix/sdk surfaces.',
-            },
-            {
               // Allowlist, not denylist: everything under `@kortix/sdk/` is
               // forbidden except the canonical entry points. The SDK keeps ~20
               // @deprecated subpath aliases alive for external consumers; none
@@ -124,10 +114,7 @@ export const sdkBoundaryConfig = {
             },
             {
               group: [
-                '@/hooks/opencode/*',
-                '@/lib/opencode-sdk',
                 '@/stores/server-store',
-                '@/stores/opencode-*',
                 '@/stores/pending-queue-store',
                 '@/stores/pending-files-store',
               ],
@@ -143,34 +130,17 @@ export const sdkBoundaryConfig = {
               name: '@kortix/sdk',
               importNames: [
                 'getClient',
-                'getActiveOpenCodeUrl',
                 'createKortixPty',
                 'getKortixPtyWebSocketUrl',
                 'removeKortixPty',
               ],
               message: 'Use the session-scoped @kortix/sdk facade or @kortix/sdk/react.',
             },
-            {
-              name: '@kortix/sdk/internal/server-store',
-              importNames: ['getActiveOpenCodeUrl'],
-              message: 'Runtime URL selection belongs in @kortix/sdk.',
-            },
           ],
         },
       ],
       'no-restricted-syntax': [
         'error',
-        {
-          // Scoped to the runtime SDK sources this guardrail actually cares
-          // about (@kortix/sdk and anything opencode-named) — NOT every
-          // import named "OpenCode" from anywhere. An earlier unscoped
-          // version (`ImportSpecifier[imported.name=/OpenCode/i]`) also
-          // fired on an unrelated brand-mark icon component and forced it to
-          // export under a confusing alias for no boundary-safety reason.
-          selector:
-            'ImportDeclaration[source.value=/(^@kortix\\/sdk(\\/|$))|opencode/i] > ImportSpecifier[imported.name=/OpenCode/i]',
-          message: 'Import a runtime-neutral alias from @kortix/sdk.',
-        },
         {
           // 176 hand-typed literals across 30 `project*` families produced
           // duplicate cache entries for one dataset (`['project-sessions',

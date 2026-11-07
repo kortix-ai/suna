@@ -86,11 +86,11 @@ let providerRecoveryCalls = 0;
 let providerRecoveryEnabled = false;
 let providerRecoveryStatus: 'running' | 'recovering' | 'unavailable' = 'unavailable';
 let providerRecoveryGate: Promise<void> | null = null;
-/** Every call that reaches a sandbox: provider status or ingress, runtime health, OpenCode. */
+/** Every call that reaches a sandbox: provider status or ingress, runtime health, the runtime's routes. */
 let runtimeContactCalls = 0;
 let releaseProviderRecovery: (() => void) | null = null;
 let computeReopenCalls = 0;
-let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
+let runtimeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
 /** The signed daemon endpoint `/start` reads the runtime capabilities from. Null: unresolvable. */
 let runtimeEndpoint: { url: string; headers: Record<string, string> } | null = null;
 let sessionRow: typeof projectSessions.$inferSelect | null;
@@ -167,7 +167,7 @@ function resetState() {
   providerRecoveryGate = null;
   releaseProviderRecovery = null;
   computeReopenCalls = 0;
-  opencodeEnsureReason = 'unchanged';
+  runtimeEnsureReason = 'unchanged';
   runtimeEndpoint = null;
   lastSessionInsertValues = null;
   lifecycleCommandInserts.length = 0;
@@ -597,26 +597,26 @@ mock.module('../projects/runtime-inspection', () => ({
   },
 }));
 
-mock.module('../projects/opencode-mapping', () => ({
+mock.module('../projects/runtime-session-mapping', () => ({
   pickCanonicalRoot: () => 'ses_root_existing',
   resolveRootSessionId: () => 'ses_root_existing',
-  sandboxOpencodeEndpoint: async () => {
+  sandboxRuntimeEndpoint: async () => {
     runtimeContactCalls += 1;
     return runtimeEndpoint;
   },
-  listSandboxOpencodeSessions: async () => {
+  listSandboxRuntimeSessions: async () => {
     runtimeContactCalls += 1;
     return {
       ok: false,
-      reason: opencodeEnsureReason === 'not_ready' ? 'not_ready' : 'unreachable',
+      reason: runtimeEnsureReason === 'not_ready' ? 'not_ready' : 'unreachable',
     };
   },
-  ensureOpencodeSessionPin: async (input: { currentPin: string | null }) => {
+  ensureRuntimeSessionPin: async (input: { currentPin: string | null }) => {
     runtimeContactCalls += 1;
     return {
       pin: input.currentPin ?? 'ses_root_existing',
       changed: false,
-      reason: opencodeEnsureReason,
+      reason: runtimeEnsureReason,
       sessions: [],
     };
   },
@@ -1772,9 +1772,9 @@ describe('project session runtime guards', () => {
     const env = lastProvisionInput!.extraEnvVars ?? {};
     expect(env).not.toHaveProperty('KORTIX_END_USER_REF');
     expect(env).not.toHaveProperty('KORTIX_ORIGIN_REF');
-    // The pin is validated by the gateway and stored in OpenCode's ref form:
+    // The pin is validated by the gateway and stored in the session ref form:
     // every model is the `kortix` provider's.
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/anthropic/claude-opus-4-8');
+    expect(env.KORTIX_MODEL).toBe('kortix/anthropic/claude-opus-4-8');
     expect(env.GMAIL_TOKEN).toBe('g-secret');
     expect(env.STRIPE_SECRET).toBeUndefined();
 
@@ -2044,7 +2044,7 @@ describe('project session runtime guards', () => {
             'live-token': {
               token: 'live-token',
               state: 'active',
-              opencodeSessionId: 'ses_root_existing',
+              runtimeSessionId: 'ses_root_existing',
               messageId: 'msg_live',
               startedAtMs: Date.now() - 60_000,
             },
@@ -2104,7 +2104,7 @@ describe('project session runtime guards', () => {
             'live-token': {
               token: 'live-token',
               state: 'active',
-              opencodeSessionId: 'ses_root_existing',
+              runtimeSessionId: 'ses_root_existing',
               messageId: 'msg_live',
               startedAtMs: Date.now() - 60_000,
             },
@@ -2167,7 +2167,7 @@ describe('project session runtime guards', () => {
             'live-token': {
               token: 'live-token',
               state: 'active',
-              opencodeSessionId: 'ses_root_existing',
+              runtimeSessionId: 'ses_root_existing',
               messageId: 'msg_live',
               startedAtMs: Date.now() - 60_000,
             },
@@ -2927,7 +2927,6 @@ describe('project session runtime guards', () => {
     expect(env.KORTIX_API_URL).toBeTruthy();
     expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
     expect(env.KORTIX_GITHUB_TOKEN).toBeUndefined();
-    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
     expect(env.KORTIX_INITIAL_PROMPT).toBeUndefined();
 
     const shadowRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
@@ -2970,7 +2969,6 @@ describe('project session runtime guards', () => {
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_BASE_REF).toBe('dev');
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBeUndefined();
   });

@@ -2,10 +2,10 @@ import { classifyRuntimeRequest, turnStartBodyFields } from './runtime-request';
 import { createHash } from 'node:crypto';
 
 // Prompt delivery is the one MUTATING call on the sandbox proxy: POSTing the
-// same body twice to opencode enqueues the user's message twice (the 3x-queued
-// bug). opencode does not refuse a repeated messageID. The daemon does, on both
-// harnesses (pi from its persisted transcript, OpenCode by reading the message
-// OpenCode persisted), but only for boxes whose daemon has that check (R9.4,
+// same body twice to the runtime enqueues the user's message twice (the
+// 3x-queued bug). The harness does not refuse a repeated messageID. The daemon
+// does (pi from its persisted transcript; an old OpenCode daemon by reading the
+// message OpenCode persisted), but only for boxes whose daemon has that check (R9.4,
 // 2026-10-06) and only when the request carries a messageID. This cache stays
 // the replica-local first line and the only line for older daemons. It records
 // each prompt delivery by its Idempotency-Key, its wire messageID, or a
@@ -144,9 +144,9 @@ function evict(now: number): void {
  *  2. The body's wire `messageID`, when present (`/prompt_async` and
  *     `/message` from the SDK). This is the DURABLE identity: the id is the
  *     one thing about a prompt that survives its body being re-serialized,
- *     because opencode persists the user message under exactly the id the
- *     sender supplies. opencode itself does not refuse a second message under
- *     the same id; the daemon does (see the header).
+ *     because the runtime persists the user message under exactly the id the
+ *     sender supplies. The harness itself does not refuse a second message
+ *     under the same id; the daemon does (see the header).
  *
  *     The original rationale here — "opencode is the arbiter of 'has this
  *     already been answered?' BY ID ORDER" — is no longer true everywhere:
@@ -162,7 +162,7 @@ function evict(now: number): void {
  *     "continue" twice on purpose) never collides just because the words
  *     match. Scoped by sandbox + session, same as the hash below, so a
  *     message that landed on a sandbox before it rotated never blocks
- *     delivery to the sandbox that replaces it — that sandbox's opencode
+ *     delivery to the sandbox that replaces it — that sandbox's runtime
  *     genuinely never saw it.
  *  3. A content hash — the near-duplicate shield for everything else
  *     (`/command`, or a body with no messageID field): retries of the SAME

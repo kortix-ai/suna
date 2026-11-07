@@ -78,7 +78,7 @@ export function useFileSearch(query: string, enabled: boolean) {
   // hidden tab (see use-composer-focus.ts) would only re-read it when
   // something else happens to re-render the component. `getActiveServerUrl()`
   // has the identical gap — it wraps the same read with no subscription of
-  // its own (see use-opencode-events/index.ts, which pairs it with
+  // its own (see use-runtime-events/index.ts, which pairs it with
   // `useCurrentRuntime` for exactly this reason). `useActiveSandboxProxyContext`
   // is the SDK's reactive form: it re-renders on every `setCurrentRuntime`
   // (session switch), so `server` and the sandbox `searchWorkspaceFiles`
@@ -138,29 +138,29 @@ export function isMenuOpenTransition(wasOpen: boolean, isOpen: boolean): boolean
  * pure function — same reasoning as `isMenuOpenTransition` above — so the
  * key SELECTION is directly testable, not just asserted by code review.
  *
- * Commands has exactly ONE query-key shape: `useOpenCodeCommands`
- * (`use-opencode-sessions/commands.ts`) never branches, so the bare
- * `['opencode', 'commands']` prefix always reaches it.
+ * Commands has exactly ONE query-key shape: `useRuntimeCommands`
+ * (`packages/sdk/src/react/use-runtime-sessions/commands.ts`) never branches,
+ * so the bare `[...runtimeKeys.all, 'commands']` prefix always reaches it.
  *
- * Agents does NOT have one shape. `useOpenCodeAgents`
- * (`use-opencode-sessions/agents.ts:42-46`) branches on `projectId`:
+ * Agents does NOT have one shape. `useRuntimeAgents`
+ * (`packages/sdk/src/react/use-runtime-sessions/agents.ts`) branches on
+ * `projectId`:
  *
  * ```ts
  * queryKey: projectId
  *   ? [...qk.project.detail(projectId), 'agents']   // ['kx','project',<id>,'detail','agents']
  *   : directory
- *     ? [...opencodeKeys.agents(), 'dir', directory] // ['opencode','agents',<server>,'dir',<dir>]
- *     : opencodeKeys.agents()                        // ['opencode','agents',<server>]
+ *     ? [...runtimeKeys.agents(), 'dir', directory] // ['runtime','agents',<server>,'dir',<dir>]
+ *     : runtimeKeys.agents()                        // ['runtime','agents',<server>]
  * ```
  *
- * The bare `['opencode', 'agents']` prefix (`runtimeKeys.agents()` minus its
+ * The bare `['runtime', 'agents']` prefix (`runtimeKeys.agents()` minus its
  * trailing server segment) DOES reach the `directory` and no-argument
- * branches — both start with `opencodeKeys.agents()`, so it's a genuine
+ * branches — both start with `runtimeKeys.agents()`, so it's a genuine
  * prefix of both. It is DISJOINT AT SEGMENT 0 from the `projectId` branch's
  * `['kx', 'project', ...]` shape — no amount of prefix-matching bridges
- * `'opencode'` and `'kx'`. Every real composer call site passes `projectId`
- * (`instant-session-shell.tsx:88`, `composer-chat-input.tsx:108`,
- * `session-chat.tsx:1641`), so invalidating only the bare prefix was a
+ * `'runtime'` and `'kx'`. Every real composer call site passes `projectId`,
+ * so invalidating only the bare prefix was a
  * SILENT no-op for agents in every actual composer — commands and skills
  * refreshed, agents did not, and nothing about `invalidateQueries` failing
  * to match anything ever surfaces an error.
@@ -174,7 +174,7 @@ export function isMenuOpenTransition(wasOpen: boolean, isOpen: boolean): boolean
  * the exact same way `agents.ts` itself builds it, not a hand-typed
  * `['kx', 'project', ...]` literal — see `use-file-search.test.ts` for the
  * test that binds this to `qk.project.detail` directly, so a future
- * reshuffle of `useOpenCodeAgents`'s branching can't repeat this silently.
+ * reshuffle of `useRuntimeAgents`'s branching can't repeat this silently.
  */
 export function menuRevalidationKeys(projectId?: string | null): QueryKey[] {
   const keys: QueryKey[] = [runtimeKeys.agents().slice(0, -1), runtimeKeys.commands().slice(0, -1)];
@@ -190,7 +190,7 @@ export function menuRevalidationKeys(projectId?: string | null): QueryKey[] {
  * caching and revalidation, like query revalidate."
  *
  * `useRuntimeAgents`/`useRuntimeCommands` (`@kortix/sdk/react`, backed by
- * `packages/sdk/src/react/use-opencode-sessions/{agents,commands}.ts`) both
+ * `packages/sdk/src/react/use-runtime-sessions/{agents,commands}.ts`) both
  * set `staleTime: Infinity` — correct for the SDK's other consumers, which
  * have no equivalent of "the user is about to pick from this list right
  * now" to hang a refetch off of, so `packages/sdk` is deliberately left
@@ -209,7 +209,7 @@ export function menuRevalidationKeys(projectId?: string | null): QueryKey[] {
  * commands) and 3 with one (agents, commands, project-scoped agents) — MORE
  * calls than a naive read of "invalidate the agents cache" suggests, and
  * that is correct: `menuRevalidationKeys`'s own doc comment is the reason
- * why one key alone cannot reach every branch `useOpenCodeAgents` can take.
+ * why one key alone cannot reach every branch `useRuntimeAgents` can take.
  */
 export function useMenuRevalidation(isOpen: boolean, projectId?: string | null): void {
   const queryClient = useQueryClient();

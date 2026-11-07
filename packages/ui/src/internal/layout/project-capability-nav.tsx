@@ -71,7 +71,7 @@ function RowGlyph({ children }: { children: ReactNode }) {
  * by asking an agent in a session, so the sidebar lists only the agents you
  * pinned (none pinned: the first five) and All agents when more exist, then Review (with its "needs you" count), Models, and Settings
  * (Project admin, whose top bar holds every library and Members).
- * The header's + and All agents buttons sit on the Customize row itself.
+ * The header's + (New agent) button sits on the Customize row itself.
  */
 export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
   const pathname = useUiPathname();

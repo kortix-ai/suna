@@ -115,7 +115,8 @@ function takeWait(rest: string[]): number | null | { error: string } {
 }
 
 /**
- * `kortix apps events emit <app> <name> [--data <json|@file>] [--id <id>] [--wait[=s]]`.
+ * `kortix apps events emit <app> <name> [--data <json|@file>] [--id <id>] [--trigger <slug>] [--wait[=s]]`.
+ * `--trigger`: only that trigger gets the test, so testing one automation starts no other.
  * With --wait it reads the log until no row of the test is pending, prints the
  * outcome per trigger, and exits 0 only when a trigger fired.
  */
@@ -124,15 +125,16 @@ async function emitCommand(rest: string[], options: ContextOptions, json: boolea
   if (wait && typeof wait === 'object') return fail(wait.error);
   const rawData = takeFlagValue(rest, ['--data']);
   const id = takeFlagValue(rest, ['--id']);
+  const trigger = takeFlagValue(rest, ['--trigger']);
   const data = rawData === undefined ? undefined : parsePayloadFlag(rawData);
   if (data && 'error' in data) return fail(data.error.replaceAll('--payload', '--data'));
   const [target, name] = rest.filter((value) => !value.startsWith('-'));
-  if (!target || !name) return fail('usage: kortix apps events emit <app> <event-name> [--data <json|@file>] [--id <id>] [--wait]');
+  if (!target || !name) return fail('usage: kortix apps events emit <app> <event-name> [--data <json|@file>] [--id <id>] [--trigger <slug>] [--wait]');
   const ctx = await context(options);
   if (!ctx) return 1;
   const { app, sent } = await scoped(ctx, async () => {
     const found = await resolveApp(ctx.apps, target);
-    const answer = await ctx.apps.events.test(found.app_id, { name, ...(data ? { data: data.value } : {}), ...(id ? { id } : {}) });
+    const answer = await ctx.apps.events.test(found.app_id, { name, ...(data ? { data: data.value } : {}), ...(id ? { id } : {}), ...(trigger ? { trigger } : {}) });
     return { app: found, sent: answer };
   });
   const testId = sent.ids[0]!;

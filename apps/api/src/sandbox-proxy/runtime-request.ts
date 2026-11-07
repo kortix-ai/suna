@@ -3,8 +3,8 @@
  *
  * The one place the API recognizes a runtime's turn routes. Two spellings reach
  * it: the daemon's Kortix routes (`/kortix/runtime/sessions/:id/prompt|command|
- * compact|abort` and `/kortix/runtime/questions/:id/reply|reject`) and OpenCode's REST
- * routes (`/session/:id/prompt_async|message|command|summarize|abort`), which
+ * compact|abort` and `/kortix/runtime/questions/:id/reply|reject`) and the box's
+ * OpenCode-shaped REST routes (`/session/:id/prompt_async|message|command|summarize|abort`), which
  * web and older API instances still send. Every proxy guard (turn ledger, dedupe,
  * env sync, deadline, client stop, retry budget) asks this function instead of
  * keeping its own regex.
@@ -110,7 +110,7 @@ export function classifyRuntimeRequest(method: string, path: string): RuntimeReq
 /**
  * The message identity a turn-start body carries: the client-minted wire id
  * and whether the prompt asks for no reply. The Kortix route spells them
- * `message_id` / `no_reply`, OpenCode's `messageID` / `noReply`.
+ * `message_id` / `no_reply`, the `/session/...` routes `messageID` / `noReply`.
  */
 export function turnStartBodyFields(body: ArrayBuffer | undefined): {
   messageId: string | null;

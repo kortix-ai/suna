@@ -1,4 +1,4 @@
-import type { TunnelRelay } from './relay';
+import type { AgentSocket, TunnelRelay } from './relay';
 import type { HeartbeatManager } from './heartbeat';
 import type { TunnelAuthMessage, AuthResult } from '../shared/types';
 
@@ -14,9 +14,9 @@ export interface WsHandlerOptions {
 }
 
 export interface WsHandlers {
-  onOpen(tunnelId: string, ws: WebSocket): void;
-  onMessage(tunnelId: string, ws: WebSocket, message: string | Buffer): void;
-  onClose(tunnelId: string, ws?: WebSocket): void;
+  onOpen(tunnelId: string, ws: AgentSocket): void;
+  onMessage(tunnelId: string, ws: AgentSocket, message: string | Buffer): void;
+  onClose(tunnelId: string, ws?: AgentSocket): void;
 }
 
 export function createWsHandlers(relay: TunnelRelay, opts?: WsHandlerOptions): WsHandlers {
@@ -26,7 +26,7 @@ export function createWsHandlers(relay: TunnelRelay, opts?: WsHandlerOptions): W
   const authTimeoutMs = opts?.authTimeoutMs ?? 10_000;
 
   const pendingConnections = new Map<
-    WebSocket,
+    AgentSocket,
     {
       tunnelId: string;
       timer: ReturnType<typeof setTimeout>;
@@ -35,7 +35,7 @@ export function createWsHandlers(relay: TunnelRelay, opts?: WsHandlerOptions): W
   >();
 
   return {
-    onOpen(tunnelId: string, ws: WebSocket) {
+    onOpen(tunnelId: string, ws: AgentSocket) {
       const timer = setTimeout(() => {
         pendingConnections.delete(ws);
         try {
@@ -46,7 +46,7 @@ export function createWsHandlers(relay: TunnelRelay, opts?: WsHandlerOptions): W
       pendingConnections.set(ws, { tunnelId, timer, authenticating: false });
     },
 
-    async onMessage(tunnelId: string, ws: WebSocket, message: string | Buffer) {
+    async onMessage(tunnelId: string, ws: AgentSocket, message: string | Buffer) {
       const msgStr = typeof message === 'string' ? message : message.toString('utf-8');
       const msgSize =
         typeof message === 'string'
@@ -159,7 +159,7 @@ export function createWsHandlers(relay: TunnelRelay, opts?: WsHandlerOptions): W
       relay.handleAgentMessage(tunnelId, ws, message);
     },
 
-    onClose(tunnelId: string, ws?: WebSocket) {
+    onClose(tunnelId: string, ws?: AgentSocket) {
       const pending = ws ? pendingConnections.get(ws) : undefined;
       if (pending) {
         clearTimeout(pending.timer);

@@ -42,7 +42,7 @@ function read(overrides: Partial<RuntimeProjectionRead> = {}): RuntimeProjection
       source: 'daemon_push',
       capturedAt: new Date(NOW - 60_000),
     },
-    pinnedOpencodeSessionId: 'ses_abc',
+    pinnedRuntimeSessionId: 'ses_abc',
     runtimeRunning: true,
     ...overrides,
   };
@@ -69,14 +69,14 @@ describe('resolveRuntimeLeg', () => {
   });
 
   test('a projection from a DIFFERENT OpenCode root is refused (the ghost rule)', () => {
-    const leg = resolveRuntimeLeg(read({ pinnedOpencodeSessionId: 'ses_reprinned' }), NOW);
+    const leg = resolveRuntimeLeg(read({ pinnedRuntimeSessionId: 'ses_reprinned' }), NOW);
     expect(leg).toEqual({ known: false, reason: 'identity_mismatch' });
   });
 
   test('a session with no pin yet is NOT a mismatch', () => {
     // A cold box mid-boot has no pin. Refusing here would blank the roster for
     // exactly the session that most needs it painted.
-    const leg = resolveRuntimeLeg(read({ pinnedOpencodeSessionId: null }), NOW);
+    const leg = resolveRuntimeLeg(read({ pinnedRuntimeSessionId: null }), NOW);
     expect(leg.known).toBe(true);
   });
 

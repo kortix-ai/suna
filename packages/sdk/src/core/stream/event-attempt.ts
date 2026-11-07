@@ -218,7 +218,7 @@ export function dispatchToStreamSubscribers<A extends unknown[]>(
     try {
       fn(...args);
     } catch (e) {
-      console.warn('[opencode-events] subscriber handler threw, skipping', e);
+      console.warn('[runtime-events] subscriber handler threw, skipping', e);
     }
   }
 }

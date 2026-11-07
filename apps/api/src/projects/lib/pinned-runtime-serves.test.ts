@@ -9,8 +9,8 @@
  * But "do not REPAIR it" and "refuse the SESSION" were the same statement, and
  * the second does not follow. Measured on dev 2026-09-28, a pinned box:
  *
- *   daemon ok · opencode ok · runtimeReady true · uptime 14917s
- *   components: cli=current, skills=current, agent=skipped, opencode=current
+ *   daemon ok · runtime ok · runtimeReady true · uptime 14917s
+ *   components: cli=current, skills=current, agent=skipped
  *   reasons:    {"agent": "updates pinned after a rollback"}
  *
  * Three of four components current, the box demonstrably serving — and the
@@ -29,12 +29,12 @@ import { pinnedRuntimeMayServe } from './pinned-runtime';
 /** The measured dev box, verbatim in shape. */
 const pinnedButServing = {
   daemon: 'ok',
-  opencode: 'ok',
+  harness: { id: 'pi', state: 'ok' },
   runtimeReady: true,
   runtime: {
     build: 1790591344,
     pinned: true,
-    components: { cli: 'current', skills: 'current', agent: 'skipped', opencode: 'current' },
+    components: { cli: 'current', skills: 'current', agent: 'skipped' },
     reasons: { agent: 'updates pinned after a rollback' },
   },
 };
@@ -45,9 +45,9 @@ describe('a pinned runtime', () => {
   });
 
   test('still reports it can serve, which is what the open must key on', () => {
-    // `opencode: 'ok'` is the whole difference between "stale but usable" and
-    // "cannot answer a prompt". The open refuses only the second.
-    expect(classifyDaemonHealth(pinnedButServing).opencode).toBe('ok');
+    // A runtime state of `ok` is the whole difference between "stale but usable"
+    // and "cannot answer a prompt". The open refuses only the second.
+    expect(classifyDaemonHealth(pinnedButServing).runtimeState).toBe('ok');
   });
 
   test('carries the operator detail, so nothing is silently swallowed', () => {
@@ -63,12 +63,12 @@ describe('a pinned runtime', () => {
     // The open must keep failing this one: blocked AND not serving.
     const dead = {
       ...pinnedButServing,
-      opencode: 'starting',
-      runtime: { ...pinnedButServing.runtime, components: { opencode: 'failed' } },
+      harness: { id: 'pi', state: 'starting' },
+      runtime: { ...pinnedButServing.runtime, components: { agent: 'failed' } },
     };
     const c = classifyDaemonHealth(dead);
     expect(c.klass).toBe('blocked');
-    expect(c.opencode).not.toBe('ok');
+    expect(c.runtimeState).not.toBe('ok');
     // …and THIS one the open must still refuse.
     expect(pinnedRuntimeMayServe(c)).toBe(false);
   });
@@ -76,7 +76,7 @@ describe('a pinned runtime', () => {
   test('a missing classification is refused, never waved through', () => {
     expect(pinnedRuntimeMayServe(null)).toBe(false);
     expect(pinnedRuntimeMayServe(undefined)).toBe(false);
-    expect(pinnedRuntimeMayServe({ opencode: null })).toBe(false);
+    expect(pinnedRuntimeMayServe({ runtimeState: null })).toBe(false);
   });
 
   test('an unpinned healthy box is not blocked at all', () => {

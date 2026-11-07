@@ -1527,3 +1527,65 @@ flow('SPACE-23', meta([...Object.values(MEMBER_ROUTES), ROUTES.list, ROUTES.crea
     await world.close();
   }
 });
+
+const PROACTIVE = '/v1/projects/:projectId/spaces/:spaceId/proactive';
+const PROACTIVE_ROUTES = { get: `GET ${PROACTIVE}`, put: `PUT ${PROACTIVE}` };
+type Proactive = { space_id: string; enabled: boolean; daily_brief: boolean; brief_timezone: string; can_edit: boolean };
+
+flow('SPACE-30', meta([...Object.values(PROACTIVE_ROUTES), ROUTES.create, FEATURES_ROUTE]), async (ctx) => {
+  const { team, project, world } = await openWorld(ctx);
+  const params = { projectId: project.id };
+  try {
+    await world.setFeature('chat', true);
+    const priya = await team.addMember('member');
+    await team.grantProjectRole(project.id, priya.userId!, 'member');
+    const created = await world.owner.post(SPACES, { name: 'Launch' }, { params });
+    created.status(201);
+    const spaceParams = { ...params, spaceId: created.json<Space>().space_id };
+
+    await ctx.step('with spaces_proactive off, GET and PUT /proactive → 403 feature_disabled naming spaces_proactive', async () => {
+      (await world.owner.get(PROACTIVE, { params: spaceParams })).status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'spaces_proactive');
+      (await world.owner.put(PROACTIVE, { enabled: true }, { params: spaceParams })).status(403).body().has('$.code', 'feature_disabled');
+    });
+
+    await world.setFeature('spaces_proactive', true);
+    await ctx.step('flag on: a space nobody turned on reads off, and its creator may change it; nothing is stored by the read', async () => {
+      (await world.owner.get(PROACTIVE, { params: spaceParams }))
+        .status(200).body().has('$.enabled', false).has('$.daily_brief', false).has('$.brief_timezone', 'UTC').has('$.can_edit', true);
+      const { rows } = await world.db.query('SELECT 1 FROM kortix.project_space_watchers WHERE space_id = $1', [spaceParams.spaceId]);
+      if (rows.length !== 0) throw new Error('a read stored a watcher row');
+    });
+
+    await ctx.step('the creator turns Proactive on → 200 enabled; the stored watcher works for the creator', async () => {
+      (await world.owner.put(PROACTIVE, { enabled: true }, { params: spaceParams })).status(200).body().has('$.enabled', true).has('$.daily_brief', false);
+      (await world.owner.get(PROACTIVE, { params: spaceParams })).status(200).body().has('$.enabled', true);
+      const { rows } = await world.db.query<{ owner_user_id: string; enabled: boolean }>(
+        'SELECT owner_user_id, enabled FROM kortix.project_space_watchers WHERE space_id = $1',
+        [spaceParams.spaceId],
+      );
+      if (rows[0]?.owner_user_id !== world.ownerUserId || rows[0]?.enabled !== true) throw new Error(`watcher row ${JSON.stringify(rows)}`);
+    });
+
+    await ctx.step('the daily brief stores its zone and keeps Proactive on; an unknown zone → 400 invalid_timezone', async () => {
+      (await world.owner.put(PROACTIVE, { daily_brief: true, brief_timezone: 'Europe/Berlin' }, { params: spaceParams }))
+        .status(200).body().has('$.enabled', true).has('$.daily_brief', true).has('$.brief_timezone', 'Europe/Berlin');
+      (await world.owner.put(PROACTIVE, { brief_timezone: 'Mars/Olympus' }, { params: spaceParams })).status(400).body().has('$.code', 'invalid_timezone');
+      (await world.owner.get(PROACTIVE, { params: spaceParams })).status(200).body().has('$.brief_timezone', 'Europe/Berlin');
+    });
+
+    await ctx.step('a member who did not create the channel reads it with can_edit false, and a change → 403 forbidden', async () => {
+      (await ctx.client.as(priya).get(PROACTIVE, { params: spaceParams })).status(200).body().has('$.enabled', true).has('$.can_edit', false);
+      (await ctx.client.as(priya).put(PROACTIVE, { enabled: false }, { params: spaceParams })).status(403).body().has('$.code', 'forbidden');
+      (await world.owner.get(PROACTIVE, { params: spaceParams })).status(200).body().has('$.enabled', true);
+    });
+
+    await ctx.step('the creator turns it off → 200; an unknown or malformed space → 404 space_not_found', async () => {
+      (await world.owner.put(PROACTIVE, { enabled: false }, { params: spaceParams })).status(200).body().has('$.enabled', false);
+      for (const spaceId of [randomUUID(), 'not-a-uuid']) {
+        (await world.owner.get(PROACTIVE, { params: { ...params, spaceId } })).status(404).body().has('$.code', 'space_not_found');
+      }
+    });
+  } finally {
+    await world.close();
+  }
+});

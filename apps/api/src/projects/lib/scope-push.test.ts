@@ -5,10 +5,10 @@
 // next prompt." and delegated delivery to the per-prompt hot sync. That
 // delegation was unreliable (silent early-returns; only fires when the prompt
 // routes through :8000 /session/{id}/{prompt_async|message}; and even then the
-// daemon took the dispose fast path, which does not refresh opencode's process
-// env). `pushSessionScopeToSandbox` is the fix: re-derive the snapshot from the
-// freshly-committed row, POST it to the daemon, and restart opencode so
-// spawnChild re-runs mergeProjectEnv + the gateway strip.
+// OpenCode daemon took the dispose fast path, which did not refresh the
+// OpenCode process env). `pushSessionScopeToSandbox` is the fix: re-derive the
+// snapshot from the freshly-committed row, POST it to the daemon, and ask the
+// runtime to apply it (`refreshModels: true`).
 //
 // These tests mirror `agent-config-push.test.ts` for the model/config push.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -22,7 +22,7 @@ let posted: Array<{
   env?: Record<string, string>;
   names?: string[];
   refreshModels?: boolean;
-  opencodeEnv?: Record<string, string | null>;
+  runtimeEnv?: Record<string, string | null>;
   llmGatewayEnabled?: boolean;
   llmGatewayBaseUrl?: string;
   llmGatewayDenyEnv?: string;
@@ -111,7 +111,7 @@ function recordingFetch(): (u: unknown, init?: { body?: string }) => Promise<Res
       env: body.env as Record<string, string> | undefined,
       names: body.names as string[] | undefined,
       refreshModels: body.refreshModels as boolean | undefined,
-      opencodeEnv: body.opencodeEnv as Record<string, string | null> | undefined,
+      runtimeEnv: body.runtimeEnv as Record<string, string | null> | undefined,
       llmGatewayEnabled: body.llmGatewayEnabled as boolean | undefined,
       llmGatewayBaseUrl: body.llmGatewayBaseUrl as string | undefined,
       llmGatewayDenyEnv: body.llmGatewayDenyEnv as string | undefined,
@@ -145,11 +145,11 @@ beforeEach(() => {
 
 describe('pushSessionScopeToSandbox', () => {
   test('pushes the re-derived snapshot and asks for the opencode restart', async () => {
-    // opencode's process env is shaped at spawn, so the snapshot alone changes
-    // nothing — `refreshModels: true` is what makes the daemon respawn it and
-    // re-run mergeProjectEnv. This is the load-bearing part of the fix: the
-    // daemon-side gate turns that into a respawn (not a dispose) because the
-    // project-secret set moved.
+    // The snapshot alone changes nothing in the runtime — `refreshModels: true`
+    // is what makes the daemon apply it (pi in place). This is the
+    // load-bearing part of the fix: on an old OpenCode box the daemon-side gate
+    // turns it into a respawn (not a dispose) because the project-secret set
+    // moved.
     const result = await pushSessionScopeToSandbox(INPUT);
 
     expect(result).toEqual({ applied: true });

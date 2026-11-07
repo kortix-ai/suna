@@ -38,8 +38,11 @@ person.
 3. **A business fact is an API event.** Sign-up, project, session, message,
    checkout and payment events fire on the server after the database write. The
    browser loses events to ad blockers; the server does not.
-4. **Only Kortix hosts report.** `kortix.com`, `staging.kortix.com` and
-   `dev.kortix.com` send to the project; every event carries `environment`.
+4. **Only production reports** (decision 2026-11-06; the free plan has one
+   project). The web client reports on `kortix.com` only; dev, staging, self-host,
+   white-label and preview hosts never download posthog-js. The API sends only
+   where `POSTHOG_PROJECT_KEY` is set: the prod blob, not dev or staging.
+   Every event carries `environment`.
    A self-hosted, white-label or preview host never downloads posthog-js. The
    API sends only when `POSTHOG_PROJECT_KEY` is set.
 5. **URLs are reduced before they leave the browser.** On signed-in and
@@ -165,12 +168,12 @@ staging events never reach the charts.
 
 ## Where the key lives
 
-- Web: `POSTHOG_PROJECT_KEY` in `posthog-config.ts`, selected by host. No
-  hosting setting is involved.
-- API: `POSTHOG_PROJECT_KEY` in the Secrets Manager blob of each deployed env
-  (`kortix-dev-env` us-east-2, `kortix-staging-env` and `kortix-prod-env`
-  eu-west-2), mirrored in `apps/api/.env.dev` / `.env.staging` / `.env.prod`
-  (the dotenvx-secrets skill). Unset = no server events.
+- Web: `POSTHOG_PROJECT_KEY` in `posthog-config.ts`, used on `kortix.com` only.
+  No hosting setting is involved.
+- API: `POSTHOG_PROJECT_KEY` in the prod Secrets Manager blob `kortix-prod-env`
+  (eu-west-2), mirrored in `apps/api/.env.prod` (the dotenvx-secrets skill).
+  `kortix-dev-env` and `kortix-staging-env` do not carry it (removed
+  2026-11-06), so dev and staging send nothing. Unset = no server events.
 
 ## PostHog MCP
 
@@ -180,11 +183,17 @@ analytics questions and edits insights, dashboards and surveys directly.
 
 ## Verify an event
 
-1. Local: put `NEXT_PUBLIC_POSTHOG_KEY=phc_…` in `apps/web/.env.local` (any
-   localhost run reports as `environment=local` only with this variable).
+Never point a test at the Kortix project. Use your own free PostHog project,
+or a local capture sink that logs what the API sends.
+
+1. Web, local: put your own project's `NEXT_PUBLIC_POSTHOG_KEY=phc_…` in
+   `apps/web/.env.local`. A localhost run reports only with this variable, as
+   `environment=local`, and keeps bot traffic (scripted browsers) tagged
+   `$browser_type: bot`.
 2. In the browser console run `localStorage.setItem('ph_debug', 'true')` and
    reload: posthog-js logs every event with its properties before it sends it.
-3. API: set `POSTHOG_PROJECT_KEY` in `apps/api/.env.local`, trigger the action,
-   then find the event in PostHog → Activity, filtered on `environment = local`.
-4. Production dashboards filter out `environment != production` through the
-   project's test-account filter.
+3. API, local: set `POSTHOG_PROJECT_KEY` (your project, or any `phc_` value)
+   and `POSTHOG_HOST=http://localhost:<port>` (a sink that logs each `/batch/`
+   body) in `apps/api/.env.local`, trigger the action, read the sink.
+4. Production: PostHog → Activity, filter `environment = production`. The
+   dashboards apply the project's test-account filter by default.

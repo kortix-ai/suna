@@ -3,7 +3,7 @@ import { isMyKortixAgentName } from '@kortix/shared';
 import { canonicalizeGrantActions, canonicalizeGrantConnectors } from '../../iam/agent-scope';
 import type { GitBackedProject } from '../git';
 import { disabledMyKortixAgentGrant, myKortixAgentGrant } from '../lib/my-kortix-agent';
-import { OPENCODE_BUILTIN_AGENTS_V3 } from '@kortix/manifest-schema';
+import { RUNTIME_BUILTIN_AGENTS } from '@kortix/manifest-schema';
 import { manifestIssueSummary, parseManifestString } from '../manifest-io';
 import { extractAgents, loadProjectAgents } from './parse';
 import type { AgentSpec, LoadedAgents } from './types';
@@ -11,7 +11,7 @@ import type { AgentSpec, LoadedAgents } from './types';
 /**
  * The non-binding agent sentinel. `project_sessions.agent_name` defaults to this
  * literal and NO agent is ever named `default` — the runtime resolves it to
- * OpenCode's configured `default_agent` (a general-purpose agent). Kept in sync
+ * the configured `default_agent` (a general-purpose agent). Kept in sync
  * with the proxy's copy (sandbox-proxy/pre-prompt-env-sync.ts).
  */
 export const DEFAULT_AGENT_SENTINEL = 'default';
@@ -46,7 +46,7 @@ export async function resolveAgentGrant(
  * sandbox roster, 2026-09-15: build, compaction, explore, general, plan,
  * summary, title).
  */
-export const OPENCODE_BUILTIN_AGENT_NAMES: ReadonlySet<string> = new Set([
+export const RUNTIME_BUILTIN_AGENT_NAMES: ReadonlySet<string> = new Set([
   'build',
   'compaction',
   'explore',
@@ -82,14 +82,14 @@ export function isLaunchableAgentName(agentName: string, loaded: LoadedAgents): 
   if (name === DEFAULT_AGENT_SENTINEL) return true;
   // My Kortix is launchable only when kortix.yaml sets `builtin_agents.my_kortix: true`.
   if (isMyKortixAgentName(name)) return loaded.builtinAgents?.my_kortix === true;
-  // OpenCode ships these in every runtime and a governed project's picker can
+  // OpenCode shipped these in every runtime and a governed project's picker can
   // still send one. They are the runtime's own, not another project's, so they
   // keep running exactly as before: an undeclared built-in resolves to the
   // deny-all grant in `grantFromLoadedAgents`, never a widening. Only declared
   // agents run: the compiled config disables build/plan/general/explore unless
   // the manifest declares the name.
-  const compiledOff = (OPENCODE_BUILTIN_AGENTS_V3 as readonly string[]).includes(name);
-  if (OPENCODE_BUILTIN_AGENT_NAMES.has(name) && !compiledOff) return true;
+  const compiledOff = (RUNTIME_BUILTIN_AGENTS as readonly string[]).includes(name);
+  if (RUNTIME_BUILTIN_AGENT_NAMES.has(name) && !compiledOff) return true;
   if (loaded.specs.length === 0 && loaded.errors.length === 0) return true;
   return loaded.specs.some((s) => s.name === name && s.enabled);
 }

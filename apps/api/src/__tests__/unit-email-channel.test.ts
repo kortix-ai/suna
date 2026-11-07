@@ -43,6 +43,8 @@ function makeChain(): any {
 }
 
 mock.module("../shared/db", () => ({
+  withDbTransaction: async <T>(action: () => Promise<T>) => action(),
+  afterDbCommit: (action: () => void) => action(),
   db: {
     select: () => makeChain(),
     insert: () => makeChain(),
@@ -105,7 +107,7 @@ let createCalls: Array<any> = [];
 let deliverOutcome: "delivered" | "no-session" = "delivered";
 
 // The email tools go through the `kortix connectors` CLI, which every harness's
-// shell has. OpenCode alone has the MCP face, so an MCP-only prompt left a pi
+// shell has. pi serves no MCP servers, so an MCP-only prompt left a pi
 // session unable to read or answer the thread (W1 B8).
 function expectConnectorEmailPrompt(prompt: string) {
   expect(prompt).toContain(

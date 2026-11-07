@@ -857,7 +857,11 @@ const catalog = {
         },
         "chat_front": {
           "name": "Spaces-Router",
-          "description": "With Spaces on, the agent you chat with in a thread is a router: it hands the work to your agents and writes back like a person, in short messages with the result, a link or the decision you need to make. Your agents share the thread through its files, so the router passes file paths, not retyped text. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml."
+          "description": "With Spaces on, the agent you chat with in a thread is a router: it does quick work itself (an answer, a short text, a look at the thread files) and hands longer work to the Space's agents. It writes back like a person, in short messages. An agent saves its full result as a file in the thread, and the router links that file instead of retyping it. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml."
+        },
+        "spaces_proactive": {
+          "name": "Spaces-Proactive",
+          "description": "With Spaces on, a space can watch itself: turn on Proactive in its details, and an agent reads what happens there (finished threads, questions left open, people who join) and writes in the chat only when it matters: a result worth sharing, a decision you need to make, or something overdue. It can also start a thread that does the work. Optional daily brief at 9:00."
         }
       },
       "channelsSwitch": {
@@ -1342,6 +1346,7 @@ const catalog = {
     "drive": "Drive",
     "repo": "Repo",
     "searchApps": "Search apps",
+    "searchArtifacts": "Search artifacts",
     "appsNoMatches": "No matches",
     "spaces": {
       "channels": "Spaces",
@@ -4829,6 +4834,7 @@ const catalog = {
       "textb7668a581f59": "Failed to disconnect",
       "textb79cac926e0b": "Help",
       "textb7d2844482b4": "Open the full approval page",
+      "text648f297b3b79": "Show in App",
       "textb7de71558bf4": "Selected connectors resolve this secret on the server. The sandbox receives no value.",
       "textb7e29198fc4e": "{value0} key removed",
       "textb80a37564fbb": "Query",
@@ -7825,7 +7831,8 @@ const catalog = {
       "missed_wake": "The last wake is overdue.",
       "ask_overdue": "An ask is past its due time.",
       "verification_stalled": "Verification started more than 24 hours ago.",
-      "unreadable": "This folder has no goal file."
+      "unreadable": "This folder has no goal file.",
+      "blocked": "This goal cannot go on by itself."
     },
     "sessionChip": "Goal",
     "sessionRole": {
@@ -7849,6 +7856,24 @@ const catalog = {
       "draft": "Getting started: the agent is writing the plan.",
       "working": "In progress. Next check {time}.",
       "workingNoWake": "In progress."
+    },
+    "blocked": {
+      "credits": "It ran out of credits, so no wake can start.",
+      "wake_cap": "It used all {max} wakes for today.",
+      "session_cap": "It used all {max} sessions it may start.",
+      "owner_lost": "Its agent session failed, and no session took over.",
+      "storage": "Its folder in Files could not be read or written.",
+      "flag_off": "Goals is turned off for this project.",
+      "setup": "Kortix is still setting it up."
+    },
+    "blockedNext": {
+      "credits": "Add credits, then resume it.",
+      "wake_cap": "It goes on by itself after midnight UTC.",
+      "session_cap": "Stop it, or ask a project admin to raise its session limit.",
+      "owner_lost": "Start it again to give it a new session.",
+      "storage": "Check the folder in Files, then resume it.",
+      "flag_off": "Turn on Goals for this project, then resume it.",
+      "setup": "This finishes by itself within a minute."
     }
   },
   "agentEditor": {
@@ -8404,7 +8429,7 @@ const catalog = {
       "composerKeys": "Enter to send · Shift+Enter for a new line",
       "closeSelection": "Discard selected passage",
       "preparingSelection": "Preparing selected passage…",
-      "selectionCaptureFailed": "Could not prepare the selected passage. Discard it to leave a whole-Artifact comment.",
+      "selectionCaptureFailed": "Could not prepare the selected passage. Discard it to leave a comment on the whole artifact.",
       "commentSelection": "Comment",
       "selectionTooLong": "This passage is too long to comment on. Select {max} characters or fewer.",
       "selectionUnavailable": "This passage cannot be anchored. Select another passage.",
@@ -8412,8 +8437,8 @@ const catalog = {
       "commentSaveFailed": "Could not save the document. Try again before commenting.",
       "events": {
         "saved": "saved a version",
-        "published": "published the Artifact",
-        "renamed": "renamed the Artifact",
+        "published": "published the artifact",
+        "renamed": "renamed the artifact",
         "visibility_changed": "changed visibility",
         "shared_with_changed": "changed who can view",
         "restored": "restored a version",
@@ -8425,7 +8450,7 @@ const catalog = {
         "sent_to_agent": "sent feedback to an agent"
       },
       "person": "Person",
-      "deleteRootDescription": "Its text is removed for everyone, and the thread becomes read-only. This cannot be undone.",
+      "deleteRootDescription": "Its text is removed for everyone, and the thread leaves the comments list. This cannot be undone.",
       "showPanel": "Show comments",
       "hidePanel": "Hide comments",
       "panelTitle": "Comments and activity",
@@ -8468,7 +8493,16 @@ const catalog = {
       "pagePinLabel": "Comment {number}",
       "showPanelCount": "Show comments, {count} open",
       "hidePanelCount": "Hide comments, {count} open",
-      "commentSelectionHint": "Comment on the selection"
+      "commentSelectionHint": "Comment on the selection",
+      "threadReopened": "Thread reopened",
+      "noCommentsReadOnlyHint": "Comments on this artifact appear here.",
+      "commentTooLong": "A comment can be up to {max} characters. Remove {over}.",
+      "discardDrawingTitle": "Discard this drawing?",
+      "discardDrawingHint": "Your strokes are not saved. This cannot be undone.",
+      "discardDrawing": "Discard",
+      "keepDrawing": "Keep drawing",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "insertMedia": "Image or video…",
     "diagram": "Diagram",
@@ -8496,7 +8530,7 @@ const catalog = {
     "showAll": "Show all",
     "live": {
       "here": "Here now",
-      "hereLabel": "On this Artifact now: {names}",
+      "hereLabel": "On this artifact now: {names}",
       "reconnecting": "Reconnecting…",
       "you": "You",
       "agents": "Agents",
@@ -8515,13 +8549,28 @@ const catalog = {
       "writing": "{name} is writing…"
     },
     "coedit": {
-      "offLarge": "Live co-editing is off: this doc is over 1 MiB. Changes save as you type.",
-      "offLineEndings": "Live co-editing is off: this doc mixes CRLF and LF line endings. Changes save as you type.",
-      "offShape": "Live co-editing is off: the editor would rewrite part of this doc's Markdown. Changes save as you type.",
+      "offLarge": "Live co-editing is off: this doc is too large. Changes save as you type.",
+      "offLineEndings": "Live co-editing is off: this doc mixes two kinds of line breaks. Changes save as you type.",
+      "offShape": "Live co-editing is off: the editor cannot keep part of this doc exactly as written. Changes save as you type.",
       "stoppedLarge": "Live co-editing stopped: one change was too large to share. Changes save as you type.",
       "stoppedFailed": "Live co-editing stopped: the connection failed. Changes save as you type.",
-      "stoppedHistory": "Live co-editing stopped: this doc's edit history is too large. Changes save as you type."
-    }
+      "stoppedHistory": "Live co-editing stopped: this doc's edit history is too large. Changes save as you type.",
+      "offFailed": "Live co-editing is off: it could not connect. Changes save as you type."
+    },
+    "conflictTitle": "Someone else changed this doc",
+    "conflictReloadTitle": "Reload the newer version?",
+    "conflictReloadHint": "Your edits since the last save are discarded. This cannot be undone.",
+    "docLoadError": "Could not load this doc.",
+    "openError": "Could not open this artifact.",
+    "viewOnly": "View only",
+    "viewingOldUndated": "You are viewing an earlier version.",
+    "exportWaiting": "Saving your edits, then exporting…",
+    "exportBlocked": "Export stopped: your latest edits are not saved.",
+    "clearFilters": "Clear filters",
+    "linkCopyFailed": "Could not copy the link. Select it in the field and copy it.",
+    "shareDropsPeople": "{count, plural, one {Saving removes the person you added. Only Private keeps a list of people.} other {Saving removes the # people you added. Only Private keeps a list of people.}}",
+    "askAgentHistoryError": "Could not load earlier chats.",
+    "embedUnavailable": "This link has no preview, so it stays a link."
   },
   "emailConnect": {
     "homeTitle": "Where the inbox lives",
@@ -9179,7 +9228,8 @@ const catalog = {
       "leaveHintPrivate": "You lose access to its threads, files and memory, your own threads included. A member must add you again.",
       "leavePrivateTitle": "Leave #{name}?",
       "addMembers": "Add members",
-      "privateLimits": "Private hides the space from other people. Code changes (git branches) and the agents’ own tools aren’t private."
+      "privateLimits": "Private hides the space from other people. Code changes (git branches) and the agents’ own tools aren’t private.",
+      "agentAdded": "{agent} added to #{name}."
     },
     "folder": {
       "memory": "Memory",
@@ -9304,8 +9354,15 @@ const catalog = {
       "routines": "Routines",
       "addRoutine": "Add routine",
       "routinesPrivate": "A private space takes no routines yet.",
+      "proactive": "Proactive",
+      "proactiveWatch": "Watch this space",
+      "proactiveWatchHint": "An agent reads what happens here and writes only when it matters.",
+      "proactiveBrief": "Daily brief",
+      "proactiveBriefHint": "A short summary at 9:00 on days with news.",
+      "proactiveFailed": "The setting was not saved. Try again.",
       "allSettings": "All settings",
-      "askHint": "You can also ask in chat: \"add an agent here\", \"pin the launch doc as a tab\"."
+      "askHint": "You can also ask in chat: \"add an agent here\", \"pin the launch doc as a tab\".",
+      "noAgentsToAdd": "Every project agent is in this space."
     },
     "profile": {
       "viewProfile": "Show the profile of {name}",
@@ -9338,9 +9395,14 @@ const catalog = {
     "mentions": {
       "people": "People",
       "agents": "Agents",
-      "addToSpace": "Not in {space} yet: mentioning adds it",
+      "addToSpace": "Not in {space}: ask to add",
       "added": "{agent} added to {space}",
-      "addFailed": "Could not add the agent. Try again."
+      "addFailed": "Could not add the agent. Try again.",
+      "askAdd": "Add {agent} to {space}?",
+      "askAddConfirm": "Add",
+      "askNotNow": "Not now",
+      "askAdmin": "{agent} isn't in {space}. Ask a Space admin to add it.",
+      "dismiss": "Dismiss"
     }
   },
   "imageGen": {

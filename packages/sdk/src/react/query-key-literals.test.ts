@@ -24,7 +24,7 @@ import { join } from 'node:path';
  * a literal the migration had just removed.
  *
  *  1. `['project-session', …]` — SINGULAR. What `session-title-sync.ts` and
- *     `use-canonical-opencode-session.ts` hand-typed before the migration.
+ *     `use-canonical-runtime-session.ts` hand-typed before the migration.
  *     `sessions` in the alternation never matched it.
  *  2. `['project-triggers', …]` — the second live evasion the migration
  *     closed, in `settings-view.tsx` and `schedule-view.tsx`.
@@ -82,7 +82,7 @@ const EXEMPT_FILES = new Set(['query-keys.ts']);
  */
 const ALLOWED_SUFFIXES = [
   // The OpenCode provider catalog — `['project-providers', id, 'gateway'|'native']`.
-  // A runtime-side entity (`use-opencode-sessions/providers.ts`,
+  // A runtime-side entity (`use-runtime-sessions/providers.ts`,
   // `provider-refresh.ts`, `use-model-defaults.ts`, `use-model-enablement.ts`),
   // never part of the `qk` project-entity migration and with no `qk` member.
   'providers',
@@ -93,7 +93,7 @@ const ALLOWED_SUFFIXES = [
   // views). Never part of the `qk` migration.
   'change-requests',
   // NOT a query key. `new Set(['project-manager'])` — the agent-name
-  // allowlist in `use-visible-agents.ts` / `use-opencode-local.ts`. Included
+  // allowlist in `use-visible-agents.ts` / `use-runtime-local.ts`. Included
   // because this scan is syntactic and cannot tell a Set of strings from a
   // query key.
   'manager',
@@ -116,7 +116,7 @@ const ENTITY_KEY_PATTERN = /\[\s*(['"])(kx|projects?(?:-[a-z][a-z-]*)?)\1/;
  * Lines that BEGIN with a comment marker. Several files here quote a removed
  * literal in prose (`query-keys.test.ts`, `invalidate-project.test.ts`,
  * `provider-selection.ts`, `use-project-config.ts`,
- * `use-opencode-events/helpers.ts`). A trailing comment on a code line does
+ * `use-runtime-events/helpers.ts`). A trailing comment on a code line does
  * NOT make the line skippable, so `queryKey: ['project-detail', id], // x`
  * is still caught.
  */

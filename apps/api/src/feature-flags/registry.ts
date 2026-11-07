@@ -248,7 +248,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },
   // `pi_harness` graduated (2026-10-23): every new session runs pi; OpenCode is
-  // sunset and serves only sessions that already run on it. No flag, no
+  // sunset (kortixd has no OpenCode harness since 2026-10-30). No flag, no
   // operator lever, no manifest `runtime:` choice. A stored
   // `experimental.pi_harness` override is inert.
   // `genui` graduated (2026-10-24): generative UI is always on. Every session
@@ -334,15 +334,15 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => Boolean(config.PLATINUM_API_KEY),
     // Off by default; a project turns it on (Marko, 2026-10-28).
     platformDefault: () => false,
-    enforcement: 'ui-only',
+    enforcement: 'routes',
     enforcementNote:
-      'BOX: off, a session box has no kortix-goals skill and its CLI hides and refuses `kortix goals` ' +
-      '(KORTIX_FEATURE_FLAGS → kortixd, apps/cli/src/command-table.ts) and kortixd runs no after-turn goal ' +
-      'check (harness/shared/on-idle-hook.ts), so a goal that already exists stops ' +
-      'being worked when the flag is turned off; its folder in Files stays. `kortix goals new` also checks the ' +
-      'flag through the API outside a box (apps/cli/src/commands/goals.ts). SERVER: off, a merged change request ' +
-      'wakes no goal (projects/lib/goal-wake.ts wakeGoal). The other server parts goals use ' +
-      '(reminders, unattended question release, reminder successors) are generic and stay on for every project.',
+      'Mixed, and every part is enforced on the server. ROUTES: every /v1/projects/:id/goals* route answers 403 ' +
+      '`feature_disabled` when off (projects/routes/goals.ts). BEHAVIORAL: the goal admission gate ' +
+      '(projects/goals/admission.ts, called from lib/trigger-fire.ts fireSessionReminder) refuses every heartbeat ' +
+      'fire and every event wake of a goal while the flag is off: no turn runs, the goal is blocked `flag_off` and ' +
+      'its heartbeat is switched off; a person resumes it after the flag is back on. A merged change request wakes ' +
+      'no goal (projects/lib/goal-wake.ts). BOX: off, a session box has no kortix-goals skill and its CLI hides ' +
+      '`kortix goals` (KORTIX_FEATURE_FLAGS → kortixd). The project_goals rows and the Goals folders in Files stay.',
   },
   {
     key: 'artifacts',
@@ -415,9 +415,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'session create/list ignore space_id. On: the person\'s DM with My Kortix is their chat; each My Kortix thread in it gets the board of the other threads at turn start ' +
       '(projects/lib/chat-threads.ts). Turning it on creates #general and files every session without a space into it (feature-flags/toggle-effects.ts). ' +
       'THREAD FILES (memory/thread-files.ts): every session of a space thread (workers too) mounts the space\'s Files folder read-write ' +
-      '(drives/service.ts sessionSpaceFolder; a private channel\'s as before); a person\'s prompt to a top-level thread is written to ' +
-      '<space folder>/threads/<slug>-<id>/messages/NNNN-<author>.md and the agent\'s answer at turn end to NNNN-<agent>.md, best effort; ' +
-      'each turn\'s system text names the thread folder and context.md. ' +
+      '(drives/service.ts sessionSpaceFolder; a private channel\'s as before). The conversation is never copied into files: ' +
+      'each turn\'s system text names the thread\'s root session (read with `kortix sessions log <id>`), the thread folder ' +
+      '(<space folder>/threads/<slug>-<id>/ with work/ and results/) and context.md. ' +
       'STORED OVERRIDE: experimental.chat, else the legacy experimental.project_channels, else experimental.infinichat (explicitOverride). ' +
       'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-channel-memory skill; a change reaches the next new box. ' +
       'WEB: a Chat row (/projects/:id/chat) and the spaces list replace New session and the session list; /projects/:id/chat renders FeatureGateScreen while off. ' +
@@ -554,7 +554,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'chat_front',
     name: 'Spaces-Router',
     description:
-      'With Spaces on, the agent you chat with in a thread is a router: it hands the work to your agents and writes back like a person, in short messages with the result, a link or the decision you need to make. Your agents share the thread through its files, so the router passes file paths, not retyped text. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml.',
+      'With Spaces on, the agent you chat with in a thread is a router: it does quick work itself (an answer, a short text, a look at the thread files) and hands longer work to the Space\'s agents. It writes back like a person, in short messages. An agent saves its full result as a file in the thread, and the router links that file instead of retyping it. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml.',
     stability: 'experimental',
     wip: true,
     available: () => true,
@@ -565,13 +565,34 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(no parent, no fork, no session caller) gets the reserved runtime_context key `kortix.front` and the server-managed ' +
       'metadata `kortix_front` (projects/lib/front-thread.ts); a request body cannot set either. Only such a front may start ' +
       'a My Kortix worker, an exception to META_AGENT_RECURSION; a worker of any other project agent is a normal hand-off. ' +
-      'BOX: kortixd gives a front only `agent`, `send_message` and `task_stop` (harness/pi/front.ts); each `agent` call ' +
-      'starts or continues one named background worker as the project agent the front picks from the roster it reads ' +
-      'from `/detail` each turn, else My Kortix. KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH is 3 so a worker keeps its own ' +
+      'BOX: a front keeps its agent\'s own tools for quick work plus `agent`, `send_message` and `task_stop` (harness/pi/front.ts); ' +
+      'each `agent` call starts or continues one named background worker as an agent of the thread\'s space (the API sends ' +
+      '`space_agents`; a spawn outside it is 400 AGENT_NOT_IN_SPACE), else the project\'s agents from `/detail`. A worker writes ' +
+      'its full result to the thread\'s results/<name>-<n>.md and reports the path; the front links it. KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH is 3 so a worker keeps its own ' +
       'subagents (projects/lib/feature-flag-env.ts). Each worker prompt ends with a "Context files" block (the thread ' +
-      'folder, the newest message file, context.md, the worker\'s work/<name>/ folder) from the prompt body\'s ' +
+      'folder, the thread\'s session id to read with `kortix sessions log`, context.md, the worker\'s work/<name>/ folder) from the prompt body\'s ' +
       '`thread_files`, which only the API sets (memory/thread-files.ts, with `chat`). WEB: a front thread\'s "Open full ' +
       'session" opens its worker.',
+  },
+  {
+    key: 'spaces_proactive',
+    name: 'Spaces-Proactive',
+    description:
+      'With Spaces on, a space can watch itself: turn on Proactive in its details, and an agent reads what happens there (finished threads, questions left open, people who join) and writes in the chat only when it matters: a result worth sharing, a decision you need to make, or something overdue. It can also start a thread that does the work. Optional daily brief at 9:00.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Off ⇒ nothing is recorded and no watcher wakes. API: with `chat` and this flag on and a space\'s Proactive on ' +
+      '(`project_space_watchers`, PUT /projects/:id/spaces/:spaceId/proactive), each finished turn of a top-level thread, ' +
+      'an ask open over 2 h, and a person or agent joining write one row to `project_space_events` (projects/lib/space-watch/). ' +
+      'The `space-watcher` job wakes the space\'s one watcher session (source `system:space-watcher`, private to the space\'s ' +
+      'owner, not filed in the space) at most once per 10 min and 24 times a day, at once for an overdue ask. It mirrors the ' +
+      'feed to events.md in the space folder. BOX: runtime_context `kortix.watcher` gives the watcher no tools ' +
+      '(harness/pi/watcher.ts); its answer is one JSON decision that the API carries out at turn end through the space post ' +
+      'path, in that space only, with the owner\'s rights. WEB: the Proactive and Daily brief rows in Space details.',
   },
 ];
 

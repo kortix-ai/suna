@@ -49,6 +49,7 @@ import {
   projectAccessRequests,
   projectGitConnections,
   projectGitCredentials,
+  projectGoals,
   projectMonitorBoxes,
   projectSessionConnectorBindings,
   projectSessionPublicShares,
@@ -124,6 +125,8 @@ export const PROJECT_TRANSFER_TABLES: readonly PgTable[] = [
   appArtifacts,
   changeRequests,
   reviewItems,
+  // A goal is live project state: its drive folder and sessions move too.
+  projectGoals,
   serviceAccounts,
   connectors,
   connectorConnections,

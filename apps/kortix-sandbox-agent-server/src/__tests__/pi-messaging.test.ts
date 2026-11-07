@@ -309,11 +309,10 @@ describe('pi send_message', () => {
     expect(denied).toMatchObject({ ok: false, card: { title: `Not sent to ${OTHER}`, status: 'denied' }, error: { kind: 'denied', message: 'You may not prompt that session.' } })
   })
 
-  test('a message over the cap, an empty one and approve without shutdown_response are refused before any call', async () => {
+  test('a message over the cap and an empty one are refused before any call', async () => {
     const { rt, frames } = await boot([
       { tool: 'send_message', args: { to: 'reviewer', message: 'x'.repeat(16_001) } },
       { tool: 'send_message', args: { to: 'reviewer', message: '   ' } },
-      { tool: 'send_message', args: { to: 'reviewer', message: 'ok', approve: true } },
       { text: 'done' },
     ])
     await rt.admit({ text: 'send', files: [] }).done
@@ -322,8 +321,17 @@ describe('pi send_message', () => {
     expect(errors).toEqual([
       'The message is 16001 characters; one message takes at most 16000. Send the essentials, or split it.',
       'The message is empty.',
-      'approve goes only with type "shutdown_response".',
     ])
+  })
+
+  test('approve on an ordinary message is dropped: the message is sent without it', async () => {
+    const { rt, frames } = await boot([{ tool: 'send_message', args: { to: 'reviewer', message: 'ok', approve: true } }, { text: 'done' }])
+    await rt.admit({ text: 'send', files: [] }).done
+    const sent = api.seen.filter((s) => s.path.endsWith('/peer-messages'))
+    expect(sent).toHaveLength(1)
+    expect(JSON.stringify(sent[0])).not.toContain('"approve"')
+    const [result] = frames.filter((f) => f.tool === 'send_message' && f.state.status === 'completed').map((f) => JSON.parse(f.state.output!))
+    expect(result.error).toBeUndefined()
   })
 
   test('a person steering the turn while send_message runs reaches the next step; the tool never blocks the steer', async () => {

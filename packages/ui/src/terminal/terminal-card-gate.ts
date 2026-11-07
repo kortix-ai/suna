@@ -47,11 +47,28 @@ export function shouldPaintTerminalCard(input: {
  *   and the wake ladder only holds until it exhausts — so withholding the
  *   card there strands the user with no card AND no poll.
  *
- * `stage` alone already separates the only two shapes that must be withheld
- * (`starting`: still polling, the server retries on its own) from the three
- * that must paint (`failed`: the server is done trying).
+ * `stage` alone decides, and every value is named. `starting` is still
+ * polling (the server retries on its own); `provisioning` and `null` (no
+ * `/start` answer yet) have not reached a verdict; `ready` contradicts a
+ * `stopped|error` row, which is then a stale cache from an earlier `/start`.
+ * None of those paints. `stopped` and `failed` are the server's verdict, and
+ * they paint.
  */
 export function shouldPaintFatalCard(input: { stage: SessionStartStage | null }): boolean {
-  return input.stage !== 'starting';
+  switch (input.stage) {
+    case 'stopped':
+    case 'failed':
+      return true;
+    case null:
+    case 'provisioning':
+    case 'starting':
+    case 'ready':
+      return false;
+    default: {
+      const unhandled: never = input.stage;
+      void unhandled;
+      return false;
+    }
+  }
 }
 import type { SessionStartStage } from '@kortix/sdk';

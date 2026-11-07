@@ -26,9 +26,6 @@ HEALTH_WAIT_S=__HEALTH_WAIT_S__
 # Entrypoint supplied by the control plane, for an API whose manifest predates the
 # `entrypoint` asset. Empty when the box's API serves it (preferred: same digest chain).
 EMBEDDED_EP_B64='__ENTRYPOINT_B64__'
-# pnpm the current daemon needs for its OpenCode install (`pnpm add -g --allow-build`,
-# pnpm >= 10). Pinned to the fleet version when the box's Node supports it.
-PNPM_PINNED='__PNPM_VERSION__'
 # Session PAT minted by the control plane when this box still carries the
 # pre-2026-08 `kortix_sb_` service key as KORTIX_TOKEN (the LLM gateway resolves
 # only PATs). Empty when the box is already on the current token model.
@@ -144,42 +141,25 @@ bash -n "$ENTRYPOINT.next" || fail entrypoint "downloaded entrypoint fails bash 
 chmod 0755 "$ENTRYPOINT.next"
 if [ -f "$ENTRYPOINT" ] && [ ! -f "$ENTRYPOINT.legacy" ]; then cp -p "$ENTRYPOINT" "$ENTRYPOINT.legacy"; fi
 mv -f "$ENTRYPOINT.next" "$ENTRYPOINT"
-# 3. pnpm floor. The current daemon installs OpenCode with `pnpm add -g
-#    --allow-build`, a pnpm >= 10 flag; a 2026-07 image ships pnpm 8. pnpm 11
-#    needs Node >= 22.13, so pick by the Node this box actually has. pnpm 10
-#    also refuses a global install without a global bin dir: the image sets
-#    PNPM_HOME at build time, so give this box the same layout through pnpm's
-#    own rc file under the daemon home — persistent, and independent of which
-#    environment a later boot hands the daemon.
 PNPM_HOME_DIR=/home/kortix/.local/share/pnpm
-pnpm_major=$( (pnpm --version 2>/dev/null || echo 0) | cut -d. -f1 )
-node_minor=$(node --version 2>/dev/null | sed -E 's/^v[0-9]+\.([0-9]+).*/\1/')
-node_major=$(node --version 2>/dev/null | sed -E 's/^v([0-9]+).*/\1/')
-if [ "${pnpm_major:-0}" -lt 10 ] 2>/dev/null; then
-  want="$PNPM_PINNED"
-  if [ "${node_major:-0}" -lt 22 ] || { [ "${node_major:-0}" -eq 22 ] && [ "${node_minor:-0}" -lt 13 ]; }; then want="10"; fi
-  [ -n "$want" ] || want="10"
-  log "pnpm $(pnpm --version 2>/dev/null || echo none) is below 10; installing pnpm@$want (node $(node --version 2>/dev/null))"
-  HOME="$OPENCODE_HOME" npm install -g "pnpm@$want" >>"$LOG" 2>&1 || fail pnpm "npm install -g pnpm@$want failed"
-  pnpm_now=$(pnpm --version 2>/dev/null || true)
-  [ "$(printf '%s' "$pnpm_now" | cut -d. -f1)" -ge 10 ] 2>/dev/null || fail pnpm "pnpm still unusable after install: '$pnpm_now'"
-  log "pnpm now $pnpm_now"
-fi
-# 4. HOME shim: the current daemon derives OpenCode's home from $HOME. Keep the
-#    existing transcript database reachable from either path.
+# 3. HOME shim: the current daemon finds its home through $HOME, and on its
+#    first boot restores the old OpenCode session log from under that home.
+#    Keep the box's existing home reachable from either path.
 if [ -d "$OPENCODE_HOME" ] && [ ! -e /home/kortix ]; then
   mkdir -p /home && ln -s "$OPENCODE_HOME" /home/kortix
 fi
 mkdir -p "$PNPM_HOME_DIR" "$OPENCODE_HOME/.config/pnpm"
 PNPM_RC="$OPENCODE_HOME/.config/pnpm/rc"
-# The entrypoint puts ${PNPM_HOME_DIR}/bin on PATH on every boot, and pnpm
-# refuses a global bin dir that is not on PATH — so that exact path is the
-# bin dir. Rewrite, never append: a stale value from an earlier attempt must lose.
+# The same pnpm layout a current image has, so a global `pnpm add -g` in a
+# session works here too. The entrypoint puts ${PNPM_HOME_DIR}/bin on PATH on
+# every boot, and pnpm refuses a global bin dir that is not on PATH — so that
+# exact path is the bin dir. Rewrite, never append: a stale value from an
+# earlier attempt must lose.
 touch "$PNPM_RC"
 sed -i '/^global-bin-dir=/d;/^global-dir=/d' "$PNPM_RC"
 printf 'global-bin-dir=%s/bin\nglobal-dir=%s/global\n' "$PNPM_HOME_DIR" "$PNPM_HOME_DIR" >> "$PNPM_RC"
 mkdir -p "$PNPM_HOME_DIR/bin" "$PNPM_HOME_DIR/global"
-# PNPM_HOME is what pnpm >= 10 reads first; persist it where pt-init re-exports
+# PNPM_HOME is what pnpm reads first; persist it where pt-init re-exports
 # on a cold boot, and hand it to the relaunched chain. The value is the bin
 # path the entrypoint puts on PATH, so pnpm's PATH check passes on every boot.
 for f in /etc/environment /etc/pt-env; do
@@ -188,9 +168,7 @@ for f in /etc/environment /etc/pt-env; do
   else printf 'PNPM_HOME=%s/bin\n' "$PNPM_HOME_DIR" >> "$f"; fi
 done
 export PNPM_HOME="$PNPM_HOME_DIR/bin"
-pnpm_final=$(pnpm --version 2>/dev/null || true)
-[ "$(printf '%s' "$pnpm_final" | cut -d. -f1)" -ge 10 ] 2>/dev/null || fail pnpm "pnpm unusable: '$pnpm_final'"
-log "pnpm $pnpm_final, PNPM_HOME=$PNPM_HOME, rc at $PNPM_RC"
+log "PNPM_HOME=$PNPM_HOME, rc at $PNPM_RC"
 # Ownership. Image generations from 2026-07-26 run the daemon as `kortix`, and
 # the supervisor promotes agent.next by rename inside $STATE_DIR — so the
 # state dir and the pnpm config must belong to that user, as the image itself

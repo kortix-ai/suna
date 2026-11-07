@@ -162,8 +162,12 @@ describe('local test runner contract', () => {
     // container against the real disposable-PostgreSQL containers.
     // The PostgreSQL contracts (`*.integration.test.ts`) run one file per
     // process in the `db-suites` lane of the core run, not here.
+    // Isolated since v0.15.1 (#11974): migrate-auto-baseline's process-wide
+    // mock.module of node-pg-migrate reached the invitations migration test,
+    // which failed and later hung the packages-rest lane to its 40-min cap.
+    // Bun 1.4.3 ran the isolated suite clean on Linux (run 42301472596).
     expect(dbPackage.scripts.test).toBe(
-      guarded("bun test --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'"),
+      guarded("bun test --isolate --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'"),
     );
   });
 
@@ -191,6 +195,8 @@ describe('local test runner contract', () => {
       'Kortix-Computer-Frontend': '762 test files; serial is not viable',
       '@kortix/sdk': 'xargs -n1 -P4 runs one file per process: no isolate swap, no leak',
       '@kortix/ui': '236 test files from the apps/web session UI; 10 of them mock.module, which leaks across files without isolation',
+      '@kortix/db': 'migrate-auto-baseline mock.module-s node-pg-migrate process-wide; the invitations migration test drives the real runner',
+      '@kortix/voice': 'a cached voice catalog leaks between speech-api test files without isolation (KRTX-4386)',
     };
 
     const offenders: string[] = [];

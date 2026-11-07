@@ -227,10 +227,13 @@ export const handleApiError = (
   // message/code still reports.
   const isGitMirrorUnavailable503 =
     status === 503 && isGitMirrorUnavailableNoiseMessage(errorMessage);
-  if (
-    (status >= 500 && !isServerDeadline503 && !isGitMirrorUnavailable503) ||
-    error?.code === 'NETWORK_ERROR'
-  ) {
+  // The previous API tasks answer `503 deploy_in_progress` while a release
+  // migration they predate rolls out (`resolveSessionInsertFailure`): accepted
+  // deploy downtime. The toast tells the user to retry; nothing to report.
+  const isDeployInProgress503 = status === 503 && error?.code === 'deploy_in_progress';
+  const reportsServerError =
+    status >= 500 && !isServerDeadline503 && !isGitMirrorUnavailable503 && !isDeployInProgress503;
+  if (reportsServerError || error?.code === 'NETWORK_ERROR') {
     captureException(
       error instanceof Error ? error : new Error(error?.message || String(error)),
       {
@@ -350,8 +353,9 @@ export const handleApiError = (
   }
 
   if (error?.status >= 500) {
+    // "Our team has been notified" is true only when it was captured above.
     errorToast(formattedMessage, {
-      description: tI18nComplete.raw('text75aec78d2ee8'),
+      description: reportsServerError ? tI18nComplete.raw('text75aec78d2ee8') : undefined,
       duration: 6000,
     });
   } else if (error?.status === 403) {

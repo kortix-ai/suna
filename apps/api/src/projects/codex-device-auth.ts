@@ -1,8 +1,9 @@
 // OpenAI Codex (ChatGPT Plus/Pro) OAuth device grant — driven directly with
 // plain HTTPS calls to auth.openai.com. No subprocess, no OpenCode `serve`, no
 // pinned pod: `start` requests a device code, `poll` exchanges it once the user
-// authorizes in the browser. The resulting auth.json is exactly what the
-// sandbox materializes for OpenCode:
+// authorizes in the browser. The result is an auth.json-shaped login (the
+// format OpenCode used), saved as a secret only the LLM gateway decrypts
+// (llm-gateway/credentials/codex.ts):
 //
 //   { "openai": { "type":"oauth", "access", "refresh", "expires", "accountId" } }
 //

@@ -8,7 +8,7 @@ import {
 
 // Adapts the AI SDK's provider-neutral stream/result back into the OpenAI
 // chat.completions SSE + JSON shapes the gateway pipeline (probe, relay, usage
-// extraction, billing, trace) and opencode both depend on. THIS is the contract
+// extraction, billing, trace) and the session runtime both depend on. THIS is the contract
 // boundary — the bytes produced here must be byte-compatible with what the native
 // openai-compat transport emits, so nothing downstream can tell the paths apart.
 
@@ -162,6 +162,11 @@ export function openAiSseFromFullStream(
     };
     let usage: LanguageModelUsage | undefined;
     let finishReason: FinishReason | undefined;
+    // The stream's ending: 'finished' unless an error part, an abort part or
+    // an iterator throw ended it. A failed stream must not read as a clean
+    // `stop`, and must not carry a zero-usage frame: the relay settles a usage
+    // estimate only when no usage frame arrived.
+    let ending: 'finished' | 'failed' = 'finished';
     try {
       for (;;) {
         await awaitDemand();
@@ -277,7 +282,12 @@ export function openAiSseFromFullStream(
             if (!finishReason) finishReason = part.finishReason as FinishReason;
             break;
           }
+          case 'abort': {
+            ending = 'failed';
+            break;
+          }
           case 'error': {
+            ending = 'failed';
             // A structured upstream failure (auth, overloaded, content filter).
             // Emit the OpenAI-shaped error frame the gateway probe detects so it
             // fails over / surfaces the real cause instead of a blank stop.
@@ -388,6 +398,7 @@ export function openAiSseFromFullStream(
         }
       }
     } catch (err) {
+      ending = 'failed';
       const message = err instanceof Error ? err.message : String(err);
       const code =
         (err as { name?: string })?.name === 'TimeoutError'
@@ -402,15 +413,19 @@ export function openAiSseFromFullStream(
     // the right model even if no content chunk did. Skipped entirely once
     // cancelled — the controller is no longer writable, and there's no
     // client left to receive a synthetic finish/[DONE] anyway.
+    // A failed stream sends no finish chunk, and a usage chunk only when the
+    // provider reported real usage before it failed.
     if (cancelled) return;
-    emit(delta({}, mapFinishReason(finishReason)));
-    emit(
-      sse({
-        ...base,
-        choices: [],
-        usage: mapUsage(usage),
-      }),
-    );
+    if (ending === 'finished') emit(delta({}, mapFinishReason(finishReason)));
+    if (ending === 'finished' || usage) {
+      emit(
+        sse({
+          ...base,
+          choices: [],
+          usage: mapUsage(usage),
+        }),
+      );
+    }
     emit(enc.encode('data: [DONE]\n\n'));
     controller.close();
   };

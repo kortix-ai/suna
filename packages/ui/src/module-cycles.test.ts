@@ -107,6 +107,7 @@ const KNOWN_UPWARD: string[] = [
   'customize/sections/view/review-center-connected.tsx -> workspace/review/map.ts',
   'customize/sections/view/review-center-connected.tsx -> workspace/review/review-actions.ts',
   'customize/sections/view/review-center-connected.tsx -> workspace/review/review-center.tsx',
+  'customize/sections/view/review-center-connected.tsx -> workspace/review/review-reducer.ts',
   'customize/settings/tabs/general-tab.tsx -> workspace/projects/modal/project-icon-field.tsx',
   'customize/settings/tabs/snapshots-tab.tsx -> workspace/sidebar/footer/sandbox-alert-state.ts',
   'customize/settings/tabs/snapshots-tab.tsx -> workspace/sidebar/footer/sandbox-health.ts',

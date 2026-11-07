@@ -22,7 +22,7 @@ import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
 import { awakeDeliveryTarget, deliverAfterWake, undoDeliveryWake, type SendOutcome } from './deliver';
-import { sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { sandboxRuntimeEndpoint } from '../runtime-session-mapping';
 import { sessionTransitionLeaves, transitionSession } from './status-transitions';
 import { promptAgent } from './agent-availability';
 import { effortVariantForPrompt } from '../lib/effort-default';
@@ -162,7 +162,7 @@ export async function continueSession(
   const turnAgent = promptAgent(command.overrides?.agent, session.agentName);
   const sendPrompt = async (
     externalId: string,
-    opencodeSessionId: string,
+    runtimeSessionId: string,
     sandboxRecord?: SandboxRecord,
   ): Promise<SendOutcome> => {
     await revalidateBeforeSend?.();
@@ -170,7 +170,7 @@ export async function continueSession(
     let bodyBytes = 0;
     const delivery = await postPrompt(
       externalId,
-      opencodeSessionId,
+      runtimeSessionId,
       text,
       userId,
       sessionId,
@@ -214,9 +214,9 @@ export async function continueSession(
       const landing = await confirmPromptLanded({
         messageId: command.wireMessageId,
         readMessage: async (messageId) => {
-          const endpoint = await sandboxOpencodeEndpoint(externalId, userId);
+          const endpoint = await sandboxRuntimeEndpoint(externalId, userId);
           if (!endpoint) throw new Error('no runtime endpoint');
-          return readRuntimeMessage({ endpoint, opencodeSessionId, externalId }, messageId);
+          return readRuntimeMessage({ endpoint, runtimeSessionId, externalId }, messageId);
         },
       });
       if (landing === 'unknown') {
@@ -274,7 +274,7 @@ export async function continueSession(
         error: err instanceof Error ? err.message : String(err),
       }),
     );
-  const outcome = await deliverAfterWake({ command, session, sessionId, userId, turnAgent, awakeEarly, sendPrompt, beforeSend: revalidateBeforeSend, identityBound: turnIdentity, tl })
+  const outcome = await deliverAfterWake({ command, session, sessionId, userId, turnAgent, awakeEarly, sendPrompt, beforeSend: revalidateBeforeSend, tl })
     .catch(async (err) => {
       if (wokeFrom) await undoWake();
       throw err;
