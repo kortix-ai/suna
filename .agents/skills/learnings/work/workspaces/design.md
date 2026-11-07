@@ -448,6 +448,47 @@ Steps 1b and 1c never meet: an agent session carries no key scope, and a key sco
 agent's. So "role/grant/scope, then HUMAN_ONLY" and the code's order give the same verdict for
 every request.
 
+#### C4b. One API keys concept (2026-11-07)
+
+Workspace settings › API keys is one list. "New key" asks **Acts as**: you, an
+agent, or a bot. Every key is a `kortix_pat_` row in `account_tokens` bound to
+the workspace (`project_id = W`); the principal decides `user_id` and
+`service_account_id`.
+
+| Acts as | `user_id` | `service_account_id` | Authorizes as | Audited as | Ends when |
+|---|---|---|---|---|---|
+| You (`acts_as: me`) | the person | NULL | the person's current role ∩ `scopes` | the person (`human`) | it expires, is revoked, the person leaves |
+| An agent (`acts_as: agent`) | the agent's service account | the agent's identity (`ensureAgentServiceAccount`) | `agent_grant` ∩ ceiling ∩ `scopes`, minus HUMAN_ONLY (authorize step 5a) | the agent (`agent`, `agent_name`, `agent_id`) | it expires or is revoked; the creator leaving does not end it |
+| A bot (`acts_as: bot`) | the bot's service account | a bot (`agent_name` NULL) | the bot's role assignments ∩ `scopes`, minus HUMAN_ONLY | the bot (`service_account`) | it expires, is revoked, or the bot is disabled or deleted |
+
+- `account_tokens.created_by` names the person who minted an agent or bot key
+  (migration `20261107090000000_account_tokens_created_by.sql`). The person's
+  offboarding revokes rows by `user_id`, so it never reaches these keys.
+- The auth middleware sets `authType: 'service_account'` for a key with a
+  service account and no session (`middleware/auth-principal.ts`); the token
+  row keeps its fence and scope (`iamTokenId`). `tokenCredential` marks it
+  `serviceAccountKey`, and `actingPrincipal` then always names the service
+  account, bound role or not.
+- Routes: `GET /v1/workspaces/:id/keys` (own keys; with `token.create` every
+  agent and bot key, each older bot's own `kortix_sa_` bearer, the agents and
+  bots a key can act as), `POST …/keys {name, acts_as, agent?, bot?, scopes?,
+  expires_at?}`, `DELETE …/keys/:keyId`. `/v1/accounts/:id/keys` is the alias.
+  `POST …/tokens` and `/iam/service-accounts` are unchanged.
+- Minting an agent or bot key needs `token.create` and a person caller (a
+  browser session or a personal key): `403 key_principal_requires_person`. A
+  custom scope outside the principal's rights is checked by the engine as the
+  new key itself: `403 key_scope_exceeds_principal`, and the row is deleted.
+- A new bot name creates the bot with the project `member` role. Its own
+  bearer is never handed out (`service_accounts.bearer_issued = false`,
+  migration `20261107090010000_service_accounts_bearer_issued.sql`).
+- Known limit: account routes that gate on human membership of `userId`
+  (`getMembership`, for example `GET /accounts/:id/members`) refuse agent and
+  bot keys, as they refuse a `kortix_sa_` bearer. Workspace routes decide
+  through IAM and serve them.
+- Proof: flow `WS-AUTH-15`. CLI: `kortix keys ls|create|rm --as
+  me|agent:<name>|bot:<name>`. SDK: `listWorkspaceKeys`, `createWorkspaceKey`,
+  `revokeWorkspaceKey`, `workspace(id).keys`.
+
 #### C5. Canonical routes, ids, response shapes, error codes
 
 New or changed canonical routes:

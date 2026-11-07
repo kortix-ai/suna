@@ -91,11 +91,21 @@ bar sits over the panel; its one rail is the navigation.
 
 | Group | Sections |
 |---|---|
-| Workspace | General (name, icon, workspace ID, Pause all triggers, Danger zone: Leave, Delete), Security (MFA, session policy, session oversight, key rules), Branding, Git, Sandbox, Feature flags, API keys, Capture (while Capture is on) |
-| Library | Connectors, Secrets, Skills, Drives, Apps, Triggers, Models, Repository |
+| Workspace | General (name, icon, workspace ID, Pause all triggers), Security (MFA, session policy, session oversight, key rules), Branding, API keys (one list: a key acts as you, an agent or a bot), Capture (while Capture is on) |
+| Library | Models, Connectors, Secrets, Skills, Drives, Apps, Triggers, Sandbox, Git (the repository connection), Repository (the repository's files, with Drive on) |
 | People | Members (one roster, one role per person, access requests on top, invite), Groups, Roles, Identity, Audit log |
 | Billing | Plan, Usage |
-| Support | Help |
+| Advanced | Feature flags |
+| Danger zone | Leave workspace, Delete workspace |
+| Support | Help, in the rail's footer |
+
+Restructured 2026-11-07 (Marko): Sandbox moved to Library, Feature flags to
+Advanced, the Danger zone out of General into its own row, Help to the rail
+footer. Every section id is unchanged, so every `/admin/<id>` link still opens
+its section. Git and Repository stay two rows: Git configures the repository
+connection behind the settings gate; Repository is the file browser behind the
+`drives` flag. Access requests stay at the top of Members, where they are
+decided; they render only while a request is pending.
 
 - Each row keeps its own permission gate. `/admin` opens General, else the
   first section the caller may open.

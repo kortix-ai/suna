@@ -21305,7 +21305,8 @@
       "text16ba47efb9f2": "A complete, filterable trail of every admin and agent action in this workspace: who did what, where, and when.",
       "text4b892277843c": "Create workspace",
       "text41018e566b60": "new workspace create add team",
-      "texta99ac8f9050b": "Workspace · Access"
+      "texta99ac8f9050b": "Workspace · Access",
+      "textfd8b8dae4421": "Danger zone"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -26504,7 +26505,9 @@
         "library": "Library",
         "people": "People",
         "billing": "Billing",
-        "support": "Support"
+        "support": "Support",
+        "advanced": "Advanced",
+        "danger": "Danger zone"
       },
       "sections": {
         "general": "General",
@@ -26530,7 +26533,8 @@
         "drives": "Drives",
         "capture": "Capture",
         "security": "Security",
-        "repo": "Repository"
+        "repo": "Repository",
+        "dangerZone": "Danger zone"
       },
       "accessTitle": "Access",
       "accessDescription": "Who can open this workspace, and with which role.",

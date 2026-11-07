@@ -21260,7 +21260,8 @@
       "text16ba47efb9f2": "此工作区中每个管理员和智能体操作的完整、可筛选记录:谁在何时何地做了什么。",
       "text4b892277843c": "创建工作区",
       "text41018e566b60": "新建 工作区 创建 添加 团队",
-      "texta99ac8f9050b": "工作区 · 访问权限"
+      "texta99ac8f9050b": "工作区 · 访问权限",
+      "textfd8b8dae4421": "危险区域"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -26504,7 +26505,9 @@
         "library": "资源库",
         "people": "成员",
         "billing": "账单",
-        "support": "支持"
+        "support": "支持",
+        "advanced": "高级",
+        "danger": "危险区域"
       },
       "sections": {
         "general": "常规",
@@ -26530,7 +26533,8 @@
         "drives": "Drives",
         "capture": "Capture",
         "security": "安全",
-        "repo": "代码仓库"
+        "repo": "代码仓库",
+        "dangerZone": "危险区域"
       },
       "accessTitle": "访问权限",
       "accessDescription": "谁可以打开此工作区，以及使用哪个角色。",

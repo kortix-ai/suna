@@ -329,7 +329,9 @@ function ProjectSettingsSectionPane({
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   switch (sectionKey) {
     case 'general':
-      return <GeneralTab projectId={projectId} />;
+      return <GeneralTab projectId={projectId} part="settings" />;
+    case 'danger-zone':
+      return <GeneralTab projectId={projectId} part="danger" />;
     case 'git':
       return (
         <div className="mx-auto w-full max-w-2xl space-y-8">

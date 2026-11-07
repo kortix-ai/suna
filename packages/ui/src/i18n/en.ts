@@ -6155,7 +6155,8 @@ const catalog = {
       "textfab4077701b7": "Put your own logo, icon, favicon, and product name on the app for everyone in this workspace: Kortix becomes your tool.",
       "textfd8fee75dbb5": "IdP groups map to roles in this workspace",
       "textadca5dfd1e42": "Bundle members into groups and give the whole group a role: one grant instead of dozens, revoked just as easily.",
-      "text16ba47efb9f2": "A complete, filterable trail of every admin and agent action in this workspace: who did what, where, and when."
+      "text16ba47efb9f2": "A complete, filterable trail of every admin and agent action in this workspace: who did what, where, and when.",
+      "textfd8b8dae4421": "Danger zone"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -9859,7 +9860,9 @@ const catalog = {
         "library": "Library",
         "people": "People",
         "billing": "Billing",
-        "support": "Support"
+        "support": "Support",
+        "advanced": "Advanced",
+        "danger": "Danger zone"
       },
       "sections": {
         "general": "General",
@@ -9885,7 +9888,8 @@ const catalog = {
         "drives": "Drives",
         "capture": "Capture",
         "security": "Security",
-        "repo": "Repository"
+        "repo": "Repository",
+        "dangerZone": "Danger zone"
       },
       "accessTitle": "Access",
       "accessDescription": "Who can open this workspace, and with which role.",

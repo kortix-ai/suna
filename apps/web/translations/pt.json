@@ -21260,7 +21260,8 @@
       "text16ba47efb9f2": "Um registro completo e filtrável de cada ação de administradores e agentes neste espaço de trabalho: quem fez o quê, onde e quando.",
       "text4b892277843c": "Criar espaço de trabalho",
       "text41018e566b60": "novo espaço de trabalho criar adicionar equipe",
-      "texta99ac8f9050b": "Espaço de trabalho · Acesso"
+      "texta99ac8f9050b": "Espaço de trabalho · Acesso",
+      "textfd8b8dae4421": "Zona de perigo"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -26504,7 +26505,9 @@
         "library": "Biblioteca",
         "people": "Pessoas",
         "billing": "Cobrança",
-        "support": "Suporte"
+        "support": "Suporte",
+        "advanced": "Avançado",
+        "danger": "Zona de perigo"
       },
       "sections": {
         "general": "Geral",
@@ -26530,7 +26533,8 @@
         "drives": "Drives",
         "capture": "Capture",
         "security": "Segurança",
-        "repo": "Repositório"
+        "repo": "Repositório",
+        "dangerZone": "Zona de perigo"
       },
       "accessTitle": "Acesso",
       "accessDescription": "Quem pode abrir este espaço de trabalho e com qual função.",

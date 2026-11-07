@@ -69,6 +69,8 @@ describe('Project admin /admin/<section> scheme', () => {
     expect(parseProjectAdminSection('loops')).toBe('triggers');
     expect(projectAdminNavTarget('experimental')).toBe('feature-flags');
     expect(projectAdminNavTarget('snapshots')).toBe('sandbox');
+    expect(projectAdminNavTarget('flags')).toBe('feature-flags');
+    expect(projectAdminNavTarget('danger')).toBe('danger-zone');
     expect(projectAdminNavTarget('settings')).toBe('general');
     expect(projectAdminNavTarget('members')).toBeNull();
     expect(projectAdminNavTarget('profile')).toBeNull();
@@ -76,13 +78,15 @@ describe('Project admin /admin/<section> scheme', () => {
 });
 
 describe('Workspace settings rail — the shared registry', () => {
-  test('the rail is the registry: Workspace, Library, People, Billing, Support', () => {
+  test('the rail is the registry: Workspace, Library, People, Billing, Advanced, Danger zone, Support', () => {
     expect(WORKSPACE_SETTINGS_GROUPS).toBe(REGISTRY_GROUPS);
     expect(WORKSPACE_SETTINGS_GROUPS.map((group) => [group.id, [...group.sections]])).toEqual([
-      ['workspace', ['general', 'security', 'branding', 'git', 'sandbox', 'feature-flags', 'api-keys', 'capture']],
-      ['library', ['connectors', 'secrets', 'skills', 'drives', 'apps', 'triggers', 'models', 'repo']],
+      ['workspace', ['general', 'security', 'branding', 'api-keys', 'capture']],
+      ['library', ['models', 'connectors', 'secrets', 'skills', 'drives', 'apps', 'triggers', 'sandbox', 'git', 'repo']],
       ['people', ['members', 'groups', 'roles', 'identity', 'audit']],
       ['billing', ['plan', 'usage']],
+      ['advanced', ['feature-flags']],
+      ['danger', ['danger-zone']],
       ['support', ['help']],
     ]);
   });

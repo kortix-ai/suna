@@ -1,5 +1,6 @@
 // Generated from the final user-visible i18n audit. Keys are SHA-256(message)[0:12].
 export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
+  'Danger zone': 'textfd8b8dae4421',
   "trigger": 'text683259feabbf',
   "New trigger": 'texta38f4ea67a30',
   "Search triggers": 'textcf789cba73dc',

@@ -174,6 +174,9 @@ const RESOURCE_PAGES: Partial<Record<ProjectAdminResourceKey, SectionPage>> = {
 };
 
 
+/** The rail group drawn in the rail's footer instead of the scrolling list. */
+const RAIL_FOOTER_GROUP: WorkspaceSettingsGroupId = 'support';
+
 /* A host page owns a full-viewport root (`AppsView` is `h-svh`). Inside this
    pane that box would overflow by the header's height and clip its last row,
    so the pane bounds its direct child to the pane's own height. */
@@ -182,7 +185,18 @@ const HOST_PANE_CLASS = '*:h-full';
 /* The Settings page's panes, mounted with the same props and in the same
    order `ProjectSettingsSectionPane` mounts them. */
 const SETTINGS_PAGES: Record<ProjectAdminSettingsKey, SectionPage> = {
-  general: lazyPage(() => import('../../customize/settings/tabs/general-tab'), (m) => m.GeneralTab),
+  general: lazyPage(() => import('../../customize/settings/tabs/general-tab'), (m) => {
+    const { GeneralTab } = m;
+    return function GeneralSection(props) {
+      return <GeneralTab {...props} part="settings" />;
+    };
+  }),
+  'danger-zone': lazyPage(() => import('../../customize/settings/tabs/general-tab'), (m) => {
+    const { GeneralTab } = m;
+    return function DangerZoneSection({ projectId }) {
+      return <GeneralTab projectId={projectId} part="danger" />;
+    };
+  }),
   git: lazyPage(() => import('../../customize/sections/view/git-view'), (m) => {
     const { GitView } = m;
     return function GitSection({ projectId }) {
@@ -401,6 +415,9 @@ export function ProjectAdminDashboard({
     accountId,
   ]);
 
+  // The rail's footer: the Support group (Help), drawn under the groups.
+  const footerRows = groups.find((group) => group.id === RAIL_FOOTER_GROUP)?.rows ?? [];
+
   // The sections of this page; a link-out row (Capture) is never active.
   const rows = groups.flatMap((group) => group.rows).filter((row) => !row.href);
   const linkOut = groups.flatMap((group) => group.rows).find((row) => row.href && row.key === section);
@@ -540,18 +557,33 @@ export function ProjectAdminDashboard({
             >
               {settled ? (
                 <Tabs value={active} orientation="vertical" className="gap-4">
-                  {groups.map((group) => (
-                    <RailGroup key={group.id} label={tSettings(`groups.${group.id}`)}>
-                      {group.rows.map((row) => (
-                        <RailTrigger key={row.key} projectId={projectId} row={row} />
-                      ))}
-                    </RailGroup>
-                  ))}
+                  {groups
+                    .filter((group) => group.id !== RAIL_FOOTER_GROUP)
+                    .map((group) => (
+                      <RailGroup key={group.id} label={tSettings(`groups.${group.id}`)}>
+                        {group.rows.map((row) => (
+                          <RailTrigger key={row.key} projectId={projectId} row={row} />
+                        ))}
+                      </RailGroup>
+                    ))}
                 </Tabs>
               ) : (
                 <RailSkeleton />
               )}
             </nav>
+            {/* Help sits under the groups, outside the scrolling list: it is
+                where a person goes when the rest of the rail did not help. */}
+            {settled && footerRows.length > 0 ? (
+              <div className="border-border/60 shrink-0 border-t px-2 py-2">
+                <Tabs value={active} orientation="vertical">
+                  <RailGroup>
+                    {footerRows.map((row) => (
+                      <RailTrigger key={row.key} projectId={projectId} row={row} />
+                    ))}
+                  </RailGroup>
+                </Tabs>
+              </div>
+            ) : null}
           </aside>
         )}
 

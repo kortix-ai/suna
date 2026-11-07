@@ -21260,7 +21260,8 @@
       "text16ba47efb9f2": "Eine vollständige, filterbare Spur jeder Admin- und Agentenaktion in diesem Workspace: wer was wo und wann getan hat.",
       "text4b892277843c": "Workspace erstellen",
       "text41018e566b60": "neuer workspace erstellen hinzufügen team",
-      "texta99ac8f9050b": "Workspace · Zugriff"
+      "texta99ac8f9050b": "Workspace · Zugriff",
+      "textfd8b8dae4421": "Gefahrenzone"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -26504,7 +26505,9 @@
         "library": "Bibliothek",
         "people": "Personen",
         "billing": "Abrechnung",
-        "support": "Support"
+        "support": "Support",
+        "advanced": "Erweitert",
+        "danger": "Gefahrenzone"
       },
       "sections": {
         "general": "Allgemein",
@@ -26530,7 +26533,8 @@
         "drives": "Drives",
         "capture": "Capture",
         "security": "Sicherheit",
-        "repo": "Repository"
+        "repo": "Repository",
+        "dangerZone": "Gefahrenzone"
       },
       "accessTitle": "Zugriff",
       "accessDescription": "Wer diesen Workspace öffnen kann, und mit welcher Rolle.",

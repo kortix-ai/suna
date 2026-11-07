@@ -12,10 +12,15 @@
  */
 
 export const WORKSPACE_SETTINGS_GROUPS = [
-  { id: 'workspace', sections: ['general', 'security', 'branding', 'git', 'sandbox', 'feature-flags', 'api-keys', 'capture'] },
-  { id: 'library', sections: ['connectors', 'secrets', 'skills', 'drives', 'apps', 'triggers', 'models', 'repo'] },
+  { id: 'workspace', sections: ['general', 'security', 'branding', 'api-keys', 'capture'] },
+  // What the workspace's agents work with. Git configures the repository
+  // connection; Repository browses its files (with Drive on).
+  { id: 'library', sections: ['models', 'connectors', 'secrets', 'skills', 'drives', 'apps', 'triggers', 'sandbox', 'git', 'repo'] },
   { id: 'people', sections: ['members', 'groups', 'roles', 'identity', 'audit'] },
   { id: 'billing', sections: ['plan', 'usage'] },
+  { id: 'advanced', sections: ['feature-flags'] },
+  { id: 'danger', sections: ['danger-zone'] },
+  // The rail draws Help in its footer, under the groups.
   { id: 'support', sections: ['help'] },
 ] as const;
 
@@ -41,6 +46,11 @@ export const WORKSPACE_SETTINGS_SECTION_ALIASES: Readonly<Record<string, Workspa
   transactions: 'usage',
   connected: 'git',
   loops: 'triggers',
+  flags: 'feature-flags',
+  experimental: 'feature-flags',
+  snapshots: 'sandbox',
+  repository: 'repo',
+  danger: 'danger-zone',
 };
 
 /** English labels (the en catalog uses the same words; a web test holds them equal). */
@@ -53,6 +63,7 @@ export const WORKSPACE_SETTINGS_LABELS: Readonly<Record<WorkspaceSettingsSection
   'feature-flags': 'Feature flags',
   'api-keys': 'API keys',
   capture: 'Capture',
+  'danger-zone': 'Danger zone',
   connectors: 'Connectors',
   secrets: 'Secrets',
   skills: 'Skills',
@@ -77,6 +88,8 @@ export const WORKSPACE_SETTINGS_GROUP_LABELS: Readonly<Record<WorkspaceSettingsG
   library: 'Library',
   people: 'People',
   billing: 'Billing',
+  advanced: 'Advanced',
+  danger: 'Danger zone',
   support: 'Support',
 };
 

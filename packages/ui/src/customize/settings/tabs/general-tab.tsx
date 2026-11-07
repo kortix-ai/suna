@@ -128,7 +128,15 @@ export interface GeneralTabViewProps {
   onCloseArchiveDialog?: () => void;
   onConfirmArchive?: () => void;
   isArchivePending?: boolean;
+  /**
+   * `all` (default): the whole tab. Workspace settings splits it in two rail
+   * rows: `settings` (General: name, icon, workspace id) and `danger` (Danger
+   * zone: Leave and Delete workspace, with their dialogs).
+   */
+  part?: GeneralTabPart;
 }
+
+export type GeneralTabPart = 'all' | 'settings' | 'danger';
 
 export interface GeneralTabCopy {
   loadFailed: string;
@@ -194,10 +202,13 @@ export function GeneralTabView({
   onCloseArchiveDialog = () => {},
   onConfirmArchive = () => {},
   isArchivePending = false,
+  part = 'all',
 }: GeneralTabViewProps) {
+  const showSettings = part !== 'danger';
+  const showDanger = part !== 'settings';
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
-      <SettingsTabHeader tab="general" />
+      {showSettings ? <SettingsTabHeader tab="general" /> : null}
 
       {isLoading ? (
         <div className="space-y-5">
@@ -217,15 +228,15 @@ export function GeneralTabView({
         />
       ) : (
         <>
-          {generalFieldsSlot}
-          {workspaceId ? (
+          {showSettings ? generalFieldsSlot : null}
+          {showSettings && workspaceId ? (
             <SettingsRowGroup>
               <SettingsRow label={copy.workspaceId} description={copy.workspaceIdDescription}>
                 <CopyRow value={workspaceId} className="w-full max-w-80" />
               </SettingsRow>
             </SettingsRowGroup>
           ) : null}
-          {canDelete || canLeave ? (
+          {showDanger && (canDelete || canLeave) ? (
             <section className="space-y-3">
               <SettingsSubsectionHeader title={copy.dangerZone} />
               <SettingsRowGroup>
@@ -580,8 +591,11 @@ function GeneralWorkspaceCard({
 export function GeneralTab({
   projectId,
   slot,
+  part = 'all',
 }: {
   projectId: string;
+  /** Which half Workspace settings shows (see `GeneralTabViewProps.part`). */
+  part?: GeneralTabPart;
   /** Rendered after the name and icon, before the Danger zone: the workspace's
    *  account settings (security policy) in Workspace settings › General. */
   slot?: ReactNode;
@@ -652,6 +666,7 @@ export function GeneralTab({
 
   return (
     <GeneralTabView
+      part={part}
       copy={{
         loadFailed: t('loadFailed'),
         retry: t('retry'),

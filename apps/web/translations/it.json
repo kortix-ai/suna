@@ -21260,7 +21260,8 @@
       "text16ba47efb9f2": "Una traccia completa e filtrabile di ogni azione di amministratori e agenti in questo workspace: chi ha fatto cosa, dove e quando.",
       "text4b892277843c": "Crea workspace",
       "text41018e566b60": "nuovo workspace crea aggiungi team",
-      "texta99ac8f9050b": "Workspace · Accesso"
+      "texta99ac8f9050b": "Workspace · Accesso",
+      "textfd8b8dae4421": "Zona pericolosa"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -26504,7 +26505,9 @@
         "library": "Libreria",
         "people": "Persone",
         "billing": "Fatturazione",
-        "support": "Supporto"
+        "support": "Supporto",
+        "advanced": "Avanzate",
+        "danger": "Zona pericolosa"
       },
       "sections": {
         "general": "Generale",
@@ -26530,7 +26533,8 @@
         "drives": "Drives",
         "capture": "Capture",
         "security": "Sicurezza",
-        "repo": "Repository"
+        "repo": "Repository",
+        "dangerZone": "Zona pericolosa"
       },
       "accessTitle": "Accesso",
       "accessDescription": "Chi può aprire questo workspace e con quale ruolo.",

@@ -27,7 +27,7 @@ const sectionOf = (key: string) => ALL_PROJECT_SETTINGS_SECTIONS.find((s) => s.k
  */
 describe('projectSettingsSections', () => {
   test('it holds every section, in order', () => {
-    expect(keys()).toEqual(['general', 'git', 'sandbox', 'feature-flags']);
+    expect(keys()).toEqual(['general', 'danger-zone', 'git', 'sandbox', 'feature-flags']);
   });
 
   test('Review is not a section — it is a capability tab', () => {
@@ -146,7 +146,7 @@ describe('the sub-nav is flat', () => {
   });
 
   test('the list order IS the rail order — one pass, nothing re-sorted', () => {
-    expect(projectSettingsSections().map((s) => s.key)).toEqual(['general', 'git', 'sandbox',
+    expect(projectSettingsSections().map((s) => s.key)).toEqual(['general', 'danger-zone', 'git', 'sandbox',
       'feature-flags',
     ]);
   });

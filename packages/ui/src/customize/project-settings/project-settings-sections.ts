@@ -3,6 +3,7 @@ import {
   FlaskIcon as Flask,
   GitBranchIcon as GitBranch,
   GearSixIcon as Settings,
+  WarningIcon as Warning,
   type Icon,
 } from '@phosphor-icons/react';
 
@@ -50,7 +51,7 @@ import type { CustomizeSection } from '../../internal/lib/project-actions';
  * at the key below that replaced it.
  */
 export type ProjectSettingsSectionKey =
-  'general' | 'git' | 'sandbox' | 'review' | 'feature-flags';
+  'general' | 'danger-zone' | 'git' | 'sandbox' | 'review' | 'feature-flags';
 
 /**
  * **One flat list, no headings.** The sub-nav used to carry the rail's three
@@ -84,6 +85,14 @@ const STATIC_SECTIONS: readonly ProjectSettingsSection[] = [
     key: 'general',
     label: 'General',
     icon: Settings,
+    gate: 'settings',
+  },
+  // Leave and Delete workspace, out of General (2026-11-07, Marko): its own
+  // rail row in Workspace settings, under the same gate as General.
+  {
+    key: 'danger-zone',
+    label: 'Danger zone',
+    icon: Warning,
     gate: 'settings',
   },
   // Its own section since 2026-09-03 (Marko): the repository, its status,

@@ -21260,7 +21260,8 @@
       "text16ba47efb9f2": "このワークスペースでの管理者とエージェントのすべての操作を、絞り込み可能な完全な記録で: 誰が、何を、どこで、いつ。",
       "text4b892277843c": "ワークスペースを作成",
       "text41018e566b60": "新規 ワークスペース 作成 追加 チーム",
-      "texta99ac8f9050b": "ワークスペース · アクセス"
+      "texta99ac8f9050b": "ワークスペース · アクセス",
+      "textfd8b8dae4421": "危険な操作"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -26504,7 +26505,9 @@
         "library": "ライブラリ",
         "people": "メンバー",
         "billing": "請求",
-        "support": "サポート"
+        "support": "サポート",
+        "advanced": "詳細設定",
+        "danger": "危険な操作"
       },
       "sections": {
         "general": "一般",
@@ -26530,7 +26533,8 @@
         "drives": "Drives",
         "capture": "Capture",
         "security": "セキュリティ",
-        "repo": "リポジトリ"
+        "repo": "リポジトリ",
+        "dangerZone": "危険な操作"
       },
       "accessTitle": "アクセス",
       "accessDescription": "このワークスペースを開ける人と、そのロール。",
