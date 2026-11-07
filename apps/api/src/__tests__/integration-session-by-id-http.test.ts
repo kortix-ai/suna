@@ -22,6 +22,7 @@ import { insertIntoView } from './helpers/compat-views';
 const ACCOUNT = crypto.randomUUID();
 const OTHER_ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
+const SIBLING = crypto.randomUUID();
 const OWNER = crypto.randomUUID();
 const MEMBER = crypto.randomUUID();
 const OUTSIDER = crypto.randomUUID();
@@ -71,12 +72,25 @@ beforeAll(async () => {
     { accountId: ACCOUNT, name: 'session-by-id-test' },
     { accountId: OTHER_ACCOUNT, name: 'session-by-id-test-other' },
   ]);
-  await db.insert(projects).values({
-    projectId: PROJECT,
-    accountId: ACCOUNT,
-    name: 'session-by-id-test-project',
-    repoUrl: 'https://example.com/session-by-id-test.git',
-  });
+  // A legacy account (2 projects, split_pending): only there does an account
+  // member without a project role stay out of the project. In a 1:1
+  // workspace membership is access (design.md §3.2 C3).
+  await db.insert(projects).values([
+    {
+      projectId: PROJECT,
+      accountId: ACCOUNT,
+      name: 'session-by-id-test-project',
+      repoUrl: 'https://example.com/session-by-id-test.git',
+      splitPending: true,
+    },
+    {
+      projectId: SIBLING,
+      accountId: ACCOUNT,
+      name: 'session-by-id-test-sibling',
+      repoUrl: 'https://example.com/session-by-id-test-sibling.git',
+      splitPending: true,
+    },
+  ]);
   await insertIntoView(db, accountMembers, [
     { userId: OWNER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
