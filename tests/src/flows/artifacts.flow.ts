@@ -21,6 +21,30 @@ const VERSIONS = '/v1/projects/:projectId/artifacts/:artifactId/versions';
 const RESTORE = '/v1/projects/:projectId/artifacts/:artifactId/restore';
 const CONTENT = '/v1/projects/:projectId/artifacts/:artifactId/content';
 
+/** Comment, live, doc and activity routes retired on 2026-11-06 (RETIRED_ROUTES in apps/api/src/routes/retired.ts). */
+const RETIRED = [
+  'GET /v1/projects/:projectId/artifacts/:artifactId/comments',
+  'POST /v1/projects/:projectId/artifacts/:artifactId/comments',
+  'GET /v1/projects/:projectId/artifacts/:artifactId/comments/context',
+  'POST /v1/projects/:projectId/artifacts/:artifactId/comments/send',
+  'GET /v1/projects/:projectId/artifacts/:artifactId/comments/:commentId/screenshot',
+  'POST /v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/replies',
+  'PATCH /v1/projects/:projectId/artifacts/:artifactId/comments/:threadId',
+  'PATCH /v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/:commentId',
+  'DELETE /v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/:commentId',
+  'GET /v1/projects/:projectId/artifact-comment-threads/:threadId',
+  'GET /v1/projects/:projectId/artifacts/:artifactId/activity',
+  'GET /v1/projects/:projectId/artifacts/:artifactId/live',
+  'POST /v1/projects/:projectId/artifacts/:artifactId/live/ticket',
+  'POST /v1/projects/:projectId/artifacts/:artifactId/live/agent',
+  'GET /v1/projects/:projectId/artifacts/:artifactId/doc',
+  'POST /v1/projects/:projectId/artifacts/:artifactId/doc/seed',
+  'POST /v1/projects/:projectId/artifacts/:artifactId/doc/updates',
+  'POST /v1/projects/:projectId/artifacts/:artifactId/doc/lease',
+  'POST /v1/projects/:projectId/artifacts/:artifactId/doc/flushed',
+  'POST /v1/projects/:projectId/artifacts/:artifactId/doc/reset',
+] as const;
+
 type Detail = {
   artifact_id: string; title: string; type: string; path: string; entry: string; visibility: string;
   can_edit: boolean; can_manage: boolean; pinned: boolean; entry_version: string | null;
@@ -60,7 +84,7 @@ flow(
     routes: [
       'GET /v1/projects/:projectId',
       'PATCH /v1/projects/:projectId/features',
-      'GET /v1/projects/:projectId/artifacts/:artifactId/comments',
+      ...RETIRED,
       'GET /v1/drives',
       'GET /v1/projects/:projectId/link-preview',
       `GET ${TYPES}`, `GET ${LIST}`, `POST ${LIST}`, `POST ${SHARE}`, `GET ${ONE}`, `PUT ${ONE}`, `PATCH ${ONE}`, `DELETE ${ONE}`,
@@ -96,6 +120,15 @@ flow(
       if (listed.length) throw new Error(`the catalog still lists ${listed.map((f) => f.key).join()}`);
     });
 
+    await ctx.step('every retired comment, live, doc and activity route → 410 ENDPOINT_RETIRED', async () => {
+      const ids = { projectId: project.id, artifactId: crypto.randomUUID(), threadId: crypto.randomUUID(), commentId: crypto.randomUUID() };
+      for (const route of RETIRED) {
+        const [method, template] = route.split(' ');
+        (await owner.request(method, template, { params: ids, body: method === 'GET' ? undefined : {} }))
+          .status(410).body().has('$.code', 'ENDPOINT_RETIRED');
+      }
+    });
+
     if (!(await artifactsAvailable(ctx, project.id))) {
       await ctx.step('no volume storage on this target: the row serves artifacts false and the list → 403 feature_disabled (feature artifacts)', async () => {
         (await owner.get(LIST, { params: p })).status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'artifacts');
@@ -103,10 +136,8 @@ flow(
       return;
     }
 
-    await ctx.step('a project that never touched a flag lists its Artifacts → 200; the removed comments route → 410 ENDPOINT_RETIRED', async () => {
+    await ctx.step('a project that never touched a flag lists its Artifacts → 200', async () => {
       (await owner.get(LIST, { params: p })).status(200).body().has('$.artifacts', []);
-      (await owner.get('/v1/projects/:projectId/artifacts/:artifactId/comments', { params: { projectId: project.id, artifactId: crypto.randomUUID() } }))
-        .status(410).body().has('$.code', 'ENDPOINT_RETIRED');
     });
     const providerBase = process.env.PLATINUM_API_URL?.replace(/\/+$/, '');
     const providerKey = process.env.PLATINUM_API_KEY;
