@@ -35,9 +35,7 @@
  * slot child. Counts below are `TABLE_MARKUP` matches / `<TableHead>` columns,
  * re-measured 2026-08-12: Audit's table is in `components/iam/audit-tab.tsx`
  * (17 / 5 — Event, Scope, Principal, Result, Time), Roles' in
- * `components/iam/roles-tab.tsx` (15 / 5), Api-keys' in
- * `components/iam/api-keys-card.tsx` (17 / 6; rewritten 2026-08-12, the table
- * used to live in the deleted `service-accounts-card.tsx`), Usage's in
+ * `components/iam/roles-tab.tsx` (15 / 5), Usage's in
  * `features/billing/transactions-table.tsx` (17 / 6), which
  * `features/billing/credit-transactions.tsx` mounts — see `CHILD_SUBTREE`.
  * Grepping only `settings/tabs/*.tsx` found a table in `members-tab.tsx` alone

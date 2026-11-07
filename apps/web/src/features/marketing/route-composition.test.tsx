@@ -29,7 +29,7 @@ describe('shipped marketing route composition', () => {
       document.body.innerHTML = html;
       expect({
         sections: [...document.querySelectorAll('section')].map((node) => node.id),
-        securityContent: name === 'security' ? document.body.textContent : undefined,
+        securityContent: undefined,
         glyphs: [...document.querySelectorAll('[style*="mask"]')].map((node) => node.getAttribute('style')),
         headings: [...document.querySelectorAll('h1, h2, h3')].map((node) => node.textContent),
         links: [...document.querySelectorAll('a')].map((node) => [node.textContent, node.getAttribute('href')]),

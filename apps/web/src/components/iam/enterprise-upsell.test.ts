@@ -138,20 +138,6 @@ describe('account page rail groups every access surface under Access', () => {
     expect(pageSource).not.toContain('EnterpriseAccessRow');
   });
 
-  /**
-   * `PatPolicyCard` + `ServiceAccountsCard` until 2026-08-12, when both were
-   * replaced by the components the settings panel's API keys tab mounts. The
-   * order flipped with them: the keys come first now, the rules that govern
-   * them second — the same fix made in `tabs/api-keys-tab.tsx`, for the same
-   * reason (a policy form is not what someone opening "Tokens" came for).
-   */
-  test('tokens section carries the keys list and then the key rules', () => {
-    expect(pageSource).toMatch(/activeSection === 'tokens' && sectionVisible.tokens/);
-    expect(pageSource).toMatch(
-      /activeSection === 'tokens'[\s\S]*?<ApiKeysSection[\s\S]*?<KeyRulesCard/,
-    );
-  });
-
   test('audit webhooks live on the audit tab, gated on entitlement + write', () => {
     expect(pageSource).toMatch(/auditEnabled && canWriteAccount \? \(\s*<AuditWebhooksCard/);
   });

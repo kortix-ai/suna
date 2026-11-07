@@ -48,8 +48,7 @@ import { AccessHelp } from '@/components/iam/access-help';
 import { WorkspaceAccessRequests } from '@/components/iam/workspace-access-requests';
 import { WorkspaceAccessSection } from '@/features/workspace/settings/workspace-access-section';
 import { AddGitHubAccountDialog } from '@kortix/ui/access/iam/add-github-account-dialog';
-import { ApiKeysSection } from '@/components/iam/api-keys-card';
-import { TokensTab } from '@kortix/ui/customize/settings/tabs/tokens-tab';
+import { WorkspaceKeysSection } from '@kortix/ui/customize/settings/tabs/workspace-keys';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
@@ -589,29 +588,20 @@ export function AccountHubContent({
             </div>
           ) : null}
 
-          {/* Tokens — the machine-access surface, and ONLY that since
-              2026-08-18: service account tokens first, the rules that govern
-              them second. A person's own API keys are not account
-              configuration and left for `/settings/tokens`
-              (`packages/ui/src/customize/settings/tabs/tokens-tab.tsx`);
-              `ApiKeysSection` carries the one line that points there. Both
-              components carry their own section headers, so the pane header
-              above is the only other chrome. */}
+          {/* API keys — ONE list of every key of the workspace (design.md
+              §3.2 C4b): a key acts as you, an agent or a bot, chosen on
+              "New key". Every member sees and manages their own keys; agent
+              and bot keys need `token.create`, which the list reports
+              (`can_manage_principals`). A person's personal keys (bound to no
+              workspace) stay in Preferences › Personal keys. */}
           {activeSection === 'tokens' && sectionVisible.tokens ? (
             <div className="space-y-10">
-              {/* A person's own keys first: every member has them (Workspaces,
-                  PR 1 — they left `/settings`). The machine keys below need
-                  `token.create`. */}
-              <TokensTab accountId={account.account_id} workspaceId={workspaceId} embedded />
+              <WorkspaceKeysSection workspaceId={workspaceId ?? account.account_id} accountId={account.account_id} heading={false} />
               {canCreateToken === true ? (
-                <>
-              <ApiKeysSection accountId={account.account_id} canManage={canCreateToken === true} />
-              {/* OAuth apps — "Sign in with Kortix" clients. A client secret
-                  is a credential the account issues to a machine, so it
-                  sits with the other machine credentials and under the same
-                  `token.*` permissions. */}
-              <OAuthAppsCard accountId={account.account_id} canManage={canCreateToken === true} />
-                </>
+                // OAuth apps — "Sign in with Kortix" clients. A client secret
+                // is a credential the workspace issues to a machine, so it
+                // sits with the keys, under the same `token.*` permissions.
+                <OAuthAppsCard accountId={account.account_id} canManage />
               ) : null}
             </div>
           ) : null}

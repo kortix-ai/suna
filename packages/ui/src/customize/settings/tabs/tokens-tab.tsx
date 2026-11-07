@@ -1043,7 +1043,7 @@ function accessLabel(row: ApiKeyRow, tWorkspaces: ReturnType<typeof useTranslati
  * per permission, the workspace name in mono. Only what the creator's role
  * holds can be minted; the API names any other.
  */
-function PermissionPicker({
+export function PermissionPicker({
   query,
   picked,
   onToggle,

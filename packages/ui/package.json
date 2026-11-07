@@ -35,6 +35,7 @@
     "./access/iam/add-github-account-dialog": "./src/access/iam/add-github-account-dialog.tsx",
     "./access/iam/api-key-expiry": "./src/access/iam/api-key-expiry.ts",
     "./access/iam/api-key-rows": "./src/access/iam/api-key-rows.ts",
+    "./access/iam/workspace-key-acts-as": "./src/access/iam/workspace-key-acts-as.ts",
     "./access/iam/managed-git-notice": "./src/access/iam/managed-git-notice.tsx",
     "./access/iam/session-oversight-card": "./src/access/iam/session-oversight-card.tsx",
     "./access/sharing-picker": "./src/access/sharing-picker.tsx",
@@ -111,6 +112,7 @@
     "./customize/settings/tabs/sandbox-tab": "./src/customize/settings/tabs/sandbox-tab.tsx",
     "./customize/settings/tabs/snapshots-tab": "./src/customize/settings/tabs/snapshots-tab.tsx",
     "./customize/settings/tabs/tokens-tab": "./src/customize/settings/tabs/tokens-tab.tsx",
+    "./customize/settings/tabs/workspace-keys": "./src/customize/settings/tabs/workspace-keys.tsx",
     "./customize/settings/type": "./src/customize/settings/type.ts",
     "./customize/shared/agent-resource-scope": "./src/customize/shared/agent-resource-scope.tsx",
     "./customize/shared/capability-access-gate": "./src/customize/shared/capability-access-gate.tsx",
@@ -622,6 +624,10 @@
         "types": "./dist/access/iam/api-key-rows.d.ts",
         "import": "./dist/access/iam/api-key-rows.js"
       },
+      "./access/iam/workspace-key-acts-as": {
+        "types": "./dist/access/iam/workspace-key-acts-as.d.ts",
+        "import": "./dist/access/iam/workspace-key-acts-as.js"
+      },
       "./access/iam/managed-git-notice": {
         "types": "./dist/access/iam/managed-git-notice.d.ts",
         "import": "./dist/access/iam/managed-git-notice.js"
@@ -922,6 +928,10 @@
       "./customize/settings/tabs/tokens-tab": {
         "types": "./dist/customize/settings/tabs/tokens-tab.d.ts",
         "import": "./dist/customize/settings/tabs/tokens-tab.js"
+      },
+      "./customize/settings/tabs/workspace-keys": {
+        "types": "./dist/customize/settings/tabs/workspace-keys.d.ts",
+        "import": "./dist/customize/settings/tabs/workspace-keys.js"
       },
       "./customize/settings/type": {
         "types": "./dist/customize/settings/type.d.ts",
