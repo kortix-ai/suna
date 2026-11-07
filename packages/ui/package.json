@@ -339,6 +339,7 @@
     "./internal/notifications/notification-inbox": "./src/internal/notifications/notification-inbox.tsx",
     "./internal/notifications/notification-rows": "./src/internal/notifications/notification-rows.ts",
     "./internal/notifications/session-toast-cards": "./src/internal/notifications/session-toast-cards.tsx",
+    "./internal/notifications/use-inbox-summary": "./src/internal/notifications/use-inbox-summary.ts",
     "./internal/notifications/web-push": "./src/internal/notifications/web-push.ts",
     "./internal/session-types/index": "./src/internal/session-types/index.ts",
     "./internal/session-types/types": "./src/internal/session-types/types.ts",
@@ -1820,6 +1821,10 @@
       "./internal/notifications/session-toast-cards": {
         "types": "./dist/internal/notifications/session-toast-cards.d.ts",
         "import": "./dist/internal/notifications/session-toast-cards.js"
+      },
+      "./internal/notifications/use-inbox-summary": {
+        "types": "./dist/internal/notifications/use-inbox-summary.d.ts",
+        "import": "./dist/internal/notifications/use-inbox-summary.js"
       },
       "./internal/notifications/web-push": {
         "types": "./dist/internal/notifications/web-push.d.ts",
