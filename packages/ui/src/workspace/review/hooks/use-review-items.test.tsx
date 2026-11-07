@@ -96,7 +96,7 @@ describe('useReviewItemById', () => {
     const { fetched, seen } = await read('call:exec-1', true);
     expect((seen as { error?: unknown }).error ?? null).toBeNull();
     expect(fetched).toHaveLength(1);
-    expect(fetched[0]).toContain('/projects/proj-1/review/items/call:exec-1');
+    expect(fetched[0]).toContain('/workspaces/proj-1/review/items/call:exec-1');
     expect(seen.data).toMatchObject({ detail: { resolved_preview: { title: 'Loaded' } } });
   });
 

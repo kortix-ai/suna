@@ -25,15 +25,16 @@ import {
   type IamRole,
   type RoleAssignment,
 } from '@kortix/sdk';
+import { HUMAN_ONLY } from '@kortix/shared/workspace-actions';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { KORTIX_PERMISSIONS_CATALOG } from '../../customize/sections/view/agent-editor-catalog';
 
-/** Never an agent's, whatever its role or its `kortix_permissions` say. Mirrors
- *  `HUMAN_ONLY_ACTIONS` in apps/api `iam/agent-principal.ts`: a token an agent
- *  minted would carry none of its permissions. */
-export const HUMAN_ONLY_PERMISSIONS: readonly string[] = ['project.credentials.issue'];
+/** Never an agent's, whatever its role or its `kortix_permissions` say: the
+ *  HUMAN_ONLY set the API enforces (minting credentials, moving money). None of
+ *  them is in the grantable catalog, so only an explicit list can name one. */
+export const HUMAN_ONLY_PERMISSIONS: readonly string[] = [...HUMAN_ONLY];
 
 /** Every project permission `kortix_permissions` may name. */
 export const GRANTABLE_PROJECT_PERMISSIONS: readonly string[] = KORTIX_PERMISSIONS_CATALOG.flatMap(
