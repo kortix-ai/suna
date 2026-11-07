@@ -33,9 +33,6 @@
     "./access/access/principal-picker": "./src/access/access/principal-picker.tsx",
     "./access/access/workspace-role-dialog": "./src/access/access/workspace-role-dialog.tsx",
     "./access/iam/add-github-account-dialog": "./src/access/iam/add-github-account-dialog.tsx",
-    "./access/iam/api-key-expiry": "./src/access/iam/api-key-expiry.ts",
-    "./access/iam/api-key-rows": "./src/access/iam/api-key-rows.ts",
-    "./access/iam/workspace-key-acts-as": "./src/access/iam/workspace-key-acts-as.ts",
     "./access/iam/managed-git-notice": "./src/access/iam/managed-git-notice.tsx",
     "./access/iam/session-oversight-card": "./src/access/iam/session-oversight-card.tsx",
     "./access/sharing-picker": "./src/access/sharing-picker.tsx",
@@ -615,18 +612,6 @@
       "./access/iam/add-github-account-dialog": {
         "types": "./dist/access/iam/add-github-account-dialog.d.ts",
         "import": "./dist/access/iam/add-github-account-dialog.js"
-      },
-      "./access/iam/api-key-expiry": {
-        "types": "./dist/access/iam/api-key-expiry.d.ts",
-        "import": "./dist/access/iam/api-key-expiry.js"
-      },
-      "./access/iam/api-key-rows": {
-        "types": "./dist/access/iam/api-key-rows.d.ts",
-        "import": "./dist/access/iam/api-key-rows.js"
-      },
-      "./access/iam/workspace-key-acts-as": {
-        "types": "./dist/access/iam/workspace-key-acts-as.d.ts",
-        "import": "./dist/access/iam/workspace-key-acts-as.js"
       },
       "./access/iam/managed-git-notice": {
         "types": "./dist/access/iam/managed-git-notice.d.ts",

@@ -239,7 +239,6 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   accounts: (rest) => runAccounts(rest),
   members: (rest) => runMembers(rest),
   groups: (rest) => runGroups(rest),
-  keys: (rest) => runKeys(rest),
   tokens: (rest) => runTokens(rest),
   billing: (rest) => runBilling(rest),
   workspaces: (rest) => runProjects(rest),
@@ -299,6 +298,9 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   update: (rest) => runUpdate(rest),
   uninstall: (rest) => runUninstall(rest),
   tasks: (rest) => runTasks(rest),
+  // Last: a newer command never wins an edit-distance tie over an older one
+  // (`kortix les` still suggests `files`).
+  keys: (rest) => runKeys(rest),
 };
 
 async function main(rawArgv: string[]): Promise<number> {
