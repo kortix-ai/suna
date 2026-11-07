@@ -15,6 +15,7 @@
  * Generic synthetic data only.
  */
 import { flow } from '../core/flow';
+import { waitFor } from '../core/poll';
 import type { FlowContext, Principal } from '../core/types';
 import { CliSandbox } from '../fixtures/cli';
 import { AgentPrincipalsWorld, openDb } from '../fixtures/agent-principals';
@@ -914,5 +915,171 @@ flow(
       (await ctx.client.as(personal).get(`/v1/workspaces/${a.id}/members`)).status(200);
       (await ctx.client.as(personal).get(`/v1/workspaces/${b.id}/members`)).status(200);
     });
+  },
+);
+
+// ── WS-AUTH-15 — one API keys concept: a key acts as me, an agent, or a bot ──
+flow(
+  'WS-AUTH-15',
+  {
+    domain: 'workspaces',
+    requires: ['database'],
+    timeoutMs: 180_000,
+    routes: [
+      'GET /v1/workspaces/:workspaceId/keys',
+      'POST /v1/workspaces/:workspaceId/keys',
+      'DELETE /v1/workspaces/:workspaceId/keys/:keyId',
+      'GET /v1/accounts/:workspaceId/keys',
+      'POST /v1/accounts/:workspaceId/keys',
+      'DELETE /v1/accounts/:workspaceId/keys/:keyId',
+      'POST /v1/workspaces/:workspaceId/members',
+      'DELETE /v1/workspaces/:workspaceId/members/:userId',
+      'POST /v1/workspaces/:workspaceId/iam/service-accounts',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const w = await team.project({ managedGit: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: w.id });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const keys = `/v1/workspaces/${w.id}/keys`;
+    const expiresAt = () => new Date(Date.now() + 3_600_000).toISOString();
+    type Key = { key_id: string; secret_key: string; acts_as: { type: string; name: string | null; service_account_id: string | null }; scope: string; created_by: string | null };
+    const mint = async (who: Principal, body: Record<string, unknown>, status = 201) => {
+      const r = await ctx.client.as(who).post(keys, { expires_at: expiresAt(), ...body });
+      r.status(status);
+      return r.json<Key & { code?: string; permissions?: string[] }>();
+    };
+    const as = (key: Key, label: string) => keyPrincipal(ctx.P.OWNER, key.secret_key, label);
+    /** The audit rows a key's requests wrote (the request rows of its own credential). */
+    const auditOf = (keyId: string) =>
+      waitFor(
+        async () =>
+          (
+            await world.db.query(
+              `SELECT actor_type, actor_user_id::text AS actor_user_id, agent_id, agent_name, credential_id
+                 FROM kortix.audit_events WHERE account_id = $1::uuid AND credential_id = $2 ORDER BY occurred_at`,
+              [team.id, keyId],
+            )
+          ).rows as Array<{ actor_type: string; actor_user_id: string | null; agent_id: string | null; agent_name: string | null }>,
+        { until: (rows) => rows.length > 0, timeoutMs: 20_000, intervalMs: 250, description: `audit rows of key ${keyId}` },
+      );
+    try {
+      await ctx.step('the manifest declares `kortix` (no permissions), `steward` ("*") and `auditor` (session read only)', async () => {
+        await world.writeManifest(
+          'project:\n  name: example-org-wsa15\ndefault_agent: kortix\nagents:\n  kortix: {}\n  steward:\n    kortix_permissions: "*"\n  auditor:\n    kortix_permissions: [project.session.read]\n',
+        );
+      });
+
+      await ctx.step('GET /keys as the owner → can_manage_principals, the three agents a key can act as, no bot yet', async () => {
+        const r = (await owner.get(keys)).status(200);
+        r.body().has('$.can_manage_principals', true);
+        const agents = r.json<{ agents: Array<{ name: string }> }>().agents.map((a) => a.name);
+        if (agents.join(',') !== 'auditor,kortix,steward') throw new Error(`agents: ${agents.join(',')}`);
+      });
+
+      let meKey!: Key;
+      await ctx.step('acts_as me (read only) → 201 acts_as me; it reads members (200), a write → 403 key_scope_read_only; audit names the owner', async () => {
+        meKey = await mint(ctx.P.OWNER, { name: 'wsa15-me', acts_as: 'me', scopes: 'read' });
+        if (meKey.acts_as.type !== 'me' || meKey.scope !== 'read' || meKey.created_by !== ctx.P.OWNER.userId) throw new Error(JSON.stringify(meKey));
+        (await ctx.client.as(as(meKey, 'ME_KEY')).get(`/v1/workspaces/${w.id}/members`)).status(200);
+        (await ctx.client.as(as(meKey, 'ME_KEY')).patch(`/v1/workspaces/${w.id}`, { name: 'nope' })).status(403).body().has('$.code', 'key_scope_read_only');
+        const rows = await auditOf(meKey.key_id);
+        if (!rows.every((row) => row.actor_type === 'human' && row.actor_user_id === ctx.P.OWNER.userId)) throw new Error(`me audit: ${JSON.stringify(rows)}`);
+      });
+
+      let stewardKey!: Key;
+      await ctx.step("acts_as agent steward → 201; it authorizes as the agent: sessions and secrets 200, minting a key → 403 agent_human_only_action; audit names the agent, no person", async () => {
+        stewardKey = await mint(ctx.P.OWNER, { name: 'wsa15-steward', acts_as: 'agent', agent: 'steward' });
+        if (stewardKey.acts_as.type !== 'agent' || stewardKey.acts_as.name !== 'steward' || !stewardKey.acts_as.service_account_id) throw new Error(JSON.stringify(stewardKey.acts_as));
+        const agent = ctx.client.as(as(stewardKey, 'STEWARD_KEY'));
+        (await agent.get(`/v1/workspaces/${w.id}/sessions`)).status(200);
+        (await agent.get(`/v1/workspaces/${w.id}/secrets`)).status(200);
+        (await agent.post(`/v1/workspaces/${w.id}/iam/service-accounts`, { name: 'from-agent-key' })).status(403).body().has('$.code', 'agent_human_only_action');
+        (await agent.post(keys, { name: 'from-agent-key', acts_as: 'me' })).status(403);
+        const rows = await auditOf(stewardKey.key_id);
+        const read = rows.find((row) => row.actor_type === 'agent');
+        if (!read || read.agent_name !== 'steward' || read.agent_id !== stewardKey.acts_as.service_account_id || read.actor_user_id !== null) {
+          throw new Error(`agent audit: ${JSON.stringify(rows)}`);
+        }
+      });
+
+      await ctx.step("acts_as agent auditor → its grant bounds the key: sessions 200, secrets 403; a custom scope outside the grant → 403 key_scope_exceeds_principal and no key is left", async () => {
+        const auditor = await mint(ctx.P.OWNER, { name: 'wsa15-auditor', acts_as: 'agent', agent: 'auditor' });
+        const agent = ctx.client.as(as(auditor, 'AUDITOR_KEY'));
+        (await agent.get(`/v1/workspaces/${w.id}/sessions`)).status(200);
+        (await agent.get(`/v1/workspaces/${w.id}/secrets`)).status(403);
+        const refused = await mint(ctx.P.OWNER, { name: 'wsa15-too-wide', acts_as: 'agent', agent: 'auditor', scopes: ['workspace.secret.read'] }, 403);
+        if (refused.code !== 'key_scope_exceeds_principal' || refused.permissions?.join() !== 'project.secret.read') throw new Error(JSON.stringify(refused));
+        const listed = (await owner.get(keys)).status(200).json<{ keys: Array<{ name: string }> }>().keys.map((k) => k.name);
+        if (listed.includes('wsa15-too-wide')) throw new Error('the refused key is listed');
+        await mint(ctx.P.OWNER, { name: 'wsa15-nobody', acts_as: 'agent', agent: 'mykortix' }, 400);
+        await mint(ctx.P.OWNER, { name: 'wsa15-unknown', acts_as: 'agent', agent: 'nope' }, 404);
+      });
+
+      let botKey!: Key;
+      await ctx.step('acts_as bot (a new name) → 201 creates the bot with the Member role; the key reads sessions (200), mints nothing (403); audit names the bot as a service account', async () => {
+        botKey = await mint(ctx.P.OWNER, { name: 'wsa15-ci', acts_as: 'bot', bot: 'wsa15-ci-bot' });
+        if (botKey.acts_as.type !== 'bot' || botKey.acts_as.name !== 'wsa15-ci-bot') throw new Error(JSON.stringify(botKey.acts_as));
+        const bot = ctx.client.as(as(botKey, 'BOT_KEY'));
+        (await bot.get(`/v1/workspaces/${w.id}/sessions`)).status(200);
+        (await bot.post(`/v1/workspaces/${w.id}/iam/service-accounts`, { name: 'from-bot-key' })).status(403).body().has('$.code', 'agent_human_only_action');
+        const rows = await auditOf(botKey.key_id);
+        if (!rows.every((row) => row.actor_type === 'service_account' && row.actor_user_id === botKey.acts_as.service_account_id)) {
+          throw new Error(`bot audit: ${JSON.stringify(rows)}`);
+        }
+        const listed = (await owner.get(keys)).status(200).json<{ bots: Array<{ name: string; has_role: boolean }> }>().bots;
+        if (!listed.some((b) => b.name === 'wsa15-ci-bot' && b.has_role)) throw new Error(`bots: ${JSON.stringify(listed)}`);
+        // A second key of the same bot reuses it.
+        const again = await mint(ctx.P.OWNER, { name: 'wsa15-ci-2', acts_as: 'bot', bot: 'wsa15-ci-bot', scopes: 'read' });
+        if (again.acts_as.service_account_id !== botKey.acts_as.service_account_id) throw new Error('a second bot was created');
+      });
+
+      await ctx.step('an older bot (POST /iam/service-accounts) lists its own bearer as a bot key; DELETE /keys/:id disables it → its bearer answers 401', async () => {
+        const sa = (await owner.post(`/v1/workspaces/${w.id}/iam/service-accounts`, { name: 'wsa15-legacy-bot' })).status(201).json<{ service_account_id: string; secret: string }>();
+        const row = (await owner.get(keys)).status(200).json<{ keys: Array<{ key_id: string; credential: string; acts_as: { type: string } }> }>().keys
+          .find((k) => k.key_id === sa.service_account_id);
+        if (!row || row.credential !== 'service_account_bearer' || row.acts_as.type !== 'bot') throw new Error(`legacy bot row: ${JSON.stringify(row)}`);
+        (await owner.del(`${keys}/${sa.service_account_id}`)).status(200);
+        (await ctx.client.withBearer(sa.secret, 'LEGACY_BOT').get(`/v1/workspaces/${w.id}/sessions`)).status(401);
+      });
+
+      await ctx.step('a plain member: GET /keys lists only their own keys, no agents or bots; acts_as agent → 403; another key → 403 on DELETE', async () => {
+        const member = await team.addMember('member');
+        const mine = await mint(member, { name: 'wsa15-member', acts_as: 'me' });
+        const r = (await ctx.client.as(member).get(keys)).status(200);
+        r.body().has('$.can_manage_principals', false).has('$.agents.length', 0).has('$.bots.length', 0);
+        const names = r.json<{ keys: Array<{ key_id: string }> }>().keys.map((k) => k.key_id);
+        if (names.join() !== mine.key_id) throw new Error(`member sees ${names.join()}`);
+        await mint(member, { name: 'wsa15-member-agent', acts_as: 'agent', agent: 'steward' }, 403);
+        (await ctx.client.as(member).del(`${keys}/${stewardKey.key_id}`)).status(403);
+        (await ctx.client.as(member).del(`${keys}/${mine.key_id}`)).status(200);
+      });
+
+      await ctx.step("an admin's agent key survives the admin's removal; the admin's own key does not", async () => {
+        const admin = await team.addMember('admin');
+        const agentKey = await mint(admin, { name: 'wsa15-admin-agent', acts_as: 'agent', agent: 'steward' });
+        const ownKey = await mint(admin, { name: 'wsa15-admin-me', acts_as: 'me' });
+        if (agentKey.created_by !== admin.userId) throw new Error(`created_by ${agentKey.created_by}`);
+        (await owner.del(`/v1/workspaces/${w.id}/members/${admin.userId}`)).status(200);
+        (await ctx.client.as(as(agentKey, 'ADMIN_AGENT_KEY')).get(`/v1/workspaces/${w.id}/sessions`)).status(200);
+        (await ctx.client.as(as(ownKey, 'ADMIN_OWN_KEY')).get(`/v1/workspaces/${w.id}/members`)).status(401);
+      });
+
+      await ctx.step('revoke: DELETE /keys/:id on the agent and bot keys → 200, each → 401; the legacy alias lists the same keys', async () => {
+        (await owner.del(`${keys}/${stewardKey.key_id}`)).status(200);
+        (await owner.del(`/v1/accounts/${w.id}/keys/${botKey.key_id}`)).status(200);
+        (await ctx.client.as(as(stewardKey, 'STEWARD_KEY')).get(`/v1/workspaces/${w.id}/sessions`)).status(401);
+        (await ctx.client.as(as(botKey, 'BOT_KEY')).get(`/v1/workspaces/${w.id}/sessions`)).status(401);
+        const viaAlias = (await owner.get(`/v1/accounts/${w.id}/keys`)).status(200).json<{ keys: Array<{ key_id: string; status: string }> }>().keys;
+        if (viaAlias.find((k) => k.key_id === stewardKey.key_id)?.status !== 'revoked') throw new Error('the alias does not list the revoked agent key');
+        await mint(ctx.P.OWNER, { name: 'wsa15-alias', acts_as: 'me' }).then(async (k) => {
+          (await owner.post(`/v1/accounts/${w.id}/keys`, { name: 'wsa15-alias-2', expires_at: expiresAt() })).status(201);
+          (await owner.del(`${keys}/${k.key_id}`)).status(200);
+        });
+      });
+    } finally {
+      await world.close();
+    }
   },
 );
