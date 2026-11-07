@@ -1,7 +1,8 @@
 // Pins the audit-webhook delivery path (deliverTestEvent -> deliverOne) to the
-// SSRF guards. Only the database is stubbed; the guards run unmocked, so a
-// regression that drops either guard from delivery sends a request and fails here.
-import { afterEach, describe, expect, mock, test } from 'bun:test';
+// SSRF guards. Only the database and DNS are stubbed; both guards run for real.
+// The string check (assertAllowedSourceAddress) rejects the literal-IP cases;
+// the DNS/rebinding case passes it and is rejected only by safeEgressFetch.
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
 
 const recorded: unknown[] = [];
 mock.module('./db', () => ({
@@ -16,22 +17,36 @@ mock.module('./db', () => ({
   },
 }));
 
+let resolvedAddress = '10.0.0.5';
+mock.module('node:dns/promises', () => ({
+  lookup: async () => [{ address: resolvedAddress, family: 4 }],
+}));
+
 const { deliverTestEvent } = await import('./audit-webhooks');
 
-type Hook = Parameters<typeof deliverTestEvent>[0];
-
-function hookFor(url: string): Hook {
+function hookFor(url: string): Parameters<typeof deliverTestEvent>[0] {
+  const now = new Date();
   return {
     webhookId: '00000000-0000-4000-a000-000000000201',
     accountId: '00000000-0000-4000-a000-000000000101',
     url,
     secret: 'whsec_test',
-  } as Hook;
+    name: 'ssrf-test',
+    enabled: true,
+    actionPrefix: null,
+    lastDeliveredAt: null,
+    lastErrorAt: null,
+    lastError: null,
+    createdBy: null,
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
-const realFetch = globalThis.fetch;
+const okFetch = Object.assign(async () => new Response('ok'), { preconnect: () => {} });
+const fetchSpy = spyOn(globalThis, 'fetch');
 afterEach(() => {
-  globalThis.fetch = realFetch;
+  fetchSpy.mockReset();
   recorded.length = 0;
 });
 
@@ -51,19 +66,26 @@ describe('audit webhook delivery SSRF guard', () => {
 
   for (const url of internalUrls) {
     test(`never sends a request to ${url}`, async () => {
-      let calls = 0;
-      globalThis.fetch = (async () => {
-        calls += 1;
-        return new Response('ok');
-      }) as unknown as typeof fetch;
+      fetchSpy.mockImplementation(okFetch);
 
       const result = await deliverTestEvent(hookFor(url));
 
       expect(result.ok).toBe(false);
-      expect(calls).toBe(0);
+      expect(fetchSpy).not.toHaveBeenCalled();
       expect(result.error).toBeTruthy();
       expect(result.error).not.toContain(url);
       expect(recorded.length).toBe(1);
     });
   }
+
+  test('never sends when a public-looking hostname resolves to a private address', async () => {
+    fetchSpy.mockImplementation(okFetch);
+    resolvedAddress = '10.0.0.5';
+
+    const result = await deliverTestEvent(hookFor('https://hooks.example.com/hook'));
+
+    expect(result.ok).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(recorded.length).toBe(1);
+  });
 });
