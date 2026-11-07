@@ -42,7 +42,8 @@ import type { ProjectRole } from '../access';
 import { serializeProject } from '../lib/serializers';
 import { compareWorkspaceRows, projectRowOfRecord } from '../lib/workspace-list';
 import { patchProjectRecord, readProjectRecord } from './project-detail';
-import { newWorkspaceCallerOf, provisionStreamResponse } from './projects';
+import { provisionStreamResponse } from './projects';
+import { newWorkspaceCallerOf } from '../lib/new-workspace-caller';
 
 export type { WorkspaceRole, WorkspaceState };
 
@@ -240,7 +241,7 @@ export async function readWorkspace(c: Context<AppEnv>): Promise<Response> {
  * that `PATCH /v1/workspaces/:id` refuses, each with the route that writes it.
  * `null`: derived, nothing writes it directly.
  */
-export const WORKSPACE_READ_ONLY_FIELDS: Readonly<Record<string, string | null>> = {
+const WORKSPACE_READ_ONLY_FIELDS: Readonly<Record<string, string | null>> = {
   mfa_required: 'PATCH /v1/workspaces/:workspaceId/iam/mfa-required',
   session_max_lifetime_minutes: 'PATCH /v1/workspaces/:workspaceId/iam/session-policy',
   session_idle_timeout_minutes: 'PATCH /v1/workspaces/:workspaceId/iam/session-policy',
@@ -264,8 +265,8 @@ export const WORKSPACE_READ_ONLY_FIELDS: Readonly<Record<string, string | null>>
   project_id: null,
 };
 
-/** The first read-only key in a PATCH body, or null. Pure: exported for tests. */
-export function readOnlyWorkspaceField(body: Record<string, unknown>): string | null {
+/** The first read-only key in a PATCH body, or null. Pure. */
+function readOnlyWorkspaceField(body: Record<string, unknown>): string | null {
   return Object.keys(body).find((key) => Object.prototype.hasOwnProperty.call(WORKSPACE_READ_ONLY_FIELDS, key)) ?? null;
 }
 
