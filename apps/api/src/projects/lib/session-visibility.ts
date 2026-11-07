@@ -113,7 +113,7 @@ const loadSpawnAncestors = ttlMemo({
  * reads the conversation of the sessions that started it (`kortix sessions log
  * <parent>`), so its parent's brief can stay short (harness/pi `agentIdentity`).
  */
-async function isSpawnAncestor(projectId: string, boundCredentialSessionId: string | null, sessionId: string): Promise<boolean> {
+export async function isSpawnAncestor(projectId: string, boundCredentialSessionId: string | null, sessionId: string): Promise<boolean> {
   if (!boundCredentialSessionId || boundCredentialSessionId === sessionId) return false;
   return (await loadSpawnAncestors(projectId, boundCredentialSessionId)).includes(sessionId);
 }
