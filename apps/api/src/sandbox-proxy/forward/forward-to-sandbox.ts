@@ -152,6 +152,7 @@ export async function forwardToSandbox(
     remainingPath,
     queryString,
     origin,
+    method,
   });
   if (accessRefusal) return accessRefusal;
   // A turn whose required connectors cannot serve it is refused HERE — before the

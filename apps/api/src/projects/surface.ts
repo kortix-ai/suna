@@ -75,7 +75,7 @@ export {
 export { extractAgents, grantsByAgent, loadProjectAgents } from './agents';
 export { mentionTokens } from './lib/mentions';
 export { resolveAndAuthorizeAgentAs } from './lib/agent-access';
-export { loadVisibleSession } from './lib/session-visibility';
+export { isSpawnAncestor, loadVisibleSession } from './lib/session-visibility';
 export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
 // Does a sandbox's runtime keep a prompt's message id (consumed by the sandbox proxy's wire-id placement).
 export { sandboxKeepsMessageIds } from './session-lifecycle/inbox-admission';
