@@ -30,8 +30,9 @@ import {
 } from '@kortix/api-contract/multi-agent';
 import type { SessionWorking } from '@kortix/api-contract';
 import { connectorCalls, sessionPendingPermissions, sessionPendingQuestions, sessionTurns } from '@kortix/db';
-import { and, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { approvalNotExpired } from '../../connectors/approval-expiry';
+import { pendingAskNotExpired } from './session-asks';
 import { db } from '../../shared/db';
 import { isUuid } from '../../shared/validate';
 import { isRequestedStopName } from '../session-turn-ledger';
@@ -132,21 +133,20 @@ export function deriveSessionBoard(input: {
 async function readAttention(sessionIds: string[]): Promise<Map<string, SessionAttention>> {
   const out = new Map<string, SessionAttention>();
   const uuids = sessionIds.filter(isUuid);
-  const askOpen = (expiresAt: typeof sessionPendingQuestions.expiresAt | typeof sessionPendingPermissions.expiresAt) => or(isNull(expiresAt), gt(expiresAt, sql`NOW()`));
   const [questions, permissions, approvals] = await Promise.all([
     db.select({ sessionId: sessionPendingQuestions.sessionId, surfaceSessionId: sessionPendingQuestions.surfaceSessionId })
       .from(sessionPendingQuestions)
       .where(and(
         or(inArray(sessionPendingQuestions.sessionId, sessionIds), inArray(sessionPendingQuestions.surfaceSessionId, sessionIds)),
         isNull(sessionPendingQuestions.answeredAt),
-        askOpen(sessionPendingQuestions.expiresAt),
+        pendingAskNotExpired(sessionPendingQuestions.expiresAt),
       )),
     db.select({ sessionId: sessionPendingPermissions.sessionId, surfaceSessionId: sessionPendingPermissions.surfaceSessionId })
       .from(sessionPendingPermissions)
       .where(and(
         or(inArray(sessionPendingPermissions.sessionId, sessionIds), inArray(sessionPendingPermissions.surfaceSessionId, sessionIds)),
         isNull(sessionPendingPermissions.decidedAt),
-        askOpen(sessionPendingPermissions.expiresAt),
+        pendingAskNotExpired(sessionPendingPermissions.expiresAt),
       )),
     uuids.length === 0
       ? Promise.resolve([] as { sessionId: string | null }[])

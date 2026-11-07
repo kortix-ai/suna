@@ -17,9 +17,9 @@
 import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { loadGitProjectRow } from './project-git-row';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionSecretGrant } from './secret-grant';
-import { projectsView } from '../../workspaces/rows';
 
 export type SecretWithheldReason = 'agent_grant' | 'session_allowlist';
 
@@ -81,15 +81,7 @@ export async function resolveSessionSecretReach(
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   if (!session) return null;
-  const [project] = await db
-    .select({
-      repoUrl: projectsView.repoUrl,
-      defaultBranch: projectsView.defaultBranch,
-      manifestPath: projectsView.manifestPath,
-    })
-    .from(projectsView)
-    .where(eq(projectsView.projectId, session.projectId))
-    .limit(1);
+  const project = await loadGitProjectRow(session.projectId);
   if (!project) return null;
   const agent = session.agentName ?? DEFAULT_AGENT_SENTINEL;
   const grantEnv = await resolveSessionSecretGrant({
