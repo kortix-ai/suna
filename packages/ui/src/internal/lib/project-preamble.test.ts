@@ -14,6 +14,8 @@ import {
   buildSessionRefsBlock,
   escapeXmlAttr,
   appendMentionRefs,
+  buildDriveRefsBlock,
+  keptDriveRefs,
 } from './project-preamble';
 
 const TITLES = [
@@ -116,5 +118,64 @@ describe('appendMentionRefs', () => {
 
   test('a session mention without an id adds no session block', () => {
     expect(appendMentionRefs('hi', [{ kind: 'session', label: 'Draft' }])).toBe('hi');
+  });
+});
+
+describe('Drive file refs', () => {
+  const HEADER =
+    "Referenced Drive files (the user picked these from the project's Drive; each one is the attached upload named in its file attribute):";
+
+  test('a Drive mention whose upload rides along becomes a drive_ref naming that upload; one per path, in mention order', () => {
+    const text = appendMentionRefs(
+      'compare @a b.png with @logo.png and @logo.png',
+      [
+        { kind: 'drive', label: 'a b.png', value: '/Company/a b.png' },
+        { kind: 'drive', label: 'logo.png', value: '/Users/ana/logo.png' },
+        { kind: 'drive', label: 'logo.png', value: '/Users/ana/logo.png' },
+        { kind: 'agent', label: 'reviewer' },
+      ],
+      [
+        { name: 'logo (ana).png', drivePath: '/Users/ana/logo.png' },
+        { name: 'a b.png', drivePath: '/Company/a b.png' },
+        { name: 'notes.txt' },
+      ],
+    );
+    expect(text).toBe(
+      [
+        'compare @a b.png with @logo.png and @logo.png',
+        `${HEADER}\n<drive_ref path="/Company/a b.png" name="a b.png" file="a b.png" />\n<drive_ref path="/Users/ana/logo.png" name="logo.png" file="logo (ana).png" />`,
+        'Referenced agents (the user has @-mentioned these agents — delegate or hand off as appropriate):\n<agent_ref name="reviewer" />',
+      ].join('\n\n'),
+    );
+  });
+
+  test('a Drive mention whose file is not attached (still downloading, refused, removed) gets no ref', () => {
+    expect(appendMentionRefs('hi @a.png', [{ kind: 'drive', label: 'a.png', value: '/Company/a.png' }])).toBe('hi @a.png');
+    expect(
+      appendMentionRefs('hi @a.png', [{ kind: 'drive', label: 'a.png', value: '/Company/a.png' }], [{ name: 'a.png', drivePath: '/Company/other/a.png' }]),
+    ).toBe('hi @a.png');
+    expect(appendMentionRefs('hi', [{ kind: 'drive', label: 'a.png' }], [{ name: 'a.png', drivePath: '/a.png' }])).toBe('hi');
+  });
+
+  test('the parser strips the block and gives back every path and name, whatever their characters', () => {
+    const files = TITLES.map((title, i) => ({ path: `/Company/${i}/${title}`, name: title, file: `${title}.png` }));
+    const parsed = parseFileMentionReferences(`look @x\n\n${buildDriveRefsBlock(files)}`);
+    expect(parsed.cleanText).toBe('look @x');
+    expect(parsed.drives).toEqual(files);
+    expect(parsed.files).toEqual([]);
+  });
+
+  test('an edited message keeps the refs whose @name and upload it kept, and sends them again', () => {
+    const refs = [
+      { path: '/Company/brand/logo.png', name: 'logo.png', file: 'logo.png' },
+      { path: '/Users/ana/logo.png', name: 'logo.png', file: 'logo (ana).png' },
+      { path: '/Company/a b.png', name: 'a b.png', file: 'a b.png' },
+      { path: '/old.png', name: 'old.png' },
+    ];
+    // The second logo's tile was removed in the editor, `a b.png`'s chip text was deleted, and a ref
+    // from before upload names were written has no file to match.
+    expect(keptDriveRefs('compare @logo.png and @old.png', refs, ['logo.png', 'a b.png', 'old.png'])).toEqual([
+      { path: '/Company/brand/logo.png', name: 'logo.png', file: 'logo.png' },
+    ]);
   });
 });

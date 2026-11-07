@@ -26,7 +26,15 @@ export function finishedDraftUploads(
     return [
       {
         uploadId: file.uploadId,
-        upload: { attachment_id, filename, mime, size, expires_at, isImage: file.isImage },
+        upload: {
+          attachment_id,
+          filename,
+          mime,
+          size,
+          expires_at,
+          isImage: file.isImage,
+          ...(file.drivePath ? { drivePath: file.drivePath } : {}),
+        },
         ...(file.kind === 'local' ? { file: file.file } : {}),
       },
     ];
@@ -76,7 +84,7 @@ export function restoreDraftUploads(
 ): AttachedFile[] {
   const files = uploads.map((upload) => takeUnsentUploadFile(upload.attachment_id));
   const ids = dependencies.restore(
-    uploads.map(({ isImage: _isImage, ...attachment }, index) => ({
+    uploads.map(({ isImage: _isImage, drivePath: _drivePath, ...attachment }, index) => ({
       attachment,
       ...(files[index] ? { file: files[index] } : {}),
     })),
@@ -85,6 +93,7 @@ export function restoreDraftUploads(
     const uploadId = ids[index];
     if (!uploadId) return [];
     const file = files[index];
+    const drive = upload.drivePath ? { drivePath: upload.drivePath } : {};
     if (file)
       return [
         {
@@ -93,6 +102,7 @@ export function restoreDraftUploads(
           file,
           localUrl: dependencies.createObjectURL(file),
           isImage: upload.isImage,
+          ...drive,
         },
       ];
     return [
@@ -103,6 +113,7 @@ export function restoreDraftUploads(
         mime: upload.mime,
         size: upload.size,
         isImage: false,
+        ...drive,
       },
     ];
   });

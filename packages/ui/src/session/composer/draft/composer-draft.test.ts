@@ -372,6 +372,13 @@ describe('finished uploads in the draft envelope', () => {
     expect(deserializeDraft(raw, USER)?.uploads).toEqual([upload]);
   });
 
+  test('a Drive file keeps its Drive path through the round trip, so its chip still owns it after a reload', () => {
+    const fromDrive = { ...upload, attachment_id: 'att-drive', drivePath: '/Company/brand/report.pdf' };
+    const stored = serializeDraft({ doc: TEXT_DOC, documentIsEmpty: false, files: [], uploads: [fromDrive], userId: USER });
+    const raw = JSON.parse(JSON.stringify(stored)) as StoredDraft;
+    expect(deserializeDraft(raw, USER)?.uploads).toEqual([fromDrive]);
+  });
+
   test('an envelope written before uploads existed loads with an empty list', () => {
     const raw = { v: DRAFT_ENVELOPE_VERSION, u: USER, doc: TEXT_DOC, files: [] };
     expect(deserializeDraft(raw, USER)?.uploads).toEqual([]);

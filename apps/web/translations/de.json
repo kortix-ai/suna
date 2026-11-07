@@ -2093,7 +2093,9 @@
       "commandsAndActions": "Befehle und Aktionen",
       "toUse": "zur Verwendung",
       "use": "Verwenden",
-      "noOneMatches": "Niemand passt"
+      "noOneMatches": "Niemand passt",
+      "drive": "Drive",
+      "driveSearchFailed": "Drive konnte nicht durchsucht werden."
     },
     "history": {
       "restoreTitle": "Einige frühere Inhalte konnten nicht wiederhergestellt werden",
@@ -10310,7 +10312,9 @@
       "budgetExceeded": "Zu viele nicht gesendete Uploads. Nicht verwendete Uploads laufen innerhalb von 24 Stunden ab.",
       "tooLarge": "Diese Datei ist größer als 50 MiB.",
       "expired": "Dieser Upload ist abgelaufen. Entfernen Sie ihn und hängen Sie die Datei erneut an.",
-      "checkConnection": "Prüfen Sie Ihre Verbindung und versuchen Sie es erneut."
+      "checkConnection": "Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
+      "driveFileUnavailable": "{name} konnte nicht aus Drive angehängt werden. Die Datei wurde eventuell verschoben, oder du kannst sie nicht mehr öffnen.",
+      "driveFilePending": "Warte, bis die Drive-Datei angehängt ist, und sende dann."
     },
     "i18nComplete": {
       "authEmailRateLimit": "Die E-Mail konnte nicht gesendet werden. Versuche es in etwa einer Stunde erneut.",

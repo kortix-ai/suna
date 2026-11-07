@@ -38,11 +38,10 @@ export function collectMentions(nodes: SerializableNode[]): TrackedMention[] {
     const kind = (node.attrs?.kind ?? 'file') as MentionKind;
     // A space's agent chip shows the display name and carries the slug in `value`.
     const label = kind === 'agent' ? node.attrs?.value || node.attrs?.label || '' : (node.attrs?.label ?? '');
-    // Only sessions round-trip an id — files and agents are addressed by
-    // label, matching TrackedMention's existing shape (types.ts) and what
-    // session-chat.tsx's send path already expects.
+    // Sessions round-trip their id and Drive files their path — workspace
+    // files and agents are addressed by label (types.ts).
     mentions.push(
-      kind === 'session' ? { kind, label, value: node.attrs?.value ?? '' } : { kind, label },
+      kind === 'session' || kind === 'drive' ? { kind, label, value: node.attrs?.value ?? '' } : { kind, label },
     );
   }
   return mentions;

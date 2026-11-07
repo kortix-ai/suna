@@ -2093,7 +2093,9 @@
       "commandsAndActions": "Comandi e azioni",
       "toUse": "da usare",
       "use": "Usa",
-      "noOneMatches": "Nessuno corrisponde"
+      "noOneMatches": "Nessuno corrisponde",
+      "drive": "Drive",
+      "driveSearchFailed": "Impossibile cercare in Drive."
     },
     "history": {
       "restoreTitle": "Non è stato possibile ripristinare parte del contenuto precedente",
@@ -10310,7 +10312,9 @@
       "budgetExceeded": "Troppi caricamenti non inviati. I caricamenti inutilizzati scadono entro 24 ore.",
       "tooLarge": "Questo file supera i 50 MiB.",
       "expired": "Questo caricamento è scaduto. Rimuovilo e allega di nuovo il file.",
-      "checkConnection": "Controlla la connessione, poi riprova."
+      "checkConnection": "Controlla la connessione, poi riprova.",
+      "driveFileUnavailable": "Impossibile allegare {name} da Drive. Potrebbe essere stato spostato o non puoi più aprirlo.",
+      "driveFilePending": "Attendi che il file di Drive sia allegato, poi invia."
     },
     "i18nComplete": {
       "authEmailRateLimit": "Impossibile inviare l’email. Riprova tra circa un’ora.",

@@ -154,16 +154,16 @@ function OptimisticUserBubble({
   // Strip every ref block the composer folded into the prompt, in the order it
   // folded them in, so the bubble shows the sentence the user typed and the
   // attachments as tiles — never raw XML.
-  const { quotes, files, cleanText, pastes, sessions } = useMemo(() => {
+  const { quotes, files, cleanText, pastes, sessions, drives } = useMemo(() => {
     // Pastes first, as on the sent turn: a ref inside a paste is paste text.
     const { text: afterPastes, pastes } = splitPastedContent(text);
     const { cleanText: afterReply, quotes } = parseReplyContexts(afterPastes);
     const { cleanText: afterFiles, files } = parseFileReferences(afterReply);
     const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
-    const { cleanText: afterFileMentions } = parseFileMentionReferences(afterProjects);
+    const { cleanText: afterFileMentions, drives } = parseFileMentionReferences(afterProjects);
     const { cleanText: afterAgentMentions } = parseAgentMentionReferences(afterFileMentions);
     const { cleanText, sessions } = parseSessionReferences(afterAgentMentions);
-    return { quotes, files, cleanText, pastes, sessions };
+    return { quotes, files, cleanText, pastes, sessions, drives };
   }, [text]);
 
   // Quotes are drawn where they were written, by the same component the sent
@@ -229,6 +229,7 @@ function OptimisticUserBubble({
                   <HighlightMentions
                     text={runText}
                     sessions={sessions}
+                    drives={drives}
                     agentNames={agentNames}
                     onFileClick={onFileClick}
                   />
@@ -239,6 +240,7 @@ function OptimisticUserBubble({
                 <HighlightMentions
                   text={cleanText}
                   sessions={sessions}
+                  drives={drives}
                   agentNames={agentNames}
                   onFileClick={onFileClick}
                 />
@@ -281,6 +283,7 @@ function OptimisticUserBubble({
 export function HighlightMentions({
   text,
   sessions: parsedSessions,
+  drives: parsedDrives,
   agentNames,
   onFileClick,
 }: {
@@ -288,14 +291,16 @@ export function HighlightMentions({
   /** The session refs the caller already stripped from `text`. Then `text` is
    *  not parsed again: a second parse finds no refs and loses every title. */
   sessions?: ReturnType<typeof parseSessionReferences>['sessions'];
+  /** The Drive refs the caller already stripped, for the same reason. */
+  drives?: ReturnType<typeof parseFileMentionReferences>['drives'];
   agentNames?: string[];
   onFileClick?: (path: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Strip every ref block (project/file/agent/session) before processing
   // inline @ mentions so the visible text never shows raw XML.
-  const { cleanText, sessions } = useMemo(() => {
-    if (parsedSessions) return { cleanText: text, sessions: parsedSessions };
+  const { cleanText, sessions, drives } = useMemo(() => {
+    if (parsedSessions) return { cleanText: text, sessions: parsedSessions, drives: parsedDrives ?? [] };
     const a = parseProjectReferences(text);
     const b = parseFileMentionReferences(a.cleanText);
     const c = parseAgentMentionReferences(b.cleanText);
@@ -303,13 +308,15 @@ export function HighlightMentions({
     return {
       cleanText: d.cleanText,
       sessions: d.sessions,
+      drives: b.drives,
     };
-  }, [text, parsedSessions]);
+  }, [text, parsedSessions, parsedDrives]);
 
   const sessionTitles = useMemo(() => sessions.map((s) => s.title), [sessions]);
+  const driveNames = useMemo(() => drives.map((d) => d.name), [drives]);
 
   const segments = useMemo(() => {
-    const built = buildMentionSegments({ text: cleanText, sessionTitles, agentNames });
+    const built = buildMentionSegments({ text: cleanText, sessionTitles, driveNames, agentNames });
     // Key each segment by its source offset in the text — content-derived and
     // unique per segment, even when the same mention appears twice.
     let offset = 0;
@@ -318,7 +325,7 @@ export function HighlightMentions({
       offset += seg.text.length;
       return { ...seg, key };
     });
-  }, [cleanText, sessionTitles, agentNames]);
+  }, [cleanText, sessionTitles, driveNames, agentNames]);
 
   const sessionHref = useProjectSessionHref();
   const shallowNavigate = useUiShallowNavigate();
@@ -373,6 +380,8 @@ export function HighlightMentions({
           />
         ) : seg.type === 'agent' ? (
           <MentionChip key={seg.key} kind="agent" label={seg.text.replace(/^@/, '')} />
+        ) : seg.type === 'drive' ? (
+          <MentionChip key={seg.key} kind="drive" label={seg.text.replace(/^@/, '')} />
         ) : (
           <span key={seg.key}>{seg.text}</span>
         ),

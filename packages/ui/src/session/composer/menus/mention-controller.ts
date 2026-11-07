@@ -6,7 +6,7 @@ import type { SuggestionOptions } from '@tiptap/suggestion';
 import { insertMention } from '../editor/mention-node';
 import type { MenuController } from '../editor/suggestion';
 import { baseSuggestion } from '../editor/suggestion';
-import type { MentionMenuHostProps } from './mention-menu';
+import type { DriveMentionSource, MentionMenuHostProps } from './mention-menu';
 import { MentionMenuHost } from './mention-menu';
 import type { MenuRow } from './menu-items';
 import { MenuNavState } from './menu-nav-state';
@@ -22,6 +22,8 @@ export interface CreateMentionSuggestionOptions {
   getCurrentSessionId: () => string | undefined;
   /** Inside a space: People and Agents only (`space-mentions.ts`). Null elsewhere. */
   getSpaceMentions?: () => SpaceMentionSource | null;
+  /** The project's Drive as a source of `@` rows. Null where Drive is off. */
+  getDriveMentions?: () => DriveMentionSource | null;
   /**
    * Fires ONLY on the false<->true boundary of "does at least one row exist
    * right now" — NOT "is a trigger match active". See `MenuNavState`'s own
@@ -119,6 +121,7 @@ export function createMentionSuggestion(
         sessions: opts.getSessions(),
         currentSessionId: opts.getCurrentSessionId(),
         spaceMentions: opts.getSpaceMentions?.() ?? null,
+        drive: opts.getDriveMentions?.() ?? null,
         // Fixed for the lifetime of this open menu — see
         // `MentionMenuHostProps.now`'s own doc comment.
         now: Date.now(),
@@ -161,6 +164,7 @@ export function createMentionSuggestion(
         sessions: opts.getSessions(),
         currentSessionId: opts.getCurrentSessionId(),
         spaceMentions: opts.getSpaceMentions?.() ?? null,
+        drive: opts.getDriveMentions?.() ?? null,
         selectedIndex: nav.getSelectedIndex(),
         onSelect,
         onHover,
@@ -188,6 +192,8 @@ export function createMentionSuggestion(
       editor.chain().focus().deleteRange(range).run();
       // An agent from outside the space only gets named: the composer asks to add it after the send.
       insertMention(editor, { kind: row.kind, label: row.label, value: row.value });
+      // A Drive file rides as an attachment: the composer fetches it with the viewer's access.
+      if (row.kind === 'drive') opts.getDriveMentions?.()?.onPick({ path: row.value, name: row.label, size: row.size });
     },
   };
 }

@@ -142,3 +142,50 @@ describe('classifyMentionToken', () => {
     expect(classifyMentionToken('src/a.ts', agents)).toBe('file');
   });
 });
+
+describe('buildMentionSegments — Drive files', () => {
+  test('a Drive name with spaces chips whole, every time it appears; the longest name wins', () => {
+    expect(
+      buildMentionSegments({
+        text: 'swap @my photo.png for @my photo.png v2 and @my',
+        driveNames: ['my', 'my photo.png'],
+      }),
+    ).toEqual([
+      { text: 'swap ' },
+      { text: '@my photo.png', type: 'drive' },
+      { text: ' for ' },
+      { text: '@my photo.png', type: 'drive' },
+      { text: ' v2 and ' },
+      { text: '@my', type: 'drive' },
+    ]);
+  });
+
+  test('an agent mention next to a Drive file still chips as an agent', () => {
+    expect(buildMentionSegments({ text: '@build read @a.png', driveNames: ['a.png'], agentNames: ['build'] })).toEqual([
+      { text: '@build', type: 'agent' },
+      { text: ' read ' },
+      { text: '@a.png', type: 'drive' },
+    ]);
+  });
+
+  test('names read out of the body are deduplicated and capped, so a flood of refs costs no flood of scans', () => {
+    const flood = Array.from({ length: 5000 }, (_, i) => `n${i}`);
+    const text = '@n0 then @n4999';
+    const started = performance.now();
+    const segments = buildMentionSegments({ text, driveNames: [...flood, ...flood] });
+    expect(performance.now() - started).toBeLessThan(200);
+    // Only the first 20 distinct names chip as Drive files; the rest fall to the regex fill.
+    expect(segments).toEqual([
+      { text: '@n0', type: 'drive' },
+      { text: ' then ' },
+      { text: '@n4999', type: 'file' },
+    ]);
+  });
+
+  test('a body dense in one Drive name chips at most 100 of them; the rest stay ordinary mentions', () => {
+    const text = Array.from({ length: 2000 }, () => '@x').join(' ');
+    const segments = buildMentionSegments({ text, driveNames: ['x'] });
+    expect(segments.filter((segment) => segment.type === 'drive')).toHaveLength(100);
+    expect(segments.filter((segment) => segment.type === 'file')).toHaveLength(1900);
+  });
+});

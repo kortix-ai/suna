@@ -14,7 +14,9 @@
  * owns where segments ARE, and only the latter is worth testing without a DOM.
  */
 
-export type MentionSegmentType = 'file' | 'agent' | 'session';
+import { MAX_PROMPT_ATTACHMENT_FILES } from '@kortix/shared';
+
+export type MentionSegmentType = 'file' | 'agent' | 'session' | 'drive';
 
 export interface MentionSegment {
   text: string;
@@ -63,6 +65,12 @@ function trimTrailingPunctuation(token: string): string {
   return token.slice(0, end);
 }
 
+/** The most Drive chips one message draws: far past any real message, and a bound on the work. */
+const MAX_DRIVE_CHIPS = 100;
+
+/** What may follow a whole mention: space, or the sentence punctuation `trimTrailingPunctuation` drops. */
+const TOKEN_END = /[\s.,;:!?)\]}'"]/;
+
 function overlaps(ranges: Range[], start: number, end: number): boolean {
   return ranges.some((r) => start < r.end && end > r.start);
 }
@@ -86,6 +94,7 @@ export function buildMentionSegments({
   text,
   sourceRefs = [],
   sessionTitles = [],
+  driveNames = [],
   agentNames = [],
 }: {
   text: string;
@@ -93,6 +102,8 @@ export function buildMentionSegments({
   sourceRefs?: readonly MentionSourceRef[];
   /** `<session_ref>` titles, matched as `@<title>` (titles contain spaces). */
   sessionTitles?: readonly string[];
+  /** `<drive_ref>` names, matched as `@<name>` (names contain spaces). Every occurrence chips. */
+  driveNames?: readonly string[];
   /** Known agent names, so `@build` chips as an agent rather than a file. */
   agentNames?: readonly string[];
 }): MentionSegment[] {
@@ -111,6 +122,27 @@ export function buildMentionSegments({
     if (idx === -1) continue;
     if (overlaps(ranges, idx, idx + needle.length)) continue;
     ranges.push({ start: idx, end: idx + needle.length, type: 'session' });
+  }
+
+  // Drive file names: a name can contain spaces, and the same file can be
+  // mentioned twice, so every occurrence is claimed — longest name first, so
+  // `@a b.png` wins over `@a`. The names come out of the message body, so they
+  // are deduplicated and capped at the most files a message carries: a body
+  // that spells out a thousand `<drive_ref>` tags buys no thousand full scans.
+  // The chips are capped too (`MAX_DRIVE_CHIPS`): each one is checked against every range claimed
+  // before it, so a body dense in one short `@name` must not buy a quadratic walk.
+  const distinctDriveNames = [...new Set(driveNames.filter(Boolean))].slice(0, MAX_PROMPT_ATTACHMENT_FILES);
+  let driveChips = 0;
+  drive: for (const name of distinctDriveNames.sort((a, b) => b.length - a.length)) {
+    const needle = `@${name}`;
+    for (let idx = text.indexOf(needle); idx !== -1; idx = text.indexOf(needle, idx + 1)) {
+      const end = idx + needle.length;
+      // A whole mention only: `@a` is not the start of `@ab`, nor the tail of `x@a`.
+      const whole = (idx === 0 || /\s/.test(text.charAt(idx - 1))) && (end === text.length || TOKEN_END.test(text.charAt(end)));
+      if (!whole || overlaps(ranges, idx, end)) continue;
+      ranges.push({ start: idx, end, type: 'drive' });
+      if (++driveChips >= MAX_DRIVE_CHIPS) break drive;
+    }
   }
 
   for (const ref of sourceRefs) {

@@ -79,7 +79,7 @@ const CHIP_INTERACTIVE = cn(
 );
 
 export interface MentionChipProps {
-  /** `file` | `agent` | `session` | `command`. */
+  /** `file` | `agent` | `session` | `drive` | `command`. */
   kind: string;
   /** The chip's text WITHOUT its prefix — `chipText` adds `@` or `/`. */
   label: string;

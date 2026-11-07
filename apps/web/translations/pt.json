@@ -2093,7 +2093,9 @@
       "commandsAndActions": "Comandos e ações",
       "toUse": "para usar",
       "use": "Usar",
-      "noOneMatches": "Ninguém corresponde"
+      "noOneMatches": "Ninguém corresponde",
+      "drive": "Drive",
+      "driveSearchFailed": "Não foi possível pesquisar no Drive."
     },
     "history": {
       "restoreTitle": "Parte do conteúdo anterior não pôde ser restaurada",
@@ -10310,7 +10312,9 @@
       "budgetExceeded": "Há muitos envios não enviados. Envios não usados expiram em até 24 horas.",
       "tooLarge": "Este arquivo tem mais de 50 MiB.",
       "expired": "Este envio expirou. Remova-o e anexe o arquivo novamente.",
-      "checkConnection": "Verifique sua conexão e tente novamente."
+      "checkConnection": "Verifique sua conexão e tente novamente.",
+      "driveFileUnavailable": "Não foi possível anexar {name} do Drive. Ele pode ter sido movido ou você não pode mais abri-lo.",
+      "driveFilePending": "Aguarde o arquivo do Drive terminar de anexar e depois envie."
     },
     "i18nComplete": {
       "authEmailRateLimit": "Não foi possível enviar o e-mail. Tente novamente em cerca de uma hora.",

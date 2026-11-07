@@ -16,6 +16,7 @@ import type { AttachmentSubmission } from './attachment-submission';
 import type { ComposerSendReset } from './composer-reset';
 import { type Command, type ModelKey, useProjectConfig, useRuntimeAgents, useRuntimeCommands, useRuntimeConfig, useRuntimeProviders, useSessionModelSelection } from '@kortix/sdk/react';
 import { appendMentionRefs } from '../../internal/lib/project-preamble';
+import { driveUploadsOf } from './drive-mentions';
 import { resolveComposerAgent, withChannelAgents } from './composer-agent-access';
 import { inheritedModelFor } from './chat-input/chat-input-summary';
 import type { DraftScope } from './draft/composer-draft';
@@ -310,7 +311,7 @@ export function ComposerChatInput({
       // A first message has no session send to write the `@` mention blocks
       // (`session-chat.tsx` `handleSend`), so they go into the text here.
       onSend={(text, files, mentions, attachments, placement) =>
-        onSend(appendMentionRefs(text, mentions), files, { ...options(), placement }, attachments)
+        onSend(appendMentionRefs(text, mentions, driveUploadsOf(files)), files, { ...options(), placement }, attachments)
       }
       promptAttachments={promptAttachments}
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}

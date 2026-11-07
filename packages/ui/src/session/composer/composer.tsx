@@ -1,7 +1,8 @@
 'use client';
 
 import { errorToast } from '../../primitives/toast';
-import { type UiSlashAction, useUiHostConfig } from '../../providers/ui-provider';
+import { type UiSlashAction, useUiHostConfig, useUiViewerId } from '../../providers/ui-provider';
+import { attachmentMime } from '../../internal/lib/attachment-mime';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import { isImageFile } from '../../internal/lib/utils/file-utils';
@@ -12,11 +13,18 @@ import type {
   ProviderListResponse,
   UsePromptAttachmentsResult,
 } from '@kortix/sdk/react';
-import { useProjectConfig, usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
+import {
+  projectDriveQueryOptions,
+  useFeatureFlag,
+  useProjectConfig,
+  usePromptAttachments,
+  useRuntimeSessions,
+} from '@kortix/sdk/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useActiveSpace } from '../../internal/stores/active-space-store';
 import { MoonIcon, WarningIcon } from '@phosphor-icons/react';
-import { SESSION_NOTICE, type SessionLogMessage } from '@kortix/sdk';
-import { newPastedContentId, type PastedContent, splitPastedContent, trimPastedText } from '@kortix/shared';
+import { downloadDriveFile, SESSION_NOTICE, type SessionLogMessage } from '@kortix/sdk';
+import { MAX_PROMPT_ATTACHMENT_BYTES, newPastedContentId, type PastedContent, splitPastedContent, trimPastedText } from '@kortix/shared';
 import type { JSONContent } from '@tiptap/core';
 import type { RefObject } from 'react';
 import {
@@ -34,6 +42,8 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
+import { driveChipsIn, driveUploadName, drivePathsIn, withoutDriveChips } from './drive-mentions';
+import type { DriveMentionSource } from './menus/mention-menu';
 import { mergeFailedSubmissionFiles } from './composer-draft-recovery';
 import { resolveComposerResetOnSend, type ComposerSendReset } from './composer-reset';
 import { disownSentAttachmentPreviews, revokeUnsentPreview } from './sent-attachment-previews';
@@ -113,6 +123,7 @@ import { type ContextUsage, getContextUsage } from './context-ring';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
+import { useLatestRef } from './hooks/use-latest-ref';
 import { controlToOpenFor, hostSlashActions, localizedSlashActions, slashActionShown, type SlashAction } from './menus/slash-actions';
 import type { SlashFile } from './menus/slash-files';
 import { outsideAgentMentions, SpaceMentionContext } from './menus/space-mentions';
@@ -1028,6 +1039,114 @@ function ComposerImpl(props: SessionChatInputProps) {
     [removePromptAttachment],
   );
 
+  // ── Drive `@` mentions ────────────────────────────────────────────────
+  // A picked Drive file is fetched with the viewer's own access (the server
+  // answers 404 for a file they may not read) and staged as an ordinary
+  // attachment marked with its Drive path, so it reaches the agent like any
+  // upload: no session mount changes, no second file transport.
+  const drivesOn = useFeatureFlag(projectId ?? null, 'drives').enabled;
+  const viewerId = useUiViewerId();
+  const queryClient = useQueryClient();
+  /** Drive paths still downloading: a second pick of one attaches nothing, and Send waits. */
+  const pendingDrivePathsRef = useRef(new Set<string>());
+  /** The Drive paths the document named after its last change: a path that leaves it is a deleted chip. */
+  const docDrivePathsRef = useRef(new Set<string>());
+  /**
+   * The Drive paths picked from the menu in this composer: the only chips worth fetching a file for
+   * again. A chip that arrives any other way (pasted rich text) is never a request to read a file.
+   */
+  const pickedDrivePathsRef = useRef(new Set<string>());
+  // Declared before the question-lock effect below, so it holds the new value when that effect empties the editor.
+  const lockForQuestionRef = useLatestRef(lockForQuestion);
+  const pickDriveFile = useCallback(
+    async ({ path, name, size }: { path: string; name: string; size?: number }) => {
+      const attached = () => attachedFilesRef.current.some((file) => file.kind !== 'remote' && file.drivePath === path);
+      // Every other way to attach refuses here too: an answer to a question takes only text.
+      if (disabled || lockForQuestionRef.current || pendingDrivePathsRef.current.has(path) || attached()) return;
+      const dropChips = () => {
+        const doc = editorRef.current?.getDocument();
+        if (doc) setDocumentWithoutStealingFocus(editorRef.current, withoutDriveChips(doc, path));
+      };
+      // Too large for a message: say so before the browser downloads it.
+      if (size !== undefined && size > MAX_PROMPT_ATTACHMENT_BYTES) {
+        errorToast(tComposerAttachments('refusedTooLarge', { name }));
+        dropChips();
+        return;
+      }
+      pendingDrivePathsRef.current.add(path);
+      let file: File;
+      try {
+        const drive = await queryClient.fetchQuery(projectDriveQueryOptions(projectId ?? undefined, viewerId));
+        const blob = await downloadDriveFile(drive.driveId, path);
+        const taken = attachedFilesRef.current.map((held) => (held.kind === 'local' ? held.file.name : held.filename));
+        // Drive serves every file as `application/octet-stream`: the name says what it is (an image reaches the model as one).
+        file = new File([blob], driveUploadName(name, path, taken), {
+          type: attachmentMime(blob.type === 'application/octet-stream' ? '' : blob.type, name),
+        });
+      } catch {
+        // Deleted, moved, or no longer shared with the viewer: say so, and take the chip back.
+        errorToast(tComposerAttachments('driveFileUnavailable', { name }));
+        dropChips();
+        return;
+      } finally {
+        pendingDrivePathsRef.current.delete(path);
+      }
+      // The chip went away while the file downloaded: nothing to attach.
+      if (!drivePathsIn(editorRef.current?.getDocument()).has(path)) return;
+      const before = new Set(attachedFilesRef.current);
+      appendAttachedFiles([file]);
+      const added = attachedFilesRef.current.find((held) => !before.has(held));
+      // Refused by the message limits: `appendAttachedFiles` already said why.
+      if (!added || added.kind === 'remote') return dropChips();
+      const next = attachedFilesRef.current.map((held) => (held === added ? { ...added, drivePath: path } : held));
+      attachedFilesRef.current = next;
+      setAttachedFiles(next);
+    },
+    [appendAttachedFiles, disabled, lockForQuestionRef, projectId, queryClient, tComposerAttachments, viewerId],
+  );
+  const handleDocChangeWithDrive = useCallback(
+    (doc: JSONContent, isEmpty: boolean) => {
+      handleEditorDocChange(doc, isEmpty);
+      const named = driveChipsIn(doc);
+      const previous = docDrivePathsRef.current;
+      docDrivePathsRef.current = new Set(named.keys());
+      // A recalled prompt replaces the draft for a moment; the tray keeps its files, as it does every attachment.
+      if (applyingHistoryRef.current) return;
+      const removed = [...previous].filter((path) => !named.has(path));
+      const added = [...named].filter(([path]) => !previous.has(path) && pickedDrivePathsRef.current.has(path));
+      if (removed.length === 0 && added.length === 0) return;
+      // Run after the change settles. A send or a command empties the editor and hands its tray off in
+      // the same handler, and a restore (draft, failed send, prefill) sets the document and then its
+      // files: by the microtask the tray is what the change left. A question lock keeps the tray.
+      queueMicrotask(() => {
+        if (lockForQuestionRef.current) return;
+        const held = (path: string) => attachedFilesRef.current.findIndex((file) => file.kind !== 'remote' && file.drivePath === path);
+        // The person deleted the last chip of a path: its file leaves the tray.
+        for (const path of removed) {
+          const index = held(path);
+          if (index !== -1) removeAttachedFile(index);
+        }
+        // A picked chip came back without its file (an undo, a redo): fetch it again.
+        for (const [path, name] of added) if (held(path) === -1) void pickDriveFile({ path, name });
+      });
+    },
+    [handleEditorDocChange, lockForQuestionRef, pickDriveFile, removeAttachedFile],
+  );
+  const driveMentions = useMemo<DriveMentionSource | null>(
+    // A host that keeps files in its own store (`takeFiles`) gets no Drive rows.
+    () =>
+      projectId && drivesOn && !takeFiles
+        ? {
+            projectId,
+            onPick: (file) => {
+              pickedDrivePathsRef.current.add(file.path);
+              void pickDriveFile(file);
+            },
+          }
+        : null,
+    [projectId, drivesOn, takeFiles, pickDriveFile],
+  );
+
   const retryAttachedFile = useCallback(
     (id: string) => {
       try {
@@ -1674,6 +1793,11 @@ function ComposerImpl(props: SessionChatInputProps) {
       const filesNow = stash ? stash.files : attachedFilesRef.current;
       const quotesNow = stash ? stash.quotes : quotesRef.current;
       const pastesNow = stash ? stash.pastes : pastesRef.current;
+      // A Drive file still downloading would leave without its bytes (a message) or be thrown away (a command).
+      if (!stash && pendingDrivePathsRef.current.size > 0) {
+        errorToast(tComposerAttachments('driveFilePending'));
+        return;
+      }
       // Every quote leads the message, or the command args, as its own
       // `<reply_context>` line. A question's custom answer below reads
       // `draft.text`, so it never carries them.
@@ -1916,6 +2040,7 @@ function ComposerImpl(props: SessionChatInputProps) {
       onQuestionAction,
       onSend,
       promptAttachments,
+      tComposerAttachments,
     ],
   );
 
@@ -2122,6 +2247,7 @@ function ComposerImpl(props: SessionChatInputProps) {
     attachedFiles,
     promptAttachmentItems,
     removeAttachedFile,
+    driveMentions,
     retryAttachedFile,
     pastes,
     removePaste,
@@ -2137,7 +2263,7 @@ function ComposerImpl(props: SessionChatInputProps) {
     historyPosition:
       historyIndex === null ? null : { index: historyIndex + 1, total: historyEntries.length },
     setIsEmpty,
-    handleDocChange: handleEditorDocChange,
+    handleDocChange: handleDocChangeWithDrive,
     allSessions,
     slashActions,
     handleSelectAction,

@@ -10,7 +10,7 @@ import type { AttachedFile } from '../types';
  * the file back instead of asking for it again. `isImage` restores the picture
  * when this tab still holds the File.
  */
-export type StoredUpload = PromptAttachment & { isImage: boolean };
+export type StoredUpload = PromptAttachment & { isImage: boolean; drivePath?: string };
 
 /**
  * What a persisted composer draft is keyed by.
@@ -188,13 +188,21 @@ export function deserializeDraft(raw: unknown, currentUserId: string): StoredDra
 /** A stored upload that is whole and not yet expired; anything else is dropped. */
 function storedUpload(value: unknown): StoredUpload | null {
   const candidate = (value ?? {}) as Partial<StoredUpload>;
-  const { attachment_id, filename, mime, size, expires_at, isImage } = candidate;
+  const { attachment_id, filename, mime, size, expires_at, isImage, drivePath } = candidate;
   if (typeof attachment_id !== 'string' || !attachment_id) return null;
   if (typeof filename !== 'string' || !filename) return null;
   if (typeof mime !== 'string' || !mime) return null;
   if (typeof size !== 'number' || !Number.isSafeInteger(size) || size <= 0) return null;
   if (typeof expires_at !== 'string' || !(Date.parse(expires_at) > Date.now())) return null;
-  return { attachment_id, filename, mime, size, expires_at, isImage: isImage === true };
+  return {
+    attachment_id,
+    filename,
+    mime,
+    size,
+    expires_at,
+    isImage: isImage === true,
+    ...(typeof drivePath === 'string' && drivePath ? { drivePath } : {}),
+  };
 }
 
 /** The node type an earlier build of the composer used for in-editor quotes. */

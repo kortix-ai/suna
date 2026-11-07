@@ -178,6 +178,12 @@ describe('parseUserMessageText', () => {
       'hi @a.ts\n\nReferenced files (read them):\n<file_ref path="a.ts" name="a.ts" />\n<agent_ref name="build" />\n<project_ref name="x" />\n<kortix_system type="ctx">secret</kortix_system>';
     expect(parseUserMessageText(raw).text).toBe('hi @a.ts');
   });
+
+  test('strips the drive_ref block a web Drive mention appends', () => {
+    const raw =
+      "see @a b.png\n\nReferenced Drive files (the user picked these from the project's Drive; each one is the attached upload named in its file attribute):\n<drive_ref path=\"/Company/a b.png\" name=\"a b.png\" file=\"a b.png\" />";
+    expect(parseUserMessageText(raw).text).toBe('see @a b.png');
+  });
 });
 
 describe('userMessageSentLabel', () => {

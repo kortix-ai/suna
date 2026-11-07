@@ -2,11 +2,13 @@
 
 import Loading from '../../../primitives/loading';
 import { getFileIcon } from '../../../files/project/components/file-icon';
-import type { Agent, Session } from '@kortix/sdk/react';
+import { type Agent, type Session, useProjectSearch } from '@kortix/sdk/react';
 import { ChatIcon, FolderIcon } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';
+import { cn } from '../../../lib/utils';
 import { useEffect, useMemo } from 'react';
 
+import { useDebouncedValue } from '../hooks/use-debounced-value';
 import { useFileSearch } from '../hooks/use-file-search';
 import type { MentionSection, MenuRow } from './menu-items';
 import { buildMentionSections } from './menu-items';
@@ -28,10 +30,13 @@ export function MentionMenu({
   onSelect,
   onHover,
   space = false,
+  notice,
 }: {
   sections: MentionSection[];
   selectedIndex: number;
   loading: boolean;
+  /** One quiet status line under the rows, e.g. a Drive search that failed. */
+  notice?: string;
   /** A space's menu: each row is a face, a name and a quiet second line. */
   space?: boolean;
   onSelect: (row: MenuRow) => void;
@@ -51,6 +56,7 @@ export function MentionMenu({
         <p role="status" className="text-muted-foreground px-3 py-2.5 text-sm">
           {space ? t('noOneMatches') : t('noMatches')}
         </p>
+        {notice && <p className="text-muted-foreground px-3 pb-2.5 text-xs">{notice}</p>}
       </MenuCard>
     );
   }
@@ -99,7 +105,14 @@ export function MentionMenu({
                     <RowIcon row={row} />
                     <span className="min-w-0 truncate text-sm">{rowTitle(row)}</span>
                     {row.description && (
-                      <span className="text-muted-foreground ml-auto shrink-0 truncate text-xs">
+                      <span
+                        className={cn(
+                          'text-muted-foreground ml-auto truncate text-xs',
+                          // A Drive file's folder can be long: it gives way, the name does not.
+                          row.kind === 'drive' ? 'min-w-0' : 'shrink-0',
+                        )}
+                        title={row.kind === 'drive' ? row.value : undefined}
+                      >
                         {row.description}
                       </span>
                     )}
@@ -115,6 +128,7 @@ export function MentionMenu({
             {t('searching')}
           </div>
         )}
+        {notice && <p className="text-muted-foreground px-2 py-2 text-xs">{notice}</p>}
       </div>
     </MenuCard>
   );
@@ -151,6 +165,16 @@ function RowIcon({ row }: { row: MenuRow }) {
   return getFileIcon(row.label, { className: 'size-4 shrink-0 text-muted-foreground' });
 }
 
+/**
+ * The project's Drive as an `@` source: the host's project, and what a picked
+ * file does (the composer attaches it). Null where Drive is off or the
+ * composer has no project.
+ */
+export interface DriveMentionSource {
+  projectId: string;
+  onPick: (file: { path: string; name: string; size?: number }) => void;
+}
+
 export interface MentionMenuHostProps {
   query: string;
   agents: Agent[];
@@ -158,6 +182,8 @@ export interface MentionMenuHostProps {
   currentSessionId: string | undefined;
   /** Inside a space: People and Agents only. */
   spaceMentions?: SpaceMentionSource | null;
+  /** The project's Drive files the viewer may read, searched by `query`. */
+  drive?: DriveMentionSource | null;
   /** Fixed at the moment the menu opened (`Date.now()`, computed in
    *  `mention-controller.ts`'s `onStart` — never inside this component's
    *  render, and never refreshed on every keystroke) so this prop's identity
@@ -186,6 +212,7 @@ export function MentionMenuHost({
   sessions,
   currentSessionId,
   spaceMentions = null,
+  drive = null,
   now,
   selectedIndex,
   onSelect,
@@ -193,21 +220,30 @@ export function MentionMenuHost({
   onRowsChange,
 }: MentionMenuHostProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('sessionUi.composerMenus');
   // A space's menu lists no files.
   const { files, isLoading } = useFileSearch(query, !spaceMentions);
+  // The server answers only with files the viewer may read (`GET /v1/projects/:id/search`).
+  const driveQuery = useDebouncedValue(query, 150);
+  const driveSearch = useProjectSearch(drive?.projectId, { q: driveQuery, limit: 20 }, { enabled: !!drive && !spaceMentions });
+  const driveFiles = drive && !spaceMentions ? driveSearch.data?.hits : undefined;
   const sections = useMemo(
     () =>
       spaceMentions ? buildSpaceMentionSections(spaceMentions, query) : buildMentionSections({
         agents,
         sessions,
         files,
+        driveFiles,
+        driveHeading: t('drive'),
         query,
         currentSessionId,
         now,
         tI18nComplete,
       }),
-    [agents, sessions, files, query, currentSessionId, now, tI18nComplete, spaceMentions],
+    [agents, sessions, files, driveFiles, t, query, currentSessionId, now, tI18nComplete, spaceMentions],
   );
+  const driveLoading = !!drive && !spaceMentions && query.trim().length > 0 && driveSearch.isFetching && !driveSearch.data;
+  const driveFailed = !!drive && !spaceMentions && driveSearch.isError;
   const rows = useMemo(() => sections.flatMap((s) => s.items), [sections]);
 
   useEffect(() => {
@@ -218,10 +254,11 @@ export function MentionMenuHost({
     <MentionMenu
       sections={sections}
       selectedIndex={selectedIndex}
-      loading={spaceMentions ? false : isLoading}
+      loading={spaceMentions ? false : isLoading || driveLoading}
       onSelect={onSelect}
       onHover={onHover}
       space={!!spaceMentions}
+      notice={driveFailed ? t('driveSearchFailed') : undefined}
     />
   );
 }

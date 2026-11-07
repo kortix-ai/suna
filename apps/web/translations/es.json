@@ -2093,7 +2093,9 @@
       "commandsAndActions": "Comandos y acciones",
       "toUse": "para usar",
       "use": "Usar",
-      "noOneMatches": "Nadie coincide"
+      "noOneMatches": "Nadie coincide",
+      "drive": "Drive",
+      "driveSearchFailed": "No se pudo buscar en Drive."
     },
     "history": {
       "restoreTitle": "No se pudo restaurar parte del contenido anterior",
@@ -10310,7 +10312,9 @@
       "budgetExceeded": "Demasiadas cargas sin enviar. Las cargas sin usar caducan en 24 horas.",
       "tooLarge": "Este archivo supera los 50 MiB.",
       "expired": "Esta carga caducó. Elimínala y vuelve a adjuntar el archivo.",
-      "checkConnection": "Comprueba tu conexión y vuelve a intentarlo."
+      "checkConnection": "Comprueba tu conexión y vuelve a intentarlo.",
+      "driveFileUnavailable": "No se pudo adjuntar {name} desde Drive. Puede que se haya movido o que ya no puedas abrirlo.",
+      "driveFilePending": "Espera a que se adjunte el archivo de Drive y luego envía."
     },
     "i18nComplete": {
       "authEmailRateLimit": "No se pudo enviar el correo. Vuelve a intentarlo en aproximadamente una hora.",

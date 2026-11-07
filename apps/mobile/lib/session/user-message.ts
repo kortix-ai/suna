@@ -236,6 +236,7 @@ export function parseUserMessageText(raw: string): ParsedUserMessageText {
 
   text = stripReferences(text, 'project_ref', 'projects');
   text = stripReferences(text, 'file_ref', 'files');
+  text = stripReferences(text, 'drive_ref', 'Drive files');
   text = stripReferences(text, 'agent_ref', 'agents').trim();
 
   const sessions: ParsedSessionRef[] = [];
