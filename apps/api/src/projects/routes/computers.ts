@@ -19,12 +19,13 @@ import {
   loadComputerMachines,
   serializeConnection,
 } from '../lib/connection-view';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerComputersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/computers',
+      path: '/{workspaceId}/computers',
       tags: ['connectors'],
       summary: 'Add a paired computer to this project',
       description:
@@ -37,7 +38,7 @@ export function registerComputersRoutes(): void {
         'tokens get 403.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: {
           content: {
             'application/json': {
@@ -60,7 +61,7 @@ export function registerComputersRoutes(): void {
     async (c: any) => {
       // Refuses session and agent tokens: attaching a machine is its owner's act.
       requireUserCredential(c);
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const body = await readJsonObject(c);
@@ -83,7 +84,7 @@ export function registerComputersRoutes(): void {
       ) {
         return c.json(
           {
-            error: 'Sharing a computer with the project requires permission to manage its connections',
+            error: 'Sharing a computer with the workspace requires permission to manage its connections',
             code: 'FORBIDDEN',
           },
           403,
@@ -119,7 +120,7 @@ export function registerComputersRoutes(): void {
       if (machine.accountId !== accountId && !personal && (share === 'project' || machine.ownerUserId !== userId)) {
         return c.json(
           {
-            error: 'This computer belongs to another account. Pair it again from this project.',
+            error: 'This computer belongs to another account. Pair it again from this workspace.',
             code: 'COMPUTER_ACCOUNT_MISMATCH',
           },
           409,

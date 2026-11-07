@@ -9,7 +9,6 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq } from 'drizzle-orm';
-import { accounts } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
@@ -19,6 +18,8 @@ import { invalidateSessionOversight } from '../../iam/session-oversight';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
+import { accountIdParam } from '../../shared/route-params';
+import { accountsView, updateAccountRows } from '../../workspaces/rows';
 
 const SessionOversightStatus = z.object({
   enabled: z.boolean(),
@@ -34,7 +35,7 @@ export function registerIamSessionOversightRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/session-oversight',
+      path: '/{workspaceId}/iam/session-oversight',
       tags: ['iam'],
       summary: 'Get whether account owners and admins can open every session',
       ...auth,
@@ -46,13 +47,13 @@ export function registerIamSessionOversightRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
       const [row] = await db
-        .select({ enabled: accounts.adminsSeeAllSessions })
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
+        .select({ enabled: accountsView.adminsSeeAllSessions })
+        .from(accountsView)
+        .where(eq(accountsView.accountId, accountId))
         .limit(1);
       if (!row) return c.json({ error: 'account not found' }, 404);
       return c.json({ enabled: row.enabled, can_change: await callerIsOwner(accountId, userId) });
@@ -62,7 +63,7 @@ export function registerIamSessionOversightRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/iam/session-oversight',
+      path: '/{workspaceId}/iam/session-oversight',
       tags: ['iam'],
       summary: 'Enable or disable owner/admin access to every session (owner only)',
       ...auth,
@@ -80,7 +81,7 @@ export function registerIamSessionOversightRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
       if (!(await callerIsOwner(accountId, userId))) {
         return c.json(
@@ -100,17 +101,14 @@ export function registerIamSessionOversightRoutes(): void {
       const enabled = body.enabled;
 
       const [before] = await db
-        .select({ enabled: accounts.adminsSeeAllSessions })
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
+        .select({ enabled: accountsView.adminsSeeAllSessions })
+        .from(accountsView)
+        .where(eq(accountsView.accountId, accountId))
         .limit(1);
       if (!before) return c.json({ error: 'account not found' }, 404);
       if (before.enabled === enabled) return c.json({ enabled, unchanged: true });
 
-      await db
-        .update(accounts)
-        .set({ adminsSeeAllSessions: enabled, updatedAt: new Date() })
-        .where(eq(accounts.accountId, accountId));
+      await updateAccountRows(eq(accountsView.accountId, accountId), { adminsSeeAllSessions: enabled, updatedAt: new Date() });
       invalidateSessionOversight();
 
       await auditIam(c, {

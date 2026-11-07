@@ -25,8 +25,8 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'POST /v1/projects/:projectId/access-requests',
-      'GET /v1/projects/:projectId/access-requests',
+      'POST /v1/workspaces/:projectId/access-requests',
+      'GET /v1/workspaces/:projectId/access-requests',
     ],
   },
   async (ctx) => {
@@ -39,7 +39,7 @@ flow(
         const r = await ctx.client
           .as(ctx.P.NONMEMBER)
           .post(
-            '/v1/projects/:projectId/access-requests',
+            '/v1/workspaces/:projectId/access-requests',
             { message: 'please add me' },
             { params: { projectId: project.id } },
           );
@@ -50,7 +50,7 @@ flow(
     await ctx.step('re-requesting while pending is idempotent → 200 pending', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post('/v1/projects/:projectId/access-requests', {}, { params: { projectId: project.id } });
+        .post('/v1/workspaces/:projectId/access-requests', {}, { params: { projectId: project.id } });
       r.status(200).body().has('$.status', 'pending');
     });
 
@@ -64,7 +64,7 @@ flow(
         const p = await team.project();
         const r = await ctx.client
           .as(spammer)
-          .post('/v1/projects/:projectId/access-requests', {}, { params: { projectId: p.id } });
+          .post('/v1/workspaces/:projectId/access-requests', {}, { params: { projectId: p.id } });
         if (i < 10) r.status(201);
         else if (exact) r.status(429);
         else r.status([201, 429]);
@@ -74,18 +74,20 @@ flow(
     await ctx.step('a project manager lists pending access requests → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/access-requests', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/access-requests', { params: { projectId: project.id } });
       r.status(200).body().exists('$.requests').exists('$.requests[0].request_id');
     });
 
     await ctx.step(
-      'a plain member with no project grant cannot review requests → 403',
+      'a plain member with no project grant of this split_pending account cannot review requests: canonical 404 workspace_not_found, legacy 403',
       async () => {
         const bare = await team.addMember('member');
-        const r = await ctx.client
-          .as(bare)
-          .get('/v1/projects/:projectId/access-requests', { params: { projectId: project.id } });
-        r.status(403);
+        const params = { params: { projectId: project.id } };
+        (await ctx.client.as(bare).get('/v1/workspaces/:projectId/access-requests', params))
+          .status(404)
+          .body()
+          .has('$.code', 'workspace_not_found');
+        (await ctx.client.as(bare).get('/v1/projects/:projectId/access-requests', params)).status(403);
       },
     );
 
@@ -93,7 +95,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access-requests',
+          '/v1/workspaces/:projectId/access-requests',
           {},
           { params: { projectId: UNKNOWN_UUID } },
         );
@@ -107,13 +109,17 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'POST /v1/projects/:projectId/access-requests/:requestId/approve',
-      'POST /v1/projects/:projectId/access-requests/:requestId/reject',
+      'POST /v1/workspaces/:projectId/access-requests/:requestId/approve',
+      'POST /v1/workspaces/:projectId/access-requests/:requestId/reject',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project();
+    // A second project makes the team a split_pending legacy account: there a
+    // member reaches a project only through a grant, so asking for access means
+    // something (on a 1:1 workspace membership already is access, design.md C3).
+    await team.project();
     const requesterA = await team.addMember('member');
     const requesterB = await team.addMember('member');
     let approveRequestId = '';
@@ -122,13 +128,13 @@ flow(
     await ctx.step('seed two pending access requests', async () => {
       const a = await ctx.client
         .as(requesterA)
-        .post('/v1/projects/:projectId/access-requests', {}, { params: { projectId: project.id } });
+        .post('/v1/workspaces/:projectId/access-requests', {}, { params: { projectId: project.id } });
       a.status(201);
       approveRequestId = a.json<any>().request.request_id;
 
       const b = await ctx.client
         .as(requesterB)
-        .post('/v1/projects/:projectId/access-requests', {}, { params: { projectId: project.id } });
+        .post('/v1/workspaces/:projectId/access-requests', {}, { params: { projectId: project.id } });
       b.status(201);
       rejectRequestId = b.json<any>().request.request_id;
     });
@@ -139,7 +145,7 @@ flow(
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .post(
-            '/v1/projects/:projectId/access-requests/:requestId/approve',
+            '/v1/workspaces/:projectId/access-requests/:requestId/approve',
             { role: 'manager' },
             { params: { projectId: project.id, requestId: approveRequestId } },
           );
@@ -154,7 +160,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access-requests/:requestId/approve',
+          '/v1/workspaces/:projectId/access-requests/:requestId/approve',
           {},
           { params: { projectId: project.id, requestId: approveRequestId } },
         );
@@ -165,7 +171,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access-requests/:requestId/approve',
+          '/v1/workspaces/:projectId/access-requests/:requestId/approve',
           { role: 'wizard' },
           { params: { projectId: project.id, requestId: rejectRequestId } },
         );
@@ -176,7 +182,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access-requests/:requestId/reject',
+          '/v1/workspaces/:projectId/access-requests/:requestId/reject',
           {},
           { params: { projectId: project.id, requestId: rejectRequestId } },
         );
@@ -187,7 +193,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access-requests/:requestId/reject',
+          '/v1/workspaces/:projectId/access-requests/:requestId/reject',
           {},
           { params: { projectId: project.id, requestId: rejectRequestId } },
         );
@@ -198,7 +204,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access-requests/:requestId/approve',
+          '/v1/workspaces/:projectId/access-requests/:requestId/approve',
           {},
           { params: { projectId: project.id, requestId: UNKNOWN_UUID } },
         );
@@ -214,7 +220,7 @@ flow(
         const seeded = await ctx.client
           .as(requesterC)
           .post(
-            '/v1/projects/:projectId/access-requests',
+            '/v1/workspaces/:projectId/access-requests',
             {},
             { params: { projectId: project.id } },
           );
@@ -223,7 +229,7 @@ flow(
         const r = await ctx.client
           .as(editorOnly)
           .post(
-            '/v1/projects/:projectId/access-requests/:requestId/approve',
+            '/v1/workspaces/:projectId/access-requests/:requestId/approve',
             {},
             { params: { projectId: project.id, requestId: seeded.json<any>().request.request_id } },
           );
@@ -240,60 +246,67 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/projects/:projectId/approvals',
-      'GET /v1/projects/:projectId/approvals/needs-input',
+      'GET /v1/workspaces/:projectId/approvals',
+      'GET /v1/workspaces/:projectId/approvals/needs-input',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project();
+    // split_pending (two projects): a bare account member holds no project role.
+    await team.project();
     const viewer = await team.addMember('member');
     await team.grantProjectRole(project.id, viewer.userId!, 'user');
 
     await ctx.step('a project manager reads the (empty) approval inbox → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/approvals', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/approvals', { params: { projectId: project.id } });
       r.status(200).body().has('$.count', 0).exists('$.approvals');
     });
 
     await ctx.step('out-of-range limit → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/approvals?limit=0', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/approvals?limit=0', { params: { projectId: project.id } });
       r.status(400);
     });
 
     await ctx.step(
-      'a plain member with no project grant cannot read the manager-only inbox → 403',
+      'a plain member with no project grant of this split_pending account cannot read the manager-only inbox: canonical 404, legacy 403 with the workspace action',
       async () => {
         const bare = await team.addMember('member');
+        (await ctx.client.as(bare).get('/v1/workspaces/:projectId/approvals', { params: { projectId: project.id } }))
+          .status(404)
+          .body()
+          .has('$.code', 'workspace_not_found');
         const r = await ctx.client
           .as(bare)
           .get('/v1/projects/:projectId/approvals', { params: { projectId: project.id } });
         r.status(403);
         deepStrictEqual(r.json(), {
           error: true,
-          message: 'You do not have access to this project',
+          message: 'You do not have access to this workspace',
           status: 403,
           code: 'no_project_membership',
           action: 'project.read',
+          workspace_action: 'workspace.read',
         });
       },
     );
 
-    await ctx.step('an unknown project returns the project-param 404 envelope', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/approvals', {
+    await ctx.step('an unknown project returns the canonical 404 workspace_not_found envelope', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/approvals', {
         params: { projectId: UNKNOWN_UUID },
       });
       r.status(404);
-      deepStrictEqual(r.json(), { error: 'Not found' });
+      deepStrictEqual(r.json(), { error: 'Workspace not found', code: 'workspace_not_found' });
     });
 
     await ctx.step(
       'a granted (non-manager) project member sees their own needs-input → 200',
       async () => {
-        const r = await ctx.client.as(viewer).get('/v1/projects/:projectId/approvals/needs-input', {
+        const r = await ctx.client.as(viewer).get('/v1/workspaces/:projectId/approvals/needs-input', {
           params: { projectId: project.id },
         });
         r.status(200);
@@ -304,19 +317,19 @@ flow(
     await ctx.step('a project manager sees needs-input project-wide → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/approvals/needs-input', {
+        .get('/v1/workspaces/:projectId/approvals/needs-input', {
           params: { projectId: project.id },
         });
       r.status(200).body().has('$.total', 0);
     });
 
-    await ctx.step('a non-project-member has no visibility into needs-input → 403', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/approvals/needs-input', {
-          params: { projectId: project.id },
-        });
-      r.status(403);
+    await ctx.step('a non-member has no visibility into needs-input: canonical 404 workspace_not_found, legacy 403', async () => {
+      const params = { params: { projectId: project.id } };
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/workspaces/:projectId/approvals/needs-input', params))
+        .status(404)
+        .body()
+        .has('$.code', 'workspace_not_found');
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/projects/:projectId/approvals/needs-input', params)).status(403);
     });
   },
 );
@@ -325,7 +338,7 @@ flow(
   'IAM-30',
   {
     domain: 'iam',
-    routes: ['POST /v1/projects/:projectId/approvals/:executionId'],
+    routes: ['POST /v1/workspaces/:projectId/approvals/:executionId'],
   },
   async (ctx) => {
     // The happy-path resolve (approve/deny a REAL pending_approval execution)
@@ -340,7 +353,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/approvals/:executionId',
+          '/v1/workspaces/:projectId/approvals/:executionId',
           { decision: 'approve' },
           { params: { projectId: project.id, executionId: 'not-a-uuid' } },
         );
@@ -351,7 +364,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/approvals/:executionId',
+          '/v1/workspaces/:projectId/approvals/:executionId',
           { decision: 'maybe' },
           { params: { projectId: project.id, executionId: UNKNOWN_UUID } },
         );
@@ -362,7 +375,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/approvals/:executionId',
+          '/v1/workspaces/:projectId/approvals/:executionId',
           { decision: 'approve' },
           { params: { projectId: project.id, executionId: UNKNOWN_UUID } },
         );
@@ -370,16 +383,16 @@ flow(
     });
 
     await ctx.step(
-      'a non-project-member cannot resolve anything on this project → 403',
+      'a non-project-member cannot resolve anything on this project → 404 workspace_not_found',
       async () => {
         const r = await ctx.client
           .as(ctx.P.NONMEMBER)
           .post(
-            '/v1/projects/:projectId/approvals/:executionId',
+            '/v1/workspaces/:projectId/approvals/:executionId',
             { decision: 'approve' },
             { params: { projectId: project.id, executionId: UNKNOWN_UUID } },
           );
-        r.status(403);
+        r.status(404).body().has('$.code', 'workspace_not_found');
       },
     );
   },
@@ -391,7 +404,7 @@ flow(
   'IAM-31',
   {
     domain: 'iam',
-    routes: ['PUT /v1/projects/:projectId/agents/:agentName/scope'],
+    routes: ['PUT /v1/workspaces/:projectId/agents/:agentName/scope'],
   },
   async (ctx) => {
     // The happy path (scoping a REAL declared agents: entry) needs a
@@ -405,7 +418,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/projects/:projectId/agents/:agentName/scope',
+          '/v1/workspaces/:projectId/agents/:agentName/scope',
           {},
           { params: { projectId: project.id, agentName: 'nope' } },
         );
@@ -416,7 +429,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/projects/:projectId/agents/:agentName/scope',
+          '/v1/workspaces/:projectId/agents/:agentName/scope',
           { env: 123 },
           { params: { projectId: project.id, agentName: 'nope' } },
         );
@@ -427,7 +440,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/projects/:projectId/agents/:agentName/scope',
+          '/v1/workspaces/:projectId/agents/:agentName/scope',
           { env: [] },
           { params: { projectId: project.id, agentName: 'does-not-exist' } },
         );
@@ -439,7 +452,7 @@ flow(
       const r = await ctx.client
         .as(bare)
         .put(
-          '/v1/projects/:projectId/agents/:agentName/scope',
+          '/v1/workspaces/:projectId/agents/:agentName/scope',
           { env: [] },
           { params: { projectId: project.id, agentName: 'does-not-exist' } },
         );

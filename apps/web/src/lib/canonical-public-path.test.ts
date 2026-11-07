@@ -40,8 +40,8 @@ describe('canonicalPublicPath', () => {
     // App paths and subpaths can carry case-sensitive ids and names, and own
     // their slash handling.
     expect(canonical('/Projects')).toBeNull();
-    expect(canonical('/projects/')).toBeNull();
-    expect(canonical('/projects/AbC/sessions/XyZ')).toBeNull();
+    expect(canonical('/workspaces/')).toBeNull();
+    expect(canonical('/workspaces/AbC/sessions/XyZ')).toBeNull();
     expect(canonical('/marketplace/AcmeCorp/Skill')).toBeNull();
     expect(canonical('/marketplace/acme/')).toBeNull();
     expect(canonical('/Docs/Getting-Started')).toBeNull();

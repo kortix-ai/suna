@@ -3,7 +3,8 @@
  *  provider-transition-store.ts so the platform session-sandbox service imports
  *  this instead of the transition store. */
 import { eq } from 'drizzle-orm';
-import { projects, type Database } from '@kortix/db';
+import { type Database } from '@kortix/db';
+import { projectsView } from '../../workspaces/rows';
 
 export const PIN_META_KEY = 'default_sandbox_provider';
 export const ACTIVE_EXTERNAL_ID_META_KEY = 'active_sandbox_external_template_id';
@@ -72,9 +73,9 @@ function recoverLegacyActiveSnapshotName(
  */
 export async function readActiveRouting(db: Database, projectId: string): Promise<ActiveRouting | null> {
   const [row] = await db
-    .select({ metadata: projects.metadata, generation: projects.sandboxProviderGeneration })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ metadata: projectsView.metadata, generation: projectsView.sandboxProviderGeneration })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!row) return null;
   const meta = asMeta(row.metadata);

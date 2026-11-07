@@ -23,7 +23,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backendApi } from '../core/http/api-client';
-import { addComputerToProject, type ConnectorConnectOwner } from '../core/rest/projects-client';
+import { addComputerToWorkspace, type ConnectorConnectOwner } from '../core/rest/projects-client';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -220,20 +220,23 @@ export function useSetComputerAccess() {
  * account follows them into every project they belong to. `share: 'me'`
  * (the server default) stays accepted and is idempotent.
  */
-export function useAddComputerToProject() {
+export function useAddComputerToWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ projectId, ...input }: {
       projectId: string;
       tunnelId: string;
       share?: ConnectorConnectOwner;
-    }) => addComputerToProject(projectId, input),
+    }) => addComputerToWorkspace(projectId, input),
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['connections', vars.projectId] });
       queryClient.invalidateQueries({ queryKey: tunnelKeys.connections() });
     },
   });
 }
+
+/** @deprecated Use `useAddComputerToWorkspace`. Kept permanently. */
+export const useAddComputerToProject = useAddComputerToWorkspace;
 
 // ─── Device Auth Hooks ──────────────────────────────────────────────────────
 

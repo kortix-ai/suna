@@ -1,5 +1,7 @@
 // Shared helpers + cross-cutting types used by multiple projects-client modules.
 
+import { withWorkspaceRouteFallback } from '../../http/workspace-routes';
+
 export type AccountRole = 'owner' | 'admin' | 'member';
 /**
  * The two built-in project roles. `member` is read + run; `manager` is
@@ -9,6 +11,8 @@ export type AccountRole = 'owner' | 'admin' | 'member';
  * what `manager` holds minus member-management and delete, and the extra tier
  * bought nothing — every `editor` assignment became `manager`. The API rejects
  * `editor` on write with `400`; it is never returned on read.
+ *
+ * @deprecated Use `WorkspaceRole`: one role ladder (`owner`, `admin`, `manager`, `member`). Kept permanently.
  */
 export type ProjectRole = 'manager' | 'member';
 
@@ -17,6 +21,7 @@ export type ConnectorSharing =
   | { mode: 'private'; ownerId: string }
   | { mode: 'members'; memberIds?: string[]; groupIds?: string[] };
 
+/** @deprecated Use `WorkspaceGitConnection`. Kept permanently. */
 export interface ProjectGitConnection {
   connection_id: string;
   account_id: string;
@@ -43,11 +48,18 @@ export interface ProjectGitConnection {
   updated_at: string;
 }
 
+/** The workspace name of {@link ProjectGitConnection}: the same type. */
+export type WorkspaceGitConnection = ProjectGitConnection;
+
+/** @deprecated Use `WorkspaceFileEntry`. Kept permanently. */
 export interface ProjectFileEntry {
   path: string;
   type: 'file';
   size: number | null;
 }
+
+/** The workspace name of {@link ProjectFileEntry}: the same type. */
+export type WorkspaceFileEntry = ProjectFileEntry;
 
 /**
  * Unwrap a `backendApi` response, throwing on failure. `fallbackMessage` is
@@ -112,7 +124,7 @@ export async function serverTokenGet<T>(
   if (!opts.backendUrl || !opts.accessToken) return null;
   const base = normalizeServerBackendBase(opts.backendUrl);
   try {
-    const res = await fetch(`${base}${path}`, {
+    const res = await withWorkspaceRouteFallback(fetch)(`${base}${path}`, {
       headers: {
         Authorization: `Bearer ${opts.accessToken}`,
         'Content-Type': 'application/json',

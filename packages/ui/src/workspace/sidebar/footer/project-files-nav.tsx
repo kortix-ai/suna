@@ -53,8 +53,8 @@ export function ProjectFilesNavItem({ projectId }: { projectId: string }) {
   const isActive =
     !!pathname &&
     (target === 'drive'
-      ? /^\/projects\/[^/]+\/drive(\/|$)/
-      : /^\/projects\/[^/]+\/files(\/|$)/
+      ? /^\/(?:workspaces|projects)\/[^/]+\/drive(\/|$)/
+      : /^\/(?:workspaces|projects)\/[^/]+\/files(\/|$)/
     ).test(pathname);
 
   // The Files view cannot pick a git ref (`resolveFilesRef`,

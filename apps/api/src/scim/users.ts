@@ -3,12 +3,13 @@ import { userChanges, applyProfile } from './user-profile';
 // registerScimUsersRoutes() registers these onto the shared scimRouter.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountInvitations, accountMemberships, accountScimUsers, accountGroupMembers } from '@kortix/db';
+import { accountInvitations, accountScimUsers, accountGroupMembers } from '@kortix/db';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import { offboardMember } from '../accounts/core/offboard-member';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
 import { accountRoleFor, countAccountOwners } from '../iam/read-models';
-import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
+import { SYSTEM_ACTOR } from '../iam/assignments';
+import { addWorkspaceMember } from '../iam/workspace-members';
 import { scimError } from '../middleware/scim-auth';
 import { auth, errors, json } from '../openapi';
 import { db } from '../shared/db';
@@ -29,6 +30,7 @@ import {
   scimRouter,
   userIdByEmail,
 } from './app';
+import { accountIdParam } from '../shared/route-params';
 
 // ─── Users ────────────────────────────────────────────────────────────────
 
@@ -87,23 +89,6 @@ async function getMember(accountId: string, userId: string): Promise<MemberRow |
  * because an audit insert hiccuped would take an enterprise's IdP sync down for
  * a bookkeeping problem.
  */
-async function assignScimMembership(accountId: string, userId: string): Promise<void> {
-  try {
-    await assignRole(SYSTEM_ACTOR, accountId, {
-      principal: { type: 'user', id: userId },
-      roleKey: 'member',
-      scope: { type: 'account' },
-      source: 'scim',
-    });
-  } catch (err) {
-    console.warn('[scim] canonical membership assignment failed', {
-      accountId,
-      userId,
-      err: (err as Error)?.message,
-    });
-  }
-}
-
 /** Last-owner guard shared by every deprovision path. */
 async function isLastOwner(accountId: string, member: MemberRow): Promise<boolean> {
   if (member.accountRole !== 'owner') return false;
@@ -166,13 +151,16 @@ async function applyDirectoryState(c: any, user: DirectoryUser, active: boolean,
       or(eq(accountInvitations.email, user.userName), eq(accountInvitations.inviteId, user.invitationId ?? user.scimId)),
     ));
   } else if (userId) {
-    await db.insert(accountMemberships).values({
-      accountId: user.accountId, userId, scimExternalId: user.externalId,
-    }).onConflictDoUpdate({
-      target: [accountMemberships.accountId, accountMemberships.userId],
-      set: { scimExternalId: user.externalId },
+    // THE membership write: the identity row (with the IdP's external id) and,
+    // for a new member only, the account `member` role. Membership is access.
+    // Best-effort role write, as before: the directory row stands.
+    await addWorkspaceMember(user.accountId, userId, 'member', [], {
+      writer: SYSTEM_ACTOR,
+      source: 'scim',
+      scimExternalId: user.externalId ?? null,
+      keepExistingRole: Boolean(member),
+      roleBestEffort: true,
     });
-    if (!member) await assignScimMembership(user.accountId, userId);
     if (groupIds.length) {
       const groups = await accountGroupsAmong(user.accountId, groupIds);
       if (groups.length) await db.insert(accountGroupMembers).values(groups.map(g => ({ groupId: g.groupId, userId }))).onConflictDoNothing();
@@ -195,10 +183,10 @@ async function applyDirectoryState(c: any, user: DirectoryUser, active: boolean,
   return user;
 }
 
-const userParams = z.object({ accountId: z.string().uuid(), userId: z.string().uuid() });
+const userParams = z.object({ workspaceId: z.string().uuid(), userId: z.string().uuid() });
 
 async function writeUser(c: any) {
-  const accountId = c.req.param('accountId');
+  const accountId = accountIdParam(c);
   const userId = c.req.param('userId');
   let changes: Map<string, unknown>;
   try { changes = userChanges(await c.req.json(), c.req.method === 'PATCH'); } catch (error) { return scimError(c, 400, (error as Error).message); }
@@ -215,12 +203,12 @@ async function writeUser(c: any) {
 
 export function registerScimUsersRoutes(): void {
   scimRouter.openapi(createRoute({
-    method: 'get', path: '/accounts/{accountId}/Users', ...auth, tags: ['scim'],
+    method: 'get', path: '/accounts/{workspaceId}/Users', ...auth, tags: ['scim'],
     summary: 'List SCIM Users (filter by userName/id/externalId eq)',
-    request: { params: z.object({ accountId: z.string().uuid() }), query: ScimListQuery },
+    request: { params: z.object({ workspaceId: z.string().uuid() }), query: ScimListQuery },
     responses: { 200: json(ScimResource, 'SCIM ListResponse'), ...errors(400, 401, 403) },
   }), async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const rawFilter = c.req.query('filter');
     if (isUnsupportedFilter(rawFilter)) return scimError(c, 400, 'Unsupported filter');
     const filter = parseFilter(rawFilter);
@@ -248,19 +236,19 @@ export function registerScimUsersRoutes(): void {
   });
 
   scimRouter.openapi(createRoute({
-    method: 'get', path: '/accounts/{accountId}/Users/{userId}', ...auth, tags: ['scim'], summary: 'Get a SCIM User',
+    method: 'get', path: '/accounts/{workspaceId}/Users/{userId}', ...auth, tags: ['scim'], summary: 'Get a SCIM User',
     request: { params: userParams }, responses: { 200: json(ScimResource, 'SCIM User'), ...errors(400, 401, 403, 404) },
   }), async (c: any) => {
-    const user = await resolveDirectoryUser(c.req.param('accountId'), c.req.param('userId'));
+    const user = await resolveDirectoryUser(accountIdParam(c), c.req.param('userId'));
     return user && !user.deletedAt ? c.json(buildDirectoryUser(user)) : scimError(c, 404, 'User not found in this account');
   });
 
   scimRouter.openapi(createRoute({
-    method: 'post', path: '/accounts/{accountId}/Users', ...auth, tags: ['scim'], summary: 'Create / provision a SCIM User',
-    request: { params: z.object({ accountId: z.string().uuid() }), body: { content: { 'application/json': { schema: ScimResource } } } },
+    method: 'post', path: '/accounts/{workspaceId}/Users', ...auth, tags: ['scim'], summary: 'Create / provision a SCIM User',
+    request: { params: z.object({ workspaceId: z.string().uuid() }), body: { content: { 'application/json': { schema: ScimResource } } } },
     responses: { 200: json(ScimResource, 'SCIM User (already provisioned)'), 201: json(ScimResource, 'SCIM User created / invited'), ...errors(400, 401, 403, 409) },
   }), async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     let changes: Map<string, unknown>;
     try { changes = userChanges(await c.req.json()); } catch (error) { return scimError(c, 400, (error as Error).message); }
     if (!changes.has('username')) return scimError(c, 400, 'userName is required');
@@ -287,7 +275,7 @@ export function registerScimUsersRoutes(): void {
 
   for (const method of ['patch', 'put'] as const) {
     scimRouter.openapi(createRoute({
-      method, path: '/accounts/{accountId}/Users/{userId}', ...auth, tags: ['scim'],
+      method, path: '/accounts/{workspaceId}/Users/{userId}', ...auth, tags: ['scim'],
       summary: method === 'patch' ? 'Patch a SCIM User' : 'Replace a SCIM User',
       request: { params: userParams, body: { content: { 'application/json': { schema: ScimResource } } } },
       responses: { 200: json(ScimResource, 'SCIM User'), 204: { description: 'Already absent' }, ...errors(400, 401, 403, 404, 409) },
@@ -295,10 +283,10 @@ export function registerScimUsersRoutes(): void {
   }
 
   scimRouter.openapi(createRoute({
-    method: 'delete', path: '/accounts/{accountId}/Users/{userId}', ...auth, tags: ['scim'], summary: 'Delete / deprovision a SCIM User',
+    method: 'delete', path: '/accounts/{workspaceId}/Users/{userId}', ...auth, tags: ['scim'], summary: 'Delete / deprovision a SCIM User',
     request: { params: userParams }, responses: { 204: { description: 'Deleted / idempotent' }, ...errors(400, 401, 403, 409) },
   }), async (c: any) => {
-    const user = await resolveDirectoryUser(c.req.param('accountId'), c.req.param('userId'));
+    const user = await resolveDirectoryUser(accountIdParam(c), c.req.param('userId'));
     if (!user || user.deletedAt) return c.body(null, 204);
     const result = await applyDirectoryState(c, user, false, true);
     return result instanceof Response ? result : c.body(null, 204);

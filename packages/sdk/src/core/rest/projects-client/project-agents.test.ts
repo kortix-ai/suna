@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { isSelectableAgent, selectableProjectAgents } from './project-agents';
+import { isSelectableAgent, selectableWorkspaceAgents } from './project-agents';
 import type { ProjectConfigSummary } from './projects';
 
 type ConfigAgent = ProjectConfigSummary['agents'][number];
@@ -62,7 +62,7 @@ describe('isSelectableAgent', () => {
 
 describe('selectableProjectAgents', () => {
   test('returns only the selectable project agents, default first', () => {
-    const roster = selectableProjectAgents(
+    const roster = selectableWorkspaceAgents(
       config(
         [
           agent('engineering', { mode: 'primary' }),
@@ -79,16 +79,16 @@ describe('selectableProjectAgents', () => {
   test('reads only default_agent: the deprecated open_code_default_agent does not reorder', () => {
     const summary = config([agent('a'), agent('b')]);
     summary.open_code_default_agent = 'b';
-    expect(selectableProjectAgents(summary).map((a) => a.name)).toEqual(['a', 'b']);
+    expect(selectableWorkspaceAgents(summary).map((a) => a.name)).toEqual(['a', 'b']);
   });
 
   test('does not mutate the config it reads', () => {
     const summary = config([agent('a'), agent('b')], 'b');
-    selectableProjectAgents(summary);
+    selectableWorkspaceAgents(summary);
     expect(summary.agents.map((a) => a.name)).toEqual(['a', 'b']);
   });
 
   test('returns an empty roster for a config without agents', () => {
-    expect(selectableProjectAgents(config([]))).toEqual([]);
+    expect(selectableWorkspaceAgents(config([]))).toEqual([]);
   });
 });

@@ -98,12 +98,12 @@ export async function saveTeamsInstall(input: TeamsInstallInput): Promise<TeamsI
       and(
         eq(chatInstalls.platform, 'teams'),
         eq(chatInstalls.projectId, projectId),
-        ne(chatInstalls.workspaceId, tenantId),
+        ne(chatInstalls.platformTeamId, tenantId),
       ),
     );
   await db
     .insert(chatInstalls)
-    .values({ platform: 'teams', workspaceId: tenantId, projectId })
+    .values({ platform: 'teams', platformTeamId: tenantId, projectId })
     .onConflictDoNothing();
 
   await upsertSecret(projectId, MS_TEAMS_TENANT_ID, tenantId);
@@ -220,7 +220,7 @@ function isOlderAppVersion(version: string | null): boolean {
  */
 export async function loadTeamsTenantForProject(projectId: string): Promise<string | null> {
   const [row] = await db
-    .select({ workspaceId: chatInstalls.workspaceId })
+    .select({ workspaceId: chatInstalls.platformTeamId })
     .from(chatInstalls)
     .where(and(eq(chatInstalls.platform, 'teams'), eq(chatInstalls.projectId, projectId)))
     .limit(1);

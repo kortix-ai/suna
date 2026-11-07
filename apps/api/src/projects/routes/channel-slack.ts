@@ -25,6 +25,7 @@ import { AnyObject, projectsApp } from '../lib/app';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { readJsonObject } from '../../shared/http-body';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { workspaceIdParam } from '../../shared/route-params';
 
 interface SlackAuthTest {
   ok: boolean;
@@ -40,12 +41,12 @@ export function registerChannelSlackRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/channels/slack/installation',
+      path: '/{workspaceId}/channels/slack/installation',
       tags: ['channels'],
       summary: 'Get the Slack installation',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
       },
       responses: {
         200: json(z.any(), 'OK'),
@@ -53,7 +54,7 @@ export function registerChannelSlackRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const install = await loadSlackInstall(projectId);
@@ -69,12 +70,12 @@ export function registerChannelSlackRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/channels/slack/mode',
+      path: '/{workspaceId}/channels/slack/mode',
       tags: ['channels'],
       summary: 'Get the Slack connection mode',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
       },
       responses: {
         200: json(z.any(), 'OK'),
@@ -82,7 +83,7 @@ export function registerChannelSlackRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const mode = slackOauthMode();
@@ -106,12 +107,12 @@ export function registerChannelSlackRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/channels/slack/oauth/complete',
+      path: '/{workspaceId}/channels/slack/oauth/complete',
       tags: ['channels'],
       summary: 'Complete the Slack OAuth connection',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: InstallCompletionBody } } },
       },
       responses: {
@@ -120,7 +121,7 @@ export function registerChannelSlackRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Same gate as the manual connect route: installing a Slack app is a
@@ -154,12 +155,12 @@ export function registerChannelSlackRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/channels/slack/connect',
+      path: '/{workspaceId}/channels/slack/connect',
       tags: ['channels'],
       summary: 'Connect Slack',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
       responses: {
@@ -168,7 +169,7 @@ export function registerChannelSlackRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Connecting a Slack workspace is a connector-write capability — a custom
@@ -240,12 +241,12 @@ export function registerChannelSlackRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/channels/slack/installation',
+      path: '/{workspaceId}/channels/slack/installation',
       tags: ['channels'],
       summary: 'Disconnect Slack',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
       },
       responses: {
         200: json(z.any(), 'OK'),
@@ -253,7 +254,7 @@ export function registerChannelSlackRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Disconnecting Slack tears down the connector — same connector-write gate.
@@ -283,12 +284,12 @@ export function registerChannelSlackRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/channels/slack/file',
+      path: '/{workspaceId}/channels/slack/file',
       tags: ['channels'],
       summary: 'Download a Slack file',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z.object({ url: z.string() }),
       },
       responses: {
@@ -300,7 +301,7 @@ export function registerChannelSlackRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const result = await downloadSlackFile(projectId, c.req.query('url') ?? '');
@@ -316,12 +317,12 @@ export function registerChannelSlackRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/channels/slack/file/upload',
+      path: '/{workspaceId}/channels/slack/file/upload',
       tags: ['channels'],
       summary: 'Upload a file to Slack',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
       responses: {
@@ -330,7 +331,7 @@ export function registerChannelSlackRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // This is a SEND primitive (posts to Slack with the project's bot token), not
@@ -387,12 +388,12 @@ export function registerChannelSlackRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/channels/slack/bind-thread',
+      path: '/{workspaceId}/channels/slack/bind-thread',
       tags: ['channels'],
       summary: 'Bind a Slack thread to a session',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
       responses: {
@@ -401,7 +402,7 @@ export function registerChannelSlackRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       // Same dual auth as turn-stream: the in-sandbox agent's sandbox token (scoped
       // back to this project) or a project/session-scoped user PAT.
       // The session this credential is BOUND to, when it is a sandbox token.
@@ -425,7 +426,7 @@ export function registerChannelSlackRoutes(): void {
           )
           .limit(1);
         if (!sandbox) {
-          return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+          return c.json({ error: 'sandbox token is not scoped to this workspace' }, 403);
         }
         callerSandboxSessionId = sandbox.sessionId ?? sandbox.sandboxId;
       } else {
@@ -489,7 +490,7 @@ export function registerChannelSlackRoutes(): void {
       const workspaceId = body.workspace_id?.trim() || null;
       if (workspaceId && !(await provenSlackWorkspaces(projectId)).includes(workspaceId)) {
         return c.json(
-          { error: 'workspace_id is not a Slack workspace this project is connected to', code: 'SLACK_WORKSPACE_NOT_CONNECTED' },
+          { error: 'workspace_id is not a Slack workspace this workspace is connected to', code: 'SLACK_WORKSPACE_NOT_CONNECTED' },
           400,
         );
       }
@@ -512,7 +513,7 @@ export function registerChannelSlackRoutes(): void {
       if (binding.bound) return c.json({ ok: true, channel, ...binding });
       if (binding.reason === 'workspace_unknown') {
         return c.json(
-          { error: 'could not resolve the Slack workspace: this project has no Slack install', code: 'SLACK_WORKSPACE_UNKNOWN', ...binding },
+          { error: 'could not resolve the Slack workspace: this workspace has no Slack install', code: 'SLACK_WORKSPACE_UNKNOWN', ...binding },
           400,
         );
       }

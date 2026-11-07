@@ -43,7 +43,7 @@ function createInstanceStore({ dir, envUrl, defaultUrl }) {
 
   /**
    * What launch and Go ▸ Home load. Every preset and the build default name
-   * `/projects`, the list; the site root is where the web app sends a
+   * `/workspaces` (older builds saved `/projects`), the list; the site root is where the web app sends a
    * signed-in browser into the project it had open last. Any other saved path
    * is the user's choice and stays.
    */
@@ -54,7 +54,7 @@ function createInstanceStore({ dir, envUrl, defaultUrl }) {
     } catch {
       return appUrl(); // the load fails and did-fail-load offers the chooser
     }
-    if (url.pathname === '/projects' || url.pathname === '/projects/') url.pathname = '/';
+    if (/^\/(?:workspaces|projects)\/?$/.test(url.pathname)) url.pathname = '/';
     return url.toString();
   }
 

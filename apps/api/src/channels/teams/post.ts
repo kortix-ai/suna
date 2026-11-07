@@ -70,7 +70,7 @@ export async function resolveTeamsProjectConversation(
   // project was already talking in; the tenant is read from the row rather
   // than from the caller.
   const [binding] = await db
-    .select({ workspaceId: chatChannelBindings.workspaceId, channelType: chatChannelBindings.channelType })
+    .select({ workspaceId: chatChannelBindings.platformTeamId, channelType: chatChannelBindings.channelType })
     .from(chatChannelBindings)
     .where(
       and(
@@ -89,14 +89,14 @@ export async function resolveTeamsProjectConversation(
     return {
       ok: false,
       error:
-        'This project has no such Teams conversation. Post only to a chat or channel the bot is already in — `teams conversations` lists them.',
+        'This Kortix workspace has no such Teams conversation. Post only to a chat or channel the bot is already in — `teams conversations` lists them.',
       status: 404,
     };
   }
 
   const serviceUrl = await loadTeamsServiceUrlForProject(projectId);
   if (!serviceUrl) {
-    return { ok: false, error: 'No Teams service URL is known yet for this project', status: 409 };
+    return { ok: false, error: 'No Teams service URL is known yet for this workspace', status: 409 };
   }
 
   return {

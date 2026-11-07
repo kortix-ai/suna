@@ -16,6 +16,7 @@ import {
 import { Skeleton } from '@kortix/ui/skeleton';
 import { DEFAULT_TIER_USD, formatWholeUsd, tierForMonthlyUsd } from '@kortix/ui/internal/billing/compute-pricing';
 import { CreditTierSelect } from '@/features/billing/credit-tier-select';
+import { FreeGrantNotice } from '@/features/billing/free-grant-notice';
 import { PlanChanger } from '@/features/billing/plan-card';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import type { PricingPlan } from '@/features/billing/pricing-plans';
@@ -29,7 +30,7 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
   accountHasLiveSubscription,
   billingModalCopy,
-  billingStateNeedsTopUp,
+  billingModalNeedsTopUp,
   resolveBillingState,
 } from '@kortix/ui/internal/lib/billing/billing-gate-state';
 import { cn } from '@kortix/ui';
@@ -98,7 +99,7 @@ export function UpgradePlansModal({
   const canPurchaseCredits = accountState?.tier?.can_purchase_credits ?? hasSub;
   const resolvedState = billingState ?? resolveBillingState(accountState);
   const layout = billingModalLayout({
-    needsTopUp: billingStateNeedsTopUp(resolvedState) || reason === 'insufficient_credits',
+    needsTopUp: billingModalNeedsTopUp(accountState, resolvedState) || reason === 'insufficient_credits',
     hasSubscription: hasSub,
     canPurchaseCredits,
   });
@@ -299,8 +300,10 @@ function CreditTopUpModal({
   // Out-of-credits copy is DERIVED from the billing state, never written here:
   // a hardcoded "Out of credits" title once announced an emergency to every
   // account that opened this modal.
+  // A Free workspace that leads with the top-up is out of credits, whatever
+  // `no_subscription` says: it has a plan (Free), its wallet is empty.
   const copy = leadWithTopUp
-    ? billingModalCopy(billingState ?? null, tI18nComplete)
+    ? billingModalCopy(billingState === 'no_subscription' ? 'out_of_credits' : (billingState ?? null), tI18nComplete)
     : { title: t('planTitle'), description: t('planDescription') };
 
   const topup = (
@@ -349,11 +352,13 @@ function CreditTopUpModal({
                 balance={balance}
                 accountLoading={accountLoading}
               />
+              <FreeGrantNotice state={accountState} />
               {topup}
               {plan}
             </>
           ) : (
             <>
+              <FreeGrantNotice state={accountState} />
               {plan}
               {topup}
             </>

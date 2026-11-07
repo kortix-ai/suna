@@ -86,6 +86,7 @@ import { logger } from '@/lib/log/logger'
 import type { SpawnSessionInput, SpawnSessionResult, SubagentSession } from './extensions/subagents'
 import { FRONT_CONTEXT_KEY, FRONT_THREAD_CONTEXT_KEY } from './front'
 import { WATCHER_CONTEXT_KEY } from './watcher'
+import { withWorkspaceRouteFallback } from '@/lib/kortix-api/workspace-routes'
 
 /** Why a separate call ran in this session instead. The tool result carries it to the model. */
 export const NO_CONTROL_PLANE_NOTICE =
@@ -286,7 +287,7 @@ interface SessionRow {
 }
 
 function sessionUrl(http: Http, childId: string, suffix = ''): string {
-  return `${http.origin}/v1/projects/${encodeURIComponent(http.projectId)}/sessions/${encodeURIComponent(childId)}${suffix}`
+  return `${http.origin}/v1/workspaces/${encodeURIComponent(http.projectId)}/sessions/${encodeURIComponent(childId)}${suffix}`
 }
 
 /** The tools a child may use: the spec's list, inside this session's own list. Undefined = no narrowing. */
@@ -310,7 +311,7 @@ export async function cloudSpawnSession(
 ): Promise<SpawnSessionResult> {
   const model = splitModel(input.model)
   const http: Http = {
-    fetchImpl: api.fetchImpl ?? fetch,
+    fetchImpl: withWorkspaceRouteFallback(api.fetchImpl ?? fetch),
     origin: apiOrigin(api.apiUrl),
     headers: { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' },
     projectId: api.projectId,
@@ -340,7 +341,7 @@ export async function cloudSpawnSession(
     await refuseOverLiveCap(api, http)
     let created: Response
     try {
-      created = await http.fetchImpl(`${http.origin}/v1/projects/${encodeURIComponent(api.projectId)}/sessions`, {
+      created = await http.fetchImpl(`${http.origin}/v1/workspaces/${encodeURIComponent(api.projectId)}/sessions`, {
         method: 'POST',
         headers: http.headers,
         body: JSON.stringify(createBody),
@@ -443,7 +444,7 @@ function isBusy(row: SessionRow): boolean {
 /** This session's children, newest first (`GET …/sessions?parent=`). Throws when the list cannot be read. */
 async function listChildren(api: CloudSubagentApi, http: Http): Promise<SessionRow[]> {
   const res = await http.fetchImpl(
-    `${http.origin}/v1/projects/${encodeURIComponent(http.projectId)}/sessions?parent=${encodeURIComponent(api.sessionId ?? '')}&limit=200`,
+    `${http.origin}/v1/workspaces/${encodeURIComponent(http.projectId)}/sessions?parent=${encodeURIComponent(api.sessionId ?? '')}&limit=200`,
     { headers: http.headers },
   )
   if (res.status !== 200) throw new Error(`the child list answered ${res.status}`)
@@ -704,7 +705,7 @@ export interface StopChildResult {
  */
 export async function cloudStopChild(api: CloudSubagentApi, target: { taskId?: string; name?: string }): Promise<StopChildResult> {
   const http: Http = {
-    fetchImpl: api.fetchImpl ?? fetch,
+    fetchImpl: withWorkspaceRouteFallback(api.fetchImpl ?? fetch),
     origin: apiOrigin(api.apiUrl),
     headers: { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' },
     projectId: api.projectId,
@@ -752,7 +753,7 @@ export interface ChildReport {
  */
 export async function cloudChildReport(api: CloudSubagentApi, childId: string): Promise<ChildReport> {
   const http: Http = {
-    fetchImpl: api.fetchImpl ?? fetch,
+    fetchImpl: withWorkspaceRouteFallback(api.fetchImpl ?? fetch),
     origin: apiOrigin(api.apiUrl),
     headers: { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' },
     projectId: api.projectId,
@@ -787,7 +788,7 @@ const TOOL_DETAILS_MESSAGES = 40
  */
 export async function cloudChildToolDetails(api: CloudSubagentApi, childId: string, tool: string): Promise<Array<Record<string, unknown>> | null> {
   const http: Http = {
-    fetchImpl: api.fetchImpl ?? fetch,
+    fetchImpl: withWorkspaceRouteFallback(api.fetchImpl ?? fetch),
     origin: apiOrigin(api.apiUrl),
     headers: { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' },
     projectId: api.projectId,

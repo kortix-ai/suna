@@ -94,9 +94,17 @@ export async function pollConnectLinkFinalize(
 
 // ─── A shared account's connect route ────────────────────────────────────────
 
-/** Which connect route authorized the account, so finalize polls the same one. */
+/**
+ * Which connect route authorized the account, so finalize polls the same one.
+ *
+ * @deprecated Use `WorkspaceConnectRoute`. Kept permanently.
+ */
 export type ProjectConnectRoute = 'connection' | 'connector';
 
+/** The workspace name of {@link ProjectConnectRoute}: the same type. */
+export type WorkspaceConnectRoute = ProjectConnectRoute;
+
+/** @deprecated Use `WorkspaceConnectionConnectDeps`. Kept permanently. */
 export interface ProjectConnectionConnectDeps {
   reconcile: (
     projectId: string,
@@ -116,9 +124,20 @@ export interface ProjectConnectionConnectDeps {
   ) => Promise<ConnectorFinalizeResult>;
 }
 
+/** The workspace name of {@link ProjectConnectionConnectDeps}: the same type. */
+export type WorkspaceConnectionConnectDeps = ProjectConnectionConnectDeps;
+
+/** @deprecated Use `DEFAULT_WORKSPACE_CONNECTION_LABEL`. Kept permanently. */
 export const DEFAULT_PROJECT_CONNECTION_LABEL = 'Project connection';
 
-/** The REST calls `projectConnectionConnectSteps` makes by default. */
+/** The workspace name of {@link DEFAULT_PROJECT_CONNECTION_LABEL}: the same value. */
+export const DEFAULT_WORKSPACE_CONNECTION_LABEL = DEFAULT_PROJECT_CONNECTION_LABEL;
+
+/**
+ * The REST calls `projectConnectionConnectSteps` makes by default.
+ *
+ * @deprecated Use `workspaceConnectionConnectRestDeps`. Kept permanently.
+ */
 export const projectConnectionConnectRestDeps: ProjectConnectionConnectDeps = {
   reconcile: reconcileConnection,
   connectConnection: (projectId, connectionId) => pipedreamConnectConnection(projectId, connectionId),
@@ -126,6 +145,9 @@ export const projectConnectionConnectRestDeps: ProjectConnectionConnectDeps = {
   connectConnector: connectorConnect,
   finalizeConnector: connectorFinalize,
 };
+
+/** The workspace name of {@link projectConnectionConnectRestDeps}: the same value. */
+export const workspaceConnectionConnectRestDeps = projectConnectionConnectRestDeps;
 
 /**
  * Did the connection-scoped connect route refuse because this account is the
@@ -147,7 +169,7 @@ export function isSharedDefaultConnectConflict(error: unknown): boolean {
  * account never holds a credential while open to everyone), then mints the
  * Connect Link; on the default-account 409 it uses the connector route.
  */
-export function projectConnectionConnectSteps(
+export function workspaceConnectionConnectSteps(
   projectId: string,
   slug: string,
   label: string | undefined,
@@ -193,3 +215,6 @@ export function projectConnectionConnectSteps(
     connectionId: () => connectionId,
   };
 }
+
+/** @deprecated Use `workspaceConnectionConnectSteps`. Kept permanently. */
+export const projectConnectionConnectSteps = workspaceConnectionConnectSteps;

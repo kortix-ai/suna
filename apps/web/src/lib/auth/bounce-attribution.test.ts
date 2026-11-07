@@ -79,11 +79,11 @@ describe('shouldDemoteReturnUrl', () => {
 
 describe('bounce cookie format', () => {
   test('round-trips the owner', () => {
-    expect(parseAuthBounceOwner(serializeAuthBounce(USER_A, '/projects/x'))).toBe(USER_A);
+    expect(parseAuthBounceOwner(serializeAuthBounce(USER_A, '/workspaces/x'))).toBe(USER_A);
   });
 
   test('an absent owner serializes to an empty owner half, not to nothing', () => {
-    const value = serializeAuthBounce(null, '/projects/x');
+    const value = serializeAuthBounce(null, '/workspaces/x');
 
     expect(value.startsWith(':')).toBe(true);
     expect(parseAuthBounceOwner(value)).toBe('');
@@ -99,10 +99,10 @@ describe('bounce cookie format', () => {
   });
 
   test('the path half never carries a character a cookie cannot', () => {
-    const value = serializeAuthBounce(USER_A, '/projects/x?a=1,2;b=3 4');
+    const value = serializeAuthBounce(USER_A, '/workspaces/x?a=1,2;b=3 4');
 
     expect(/[,; ]/.test(value)).toBe(false);
-    expect(decodeURIComponent(value.slice(value.indexOf(':') + 1))).toBe('/projects/x?a=1,2;b=3 4');
+    expect(decodeURIComponent(value.slice(value.indexOf(':') + 1))).toBe('/workspaces/x?a=1,2;b=3 4');
   });
 });
 

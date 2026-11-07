@@ -7,9 +7,9 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
 
 import { configureKortix } from '../core/http/config';
-import { ProjectGoalConflictError, type ProjectGoal, type ProjectGoalRecord } from '../core/rest/projects-client';
+import { WorkspaceGoalConflictError, type ProjectGoal, type ProjectGoalRecord } from '../core/rest/projects-client';
 import { qk } from './query-keys';
-import { runProjectGoalControl } from './use-goals';
+import { runWorkspaceGoalControl } from './use-goals';
 
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 
@@ -48,8 +48,8 @@ describe('runProjectGoalControl', () => {
     const qc = new QueryClient();
     seed(qc, RECORD);
     const goal = { goalId: 'g1', revision: 4 } as ProjectGoal;
-    const next = await runProjectGoalControl(qc, 'p1', { goal, action: 'pause', reason: 'x' });
-    expect(calls).toEqual(['/projects/p1/goals/g1/pause']);
+    const next = await runWorkspaceGoalControl(qc, 'p1', { goal, action: 'pause', reason: 'x' });
+    expect(calls).toEqual(['/workspaces/p1/goals/g1/pause']);
     expect(next?.revision).toBe(5);
     expect(qc.getQueryData<ProjectGoal>(qk.project.goal('p1', 'g1'))?.revision).toBe(5);
     expect(qc.getQueryData<ProjectGoal[]>(qk.project.goals('p1'))?.[0]?.revision).toBe(5);
@@ -60,10 +60,10 @@ describe('runProjectGoalControl', () => {
     const qc = new QueryClient();
     const goal = { goalId: 'g1', revision: 4 } as ProjectGoal;
     const [a, b] = await Promise.all([
-      runProjectGoalControl(qc, 'p1', { goal, action: 'stop', reason: 'x' }),
-      runProjectGoalControl(qc, 'p1', { goal, action: 'stop', reason: 'x' }),
+      runWorkspaceGoalControl(qc, 'p1', { goal, action: 'stop', reason: 'x' }),
+      runWorkspaceGoalControl(qc, 'p1', { goal, action: 'stop', reason: 'x' }),
     ]);
-    expect(calls).toEqual(['/projects/p1/goals/g1/stop']);
+    expect(calls).toEqual(['/workspaces/p1/goals/g1/stop']);
     expect(a).toBe(b);
   });
 
@@ -71,8 +71,8 @@ describe('runProjectGoalControl', () => {
     respond = () => json(409, { error: 'goal_conflict', message: 'The goal changed.', goal: { ...RECORD, revision: 9, state: 'stopped' } });
     const qc = new QueryClient();
     seed(qc, RECORD);
-    const error = await runProjectGoalControl(qc, 'p1', { goal: { goalId: 'g1', revision: 4 } as ProjectGoal, action: 'resume' }).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(ProjectGoalConflictError);
+    const error = await runWorkspaceGoalControl(qc, 'p1', { goal: { goalId: 'g1', revision: 4 } as ProjectGoal, action: 'resume' }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(WorkspaceGoalConflictError);
     expect(qc.getQueryData<ProjectGoal>(qk.project.goal('p1', 'g1'))?.revision).toBe(9);
     expect(qc.getQueryData<ProjectGoal[]>(qk.project.goals('p1'))?.[0]?.record.state).toBe('stopped');
   });
@@ -82,9 +82,9 @@ describe('runProjectGoalControl', () => {
     const qc = new QueryClient();
     const goal = { goalId: 'g1', revision: 4 } as ProjectGoal;
     await Promise.all([
-      runProjectGoalControl(qc, 'p1', { goal, action: 'answer', text: 'yes', answerId: 'a-1' }),
-      runProjectGoalControl(qc, 'p1', { goal, action: 'answer', text: 'yes', answerId: 'a-1' }),
+      runWorkspaceGoalControl(qc, 'p1', { goal, action: 'answer', text: 'yes', answerId: 'a-1' }),
+      runWorkspaceGoalControl(qc, 'p1', { goal, action: 'answer', text: 'yes', answerId: 'a-1' }),
     ]);
-    expect(calls).toEqual(['/projects/p1/goals/g1/answer']);
+    expect(calls).toEqual(['/workspaces/p1/goals/g1/answer']);
   });
 });

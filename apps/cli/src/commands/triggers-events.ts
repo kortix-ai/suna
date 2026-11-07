@@ -163,7 +163,7 @@ export function surfaceEventTriggerError(err: unknown): number {
   const body = (err as { body?: { code?: unknown; feature?: unknown } } | null)?.body;
   if (body?.code === 'feature_disabled' && body.feature === 'event_triggers') {
     process.stderr.write(
-      `${status.err('Composio event triggers are off for this project. Turn them on: kortix projects features enable event_triggers')}\n`,
+      `${status.err('Composio event triggers are off for this workspace. Turn them on: kortix workspaces features enable event_triggers')}\n`,
     );
     return 1;
   }
@@ -197,11 +197,11 @@ export function eventNextStep(
           // default shared account); `connect` links are Composio/Pipedream only.
           (e.source ?? e.provider) === 'mcp'
             ? e.account
-              ? `Needs the project-shared ${e.app ?? e.connector} account labelled "${e.account}" on ${e.connector}, signed in. A person signs in the default shared account: kortix connectors authorize ${e.connector}  (pin "${e.account}" as the default first: kortix connectors connections default <id>)`
-              : `Needs a signed-in project-shared ${e.app ?? e.connector} account. A person must sign it in: kortix connectors authorize ${e.connector}`
+              ? `Needs the workspace-shared ${e.app ?? e.connector} account labelled "${e.account}" on ${e.connector}, signed in. A person signs in the default shared account: kortix connectors authorize ${e.connector}  (pin "${e.account}" as the default first: kortix connectors connections default <id>)`
+              : `Needs a signed-in workspace-shared ${e.app ?? e.connector} account. A person must sign it in: kortix connectors authorize ${e.connector}`
             : e.account
-              ? `Needs a project-shared ${e.app ?? e.connector} account labelled "${e.account}" on ${e.connector}. A person must open the link: kortix connectors connect ${e.connector} --owner project  (label it "${e.account}": kortix connectors connections rename <id> ${e.account})`
-              : `Needs a project-shared ${e.app ?? e.connector} account. A person must open the link: kortix connectors connect ${e.connector} --owner project`,
+              ? `Needs a workspace-shared ${e.app ?? e.connector} account labelled "${e.account}" on ${e.connector}. A person must open the link: kortix connectors connect ${e.connector} --owner workspace  (label it "${e.account}": kortix connectors connections rename <id> ${e.account})`
+              : `Needs a workspace-shared ${e.app ?? e.connector} account. A person must open the link: kortix connectors connect ${e.connector} --owner workspace`,
           'It goes live when the account is connected.',
         ],
       };
@@ -210,7 +210,7 @@ export function eventNextStep(
       if (/^(Composio|Connector|App) event triggers are off/.test(e.error ?? '')) {
         return {
           word: 'error',
-          lines: [`Error: ${e.error}`, 'Turn them on: kortix projects features enable event_triggers'],
+          lines: [`Error: ${e.error}`, 'Turn them on: kortix workspaces features enable event_triggers'],
         };
       }
       // No provider: the connector is undeclared. A provider other than the
@@ -239,12 +239,12 @@ export function eventNextStep(
 }
 
 const eventTypesPath = (projectId: string, connector: string): string =>
-  `/projects/${projectId}/triggers/event-types?connector=${encodeURIComponent(connector)}`;
+  `/workspaces/${projectId}/triggers/event-types?connector=${encodeURIComponent(connector)}`;
 
 const appEventTypesPath = (projectId: string, app: string, source?: string): string =>
-  `/projects/${projectId}/triggers/event-types?app=${encodeURIComponent(app)}${source ? `&source=${encodeURIComponent(source)}` : ''}`;
+  `/workspaces/${projectId}/triggers/event-types?app=${encodeURIComponent(app)}${source ? `&source=${encodeURIComponent(source)}` : ''}`;
 
-const eventAppsPath = (projectId: string): string => `/projects/${projectId}/triggers/event-apps`;
+const eventAppsPath = (projectId: string): string => `/workspaces/${projectId}/triggers/event-apps`;
 
 const sourceOf = (x: { source?: string; provider: string }): string => x.source ?? x.provider;
 
@@ -254,7 +254,7 @@ interface McpSetup {
   steps: string[];
 }
 
-const AUTHORIZE_NOTE = '  (a person signs in; the account is shared with the project)';
+const AUTHORIZE_NOTE = '  (a person signs in; the account is shared with the workspace)';
 
 /**
  * The setup of one MCP app, from its `event-apps` entry. An app with a
@@ -392,7 +392,7 @@ async function printApps(
       ? ['Add a connector: kortix connectors add <slug> --provider composio --app <app> --apply']
       : []),
     ...(restSources.includes('mcp')
-      ? ["Add an MCP app (its read-only list tools become events too): kortix connectors add <slug> --provider mcp --url <mcp_url> --apply, then sign it in for the project: kortix connectors authorize <slug>. One app's exact commands: kortix triggers events --app <app>."]
+      ? ["Add an MCP app (its read-only list tools become events too): kortix connectors add <slug> --provider mcp --url <mcp_url> --apply, then sign it in for the workspace: kortix connectors authorize <slug>. One app's exact commands: kortix triggers events --app <app>."]
       : []),
   ];
   out.write(

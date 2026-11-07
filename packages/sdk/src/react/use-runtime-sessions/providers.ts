@@ -2,13 +2,13 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
-import { useKortixRouteProjectId } from '../route-project';
+import { useKortixRouteWorkspaceId } from '../route-project';
 import { contract } from '../query-contracts';
 import { qk } from '../query-keys';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import type { ProviderListResponse } from './keys';
 import { unwrap } from './shared';
-import { getProjectModelPicker } from '../../core/rest/projects-client';
+import { getWorkspaceModelPicker } from '../../core/rest/projects-client';
 import {
   GATEWAY_PROVIDER_IDS,
   normalizeProviderList,
@@ -42,7 +42,7 @@ function isClientError(error: unknown): boolean {
 export function useRuntimeProviders() {
   const queryClient = useQueryClient();
   const runtimeReady = useRuntimeReady();
-  const projectId = useKortixRouteProjectId();
+  const projectId = useKortixRouteWorkspaceId();
   const gatewayProvidersQuery = useQuery<ProviderListResponse>({
     queryKey: ['project-providers', projectId, 'gateway'],
     queryFn: async () => {
@@ -53,7 +53,7 @@ export function useRuntimeProviders() {
       // read and fills the shared entry.
       const catalog = await queryClient.fetchQuery({
         queryKey: qk.project.modelPicker(projectId!),
-        queryFn: () => getProjectModelPicker(projectId!),
+        queryFn: () => getWorkspaceModelPicker(projectId!),
         ...contract('config'),
       });
       return projectLlmCatalogToProviderList(catalog);

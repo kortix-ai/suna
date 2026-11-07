@@ -80,7 +80,7 @@ test('Remove asks first, then POSTs the folder with confirm and refetches the pr
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 
   expect(requests).toEqual([
-    { url: 'http://backend.test/v1/projects/synthetic-project/skills/remove', body: { folder: 'skills/notes', confirm: true } },
+    { url: 'http://backend.test/v1/workspaces/synthetic-project/skills/remove', body: { folder: 'skills/notes', confirm: true } },
   ]);
   expect(queryClient.getQueryState(qk.project.detail('synthetic-project'))?.isInvalidated).toBe(true);
 });

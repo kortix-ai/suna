@@ -64,7 +64,7 @@ function startFakeApi() {
       const body: any = req.method === 'GET' ? null : await req.json().catch(() => null)
       seen.push({ method: req.method, path: url.pathname, query: url.search, auth: req.headers.get('authorization'), body })
       if (delayMs) await Bun.sleep(delayMs)
-      const base = `/v1/projects/${PROJECT_ID}/sessions`
+      const base = `/v1/workspaces/${PROJECT_ID}/sessions`
       if (req.method === 'GET' && url.pathname === `${base}/${SELF}/reachable`) return Response.json(REACHABLE)
       if (req.method === 'POST' && url.pathname === `${base}/${SELF}/peer-messages`) {
         const answer = send(body)
@@ -197,7 +197,7 @@ describe('pi list_agents', () => {
     expect(await rt.admit({ text: 'who is around?', files: [] }).done).toBe('completed')
 
     const call = api.seen.find((s) => s.path.endsWith('/reachable'))!
-    expect(call).toMatchObject({ method: 'GET', path: `/v1/projects/${PROJECT_ID}/sessions/${SELF}/reachable`, query: '?scope=project', auth: 'Bearer box-token' })
+    expect(call).toMatchObject({ method: 'GET', path: `/v1/workspaces/${PROJECT_ID}/sessions/${SELF}/reachable`, query: '?scope=project', auth: 'Bearer box-token' })
     const { state, result } = lastResult(frames, 'list_agents')
     expect(result).toEqual({
       ok: true,
@@ -208,9 +208,9 @@ describe('pi list_agents', () => {
         subtitle: 'This session is main. 1 working.',
         status: 'done',
         rows: [
-          { title: 'reviewer', detail: 'started by this session · @reviewer · Review the auth module', badge: 'working', href: `/projects/${PROJECT_ID}/sessions/${REVIEWER}` },
-          { title: 'docs-writer', detail: 'session · Write the docs · messages wait for approval', badge: 'idle', href: `/projects/${PROJECT_ID}/sessions/${OTHER}` },
-          { title: 'quiet', detail: 'session · @reviewer · Review the auth module · takes no messages', badge: 'done', href: `/projects/${PROJECT_ID}/sessions/aaaaaaaa-0000-4000-8000-000000000004` },
+          { title: 'reviewer', detail: 'started by this session · @reviewer · Review the auth module', badge: 'working', href: `/workspaces/${PROJECT_ID}/sessions/${REVIEWER}` },
+          { title: 'docs-writer', detail: 'session · Write the docs · messages wait for approval', badge: 'idle', href: `/workspaces/${PROJECT_ID}/sessions/${OTHER}` },
+          { title: 'quiet', detail: 'session · @reviewer · Review the auth module · takes no messages', badge: 'done', href: `/workspaces/${PROJECT_ID}/sessions/aaaaaaaa-0000-4000-8000-000000000004` },
         ],
       },
       data: REACHABLE,
@@ -234,7 +234,7 @@ describe('pi send_message', () => {
     ])
     await rt.admit({ text: 'tell the reviewer', files: [] }).done
     const call = api.seen.find((s) => s.path.endsWith('/peer-messages'))!
-    expect(call).toMatchObject({ method: 'POST', path: `/v1/projects/${PROJECT_ID}/sessions/${SELF}/peer-messages`, auth: 'Bearer box-token' })
+    expect(call).toMatchObject({ method: 'POST', path: `/v1/workspaces/${PROJECT_ID}/sessions/${SELF}/peer-messages`, auth: 'Bearer box-token' })
     expect(call.body).toEqual({ to: '@reviewer', message: 'The schema migration finished; tenant_id is the new column.', summary: 'Migration finished', notify_when_idle: true })
     const { result } = lastResult(frames, 'send_message')
     expect(result).toMatchObject({
@@ -379,7 +379,7 @@ describe('pi agent tool background default', () => {
   test('at depth 0 a separate subagent runs in the background unless the call says false; deeper it waits', async () => {
     const top = await boot([{ tool: 'agent', args: { description: 'Audit logs', prompt: 'audit the logs', subagent_type: 'general', name: 'auditor' } }, { text: 'started' }])
     await top.rt.admit({ text: 'audit', files: [] }).done
-    const create = api.seen.find((s) => s.method === 'POST' && s.path === `/v1/projects/${PROJECT_ID}/sessions`)!
+    const create = api.seen.find((s) => s.method === 'POST' && s.path === `/v1/workspaces/${PROJECT_ID}/sessions`)!
     expect(create.body.metadata).toEqual({ notify_parent: true, agent_handle: 'auditor' })
     expect(create.body.runtime_context).toMatchObject({ 'kortix.subagent.depth': 1, 'kortix.agent.handle': 'auditor' })
     const part = top.frames.filter((f) => f.tool === 'agent' && f.state.status === 'completed').at(-1)!.state

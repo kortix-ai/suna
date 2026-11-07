@@ -110,7 +110,7 @@ export interface SessionProviderSecretPool {
 const accountPath = (accountId: string) => `/accounts/${encodeURIComponent(accountId)}/secret-resources`;
 const secretPath = (accountId: string, secretId: string) => `${accountPath(accountId)}/${encodeURIComponent(secretId)}`;
 const poolPath = (projectId: string, sessionId: string, providerId: string) =>
-  `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/provider-secret-pools/${encodeURIComponent(providerId)}`;
+  `/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/provider-secret-pools/${encodeURIComponent(providerId)}`;
 
 export async function listAccountSecretResources(accountId: string, projectId?: string) {
   const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
@@ -151,7 +151,7 @@ export async function getSessionProviderSecretPool(projectId: string, sessionId:
   return unwrap(await backendApi.get<SessionProviderSecretPool>(poolPath(projectId, sessionId, providerId)));
 }
 export async function listSessionProviderSecretPools(projectId: string, sessionId: string) {
-  const path = `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/provider-secret-pools`;
+  const path = `/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/provider-secret-pools`;
   return unwrap(await backendApi.get<{
     pools: SessionProviderSecretPool[];
     can_edit: boolean;

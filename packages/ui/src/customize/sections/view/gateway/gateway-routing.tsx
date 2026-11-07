@@ -166,7 +166,7 @@ export function hasAdvancedRoutingConfig(
  *
  * This was `CustomizeSectionWrapper`, which is the settings PANEL's shell: it
  * brings `mx-auto max-w-2xl` and its own `overflow-y-auto`. Routing is not
- * panel content any more — it is one tab of `/projects/[id]/models`, whose
+ * panel content any more — it is one tab of `/workspaces/[id]/models`, whose
  * column is `CapabilityPageShell`'s `max-w-5xl` — so the wrapper drew this tab
  * 320px narrower than the six tabs beside it, off the column's left edge, and
  * opened a second scroller inside the page's one. The heading and the Reset

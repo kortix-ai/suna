@@ -156,7 +156,7 @@ export async function createMarketplaceInstallSession(
 ): Promise<{ session_id: string }> {
   return unwrap(
     await backendApi.post<{ session_id: string }>(
-      `/projects/${encodeURIComponent(projectId)}/marketplace/install-session`,
+      `/workspaces/${encodeURIComponent(projectId)}/marketplace/install-session`,
       { id: itemId },
     ),
     'Failed to start marketplace install session',

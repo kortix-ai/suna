@@ -65,48 +65,7 @@ describe('ProfileTabView', () => {
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   });
 
-  /**
-   * Jay, 2026-08-17: "in the user settings also have all the accounts you're a
-   * part of so you can easily go to the account settings as well from the user
-   * settings."
-   *
-   * Placement is the requirement, not just presence — "easily" means the list
-   * is reachable without scrolling past Security and Danger zone, and without
-   * finding a tab first. So it sits directly under the identity group and
-   * ABOVE Security. `account-memberships.test.tsx` covers the section itself;
-   * this pins where it lands on the pane.
-   */
-  describe('organizations', () => {
-    const withAccounts = () =>
-      renderToStaticMarkup(
-        <ProfileTabView
-          accounts={[{ account_id: 'acc_1', name: 'Acme', account_role: 'owner' }]}
-        />,
-      );
 
-    test('lists each account with a link to its settings', () => {
-      const out = withAccounts();
-      // `?accountId=acc_1` — the hub is a modal on the current page, not a
-      // route. Rendered with no router context, the href is the query-only
-      // relative form.
-      expect(out).toContain('href="?accountId=acc_1"');
-      expect(out).toContain('>Acme<');
-    });
-
-    test('sits under the identity rows and above Danger zone', () => {
-      expect(headings(withAccounts())).toEqual(['Profile', 'Organizations', 'Danger zone']);
-      expect(withAccounts().indexOf('>Email<')).toBeLessThan(
-        withAccounts().indexOf('Organizations'),
-      );
-    });
-
-    /** No account list, no section — the pane is unchanged for a reader whose
-     *  accounts query has not answered. This is why the heading assertion at
-     *  the top of this file still reads three headings. */
-    test('adds nothing to the pane when the list is unknown', () => {
-      expect(headings(html())).toEqual(['Profile', 'Danger zone']);
-    });
-  });
 
   test('consecutive rows share one bordered group', () => {
     // The whole point of the restyle: one border around the rows, hairlines
@@ -115,7 +74,8 @@ describe('ProfileTabView', () => {
   });
 
   test('the deletion entry point explains the cancellable default before confirmation', () => {
-    const out = renderToStaticMarkup(<ProfileTabView copy={messages.settings.profile} />);
+    // The raw catalog: its plural strings are not the view's formatter functions.
+    const out = renderToStaticMarkup(<ProfileTabView copy={messages.settings.profile as never} />);
     expect(out).toContain('Schedule account deletion. You can cancel before the scheduled date.');
     expect(out).not.toContain('This cannot be undone.');
   });
@@ -227,5 +187,25 @@ describe('ProfileTabView — no security section', () => {
     const out = html();
     expect(out).not.toContain('Two-factor authentication');
     expect(out).not.toContain('No second factor enrolled');
+  });
+});
+
+describe('ProfileTabView — a person with no workspace', () => {
+  test('offers "Delete my login", never the scheduled account deletion', () => {
+    const html = renderToStaticMarkup(
+      <ProfileTabView
+        accountDeletionSupported
+        isDeletionStatusError={false}
+        loginOnly={{
+          label: 'Delete my login',
+          description: 'Deletes your Kortix login. You belong to no workspace, so nothing else is deleted.',
+          title: 'Delete your login?',
+          warning: 'This deletes your login right away. This cannot be undone.',
+        }}
+      />,
+    );
+    expect(html).toContain('Delete my login');
+    expect(html).toContain('You belong to no workspace');
+    expect(html).not.toContain('Delete account');
   });
 });

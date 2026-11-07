@@ -59,7 +59,7 @@ describe('ExperimentalTabView', () => {
   test('renders the header title and description', () => {
     const out = renderToStaticMarkup(<ExperimentalTabView />);
     // "Feature flags", not "Experimental": the pane moved to
-    // `/projects/[id]/admin/feature-flags` and took the name the
+    // `/workspaces/[id]/admin/feature-flags` and took the name the
     // `CustomizeSection` id has always used.
     expect(out).toContain('Feature flags');
     expect(out).toContain('Features you can switch on before they are generally available.');
@@ -133,7 +133,7 @@ describe('ExperimentalTabView', () => {
     const managed: FeatureFlagView = { ...experimentalFeature, key: 'session_log', name: 'Session log', enabled: true, overridden: true, operator_only: true };
     const out = renderToStaticMarkup(<ExperimentalTabView features={[managed]} canManage />);
     expect(out).toContain('Managed by Kortix');
-    expect(out).not.toContain('Overridden for this project');
+    expect(out).not.toContain('Overridden for this workspace');
     expect(out).toMatch(/role="switch"[^>]*aria-checked="true"[^>]*disabled|role="switch"[^>]*disabled[^>]*aria-checked="true"/);
     // An ordinary flag beside it stays writable.
     const mixed = renderToStaticMarkup(<ExperimentalTabView features={[betaFeature]} canManage />);
@@ -153,7 +153,7 @@ describe('ExperimentalTabView', () => {
     const out = renderToStaticMarkup(<ExperimentalTabView features={[]} />);
     expect(out).toContain('data-slot="empty"');
     expect(out).toContain('No experimental features');
-    expect(out).toContain('This deployment exposes no per-project feature flags.');
+    expect(out).toContain('This deployment exposes no per-workspace feature flags.');
     expect(out).not.toContain('<table');
   });
 
@@ -175,7 +175,7 @@ describe('ExperimentalTabView', () => {
     // Ported from `main`'s `feature-flags-view.test.ts`. `overridden` reports
     // WHETHER the project set a choice, not what the default was.
     const overridden = renderToStaticMarkup(<ExperimentalTabView features={[betaFeature]} />);
-    expect(overridden).toContain('Overridden for this project');
+    expect(overridden).toContain('Overridden for this workspace');
 
     const inherited = renderToStaticMarkup(
       <ExperimentalTabView features={[experimentalFeature]} />,

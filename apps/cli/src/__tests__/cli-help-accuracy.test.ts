@@ -120,7 +120,7 @@ beforeAll(() => {
     port: 0,
     fetch: async (req) => {
       const { pathname } = new URL(req.url);
-      if (pathname.endsWith('/accounts/me')) return Response.json(ME);
+      if (pathname.endsWith('/me')) return Response.json(ME);
       if (pathname.endsWith('/marketplace/install-session')) {
         if (req.method !== 'POST')
           return Response.json({ error: 'method not allowed' }, { status: 405 });
@@ -246,13 +246,13 @@ describe('KRTX-1802: `kortix token --help`', () => {
   test('`token --token-only` stays accepted (symmetry with whoami)', async () => {
     const r = await runCli(['token', '--token-only']);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('project token');
+    expect(r.stdout).toContain('workspace token');
   });
 
   test('bare `kortix token` still prints the token context', async () => {
     const r = await runCli(['token']);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('project token');
+    expect(r.stdout).toContain('workspace token');
     expect(r.stdout).toContain(ME.token_context.project_id);
   });
 });

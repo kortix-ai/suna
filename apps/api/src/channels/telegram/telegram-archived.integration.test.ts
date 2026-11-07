@@ -4,7 +4,7 @@
  * A project has one end state, `status = 'archived'`, and one way to reach it:
  * `DELETE /v1/projects/:id` (projects/routes/project-settings.ts). No route
  * restores it (KRTX-3384). Two starting points:
- * - `tombstone`: only the status changed (`archiveProjectAndRevokeTokens`); the
+ * - `tombstone`: only the status changed (`archiveProjectRow`); the
  *   install, its secrets and the bot's webhook stay. Every project deleted
  *   before the delete released its bot looks like this.
  * - `deleted`: the project went through the real DELETE route.
@@ -29,7 +29,7 @@ import { and, eq, inArray, like } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { insertIntoView } from '../../__tests__/helpers/compat-views';
 import { config } from '../../config';
-import { archiveProjectAndRevokeTokens } from '../../projects/lib/project-deletion';
+import { archiveProjectRow } from '../../workspaces/lifecycle';
 import { registerProjectSettingsRoutes } from '../../projects/routes/project-settings';
 import { projectsApp } from '../../projects/surface';
 import { db } from '../../shared/db';
@@ -40,7 +40,6 @@ import { handleTelegramEvent, telegramMessageEvent, type TelegramMessage } from 
 import { telegramInbound } from './inbound';
 
 const telegramWebhookApp = channelWebhookRoutes(telegramInbound);
-const ACCOUNT = crypto.randomUUID();
 const OWNER = crypto.randomUUID();
 const ALLOWED = '111';
 const STRANGER = '999';
@@ -50,6 +49,8 @@ const TELEGRAM_SECRETS = [TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, TELEGRAM_
 
 interface Fixture {
   state: 'tombstone' | 'deleted' | 'moved' | 'revoked' | 'unreachable';
+  /** Its own account: a workspace holds one project (1:1). */
+  account: string;
   project: string;
   botId: string;
   token: string;
@@ -60,7 +61,7 @@ interface Fixture {
 
 function fixture(state: Fixture['state']): Fixture {
   const botId = String(5_000_000_000 + Math.floor(Math.random() * 1_000_000));
-  return { state, project: crypto.randomUUID(), botId, token: `${botId}:${'A'.repeat(35)}`, session: crypto.randomUUID(), deleteCalls: [] };
+  return { state, account: crypto.randomUUID(), project: crypto.randomUUID(), botId, token: `${botId}:${'A'.repeat(35)}`, session: crypto.randomUUID(), deleteCalls: [] };
 }
 
 type Call = { botId: string; method: string; body: Record<string, unknown> };
@@ -99,22 +100,25 @@ function asOwner(method: string, path: string) {
 }
 
 async function seed(f: Fixture) {
+  await db.insert(accounts).values({ accountId: f.account, name: `telegram-archived-${f.state}` });
+  // The account owner: the automation actor a channel session runs as, and the caller of the DELETE route.
+  await insertIntoView(db, accountMembers, { userId: OWNER, accountId: f.account, accountRole: 'owner', isSuperAdmin: false });
   await db.insert(projects).values({
     projectId: f.project,
-    accountId: ACCOUNT,
+    accountId: f.account,
     name: `telegram-${f.state}`,
     repoUrl: `file:///nonexistent/telegram-${f.state}.git`,
     metadata: { telegram: { allowedUserIds: [ALLOWED] } },
   });
   await saveTelegramInstall({ projectId: f.project, botId: f.botId, username: 'synthetic_bot', token: f.token, webhookSecret: SECRET });
-  await db.insert(projectSessions).values({ sessionId: f.session, accountId: ACCOUNT, projectId: f.project, branchName: f.session, createdBy: OWNER });
+  await db.insert(projectSessions).values({ sessionId: f.session, accountId: f.account, projectId: f.project, branchName: f.session, createdBy: OWNER });
   webhookUrl.set(f.botId, `https://example.test/v1/webhooks/telegram/${f.project}`);
 }
 
 async function deleteProject(f: Fixture) {
   const before = botCalls(f).length;
   if (f.state === 'tombstone') {
-    expect(await archiveProjectAndRevokeTokens(f.project, ACCOUNT)).toBeTruthy();
+    expect(await archiveProjectRow(f.project, f.account)).toBeTruthy();
   } else {
     const res = await asOwner('DELETE', `/v1/projects/${f.project}`);
     expect(res.status).toBe(200);
@@ -169,9 +173,6 @@ async function consume(f: Fixture, event: ReturnType<typeof message>) {
 
 beforeAll(async () => {
   (config as { TELEGRAM_API_URL: string }).TELEGRAM_API_URL = fake.url.origin;
-  await db.insert(accounts).values({ accountId: ACCOUNT, name: 'telegram-archived-test' });
-  // The account owner: the automation actor a channel session runs as, and the caller of the DELETE route.
-  await insertIntoView(db, accountMembers, { userId: OWNER, accountId: ACCOUNT, accountRole: 'owner', isSuperAdmin: false });
 });
 
 afterAll(() => {
@@ -189,7 +190,7 @@ for (const f of [fixture('tombstone'), fixture('deleted')]) {
       calls.length = 0;
       await db.delete(jobQueue).where(like(jobQueue.jobKey, `telegram:${f.botId}:%`));
       await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.projectId, f.project));
-      await db.delete(chatThreads).where(eq(chatThreads.workspaceId, f.botId));
+      await db.delete(chatThreads).where(eq(chatThreads.platformTeamId, f.botId));
       await bindChatThread({ projectId: f.project, platform: 'telegram', workspaceId: f.botId, threadId: String(BOUND_CHAT), sessionId: f.session });
     });
 

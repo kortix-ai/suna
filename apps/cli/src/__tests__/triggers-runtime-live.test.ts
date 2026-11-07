@@ -6,9 +6,9 @@ import { join, resolve } from 'node:path';
 const CLI_ENTRY = join(resolve(import.meta.dir, '..', '..'), 'src', 'index.ts');
 const PROJECT = '11111111-1111-4111-8111-111111111111';
 const SESSION = '22222222-2222-4222-8222-222222222222';
-const ALL = `/v1/projects/${PROJECT}/triggers/all`;
-const DECLARED_LIST = `/v1/projects/${PROJECT}/triggers`;
-const RUNTIME = `/v1/projects/${PROJECT}/triggers/runtime`;
+const ALL = `/v1/workspaces/${PROJECT}/triggers/all`;
+const DECLARED_LIST = `/v1/workspaces/${PROJECT}/triggers`;
+const RUNTIME = `/v1/workspaces/${PROJECT}/triggers/runtime`;
 
 let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;

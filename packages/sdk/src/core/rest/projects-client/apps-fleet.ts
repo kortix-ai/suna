@@ -75,7 +75,7 @@ export interface CreateAppVolumeInput {
   snapshot_retention_days?: number;
 }
 
-const app = (projectId: string, appId: string) => `/projects/${projectId}/apps/${appId}`;
+const app = (projectId: string, appId: string) => `/workspaces/${projectId}/apps/${appId}`;
 
 export async function listAppMachines(projectId: string, appId: string): Promise<AppMachine[]> {
   return unwrap(await backendApi.get<{ machines: AppMachine[] }>(`${app(projectId, appId)}/machines`), 'Failed to list machines').machines;

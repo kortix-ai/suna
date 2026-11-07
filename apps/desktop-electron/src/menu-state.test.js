@@ -4,13 +4,13 @@ const { copyableUrl } = require('./menu-state');
 
 describe('copyableUrl', () => {
   test('a session URL comes back unchanged', () => {
-    const url = 'https://kortix.com/projects/p1/sessions/s1';
+    const url = 'https://kortix.com/workspaces/p1/sessions/s1';
     expect(copyableUrl(url)).toBe(url);
   });
 
   test('the query and fragment survive, so a paste reopens the same view', () => {
-    expect(copyableUrl('https://kortix.com/projects/p1/sessions/s1?tab=logs#anchor')).toBe(
-      'https://kortix.com/projects/p1/sessions/s1?tab=logs#anchor',
+    expect(copyableUrl('https://kortix.com/workspaces/p1/sessions/s1?tab=logs#anchor')).toBe(
+      'https://kortix.com/workspaces/p1/sessions/s1?tab=logs#anchor',
     );
   });
 
@@ -18,8 +18,8 @@ describe('copyableUrl', () => {
     expect(copyableUrl('https://kortix.com/')).toBe('https://kortix.com/');
     expect(copyableUrl('https://kortix.com/new')).toBe('https://kortix.com/new');
     expect(copyableUrl('https://kortix.com/settings')).toBe('https://kortix.com/settings');
-    expect(copyableUrl('http://localhost:3000/projects/p2/sessions/s2')).toBe(
-      'http://localhost:3000/projects/p2/sessions/s2',
+    expect(copyableUrl('http://localhost:3000/workspaces/p2/sessions/s2')).toBe(
+      'http://localhost:3000/workspaces/p2/sessions/s2',
     );
   });
 

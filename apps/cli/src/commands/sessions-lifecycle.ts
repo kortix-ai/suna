@@ -44,10 +44,10 @@ an idle auto-stop leaves it. Resume with \`kortix sessions start\`. Use
 \`sessions restart\` to re-provision instead, and \`sessions rm\` to delete.
 
 Options:
-  --project <id>   Operate on this project id (default: linked).
-  --host <name>    Operate against a non-default Kortix host.
-  --json           Machine-readable output.
-  -h, --help       Show this help.
+  --workspace <id>  Operate on this workspace id (default: linked).
+  --host <name>     Operate against a non-default Kortix host.
+  --json            Machine-readable output.
+  -h, --help        Show this help.
 
 Needs project.session.stop, and the session owner or an account owner/admin.
 `;
@@ -60,17 +60,17 @@ fresh sandbox from the branch. After 30 days its messages, files and branch
 are deleted. Public links stay revoked.
 
 Pass the full session id: a deleted session is not in \`sessions ls\`, so a
-short id cannot be expanded, and no other project is searched for it.
+short id cannot be expanded, and no other workspace is searched for it.
 \`sessions ls --deleted\` lists the ones you can restore with their full id;
-\`sessions rm\` prints the exact command, with --project (and --host).
+\`sessions rm\` prints the exact command, with --workspace (and --host).
 
 Options:
-  --project <id>   Operate on this project id (default: linked).
-  --host <name>    Operate against a non-default Kortix host.
-  --json           Machine-readable output.
-  -h, --help       Show this help.
+  --workspace <id>  Operate on this workspace id (default: linked).
+  --host <name>     Operate against a non-default Kortix host.
+  --json            Machine-readable output.
+  -h, --help        Show this help.
 
-Needs project.session.stop, and the session owner or a project manager.
+Needs project.session.stop, and the session owner or a workspace manager.
 `;
 
 const RECOVER_HELP = help`Usage: kortix sessions recover <session-id> [options]
@@ -86,12 +86,12 @@ A session with no saved conversation cannot continue: recover refuses it and
 changes nothing. Delete it with \`sessions rm\` instead.
 
 Options:
-  --project <id>   Operate on this project id (default: linked).
-  --host <name>    Operate against a non-default Kortix host.
-  --json           Machine-readable output.
-  -h, --help       Show this help.
+  --workspace <id>  Operate on this workspace id (default: linked).
+  --host <name>     Operate against a non-default Kortix host.
+  --json            Machine-readable output.
+  -h, --help        Show this help.
 
-Needs project.session.start, and the session owner or a project manager.
+Needs project.session.start, and the session owner or a workspace manager.
 `;
 
 const START_HELP = help`Usage: kortix sessions start <session-id> [options]
@@ -102,15 +102,15 @@ just reports \`ready\`. Without --wait it reports the stage it reached in one
 call and exits 0.
 
 Options:
-  --wait           Block until the runtime is ready (up to ~5 min). Exit 1 if
-                   the session ends up failed or stopped. Each step prints
-                   one stderr line, e.g. \`provisioning · building the first
-                   image for this project (0:42)\`. --json prints the last
-                   /start payload, its boot.image step included.
-  --project <id>   Operate on this project id (default: linked).
-  --host <name>    Operate against a non-default Kortix host.
-  --json           Machine-readable output.
-  -h, --help       Show this help.
+  --wait            Block until the runtime is ready (up to ~5 min). Exit 1 if
+                    the session ends up failed or stopped. Each step prints
+                    one stderr line, e.g. \`provisioning · building the first
+                    image for this workspace (0:42)\`. --json prints the last
+                    /start payload, its boot.image step included.
+  --workspace <id>  Operate on this workspace id (default: linked).
+  --host <name>     Operate against a non-default Kortix host.
+  --json            Machine-readable output.
+  -h, --help        Show this help.
 
 Needs project.session.start.
 `;
@@ -130,14 +130,14 @@ New verbs: get [session-id], set [session-id] <model>, switch [session-id] <mode
 The new verbs default to KORTIX_SESSION_ID.
 
 Options:
-  --prompt <text>  Queue a continuation after the running turn.
+  --prompt <text>   Queue a continuation after the running turn.
   --idempotency-key <key>  Required with --prompt; reuse for retries.
-  --project <id>   Operate on this project id (default: linked).
-  --host <name>    Operate against a non-default Kortix host.
-  --json           Machine-readable output.
-  -h, --help       Show this help.
+  --workspace <id>  Operate on this workspace id (default: linked).
+  --host <name>     Operate against a non-default Kortix host.
+  --json            Machine-readable output.
+  -h, --help        Show this help.
 
-Needs the session owner or a project manager, and the model must be servable
+Needs the session owner or a workspace manager, and the model must be servable
 for the account. Run \`kortix gateway models\` to see what is.
 `;
 
@@ -152,10 +152,10 @@ A full context does the same by itself. A session whose runtime cannot do this
 on demand exits 1 and nothing changes. A stopped session is started first.
 
 Options:
-  --project <id>   Operate on this project id (default: linked).
-  --host <name>    Operate against a non-default Kortix host.
-  --json           Machine-readable output.
-  -h, --help       Show this help.
+  --workspace <id>  Operate on this workspace id (default: linked).
+  --host <name>     Operate against a non-default Kortix host.
+  --json            Machine-readable output.
+  -h, --help        Show this help.
 `;
 
 function parseCommon(argv: string[], helpText: string): {
@@ -169,7 +169,7 @@ function parseCommon(argv: string[], helpText: string): {
     return 0;
   }
   try {
-    const projectArg = takeFlagValue(rest, ['--project']);
+    const projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     const hostArg = takeFlagValue(rest, ['--host']);
     const json = takeFlagBool(rest, ['--json']);
     return { rest, opts: { projectArg, hostArg }, json };
@@ -199,7 +199,7 @@ export async function runSessionsStop(argv: string[]): Promise<number> {
 
   let result: { ok: boolean; session_id: string; status: string };
   try {
-    result = await client.post(`/projects/${projectId}/sessions/${session.session_id}/stop`, {});
+    result = await client.post(`/workspaces/${projectId}/sessions/${session.session_id}/stop`, {});
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -234,7 +234,7 @@ export async function runSessionsRestore(argv: string[]): Promise<number> {
   if (!ctx) return 1;
 
   try {
-    await ctx.client.post(`/projects/${ctx.projectId}/sessions/${sessionId}/restore`, {});
+    await ctx.client.post(`/workspaces/${ctx.projectId}/sessions/${sessionId}/restore`, {});
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -267,7 +267,7 @@ export async function runSessionsRecover(argv: string[]): Promise<number> {
   const { client, projectId, session } = located.located;
 
   try {
-    await client.post(`/projects/${projectId}/sessions/${session.session_id}/recover`, {});
+    await client.post(`/workspaces/${projectId}/sessions/${session.session_id}/recover`, {});
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -291,7 +291,7 @@ export async function runSessionsStart(argv: string[]): Promise<number> {
   let json = false;
   let wait = false;
   try {
-    opts = { projectArg: takeFlagValue(rest, ['--project']), hostArg: takeFlagValue(rest, ['--host']) };
+    opts = { projectArg: takeFlagValue(rest, ['--project', '--workspace']), hostArg: takeFlagValue(rest, ['--host']) };
     json = takeFlagBool(rest, ['--json']);
     wait = takeFlagBool(rest, ['--wait']);
   } catch (err) {
@@ -311,7 +311,7 @@ export async function runSessionsStart(argv: string[]): Promise<number> {
   );
   if (!located) return 1;
   const { client, projectId, session } = located.located;
-  const path = `/projects/${projectId}/sessions/${session.session_id}/start`;
+  const path = `/workspaces/${projectId}/sessions/${session.session_id}/start`;
 
   // Same idempotent readiness call the dashboard polls, and the same budget
   // `sessions new --wait` uses: 75 attempts, 4s apart (~5 min). One stderr
@@ -408,7 +408,7 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
     detail?: string;
   };
   try {
-    result = await client.put(`/projects/${projectId}/sessions/${session.session_id}/model`, {
+    result = await client.put(`/workspaces/${projectId}/sessions/${session.session_id}/model`, {
       model,
       ...(prompt && retryKey ? { prompt, idempotency_key: retryKey } : {}),
     });

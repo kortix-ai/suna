@@ -45,10 +45,14 @@ describe('computeAgentAuthority — kortix_permissions ∩ ceiling − HUMAN_ONL
     const result = computeAgentAuthority('all', null);
     expect(result.declared.length).toBe(GRANTABLE_PROJECT_PERMISSIONS.length);
     for (const p of HUMAN_ONLY_PERMISSIONS) expect(result.effective).not.toContain(p);
-    expect(result.humanOnly).toEqual([...HUMAN_ONLY_PERMISSIONS].sort());
-    expect(result.effective.length).toBe(
-      GRANTABLE_PROJECT_PERMISSIONS.length - HUMAN_ONLY_PERMISSIONS.length,
-    );
+    expect(result.humanOnly).toEqual([]);
+    expect(result.effective.length).toBe(GRANTABLE_PROJECT_PERMISSIONS.length);
+  });
+
+  test('a human-only permission named in an explicit list is dropped and reported', () => {
+    const result = computeAgentAuthority(['project.credentials.issue', 'billing.write'], null);
+    expect(result.humanOnly).toEqual(['billing.write', 'project.credentials.issue']);
+    expect(result.effective).toEqual(['project.read']);
   });
 
   test('none / missing grant leaves only project.read', () => {
@@ -59,8 +63,9 @@ describe('computeAgentAuthority — kortix_permissions ∩ ceiling − HUMAN_ONL
     expect(expandPermissionGrant([])).toEqual([]);
   });
 
-  test('every human-only permission is in the grantable catalog (drift guard)', () => {
-    for (const p of HUMAN_ONLY_PERMISSIONS) expect(GRANTABLE_PROJECT_PERMISSIONS).toContain(p);
+  test('no human-only permission is in the grantable catalog (drift guard)', () => {
+    expect(HUMAN_ONLY_PERMISSIONS).toContain('project.credentials.issue');
+    for (const p of HUMAN_ONLY_PERMISSIONS) expect(GRANTABLE_PROJECT_PERMISSIONS).not.toContain(p);
   });
 });
 

@@ -22,6 +22,7 @@ import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
 import { agentPrincipalModeFor } from './agent-principal';
+import { readKeyScopes, type KeyScopes } from './key-scope';
 
 /**
  * uuid5 namespace for a `pending` principal — the invitee of an
@@ -51,9 +52,12 @@ export function pendingPrincipalId(email: string): string {
  * `middleware/auth.ts` — there is no sixth way into the API.
  */
 export type Credential =
-  /** Supabase JWT (browser / dashboard). No token scope, no agent grant; the
-   *  only credential the account-MFA gate applies to. */
-  | { kind: 'jwt' }
+  /** Supabase JWT (browser / dashboard), or an OAuth access token acting as
+   *  its person. No agent grant; the only credential the account-MFA gate
+   *  applies to. `boundWorkspaceId`: the OAuth consent named one workspace,
+   *  and the engine confines the token to it like a workspace key
+   *  ({@link actingTokenBinding}). */
+  | { kind: 'jwt'; boundWorkspaceId?: string }
   /** A human's CLI Personal Access Token. `projectId` non-null = bound to one
    *  project and refused everywhere else. */
   | { kind: 'pat'; tokenId: string; projectId: string | null }
@@ -78,6 +82,11 @@ export type Credential =
        *  run or once another human prompted it (spec §2.3). Decides personal
        *  resources only, never shared authority. */
       onBehalfOfUserId?: string | null;
+      /** A workspace key that acts as this service account (an agent key or
+       *  a bot key, design.md §3.2 C4b): no session. It always authorizes AS
+       *  the service account, never as the person who minted it, whether or
+       *  not a role is bound. Optional so an older literal reads as a session. */
+      serviceAccountKey?: boolean;
     }
   /** A direct `kortix_sa_` bearer. Fail-closed: no membership baseline, no
    *  built-in role, authority is exactly its own assignments. */
@@ -133,7 +142,7 @@ export interface PrincipalRef {
  */
 export function actingPrincipal(actor: Actor): PrincipalRef {
   const c = actor.credential;
-  if (c.kind === 'agent_session' && (c.activated || c.agentPrincipal)) {
+  if (c.kind === 'agent_session' && (c.activated || c.agentPrincipal || c.serviceAccountKey)) {
     return { type: 'service_account', id: c.serviceAccountId };
   }
   if (c.kind === 'service_account') {
@@ -143,18 +152,31 @@ export function actingPrincipal(actor: Actor): PrincipalRef {
 }
 
 /** The acting token id, when a token is acting. Undefined for jwt/sandbox. */
+/**
+ * The acting token and its binding, for the engine's token rules (steps 1c, 2
+ * and 4 of `authorize`, and the project listing). A workspace-bound OAuth
+ * token has no `account_tokens` row: its binding is the consent's workspace,
+ * with no key scope and no agent grant, so a bound OAuth token is refused on
+ * every other workspace exactly like a workspace key.
+ */
+export async function actingTokenBinding(actor: Actor): Promise<{ tokenId: string | undefined; binding: TokenBinding | null }> {
+  const tokenId = actingTokenId(actor);
+  if (tokenId) return { tokenId, binding: await loadTokenBinding(tokenId) };
+  const c = actor.credential;
+  if (c.kind === 'jwt' && c.boundWorkspaceId) {
+    return {
+      tokenId: `oauth-workspace:${c.boundWorkspaceId}`,
+      binding: { projectId: c.boundWorkspaceId, agentGrant: null, serviceAccountId: null, sessionId: null, scopes: null },
+    };
+  }
+  return { tokenId: undefined, binding: null };
+}
+
 export function actingTokenId(actor: Actor): string | undefined {
   const c = actor.credential;
   if (c.kind === 'pat' || c.kind === 'agent_session') return c.tokenId;
   if (c.kind === 'service_account') return c.serviceAccountId;
   return undefined;
-}
-
-/** The project a token is confined to, or null when it is unconfined. */
-export function credentialProjectId(actor: Actor): string | null {
-  const c = actor.credential;
-  if (c.kind === 'pat' || c.kind === 'agent_session') return c.projectId;
-  return null;
 }
 
 /**
@@ -175,6 +197,19 @@ export function credentialOnBehalfOf(actor: Actor): string | null {
   return actor.credential.kind === 'agent_session' ? (actor.credential.onBehalfOfUserId ?? null) : null;
 }
 
+/**
+ * True when the request runs inside an agent session: an `agent_session`
+ * credential, or a token bound to a session or an agent grant that names no
+ * service account (the My Kortix coordinator, or a session whose service
+ * account could not be ensured). Those classify as `pat` and act as their
+ * launcher, but they are agents: HUMAN_ONLY (C8) applies to them.
+ */
+export function isAgentSessionToken(actor: Actor, binding: TokenBinding | null): boolean {
+  if (actor.credential.kind === 'agent_session') return true;
+  if (actor.credential.kind !== 'pat' || !binding) return false;
+  return (binding.sessionId ?? null) != null || binding.agentGrant != null;
+}
+
 /** The agent-session narrowing, or null when there is none. */
 export function credentialAgentGrant(actor: Actor): AgentGrant | null {
   return actor.credential.kind === 'agent_session' ? actor.credential.agentGrant : null;
@@ -191,10 +226,17 @@ export interface TokenBinding {
   projectId: string | null;
   agentGrant: AgentGrant | null;
   serviceAccountId: string | null;
+  /** The session the token belongs to. A session token that names no service
+   *  account (My Kortix, or a failed agent service-account ensure) still is an
+   *  agent session: `isAgentSessionToken` reads this. */
+  sessionId?: string | null;
   /** Only on the binding the auth middleware read this request. The memo below
    *  never carries it: every turn rewrites it (`bindSessionTurnIdentity`), and a
    *  15 s copy on another replica would name the previous prompter. */
   onBehalfOfUserId?: string | null;
+  /** A workspace key's scope inside its creator's role (`iam/key-scope.ts`).
+   *  Null = full. Immutable after mint, so the memo below may carry it. */
+  scopes?: KeyScopes | null;
 }
 
 /**
@@ -218,6 +260,8 @@ const loadTokenBinding = ttlMemo({
         projectId: accountTokens.projectId,
         agentGrant: accountTokens.agentGrant,
         serviceAccountId: accountTokens.serviceAccountId,
+        sessionId: accountTokens.sessionId,
+        scopes: accountTokens.scopes,
       })
       .from(accountTokens)
       .where(eq(accountTokens.tokenId, tokenId))
@@ -227,6 +271,8 @@ const loadTokenBinding = ttlMemo({
           projectId: row.projectId,
           agentGrant: readStoredAgentGrant(row.agentGrant),
           serviceAccountId: row.serviceAccountId ?? null,
+          sessionId: row.sessionId ?? null,
+          scopes: readKeyScopes(row.scopes),
         }
       : null;
   },
@@ -315,11 +361,15 @@ export async function tokenCredential(
       accountId ? loadServiceAccountActivation(serviceAccountId, accountId) : Promise.resolve(false),
       agentPrincipalModeFor(binding?.projectId ?? null, binding?.agentGrant ?? null),
     ]);
+    // A key that names a service account and no session (`sessionId` read from
+    // the row; the request's own value when the seeded binding lacks it).
+    const tokenSessionId = binding?.sessionId !== undefined ? binding.sessionId : sessionId;
     return {
       kind: 'agent_session',
       tokenId,
       projectId: binding?.projectId ?? null,
       sessionId,
+      serviceAccountKey: tokenSessionId == null,
       agentGrant: binding?.agentGrant ?? null,
       serviceAccountId,
       activated,

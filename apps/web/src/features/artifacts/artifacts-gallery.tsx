@@ -86,7 +86,7 @@ function matches(a: Artifact, scope: ArtifactListScope, q: string, viewerId: str
 }
 
 /**
- * /projects/[id]/artifacts — every artifact the viewer may see, as live
+ * /workspaces/[id]/artifacts — every artifact the viewer may see, as live
  * previews, and a New doc button after the search (the Skills page's pair).
  * A new doc joins the grid where you are; its toast opens it.
  */

@@ -58,7 +58,7 @@ export const loadSessionLogPage: LoadSessionLogPage | null = async (projectId, s
   if (query.limit !== undefined) search.set('limit', String(query.limit));
   const qs = search.toString();
   const response = await backendApi.get<unknown>(
-    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/log${qs ? `?${qs}` : ''}`,
+    `/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/log${qs ? `?${qs}` : ''}`,
     { showErrors: false, signal },
   );
   if (!response.success) throw response.error ?? new Error('Session log request failed');

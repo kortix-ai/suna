@@ -55,6 +55,7 @@ import { registerEmbeddedTerminal } from './features/terminal/register.ts';
 import { initKortix, kortix } from './kortix.ts';
 import type { UiPrefs } from './layout/ui-prefs.ts';
 import { initialUi, prefsPath, readPrefs } from './lib/prefs.ts';
+import { NO_WORKSPACE_TEXT } from './lib/workspaces.ts';
 
 registerEmbeddedTerminal();
 
@@ -107,7 +108,7 @@ export async function bootSession(
 ): Promise<string | null> {
   if (!request) return null;
   if (!projectId) {
-    note('--new needs a project: none is configured on this host.');
+    note(`--new needs a workspace. ${NO_WORKSPACE_TEXT}`);
     return null;
   }
   try {
@@ -169,12 +170,22 @@ export async function resolveProjectId(
     } catch (error) {
       const reason = error instanceof Error && error.message ? error.message : String(error);
       deps.note(
-        `Project ${trimmed.slice(0, 8)} is not available on this host (${reason}); using the first project in your account.`,
+        `Workspace ${trimmed.slice(0, 8)} is not available on this host (${reason}); opening your first workspace.`,
       );
     }
   }
+  // The host account first. An account with no project is not a workspace,
+  // so when it has none, the first workspace in any account the person
+  // belongs to opens instead.
   try {
     const projects = await deps.listProjects(accountId);
+    const first = projects?.[0]?.project_id;
+    if (first || !accountId) return first ?? null;
+  } catch {
+    if (!accountId) return null;
+  }
+  try {
+    const projects = await deps.listProjects(null);
     return projects?.[0]?.project_id ?? null;
   } catch {
     return null;
@@ -379,7 +390,7 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
         state: host ? 'waiting' : 'done',
         detail: host ? hostOrigin(host.backendUrl) : 'opening the login screen',
       },
-      ...(host ? [{ id: 'project', label: 'Opening the project', state: 'waiting' as const }] : []),
+      ...(host ? [{ id: 'project', label: 'Opening the workspace', state: 'waiting' as const }] : []),
       ...(host && options.newSession
         ? [{ id: 'session', label: 'Starting a session', state: 'waiting' as const }]
         : []),
@@ -437,7 +448,7 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
         mark(
           'project',
           'done',
-          projectName ?? (projectId ? projectId.slice(0, 8) : 'none on this host'),
+          projectName ?? (projectId ? projectId.slice(0, 8) : 'No workspace yet'),
         );
       }
 

@@ -17,11 +17,11 @@ flow(
   {
     domain: 'secrets',
     routes: [
-      'GET /v1/projects/:projectId/claude-subscription',
-      'PUT /v1/projects/:projectId/claude-subscription/token',
-      'POST /v1/projects/:projectId/claude-subscription/login/start',
-      'POST /v1/projects/:projectId/claude-subscription/login/complete',
-      'DELETE /v1/projects/:projectId/claude-subscription',
+      'GET /v1/workspaces/:projectId/claude-subscription',
+      'PUT /v1/workspaces/:projectId/claude-subscription/token',
+      'POST /v1/workspaces/:projectId/claude-subscription/login/start',
+      'POST /v1/workspaces/:projectId/claude-subscription/login/complete',
+      'DELETE /v1/workspaces/:projectId/claude-subscription',
       'GET /v1/accounts/:accountId/secret-resources',
       'PUT /v1/accounts/:accountId/secret-resources/:secretId/access',
       'PUT /v1/accounts/:accountId/secret-resources/:secretId/value',
@@ -35,7 +35,7 @@ flow(
     await team.grantProjectRole(project.id, member.userId!, 'member');
     const owner = ctx.client.as(ctx.P.OWNER);
     const asMember = ctx.client.as(member);
-    const path = '/v1/projects/:projectId/claude-subscription';
+    const path = '/v1/workspaces/:projectId/claude-subscription';
     const params = { projectId: project.id };
     const leaks = (text: string) => text.includes(TOKEN) || text.includes('sk-ant-oat01-');
     let secretId = '';
@@ -67,7 +67,7 @@ flow(
       if (row.provider_id !== 'claude-agent' || row.label !== 'Claude' || row.access_mode !== 'members' || row.project_id !== project.id) {
         throw new Error(`unexpected Claude account row: ${JSON.stringify({ ...row, granted_user_ids: undefined })}`);
       }
-      const secrets = await owner.get('/v1/projects/:projectId/secrets', { params });
+      const secrets = await owner.get('/v1/workspaces/:projectId/secrets', { params });
       secrets.status(200);
       if (leaks(secrets.text())) throw new Error('the token is in the project secret list');
     });
@@ -128,14 +128,14 @@ flow(
   {
     domain: 'secrets',
     routes: [
-      'GET /v1/projects/:projectId/model-picker',
-      'PUT /v1/projects/:projectId/model-defaults',
-      'POST /v1/projects/:projectId/sessions',
-      'PUT /v1/projects/:projectId/sessions/:sessionId/model',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'PUT /v1/projects/:projectId/claude-subscription/token',
-      'DELETE /v1/projects/:projectId/claude-subscription',
-      'PUT /v1/projects/:projectId/model-access',
+      'GET /v1/workspaces/:projectId/model-picker',
+      'PUT /v1/workspaces/:projectId/model-defaults',
+      'POST /v1/workspaces/:projectId/sessions',
+      'PUT /v1/workspaces/:projectId/sessions/:sessionId/model',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'PUT /v1/workspaces/:projectId/claude-subscription/token',
+      'DELETE /v1/workspaces/:projectId/claude-subscription',
+      'PUT /v1/workspaces/:projectId/model-access',
     ],
   },
   async (ctx) => {
@@ -149,12 +149,12 @@ flow(
     });
     const sessionParams = { projectId: project.id, sessionId: session };
     const prompt = (model: { providerID: string; modelID: string }, id: string) =>
-      owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts', {
+      owner.post('/v1/workspaces/:projectId/sessions/:sessionId/prompts', {
         client_message_id: id, parts: [{ type: 'text', text: 'hello' }], overrides: { model },
       }, { params: sessionParams });
 
     await ctx.step('the picker lists the Claude subscription group apart from the gateway models, not connected', async () => {
-      const picker = await owner.get('/v1/projects/:projectId/model-picker', { params });
+      const picker = await owner.get('/v1/workspaces/:projectId/model-picker', { params });
       picker.status(200).body().has('$.claudeSubscription.providerId', 'claude-agent').has('$.claudeSubscription.connected', false);
       const body = picker.json<any>();
       const ids = (body.claudeSubscription.models as any[]).map((model) => model.id);
@@ -166,27 +166,27 @@ flow(
     });
 
     await ctx.step('a project default on a known Claude model → 200; an unknown id → 400 naming the valid ids', async () => {
-      (await owner.put('/v1/projects/:projectId/model-defaults', { scope: 'project', model: 'claude-agent/sonnet' }, { params })).status(200);
-      const refused = await owner.put('/v1/projects/:projectId/model-defaults', { scope: 'project', model: 'claude-agent/gpt-9' }, { params });
+      (await owner.put('/v1/workspaces/:projectId/model-defaults', { scope: 'project', model: 'claude-agent/sonnet' }, { params })).status(200);
+      const refused = await owner.put('/v1/workspaces/:projectId/model-defaults', { scope: 'project', model: 'claude-agent/gpt-9' }, { params });
       refused.status(400).body().has('$.code', 'invalid_model');
       if (!refused.text().includes(VALID)) throw new Error(`the refusal does not list the valid ids: ${refused.text()}`);
     });
 
     await ctx.step('session create: an unknown Claude id → 400 INVALID_SESSION_MODEL; a first prompt without a login → 409 claude_subscription_required', async () => {
-      const unknown = await owner.post('/v1/projects/:projectId/sessions', { model: 'claude-agent/gpt-9' }, { params });
+      const unknown = await owner.post('/v1/workspaces/:projectId/sessions', { model: 'claude-agent/gpt-9' }, { params });
       unknown.status(400).body().has('$.code', 'INVALID_SESSION_MODEL');
       if (!unknown.text().includes(VALID)) throw new Error('the create refusal does not list the valid ids');
-      (await owner.post('/v1/projects/:projectId/sessions', { model: 'claude-agent/opus', initial_prompt: 'hello' }, { params }))
+      (await owner.post('/v1/workspaces/:projectId/sessions', { model: 'claude-agent/opus', initial_prompt: 'hello' }, { params }))
         .status(409).body().has('$.code', 'claude_subscription_required').has('$.model', 'claude-agent/opus');
     });
 
     await ctx.step('session model change: a known Claude id is stored as-is; an unknown one → 400', async () => {
-      const changed = await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', { model: 'claude-agent/haiku' }, { params: sessionParams });
+      const changed = await owner.put('/v1/workspaces/:projectId/sessions/:sessionId/model', { model: 'claude-agent/haiku' }, { params: sessionParams });
       if (changed.statusCode !== 200 && changed.statusCode !== 202) throw new Error(`model change returned ${changed.statusCode}: ${changed.text()}`);
       if (!changed.text().includes('claude-agent/haiku') || changed.text().includes('kortix/claude-agent')) {
         throw new Error(`the stored model is not claude-agent/haiku as-is: ${changed.text()}`);
       }
-      const refused = await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', { model: 'claude-agent/gpt-9' }, { params: sessionParams });
+      const refused = await owner.put('/v1/workspaces/:projectId/sessions/:sessionId/model', { model: 'claude-agent/gpt-9' }, { params: sessionParams });
       refused.status(400).body().has('$.code', 'INVALID_SESSION_MODEL');
     });
 
@@ -199,22 +199,22 @@ flow(
     });
 
     await ctx.step('a model turned off in the model settings reads enabled: false and a session cannot switch to it', async () => {
-      (await owner.put('/v1/projects/:projectId/model-access', { target: 'model', id: 'claude-agent/fable', enabled: false }, { params })).status(200);
-      const models = (await owner.get('/v1/projects/:projectId/model-picker', { params })).json<any>().claudeSubscription.models as any[];
+      (await owner.put('/v1/workspaces/:projectId/model-access', { target: 'model', id: 'claude-agent/fable', enabled: false }, { params })).status(200);
+      const models = (await owner.get('/v1/workspaces/:projectId/model-picker', { params })).json<any>().claudeSubscription.models as any[];
       const enabled = Object.fromEntries(models.map((model) => [model.id, model.enabled]));
       if (enabled['claude-agent/fable'] !== false || enabled['claude-agent/opus'] !== true) throw new Error(`enabled after turning fable off: ${JSON.stringify(enabled)}`);
-      const switched = await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', { model: 'claude-agent/fable' }, { params: sessionParams });
+      const switched = await owner.put('/v1/workspaces/:projectId/sessions/:sessionId/model', { model: 'claude-agent/fable' }, { params: sessionParams });
       if (switched.statusCode < 400) throw new Error(`a session switched to a turned-off model: ${switched.statusCode}`);
-      (await owner.put('/v1/projects/:projectId/model-access', { target: 'model', id: 'claude-agent/fable', enabled: true }, { params })).status(200);
+      (await owner.put('/v1/workspaces/:projectId/model-access', { target: 'model', id: 'claude-agent/fable', enabled: true }, { params })).status(200);
     });
 
     await ctx.step('after the login the picker reads connected and the prompt passes the Claude gate', async () => {
-      (await owner.put('/v1/projects/:projectId/claude-subscription/token', { token: TOKEN }, { params })).status(200);
-      (await owner.get('/v1/projects/:projectId/model-picker', { params })).status(200).body()
+      (await owner.put('/v1/workspaces/:projectId/claude-subscription/token', { token: TOKEN }, { params })).status(200);
+      (await owner.get('/v1/workspaces/:projectId/model-picker', { params })).status(200).body()
         .has('$.claudeSubscription.connected', true).has('$.claudeSubscription.models[0].connected', true);
       const passed = await prompt({ providerID: 'claude-agent', modelID: 'opus' }, 'claude-gate-2');
       if (passed.statusCode === 409 && passed.text().includes('claude_subscription_required')) throw new Error('the gate refused a connected person');
-      (await owner.del('/v1/projects/:projectId/claude-subscription', { params })).status(200);
+      (await owner.del('/v1/workspaces/:projectId/claude-subscription', { params })).status(200);
     });
   },
 );
@@ -224,13 +224,13 @@ flow(
   {
     domain: 'secrets',
     routes: [
-      'PUT /v1/projects/:projectId/claude-subscription/token',
-      'PUT /v1/projects/:projectId/custom-providers/:providerId',
-      'POST /v1/projects/:projectId/secrets',
-      'PUT /v1/projects/:projectId/gateway/routing-policy',
+      'PUT /v1/workspaces/:projectId/claude-subscription/token',
+      'PUT /v1/workspaces/:projectId/custom-providers/:providerId',
+      'POST /v1/workspaces/:projectId/secrets',
+      'PUT /v1/workspaces/:projectId/gateway/routing-policy',
       'POST /v1/accounts/tokens',
       'POST /v1/llm/chat/completions',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx) => {
@@ -273,15 +273,15 @@ flow(
     try {
       await db.connect();
       await ctx.step('a manager connects a Claude account, a stub model and a Routing chain that ends at the stub', async () => {
-        claudeAccount = (await asHolder.put('/v1/projects/:projectId/claude-subscription/token', { token: TOKEN }, { params }))
+        claudeAccount = (await asHolder.put('/v1/workspaces/:projectId/claude-subscription/token', { token: TOKEN }, { params }))
           .status(200).json<{ secret_id: string }>().secret_id;
-        (await asHolder.put('/v1/projects/:projectId/custom-providers/:providerId',
+        (await asHolder.put('/v1/workspaces/:projectId/custom-providers/:providerId',
           { name: 'Stub LLM', base_url: `http://127.0.0.1:${port}/v1/`, models: [{ id: 'm1', name: 'Model One' }] },
           { params: { ...params, providerId: provider } })).status(200);
-        (await asHolder.post('/v1/projects/:projectId/secrets', {
+        (await asHolder.post('/v1/workspaces/:projectId/secrets', {
           name: `CUSTOM_${provider.toUpperCase().replace(/-/g, '_')}_API_KEY`, value: 'sk-stub-key', strategy: 'broker', consumer: 'llm_gateway',
         }, { params })).status(200);
-        (await asHolder.put('/v1/projects/:projectId/gateway/routing-policy',
+        (await asHolder.put('/v1/workspaces/:projectId/gateway/routing-policy',
           { defaultModel: null, visionModel: null, defaultFallback: { models: [fallback], fallbackOn: 'transient' }, rules: [] },
           { params })).status(200);
       });
@@ -307,7 +307,7 @@ flow(
           .headerEquals('x-kortix-model', fallback)
           .body().has('$.choices[0].message.content', 'FALLBACK-OK');
         if (received.at(-1) !== 'm1') throw new Error(`the stub received ${JSON.stringify(received)}`);
-        const metadata = await waitFor(async () => (await asHolder.get('/v1/projects/:projectId/sessions/:sessionId', { params: { ...params, sessionId } }))
+        const metadata = await waitFor(async () => (await asHolder.get('/v1/workspaces/:projectId/sessions/:sessionId', { params: { ...params, sessionId } }))
           .status(200).json<{ metadata?: Record<string, unknown> }>().metadata ?? {}, {
           until: (value) => value.model_source === 'fallback',
           timeoutMs: 10_000,

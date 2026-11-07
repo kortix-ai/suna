@@ -131,7 +131,7 @@ test('a 404 from the raw route surfaces as a not-found error', async () => {
 // KRTX-1723: the tree was built from the recursive list, which stops at 1,000
 // files, so every folder that sorts after file 1,000 was missing.
 test('listFiles reads one folder level (depth=1) and maps folders and files', async () => {
-  routes['/projects/P1/files'] = {
+  routes['/workspaces/P1/files'] = {
     status: 200,
     body: JSON.stringify({
       entries: [
@@ -156,7 +156,7 @@ test('listFiles reads one folder level (depth=1) and maps folders and files', as
 });
 
 test('listFiles at the root lists a folder that sorts after 1,000 files', async () => {
-  routes['/projects/P1/files'] = {
+  routes['/workspaces/P1/files'] = {
     status: 200,
     body: JSON.stringify({
       entries: [
@@ -179,7 +179,7 @@ test('listFiles at the root lists a folder that sorts after 1,000 files', async 
 
 // KRTX-1723: a folder over one page shows its first 500 entries and "Load more".
 test('listFiles asks for one page and returns the cursor of the next', async () => {
-  routes['/projects/P1/files'] = {
+  routes['/workspaces/P1/files'] = {
     status: 200,
     body: JSON.stringify({
       entries: [{ path: 'a/f0000.txt', type: 'file' }],
@@ -197,7 +197,7 @@ test('listFiles asks for one page and returns the cursor of the next', async () 
 });
 
 test('listFiles sends the cursor for the next page', async () => {
-  routes['/projects/P1/files'] = {
+  routes['/workspaces/P1/files'] = {
     status: 200,
     body: JSON.stringify({ entries: [{ path: 'a/f1199.txt', type: 'file' }], truncated: false, next_cursor: null }),
     contentType: 'application/json',
@@ -216,7 +216,7 @@ test('listFiles sends the cursor for the next page', async () => {
 });
 
 test('an API without next_cursor reads as the last page', async () => {
-  routes['/projects/P1/files'] = {
+  routes['/workspaces/P1/files'] = {
     status: 200,
     body: JSON.stringify({ entries: [], truncated: false }),
     contentType: 'application/json',
@@ -229,7 +229,7 @@ test('an API without next_cursor reads as the last page', async () => {
 // An API older than paging ignores `limit`: it cuts the folder at 5,000 and
 // sends no cursor. The page must say it is cut, never read as complete.
 test('a cut response without next_cursor reads as truncated, with no next page', async () => {
-  routes['/projects/P1/files'] = {
+  routes['/workspaces/P1/files'] = {
     status: 200,
     body: JSON.stringify({ entries: [{ path: 'a/f0000.txt', type: 'file' }], truncated: true }),
     contentType: 'application/json',
@@ -242,7 +242,7 @@ test('a cut response without next_cursor reads as truncated, with no next page',
 // KRTX-1723: the Files page had no search; a file past the old 1,000-file cut
 // could be neither seen nor found.
 test('searchFiles asks the server by filename and returns workspace paths', async () => {
-  routes['/projects/P1/files/search'] = {
+  routes['/workspaces/P1/files/search'] = {
     status: 200,
     body: JSON.stringify({ query: 'last', ref: 'main', content_search: false, results: [{ path: 'z/last.txt' }] }),
     contentType: 'application/json',
@@ -263,7 +263,7 @@ test('searchFiles sends nothing for a blank query', async () => {
 
 // KRTX-1723: content search finds a line in a file; choosing it opens that line.
 test('searchFileContents asks the server for a content search and keeps the line', async () => {
-  routes['/projects/P1/files/search'] = {
+  routes['/workspaces/P1/files/search'] = {
     status: 200,
     body: JSON.stringify({
       query: 'last',

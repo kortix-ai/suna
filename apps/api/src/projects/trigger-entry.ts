@@ -131,7 +131,7 @@ export function parseTargetField(
   if (payload !== undefined && (!isPlainObject(payload) || JSON.stringify(payload).length > 64 * 1024)) {
     return { error: 'target.payload must be an object of at most 64 KiB' };
   }
-  if (typeof app !== 'string' || !APP_SLUG_RE.test(app.trim())) return { error: 'target.app must be the slug of an App in this project' };
+  if (typeof app !== 'string' || !APP_SLUG_RE.test(app.trim())) return { error: 'target.app must be the slug of an App in this workspace' };
   if (typeof path !== 'string' || !path.startsWith('/') || /[\r\n]/.test(path) || path.length > 2048) return { error: 'target.path must be an HTTP path starting with /' };
   if (method !== 'POST' && method !== 'GET') return { error: 'target.method must be POST or GET' };
   return { target: { app: app.trim(), path, method, ...(payload ? { payload: payload as Record<string, unknown> } : {}) } };

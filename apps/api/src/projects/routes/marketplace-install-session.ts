@@ -38,6 +38,7 @@ import {
   buildTemplateInstallPrompt,
 } from './marketplace-install-prompts';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { workspaceIdParam } from '../../shared/route-params';
 
 /** The project's manifest raw text (kortix.yaml, else kortix.yml). */
 async function manifestRawOrNull(
@@ -127,7 +128,7 @@ async function installModelGate(
 }
 
 async function handleMarketplaceInstallSession(c: any) {
-  const projectId = c.req.param('projectId');
+  const projectId = workspaceIdParam(c);
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // The install lands as a change request, so it needs the CR leaf.
@@ -194,12 +195,12 @@ export function registerMarketplaceInstallSessionRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/marketplace/install-session',
+      path: '/{workspaceId}/marketplace/install-session',
       tags: ['marketplace'],
       summary: 'Start a session that installs a marketplace item',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: {
           content: {
             'application/json': {

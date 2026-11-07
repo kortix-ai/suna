@@ -20,25 +20,25 @@ const PROJECT_ID = '1b1e6c9e-2a5d-4f1a-9f0b-7c3d2e5a8b41';
 
 describe('resolveSettingsExitPath', () => {
   test('a remembered project sends the user back to it', () => {
-    expect(resolveSettingsExitPath(PROJECT_ID)).toBe(`/projects/${PROJECT_ID}`);
+    expect(resolveSettingsExitPath(PROJECT_ID)).toBe(`/workspaces/${PROJECT_ID}`);
   });
 
   test('no remembered project falls back to the list, never the provisioning door', () => {
-    // `/projects/start` (`PROJECT_LANDING_PATH`) creates a project when the
+    // `/workspaces/start` (`PROJECT_LANDING_PATH`) creates a project when the
     // account has none. This route exists so a user with NO app access can
     // reach billing without that happening, so closing the overlay must not
-    // hand them one either. `/projects` applies the entitlement-aware rule
+    // hand them one either. `/workspaces` applies the entitlement-aware rule
     // instead (`shouldAutoCreateFirstProject`).
-    expect(resolveSettingsExitPath(null)).toBe('/projects');
-    expect(resolveSettingsExitPath(undefined)).toBe('/projects');
+    expect(resolveSettingsExitPath(null)).toBe('/workspaces');
+    expect(resolveSettingsExitPath(undefined)).toBe('/workspaces');
   });
 
   test('a tampered cookie value is never interpolated into the path', () => {
     // The id comes from a browser-writable cookie, so it goes through
     // `projectPathFromId`'s UUID check rather than straight into the URL.
-    expect(resolveSettingsExitPath('../../admin')).toBe('/projects');
-    expect(resolveSettingsExitPath('')).toBe('/projects');
-    expect(resolveSettingsExitPath(`${PROJECT_ID} `)).toBe('/projects');
+    expect(resolveSettingsExitPath('../../admin')).toBe('/workspaces');
+    expect(resolveSettingsExitPath('')).toBe('/workspaces');
+    expect(resolveSettingsExitPath(`${PROJECT_ID} `)).toBe('/workspaces');
   });
 });
 
@@ -52,7 +52,7 @@ describe('STANDALONE_DEFAULT_SETTINGS_TAB', () => {
 
   test('the project-scoped default is reachable with no project too', () => {
     // The two constants converged when project configuration left the overlay
-    // for `/projects/[id]/admin/general`: `DEFAULT_SETTINGS_TAB` was `general`, the
+    // for `/workspaces/[id]/admin/general`: `DEFAULT_SETTINGS_TAB` was `general`, the
     // project workspace tab, and is `profile` now. They stay separate
     // constants because they answer different questions — what the panel opens
     // on, and what the project-less route opens on — and a future

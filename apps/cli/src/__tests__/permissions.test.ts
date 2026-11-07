@@ -146,7 +146,7 @@ describe('kortix permissions', () => {
   test('ls reads the catalog and prints area / level / delegable', async () => {
     const code = await runPermissions(['ls']);
     expect(code).toBe(0);
-    expect(requests[0].url).toContain('/v1/accounts/account_1/iam/permissions');
+    expect(requests[0].url).toContain('/v1/workspaces/account_1/iam/permissions');
     const out = stripAnsi(stdout);
     expect(out).toContain('ACTION');
     expect(out).toContain('AREA');

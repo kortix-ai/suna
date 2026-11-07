@@ -19,6 +19,7 @@ import { createSession } from '../session-lifecycle';
 import { agentMayPerform, getAgentGrant } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { postIntoSpace } from '../lib/space-posts';
+import { workspaceIdParam } from '../../shared/route-params';
 
 /** A thread title from Kortix's message: its first line, at most 60 characters. */
 function threadTitle(text: string): string {
@@ -47,18 +48,18 @@ const SpacePostSchema = z.object({
 export function registerChatThreadRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'post',
-    path: '/{projectId}/chat/threads',
+    path: '/{workspaceId}/chat/threads',
     tags: ['sessions'],
     summary: 'Start a thread in the person’s chat',
     description: 'A session posts a top-level message to the person it works for, in their chat with Kortix (their DM with My Kortix). The person’s reply runs in that thread. Only a `private` session filed in no space or in one of the person’s own DMs may post; any other session gets 403 `not_the_persons_chat`. Flag `chat`.',
     ...auth,
     request: {
-      params: z.object({ projectId: z.string() }),
+      params: z.object({ workspaceId: z.string() }),
       body: { required: true, content: { 'application/json': { schema: ChatThreadInputSchema } } },
     },
     responses: { 201: json(ChatThreadSchema, 'The new thread'), ...errors(...SESSION_CREATE_ERROR_STATUSES) },
   }), async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const caller = callerKortixSessionId(c);
     if (!caller) return c.json({ error: 'Only a session starts a thread in a person’s chat' }, 403);
     const loaded = await loadProjectForUser(c, projectId, 'session');
@@ -98,7 +99,7 @@ export function registerChatThreadRoutes(): void {
 
   projectsApp.openapi(createRoute({
     method: 'post',
-    path: '/{projectId}/spaces/{spaceId}/posts',
+    path: '/{workspaceId}/spaces/{spaceId}/posts',
     tags: ['spaces'],
     summary: 'Post into a space as an agent',
     description:
@@ -109,12 +110,12 @@ export function registerChatThreadRoutes(): void {
       '`@person` (display name, email or its local part) and `@agent` become mentions; each mentioned person who may see the thread gets one notification. Flag `chat`.',
     ...auth,
     request: {
-      params: z.object({ projectId: z.string(), spaceId: z.string() }),
+      params: z.object({ workspaceId: z.string(), spaceId: z.string() }),
       body: { required: true, content: { 'application/json': { schema: SpacePostInputSchema } } },
     },
     responses: { 201: json(SpacePostSchema, 'The post'), ...errors(...SESSION_CREATE_ERROR_STATUSES) },
   }), async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const caller = callerKortixSessionId(c);
     if (!caller) return c.json({ error: 'Only an agent in a session posts here. A person writes in the chat.', code: 'session_only' }, 403);
     const loaded = await loadProjectForUser(c, projectId, 'session');

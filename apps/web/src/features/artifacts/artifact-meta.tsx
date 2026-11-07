@@ -16,7 +16,7 @@ export const VISIBILITY_ICON: Record<ArtifactVisibility, Icon> = {
 
 
 export function artifactHref(projectId: string, artifactId: string): string {
-  return `/projects/${projectId}/artifacts/${artifactId}`;
+  return `/workspaces/${projectId}/artifacts/${artifactId}`;
 }
 
 /**

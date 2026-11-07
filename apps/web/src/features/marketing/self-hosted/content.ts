@@ -18,14 +18,14 @@ export const yours = {
   eyebrow: 'What you keep',
   title: 'The company stays on your side of the wall.',
   titleMuted: 'Sandbox compute runs on your provider.',
-  sub: 'Self-hosting is not a smaller Kortix with the interesting parts removed. It is the whole control plane — accounts, projects, repos, secrets, connectors, policies, audit — running inside your network, on storage you back up yourself.',
+  sub: 'Self-hosting is not a smaller Kortix with the interesting parts removed. It is the whole control plane — workspaces, repos, secrets, connectors, policies, audit — running inside your network, on storage you back up yourself.',
   onbox: {
     label: 'on your box',
     items: [
       'The Postgres database, as a directory you can back up',
       'File storage, as a second directory next to it',
-      'Every project repo and every secret the platform holds',
-      'Accounts, roles, policies, triggers, channels and the audit record',
+      'Every workspace repo and every secret the platform holds',
+      'Workspaces, roles, policies, triggers, channels and the audit record',
       'The LLM gateway your sessions route model calls through',
     ],
   },

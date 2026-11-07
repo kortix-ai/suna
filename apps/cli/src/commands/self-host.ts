@@ -123,7 +123,7 @@ Options:
   --local-images          Run locally-built images (dev mode); forces auto-update off.
   --enterprise-license    Unlock SSO/SCIM/RBAC/audit (kortix.com/enterprise).
   --admin-email <email>   Grant platform-admin to this account.
-  --no-restrict-account-creation   Let any signed-in user create new accounts/orgs (default: admin-only).
+  --no-restrict-account-creation   Let any signed-in user create new workspaces (default: admin-only).
   --restrict-account-creation      Explicitly re-enable the admin-only restriction (the default).
   --disable-signup        Turn self sign-up off (DISABLE_SIGNUP=true); nobody can sign up, the admin included.
   --json                  Machine-readable output where supported.
@@ -530,7 +530,7 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
 
   if (!gitProviderConfigured(env)) {
     process.stdout.write(
-      `${C.dim}  note     managed git not configured yet — connect GitHub in the dashboard (Settings → Git) before creating projects.${C.reset}\n\n`,
+      `${C.dim}  note     managed git not configured yet — connect GitHub in the dashboard (Settings → Git) before creating workspaces.${C.reset}\n\n`,
     );
   }
 
@@ -1185,7 +1185,7 @@ async function promptFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): Promise
   // Default Yes: signups/teams/SSO all keep working either way — this only
   // gates who can spin up a brand-new organization (POST /v1/accounts).
   const restrictAccountCreation = await confirm(
-    'Restrict account creation to the admin? (new organizations can only be created by platform admins; users join by invite or SSO)',
+    'Restrict workspace creation to the admin? (new workspaces can only be created by platform admins; users join by invite or SSO)',
     env.KORTIX_RESTRICT_ACCOUNT_CREATION !== 'false',
   );
   env.KORTIX_RESTRICT_ACCOUNT_CREATION = restrictAccountCreation ? 'true' : 'false';
@@ -2525,7 +2525,7 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
 async function selfHostConnectGithub(_args: string[], _flags: GlobalFlags): Promise<number> {
   process.stdout.write(
     `\n  ${C.yellow}kortix self-host connect-github is deprecated.${C.reset}\n` +
-      `  ${C.dim}GitHub (projects) is configured in the dashboard: Settings → Git.${C.reset}\n\n`,
+      `  ${C.dim}GitHub (workspaces) is configured in the dashboard: Settings → Git.${C.reset}\n\n`,
   );
   return 0;
 }
@@ -2952,7 +2952,7 @@ function renderConnectionSummary(env: SelfHostEnv): void {
  */
 function renderAfterStartNote(): void {
   process.stdout.write(
-    `  ${C.dim}After start ${C.reset}Sign in → Settings → Git to connect GitHub (projects) · connect your model key in the app (BYOK) · optional: connectors · email with ${C.reset}env set EMAIL_URL=smtp://user:pass@host:587${C.dim}.${C.reset}\n\n`,
+    `  ${C.dim}After start ${C.reset}Sign in → Settings → Git to connect GitHub (workspaces) · connect your model key in the app (BYOK) · optional: connectors · email with ${C.reset}env set EMAIL_URL=smtp://user:pass@host:587${C.dim}.${C.reset}\n\n`,
   );
 }
 

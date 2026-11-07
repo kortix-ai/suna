@@ -22,11 +22,11 @@ questions the agent is blocked on. Answer them with
 \`kortix sessions approve\` / \`kortix sessions answer\`.
 
 Options:
-  --project <id>   Operate on this project id (default: linked/default).
-  --host <name>    Operate against a non-default Kortix host.
-  --json           Machine-readable output ({ permissions, questions }; each
-                   record has id, thread_id, call_id, payload, asked_at).
-  -h, --help       Show this help.
+  --workspace <id>  Operate on this workspace id (default: linked/default).
+  --host <name>     Operate against a non-default Kortix host.
+  --json            Machine-readable output ({ permissions, questions }; each
+                    record has id, thread_id, call_id, payload, asked_at).
+  -h, --help        Show this help.
 `;
 
 const APPROVE_HELP = help`Usage: kortix sessions approve <session-id> [<request-id>] [options]
@@ -38,7 +38,7 @@ Options:
   --always           Allow this action pattern for the rest of the session.
   --reject           Deny the request.
   --message "<why>"  Note passed back to the agent with the reply.
-  --project <id>     Operate on this project id (default: linked/default).
+  --workspace <id>   Operate on this workspace id (default: linked/default).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 `;
@@ -56,7 +56,7 @@ Options:
   --reject           Dismiss the question without answering.
   --answers <json>   Raw answers payload (string[][]) for requests carrying
                      several questions — overrides --option/--text.
-  --project <id>     Operate on this project id (default: linked/default).
+  --workspace <id>   Operate on this workspace id (default: linked/default).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 `;
@@ -72,7 +72,7 @@ function parseTarget(argv: string[], help: string): ParsedTarget | null {
   let projectArg: string | undefined;
   let hostArg: string | undefined;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n\n${help}`);
@@ -344,7 +344,7 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
 const APPROVALS_HELP = help`Usage: kortix sessions approvals <session-id> [<subcommand>] [options]
 
 Governed connector calls this session is waiting on a human for — an action a
-project policy said needs a decision before the connector runs it. Durable:
+workspace policy said needs a decision before the connector runs it. Durable:
 unlike \`sessions pending\`, these survive a sandbox restart.
 
 Subcommands:
@@ -353,10 +353,10 @@ Subcommands:
   deny <execution-id>      Refuse it. The agent is told and continues without it.
 
 Options:
-  --project <id>   Operate on this project id (default: linked/default).
-  --host <name>    Operate against a non-default Kortix host.
-  --json           Machine-readable output.
-  -h, --help       Show this help.
+  --workspace <id>  Operate on this workspace id (default: linked/default).
+  --host <name>     Operate against a non-default Kortix host.
+  --json            Machine-readable output.
+  -h, --help        Show this help.
 
 Needs project.members.manage, or being the human who launched the session. An
 agent may never resolve its own approval.
@@ -441,7 +441,7 @@ export async function runSessionsConnectorApprovals(argv: string[]): Promise<num
   let json = false;
   try {
     opts = {
-      projectArg: takeFlagValue(rest, ['--project']),
+      projectArg: takeFlagValue(rest, ['--project', '--workspace']),
       hostArg: takeFlagValue(rest, ['--host']),
     };
     json = takeFlagBool(rest, ['--json']);

@@ -267,7 +267,7 @@ test('closing the drawer clears a pending navigation so no row stays marked', as
 test('a signed-in visitor sees the projects button; a signed-out one sees Get Started', async () => {
   authUser = { id: 'synthetic-user' };
   await mountNavbar();
-  expect(container!.innerHTML).toContain('href="/projects/start"');
+  expect(container!.innerHTML).toContain('href="/workspaces/start"');
 
   root?.unmount();
   container?.remove();

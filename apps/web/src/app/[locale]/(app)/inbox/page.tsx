@@ -11,7 +11,7 @@ import { NotificationInbox } from '@kortix/ui/internal/notifications/notificatio
 
 /**
  * /inbox — the Inbox (KRTX-1742) outside a project: the same page as
- * `/projects/[id]/inbox`, under the account pages' top bar. The Inbox button
+ * `/workspaces/[id]/inbox`, under the account pages' top bar. The Inbox button
  * of `/projects` and `/new` opens it. These pages mount no Settings overlay,
  * so "Notification settings" navigates to `/settings/sessions`.
  */

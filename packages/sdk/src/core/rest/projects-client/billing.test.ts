@@ -543,3 +543,20 @@ test('contactEnterpriseSales posts the account and an optional note, and returns
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ account_id: 'acc-1', note: 'SSO for 40 people' });
 });
+
+test('getAccountState types the free-grant and split-off comp fields (Workspaces C6)', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      credits: { total: 0, free_grant: { eligible: false, claimed_workspace_id: '11111111-1111-4111-8111-111111111111' } },
+      tier: { name: 'free', monthly_credits: 0 },
+      plan_comp: { until: '2026-12-01T00:00:00.000Z', source: 'workspace_split' },
+    },
+  };
+  const state = await getAccountState({ accountId: 'acct-2' });
+  const grant: { eligible: boolean; claimed_workspace_id: string | null } | undefined = state.credits.free_grant;
+  const comp: { until: string; source: 'workspace_split' } | null | undefined = state.plan_comp;
+  expect(grant).toEqual({ eligible: false, claimed_workspace_id: '11111111-1111-4111-8111-111111111111' });
+  expect(comp).toEqual({ until: '2026-12-01T00:00:00.000Z', source: 'workspace_split' });
+  expect(last()?.url).toContain('account_id=acct-2');
+});

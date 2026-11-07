@@ -21,6 +21,13 @@ export type { KortixAccount } from '@kortix/sdk';
 
 export { listAccounts } from '@kortix/sdk';
 
+// ── Workspaces ───────────────────────────────────────────────────────────────
+// A workspace is one account and its one project; `workspace_id` = `project_id`.
+// The SDK names, for new mobile code. The project names below keep working.
+
+export type { Workspace, WorkspaceSummary, WorkspaceRole } from '@kortix/sdk';
+export { listWorkspaces, getWorkspace, updateWorkspace, workspaceFromProject } from '@kortix/sdk';
+
 // ── Projects ───────────────────────────────────────────────────────────────
 
 export type {

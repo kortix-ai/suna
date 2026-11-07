@@ -5,7 +5,7 @@
 
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { getProjectGitToken, validateProjectManifest } from './projects';
+import { getWorkspaceGitToken, validateWorkspaceManifest } from './projects';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -31,8 +31,8 @@ const last = () => calls[calls.length - 1];
 
 test('validateProjectManifest posts { raw } and returns the verdict', async () => {
   nextResponse = { status: 200, body: { valid: false, issues: [{ message: 'missing [project]' }] } };
-  const result = await validateProjectManifest('P1', 'name = "x"');
-  expect(last().url).toContain('/projects/P1/manifest/validate');
+  const result = await validateWorkspaceManifest('P1', 'name = "x"');
+  expect(last().url).toContain('/workspaces/P1/manifest/validate');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ raw: 'name = "x"' });
   expect(result.valid).toBe(false);
@@ -41,8 +41,8 @@ test('validateProjectManifest posts { raw } and returns the verdict', async () =
 
 test('getProjectGitToken posts to git-token and returns the push token', async () => {
   nextResponse = { status: 200, body: { push_token: 'tok_abc', git_username: 't', repo_id: 'r1', repo_url: 'https://kortix.code.storage/x.git' } };
-  const result = await getProjectGitToken('P1');
-  expect(last().url).toContain('/projects/P1/git-token');
+  const result = await getWorkspaceGitToken('P1');
+  expect(last().url).toContain('/workspaces/P1/git-token');
   expect(last().method).toBe('POST');
   expect(result.push_token).toBe('tok_abc');
   const gitUsername: string = result.git_username;
@@ -51,5 +51,5 @@ test('getProjectGitToken posts to git-token and returns the push token', async (
 
 test('getProjectGitToken throws on a 409 (BYO project, not managed)', async () => {
   nextResponse = { status: 409, body: { message: 'Project is not a managed repo' } };
-  await expect(getProjectGitToken('P1')).rejects.toThrow();
+  await expect(getWorkspaceGitToken('P1')).rejects.toThrow();
 });

@@ -9,7 +9,7 @@ import {
 
 // One member, in each shape a runtime hands it over.
 const CLAIMS = {
-  iss: 'https://api.example.test/v1/projects/p-1',
+  iss: 'https://api.example.test/v1/workspaces/p-1',
   aud: 'b-1',
   sub: 'user-1',
   email: 'ada@example.test',

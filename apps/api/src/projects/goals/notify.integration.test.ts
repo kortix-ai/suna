@@ -25,6 +25,7 @@ const OUTSIDER = crypto.randomUUID();
 const GONE = crypto.randomUUID();
 
 let project: SeededProject;
+let sibling: SeededProject | undefined;
 let ownerSessionId: string;
 
 function goal(createdByUserId: string, assignedUserId: string | null) {
@@ -47,6 +48,10 @@ async function toldAbout(goalId: string): Promise<string[]> {
 
 beforeAll(async () => {
   project = await seedProject('goal-notify');
+  // A legacy account (2 projects, split_pending): only there does an account
+  // member without a project role stay out of the project. In a 1:1
+  // workspace membership is access (design.md §3.2 C3).
+  sibling = await seedProject('goal-notify-sibling', { accountId: project.account_id });
   await insertIntoView(db, accountMembers, [
     { userId: OWNER, accountId: project.account_id, accountRole: 'owner' },
     { userId: MEMBER, accountId: project.account_id, accountRole: 'member' },
@@ -60,7 +65,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.delete(notifications).where(eq(notifications.projectId, project.project_id));
-  await removeSeeded([project]);
+  await removeSeeded(sibling ? [sibling, project] : [project]);
 });
 
 describe('a goal notice reaches only a person who may read the project', () => {

@@ -39,7 +39,7 @@ function startStoredApi() {
       const path = new URL(req.url).pathname;
       const body = req.method === 'GET' ? undefined : await req.json().catch(() => undefined);
       storedRequests.push({ method: req.method, path, body });
-      if (path === `/v1/projects/${STORED_PROJECT}`) {
+      if (path === `/v1/workspaces/${STORED_PROJECT}`) {
         return Response.json({ project_id: STORED_PROJECT, account_id: 'acct_own', name: 'own' });
       }
       if (path.endsWith('/iam/roles')) {
@@ -50,7 +50,7 @@ function startStoredApi() {
       if (path.endsWith('/iam/assignments') && req.method === 'POST') {
         return Response.json({ assignment_id: 'a_new', principal_type: 'user', principal_id: MEMBER, role_key: 'manager', scope_type: 'project', scope_id: STORED_PROJECT });
       }
-      if (path.includes(`/projects/${STORED_PROJECT}/access/`)) return Response.json({ ok: true });
+      if (path.includes(`/workspaces/${STORED_PROJECT}/access/`)) return Response.json({ ok: true });
       return Response.json({ error: `unexpected ${req.method} ${path}` }, { status: 404 });
     },
   });
@@ -149,7 +149,7 @@ test('selected host: the project-member form grants on its default project', asy
   await selectStoredHost();
   const r = await runCli(['access', 'grant', MEMBER, '--role', 'manager']);
   expect(r.code).toBe(0);
-  expect(storedRequests.some((q) => q.method === 'PUT' && q.path.includes(`/projects/${STORED_PROJECT}/access/${MEMBER}`))).toBe(true);
+  expect(storedRequests.some((q) => q.method === 'PUT' && q.path.includes(`/workspaces/${STORED_PROJECT}/access/${MEMBER}`))).toBe(true);
   expect(envRequests).toEqual([]);
 });
 
@@ -164,7 +164,7 @@ test('linked directory: the project-member form grants on the linked project', a
   linkStoredProject();
   const r = await runCli(['access', 'grant', MEMBER, '--role', 'manager']);
   expect(r.code).toBe(0);
-  expect(storedRequests.some((q) => q.method === 'PUT' && q.path.includes(`/projects/${STORED_PROJECT}/access/${MEMBER}`))).toBe(true);
+  expect(storedRequests.some((q) => q.method === 'PUT' && q.path.includes(`/workspaces/${STORED_PROJECT}/access/${MEMBER}`))).toBe(true);
   expect(envRequests).toEqual([]);
 });
 

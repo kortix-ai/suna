@@ -27,6 +27,7 @@ let mirrorDown = false;
 let hidden: (path: string) => boolean = () => false;
 
 mock.module('../../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: () => true,
   db: new Proxy({}, {
     get: () => () => new Proxy({}, { get: () => () => ({ returning: async () => [] }) }),
@@ -208,7 +209,7 @@ describe('GET /:projectId/files — the query it took before paging', () => {
   test('the OpenAPI document lists ref, path, depth, limit and cursor', () => {
     const doc = projectsApp.getOpenAPIDocument({ openapi: '3.0.0', info: { title: 't', version: '1' } });
     type Param = { name: string; in: string; required?: boolean; schema?: { type?: string; description?: string } };
-    const params = (doc.paths['/{projectId}/files']?.get?.parameters ?? []) as Param[];
+    const params = (doc.paths['/{workspaceId}/files']?.get?.parameters ?? []) as Param[];
     const query = params.filter((p) => p.in === 'query');
     expect(query.map((p) => p.name).sort()).toEqual(['cursor', 'depth', 'limit', 'path', 'ref']);
     expect(query.every((p) => !p.required && p.schema?.type === 'string' && !!p.schema.description)).toBe(true);

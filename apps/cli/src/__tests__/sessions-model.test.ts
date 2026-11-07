@@ -76,7 +76,7 @@ beforeEach(() => {
     port: 0,
     fetch: (request) => {
       const url = new URL(request.url);
-      if (url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
+      if (url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions`) {
         return Response.json([PINNED, UNPINNED, BYOK]);
       }
       // `sessions status` wakes each running session before it reads activity;

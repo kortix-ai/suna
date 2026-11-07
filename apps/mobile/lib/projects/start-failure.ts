@@ -30,6 +30,6 @@ export function startFailureCopy(kind: StartFailure): { title: string; body: str
     case 'unreachable':
       return { title: "Can't reach Kortix", body: 'Check your connection, then try again.' };
     case 'server':
-      return { title: 'Could not open your project', body: 'Try again, or open another project.' };
+      return { title: 'Could not open your workspace', body: 'Try again, or open another workspace.' };
   }
 }

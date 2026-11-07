@@ -2,7 +2,15 @@ import { describe, expect, test } from 'bun:test';
 
 import { testUiTranslator } from '../../test-utils/intl';
 import type { PatPolicy } from '@kortix/sdk';
-import { NEVER_EXPIRES, defaultExpiryOption, expiresAtIso, expiryOptions } from './api-key-expiry';
+import {
+  NEVER_EXPIRES,
+  defaultExpiryOption,
+  defaultKeyExpiryOption,
+  expiresAtIso,
+  expiryOptions,
+  keyExpiresAt,
+  keyExpiryOptions,
+} from './api-key-expiry';
 
 function policy(over: Partial<PatPolicy> = {}): PatPolicy {
   return { max_lifetime_days: null, require_expiry: false, idle_revoke_days: null, ...over };
@@ -124,5 +132,41 @@ describe('expiresAtIso', () => {
     expect(expiresAtIso('', now)).toBeUndefined();
     expect(expiresAtIso('-1', now)).toBeUndefined();
     expect(expiresAtIso('abc', now)).toBeUndefined();
+  });
+});
+
+describe('API key expiry (a key always expires unless the policy allows no expiry)', () => {
+  const keyPolicy = (patch: Partial<PatPolicy> = {}): PatPolicy => ({
+    max_lifetime_days: null,
+    require_expiry: false,
+    idle_revoke_days: null,
+    ...patch,
+  });
+
+  test('no policy rules: every preset up to 365 days, no Never, 90 days preselected', () => {
+    expect(keyExpiryOptions(keyPolicy(), testUiTranslator).map((o) => o.value)).toEqual(['1', '30', '90', '365']);
+    expect(defaultKeyExpiryOption(keyPolicy(), testUiTranslator)).toBe('90');
+    expect(keyExpiryOptions(null, testUiTranslator).map((o) => o.value)).toEqual(['1', '30', '90', '365']);
+  });
+
+  test('allow_no_expiry adds Never last; require_expiry removes it again', () => {
+    expect(keyExpiryOptions(keyPolicy({ allow_no_expiry: true }), testUiTranslator).map((o) => o.value)).toEqual([
+      '1', '30', '90', '365', NEVER_EXPIRES,
+    ]);
+    expect(
+      keyExpiryOptions(keyPolicy({ allow_no_expiry: true, require_expiry: true }), testUiTranslator).map((o) => o.value),
+    ).not.toContain(NEVER_EXPIRES);
+  });
+
+  test('a policy maximum bounds the presets and the default', () => {
+    expect(keyExpiryOptions(keyPolicy({ max_lifetime_days: 30 }), testUiTranslator).map((o) => o.value)).toEqual(['1', '30']);
+    expect(defaultKeyExpiryOption(keyPolicy({ max_lifetime_days: 30 }), testUiTranslator)).toBe('30');
+    expect(keyExpiryOptions(keyPolicy({ max_lifetime_days: 7 }), testUiTranslator).map((o) => o.value)).toEqual(['1', '7']);
+  });
+
+  test('Never sends an explicit null; a day count sends an instant', () => {
+    const now = Date.parse('2026-08-12T00:00:00.000Z');
+    expect(keyExpiresAt(NEVER_EXPIRES, now)).toBeNull();
+    expect(keyExpiresAt('30', now)).toBe('2026-09-11T00:00:00.000Z');
   });
 });

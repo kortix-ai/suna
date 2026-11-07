@@ -6,7 +6,6 @@
 import { connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
 import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
-import { projects } from '@kortix/db';
 import { connectedAsOf } from '../../connectors/connection-identity';
 import { defaultConnectionIdForConnector } from '../../connectors/credentials';
 import { logger } from '../../lib/logger';
@@ -20,6 +19,7 @@ import { appLabel, connectorEventApp, MCP_SOURCE_ID } from './mcp-source';
 import { eventSourceFor, unknownSourceMessage } from './registry';
 import * as store from './store';
 import { EventConnectionNotReadyError, type EventSourceConnection, type EventSourceProvider } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 type Resolution =
   | { kind: 'ok'; provider: EventSourceProvider; connection: EventSourceConnection }
@@ -275,7 +275,7 @@ export async function reconcileEventSubscriptions(
       const desired = all.filter((s) => s.type === 'event' && s.enabled && s.event);
       const desiredSlugs = new Set(desired.map((s) => s.slug));
       const rows = new Map((await store.listByProject(projectId)).map((r) => [r.slug, r]));
-      const [project] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+      const [project] = await db.select({ metadata: projectsView.metadata }).from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
       const flagOff = eventTriggersOffForProject(project?.metadata);
       for (const spec of desired) {
         try {

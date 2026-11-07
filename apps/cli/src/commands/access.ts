@@ -53,11 +53,11 @@ import {
 const HELP = help`Usage: kortix access <subcommand> [options]
 
 Who can do what. People, groups and service accounts get ROLES — on the
-account, on one project, or on a single object inside a project. Agents get
-Kortix permissions in kortix.yaml; a session can only do what both allow.
+workspace, or on a single object inside it. Agents get Kortix permissions in
+kortix.yaml; a session can only do what both allow.
 
 Role assignments:
-  assignments [--project <id>|--account|--all]   List role assignments.
+  assignments [--workspace <id>|--account|--all]  List role assignments.
   grant --user <id|email>|--group <id|name>|--service-account <id> --role <key|id>
                                     Grant a role. Prints the assignment id.
   grant --user|--group|--everyone --agent <name>|--connection <id>
@@ -65,49 +65,51 @@ Role assignments:
                                     connector account.
   revoke <assignment-id>            Revoke one assignment.
 
-Project members:
-  ls [--json]                       List members + effective project roles.
-  invite <email> --role <r>         Invite someone to the project.
-  grant <user-id> --role <r>        Set a member's project role.
-  revoke <user-id>                  Remove a member's project access.
-  pending [--json]                  List pending project invitations.
+Workspace members:
+  ls [--json]                       List members + effective workspace roles.
+  invite <email> --role <r>         Invite someone to the workspace.
+  grant <user-id> --role <r>        Set a member's workspace role.
+  revoke <user-id>                  Remove a member's workspace access.
+  pending [--json]                  List pending workspace invitations.
   resend <invite-id>                Re-send an invite email + refresh its
                                     14-day expiry. Prints the link too.
   cancel <invite-id>                Cancel a pending invitation.
 
-Access requests (people asking to join this project):
+Access requests (people asking to join this workspace):
   requests ls [--json]              List pending access requests.
-  requests approve <req-id>         Approve one — grants the project role.
+  requests approve <req-id>         Approve one — grants the workspace role.
            [--role <r>]             Default: member.
   requests reject <req-id>          Reject one.
 
-Every verb in these two blocks needs project.members.manage.
+Every verb in these two blocks needs workspace.members.manage.
 
-Project roles: ${ROLES.join(', ')}. Account roles: owner, admin, member.
+Workspace roles, one ladder: owner > admin > manager > member. Owner and admin
+cover the whole workspace (grant them with --account); manager and member are
+granted here.
 Run \`kortix roles ls\` for every role, \`kortix permissions ls\` for the catalog.
 
 Options:
-  --user <id|email>  Grant to a person. An email resolves via the account
+  --user <id|email>  Grant to a person. An email resolves via the workspace
                      member directory.
   --group <id|name>  Grant to a group instead of a person. A name resolves via
-                     the account's groups.
+                     the workspace's groups.
   --service-account <id>
                      Grant to a service account — an agent's identity.
   --role <key|id>    Role to grant — a system key (owner/admin/member,
                      manager/member) or a custom role's key or id.
-  --project <id>     Scope to this project (default: the linked project).
-  --account          Scope to the whole account — every project in it.
-  --all              List every assignment in the account, at any scope.
+  --workspace <id>   Scope to this workspace (default: the linked workspace).
+  --account          Scope to the whole workspace (the owner and admin roles).
+                     An older account with several projects: every one of them.
+  --all              List every assignment in the workspace, at any scope.
   --agent <name>     Narrow the grant to ONE agent. Implies --role ${OBJECT_GRANT_ROLE}.
   --connection <id>  Narrow the grant to ONE shared connector account. The first
                      grant limits the account to its grantees; revoking the last
-                     opens it to the whole project again. Implies --role ${OBJECT_GRANT_ROLE}.
-  --everyone         Grant to everyone with access to the project. Holds an
+                     opens it to the whole workspace again. Implies --role ${OBJECT_GRANT_ROLE}.
+  --everyone         Grant to everyone with access to the workspace. Holds an
                      agent or a connection, never a role.
   --principal <id>   Filter assignments by principal. Also user:<id|email> |
                      group:<id|name> | service_account:<id> | pending:<email>.
   --expires <iso>    Auto-revoke timestamp.
-  --account-id <id>  Operate on this account (default: the linked project's account, else the active account).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -150,13 +152,13 @@ async function resolveScope(
   wantsProject: boolean,
 ): Promise<Scope | null> {
   if (!wantsProject) {
-    const acct = resolveAccountContext({ accountArg: f.accountId, hostArg: f.host });
+    const acct = resolveAccountContext({ workspaceArg: f.project, accountArg: f.accountId, hostArg: f.host });
     if (!acct) return null;
     return { client: acct.client, accountId: acct.accountId, projectId: null };
   }
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return null;
-  const project = await ctx.client.get<ProjectSummary>(`/projects/${ctx.projectId}`);
+  const project = await ctx.client.get<ProjectSummary>(`/workspaces/${ctx.projectId}`);
   const accountId = project.account_id || f.accountId || ctx.auth.account_id;
   return { client: clientFromAuth(ctx.auth, { accountId }), accountId, projectId: ctx.projectId };
 }
@@ -171,7 +173,7 @@ export async function runAccess(argv: string[]): Promise<number> {
   let accountScope = false;
   let allScopes = false;
   try {
-    f.project = takeFlagValue(rest, ['--project']);
+    f.project = takeFlagValue(rest, ['--project', '--workspace']);
     f.host = takeFlagValue(rest, ['--host']);
     f.role = takeFlagValue(rest, ['--role']);
     f.expires = takeFlagValue(rest, ['--expires']);
@@ -221,7 +223,7 @@ export async function runAccess(argv: string[]): Promise<number> {
     // (the handlers are thin wrappers — they live in access-projects.ts)
     const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
     if (!ctx) return 1;
-    const base = `/projects/${ctx.projectId}`;
+    const base = `/workspaces/${ctx.projectId}`;
     const role = f.role as ProjectRole | undefined;
 
     switch (sub) {
@@ -274,7 +276,7 @@ async function accessRequests(
   role: ProjectRole | undefined,
   json: boolean,
 ): Promise<number> {
-  const base = `/projects/${ctx.projectId}/access-requests`;
+  const base = `/workspaces/${ctx.projectId}/access-requests`;
   const action = positional[0] ?? 'ls';
 
   if (action === 'ls' || action === 'list') {
@@ -398,7 +400,7 @@ async function listAssignments(
       ? 'in this account'
       : opts.accountScope
         ? 'at account scope'
-        : 'on this project';
+        : 'on this workspace';
     process.stdout.write(`  ${C.dim}No role assignments ${where}.${C.reset}\n`);
     return 0;
   }
@@ -458,7 +460,7 @@ async function grantAssignment(
       : null;
   if (object && opts.accountScope) {
     return fail(
-      'An object grant is project-scoped — drop --account, or name a project with --project.',
+      'An object grant is workspace-scoped. Drop --account, or name a workspace with --workspace.',
     );
   }
   if (f.everyone && (!object || f.role)) {
@@ -488,7 +490,7 @@ async function grantAssignment(
   if (f.everyone) {
     // Everyone with access to the project: the principal id is the project.
     if (!scope.projectId) {
-      return fail('--everyone needs a project: link one or pass --project.');
+      return fail('--everyone needs a workspace: link one or pass --workspace.');
     }
     principalType = 'project';
     principalId = scope.projectId;
@@ -526,13 +528,13 @@ async function grantAssignment(
     return 0;
   }
   const who = f.everyone
-    ? 'everyone in project'
+    ? 'everyone in workspace'
     : f.group
       ? `group ${f.group}`
       : f.sa
         ? `service account ${f.sa}`
         : (f.user as string);
-  const where = scope.projectId ? `project ${scope.projectId}` : 'the account';
+  const where = scope.projectId ? `workspace ${scope.projectId}` : 'the account';
   const on = object ? ` on ${object.type} ${C.bold}${object.id}${C.reset}` : '';
   process.stdout.write(
     `${status.ok(`Granted ${C.bold}${assignment.role_key}${C.reset} to ${C.bold}${who}${C.reset} on ${where}${on}`)}\n`,
@@ -556,7 +558,7 @@ async function revokeByAssignmentId(
   f: Record<string, string | undefined>,
   json: boolean,
 ): Promise<number | null> {
-  const acct = resolveAccountContext({ accountArg: f.accountId, hostArg: f.host });
+  const acct = resolveAccountContext({ workspaceArg: f.project, accountArg: f.accountId, hostArg: f.host });
   // No credentials at all — it already said so; do not let the legacy path
   // print the same refusal a second time.
   if (!acct) return 1;

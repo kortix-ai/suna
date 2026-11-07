@@ -12,7 +12,7 @@
  *
  * The write is an ATOMIC SQL jsonb merge
  * (`COALESCE(config,'{}'::jsonb) || jsonb_build_object(...)`), not a
- * read-modify-write in JS — see the warning on `metadata-merge.ts` for the
+ * read-modify-write in JS — see the metadata merge helpers in `workspaces/rows.ts` for the
  * lost-update class of bug a plain read-then-`UPDATE` produces when another
  * writer touches a DIFFERENT key of the same jsonb column between the read
   * and the write. `serviceKey` and the keys here are

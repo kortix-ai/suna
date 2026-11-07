@@ -27,7 +27,10 @@ describe('desktop navigation gate', () => {
 
   test('keeps full-page loads to allowed routes in the app window', () => {
     expect(isAppPath('/settings/billing')).toBe(true);
+    expect(isAppPath('/workspaces/p1/sessions/s1')).toBe(true);
+    // A pre-2026-11-06 link: in the window, where next.config redirects it.
     expect(isAppPath('/projects/p1/sessions/s1')).toBe(true);
+    expect(isAppPath('/new')).toBe(true);
     expect(isAppPath('/auth')).toBe(true);
     expect(isAppPath('/auth/callback')).toBe(true);
   });
@@ -67,8 +70,8 @@ describe('isApprovalDialogPath', () => {
   test('treats every other app page as leaving the dialog', () => {
     // Back replaces the page with the app home: that must close the dialog,
     // not render the app inside it.
-    expect(isApprovalDialogPath('/projects/p1')).toBe(false);
-    expect(isApprovalDialogPath('/projects/start')).toBe(false);
+    expect(isApprovalDialogPath('/workspaces/p1')).toBe(false);
+    expect(isApprovalDialogPath('/workspaces/start')).toBe(false);
     expect(isApprovalDialogPath('/')).toBe(false);
     expect(isApprovalDialogPath('/tunnelx')).toBe(false);
   });

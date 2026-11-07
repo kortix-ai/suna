@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
 import { qk } from './query-keys';
 import {
-  invalidateProject,
-  invalidateProjectIdentity,
-  restoreProjectName,
-  writeProjectNameOptimistically,
+  invalidateWorkspace,
+  invalidateWorkspaceIdentity,
+  restoreWorkspaceName,
+  writeWorkspaceNameOptimistically,
 } from './invalidate-project';
 
 const client = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -23,7 +23,7 @@ describe('invalidateProjectIdentity', () => {
     qc.setQueryData(qk.projects.list(), [{ project_id: ID, name: 'Old' }]);
     qc.setQueryData(qk.project.detail(ID), { project: { project_id: ID, name: 'Old' } });
 
-    await invalidateProjectIdentity(qc, ID);
+    await invalidateWorkspaceIdentity(qc, ID);
 
     expect(qc.getQueryState(qk.projects.list())?.isInvalidated).toBe(true);
     expect(qc.getQueryState(qk.project.detail(ID))?.isInvalidated).toBe(true);
@@ -41,7 +41,7 @@ describe('invalidateProjectIdentity', () => {
     qc.setQueryData(qk.projects.list('acct_2'), [{ project_id: ID, name: 'Old' }]);
     qc.setQueryData(qk.project.detail(ID), { project: { project_id: ID, name: 'Old' } });
 
-    await invalidateProjectIdentity(qc, ID);
+    await invalidateWorkspaceIdentity(qc, ID);
 
     expect(qc.getQueryState(qk.projects.list('acct_1'))?.isInvalidated).toBe(true);
     expect(qc.getQueryState(qk.projects.list('acct_2'))?.isInvalidated).toBe(true);
@@ -51,7 +51,7 @@ describe('invalidateProjectIdentity', () => {
   test('leaves an unrelated project untouched', async () => {
     const qc = client();
     qc.setQueryData(qk.project.detail('other'), { project: { name: 'Other' } });
-    await invalidateProjectIdentity(qc, ID);
+    await invalidateWorkspaceIdentity(qc, ID);
     expect(qc.getQueryState(qk.project.detail('other'))?.isInvalidated).toBe(false);
   });
 
@@ -64,7 +64,7 @@ describe('invalidateProjectIdentity', () => {
     qc.setQueryData(qk.projects.list('acct_1'), [{ project_id: ID, name: 'Old' }]);
     qc.setQueryData(qk.project.detail('other'), { project: { project_id: 'other', name: 'Other' } });
 
-    await invalidateProjectIdentity(qc, ID);
+    await invalidateWorkspaceIdentity(qc, ID);
 
     expect(qc.getQueryState(qk.project.detail('other'))?.isInvalidated).toBe(false);
   });
@@ -77,7 +77,7 @@ describe('invalidateProject', () => {
     qc.setQueryData(qk.project.sessions(ID), []);
     qc.setQueryData(qk.project.connectors(ID), []);
 
-    await invalidateProject(qc, ID);
+    await invalidateWorkspace(qc, ID);
 
     for (const key of [
       qk.project.detail(ID),
@@ -98,7 +98,7 @@ describe('writeProjectNameOptimistically', () => {
     ]);
     qc.setQueryData(qk.project.detail(ID), { project: { project_id: ID, name: 'Old' } });
 
-    writeProjectNameOptimistically(qc, ID, 'New');
+    writeWorkspaceNameOptimistically(qc, ID, 'New');
 
     const list = qc.getQueryData(qk.projects.list()) as Array<{
       project_id: string;
@@ -122,7 +122,7 @@ describe('writeProjectNameOptimistically', () => {
       { project_id: 'other', name: 'Keep' },
     ]);
 
-    writeProjectNameOptimistically(qc, ID, 'New');
+    writeWorkspaceNameOptimistically(qc, ID, 'New');
 
     const acct1 = qc.getQueryData(qk.projects.list('acct_1')) as Array<{
       project_id: string;
@@ -139,7 +139,7 @@ describe('writeProjectNameOptimistically', () => {
 
   test('is a no-op when neither cache is populated', () => {
     const qc = client();
-    expect(() => writeProjectNameOptimistically(qc, ID, 'New')).not.toThrow();
+    expect(() => writeWorkspaceNameOptimistically(qc, ID, 'New')).not.toThrow();
     expect(qc.getQueryData(qk.project.detail(ID))).toBeUndefined();
   });
 
@@ -148,8 +148,8 @@ describe('writeProjectNameOptimistically', () => {
     qc.setQueryData(qk.projects.list('acct_1'), [{ project_id: ID, name: 'Old' }]);
     qc.setQueryData(qk.project.detail(ID), { project: { project_id: ID, name: 'Old' } });
 
-    const snapshot = writeProjectNameOptimistically(qc, ID, 'New');
-    restoreProjectName(qc, ID, snapshot);
+    const snapshot = writeWorkspaceNameOptimistically(qc, ID, 'New');
+    restoreWorkspaceName(qc, ID, snapshot);
 
     expect(qc.getQueryData<ProjectsListEntry[]>(qk.projects.list('acct_1'))).toEqual([
       { project_id: ID, name: 'Old' },
@@ -173,9 +173,9 @@ describe('restoreProjectName', () => {
     qc.setQueryData(qk.projects.list('acct_2'), [{ project_id: ID, name: 'Original' }]);
     qc.setQueryData(qk.project.detail(ID), { project: { project_id: ID, name: 'Original' } });
 
-    const snapshot = writeProjectNameOptimistically(qc, ID, 'Optimistic-New');
+    const snapshot = writeWorkspaceNameOptimistically(qc, ID, 'Optimistic-New');
     // Simulate the mutation rejecting.
-    restoreProjectName(qc, ID, snapshot);
+    restoreWorkspaceName(qc, ID, snapshot);
 
     expect(qc.getQueryData<ProjectsListEntry[]>(qk.projects.list('acct_1'))).toEqual([
       { project_id: ID, name: 'Original' },
@@ -194,8 +194,8 @@ describe('restoreProjectName', () => {
   // just as much a "nothing to restore" case as an explicit empty snapshot.
   test('is a no-op when the snapshot captured nothing', () => {
     const qc = client();
-    const snapshot = writeProjectNameOptimistically(qc, ID, 'New');
-    expect(() => restoreProjectName(qc, ID, snapshot)).not.toThrow();
+    const snapshot = writeWorkspaceNameOptimistically(qc, ID, 'New');
+    expect(() => restoreWorkspaceName(qc, ID, snapshot)).not.toThrow();
     expect(qc.getQueryData(qk.project.detail(ID))).toBeUndefined();
     expect(qc.getQueryData(qk.projects.list())).toBeUndefined();
   });
@@ -207,12 +207,12 @@ describe('restoreProjectName', () => {
   test('does not touch a list key that did not exist when the snapshot was taken', () => {
     const qc = client();
     qc.setQueryData(qk.projects.list('acct_1'), [{ project_id: ID, name: 'Original' }]);
-    const snapshot = writeProjectNameOptimistically(qc, ID, 'Optimistic-New');
+    const snapshot = writeWorkspaceNameOptimistically(qc, ID, 'Optimistic-New');
 
     // A different account's list gets fetched for the first time mid-flight.
     qc.setQueryData(qk.projects.list('acct_2'), [{ project_id: ID, name: 'Optimistic-New' }]);
 
-    restoreProjectName(qc, ID, snapshot);
+    restoreWorkspaceName(qc, ID, snapshot);
 
     expect(qc.getQueryData<ProjectsListEntry[]>(qk.projects.list('acct_1'))).toEqual([
       { project_id: ID, name: 'Original' },
@@ -229,10 +229,10 @@ test('rename leaves the quota object under the projects prefix untouched', () =>
   const quota = { limit: 5, used: 1 };
   qc.setQueryData(qk.projects.quota('acct_1'), quota);
   qc.setQueryData(qk.projects.list('acct_1'), [{ project_id: ID, name: 'Old' }]);
-  const snapshot = writeProjectNameOptimistically(qc, ID, 'New');
+  const snapshot = writeWorkspaceNameOptimistically(qc, ID, 'New');
   expect(qc.getQueryData<typeof quota>(qk.projects.quota('acct_1'))).toBe(quota);
   expect(qc.getQueryData<ProjectsListEntry[]>(qk.projects.list('acct_1'))).toEqual([{ project_id: ID, name: 'New' }]);
-  restoreProjectName(qc, ID, snapshot);
+  restoreWorkspaceName(qc, ID, snapshot);
   expect(qc.getQueryData<typeof quota>(qk.projects.quota('acct_1'))).toBe(quota);
   expect(qc.getQueryData<ProjectsListEntry[]>(qk.projects.list('acct_1'))).toEqual([{ project_id: ID, name: 'Old' }]);
 });
@@ -245,7 +245,7 @@ describe('the bare project row (qk.project.summary)', () => {
     const qc = client();
     qc.setQueryData(qk.project.summary(ID), { project_id: ID, name: 'Old' });
 
-    await invalidateProjectIdentity(qc, ID);
+    await invalidateWorkspaceIdentity(qc, ID);
 
     expect(qc.getQueryState(qk.project.summary(ID))?.isInvalidated).toBe(true);
   });
@@ -254,16 +254,16 @@ describe('the bare project row (qk.project.summary)', () => {
     const qc = client();
     qc.setQueryData(qk.project.summary(ID), { project_id: ID, name: 'Old', icon: '🐢' });
 
-    const snapshot = writeProjectNameOptimistically(qc, ID, 'New');
+    const snapshot = writeWorkspaceNameOptimistically(qc, ID, 'New');
     expect(qc.getQueryData<Record<string, unknown>>(qk.project.summary(ID))).toEqual({ project_id: ID, name: 'New', icon: '🐢' });
 
-    restoreProjectName(qc, ID, snapshot);
+    restoreWorkspaceName(qc, ID, snapshot);
     expect(qc.getQueryData<Record<string, unknown>>(qk.project.summary(ID))).toEqual({ project_id: ID, name: 'Old', icon: '🐢' });
   });
 
   test('writeProjectNameOptimistically does not fabricate an uncached row', () => {
     const qc = client();
-    writeProjectNameOptimistically(qc, ID, 'New');
+    writeWorkspaceNameOptimistically(qc, ID, 'New');
     expect(qc.getQueryData(qk.project.summary(ID))).toBeUndefined();
   });
 });

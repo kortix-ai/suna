@@ -18,17 +18,17 @@ import {
 flow('SESS-30', {
   domain: 'sessions', requires: ['database', 'funded'], timeoutMs: 180_000,
   routes: [
-    'POST /v1/projects/:projectId/attachments',
-    'PUT /v1/projects/:projectId/attachments/:attachmentId/chunks/:index',
-    'POST /v1/projects/:projectId/attachments/:attachmentId/complete',
-    'DELETE /v1/projects/:projectId/attachments/:attachmentId',
-    'DELETE /v1/projects/:projectId/sessions/:sessionId',
-    'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-    'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
-    'GET /v1/projects/:projectId/sessions/:sessionId',
-    'GET /v1/projects/:projectId/runtime/prompt-attachments/:attachmentId',
-    'POST /v1/projects/:projectId/cli-token',
-    'DELETE /v1/projects/:projectId/cli-token/:tokenId',
+    'POST /v1/workspaces/:projectId/attachments',
+    'PUT /v1/workspaces/:projectId/attachments/:attachmentId/chunks/:index',
+    'POST /v1/workspaces/:projectId/attachments/:attachmentId/complete',
+    'DELETE /v1/workspaces/:projectId/attachments/:attachmentId',
+    'DELETE /v1/workspaces/:projectId/sessions/:sessionId',
+    'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+    'GET /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+    'GET /v1/workspaces/:projectId/sessions/:sessionId',
+    'GET /v1/workspaces/:projectId/runtime/prompt-attachments/:attachmentId',
+    'POST /v1/workspaces/:projectId/cli-token',
+    'DELETE /v1/workspaces/:projectId/cli-token/:tokenId',
   ],
 }, async (ctx) => {
   const project = await ctx.fixtures.project({ seed: true });
@@ -40,10 +40,10 @@ flow('SESS-30', {
     | { kind: 'direct'; url: string; method: string; headers: Record<string, string> }
     | { kind: 'chunked'; chunk_size: number }
     | undefined;
-  const begin = '/v1/projects/:projectId/attachments';
-  const chunk = '/v1/projects/:projectId/attachments/:attachmentId/chunks/:index';
-  const complete = '/v1/projects/:projectId/attachments/:attachmentId/complete';
-  const remove = '/v1/projects/:projectId/attachments/:attachmentId';
+  const begin = '/v1/workspaces/:projectId/attachments';
+  const chunk = '/v1/workspaces/:projectId/attachments/:attachmentId/chunks/:index';
+  const complete = '/v1/workspaces/:projectId/attachments/:attachmentId/complete';
+  const remove = '/v1/workspaces/:projectId/attachments/:attachmentId';
   await ctx.step('anonymous upload initiation is refused and empty or oversized declarations create no upload', async () => {
     (await ctx.client.as(ctx.P.ANON).post(begin, { filename: 'probe.txt', mime: 'text/plain', size: bytes.length }, { params: base })).status(401);
     for (const size of [0, 50 * 1024 * 1024 + 1]) {
@@ -91,8 +91,8 @@ flow('SESS-30', {
   ctx.track('session', sessionId, { projectId: project.id });
   const firstBody = { client_message_id: 'SESS-30-first', parts: [{ type: 'text', text: 'SESS-30 eager attachment' }, { type: 'file', attachment_id: attachmentId, filename: 'untrusted.txt', mime: 'image/png' }] };
   await ctx.step('send the first prompt with the ready handle before the box exists, and read the canonical filename from the durable inbox', async () => {
-    (await owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts', firstBody, { params: { ...base, sessionId } })).status(202);
-    const inbox = await owner.get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params: { ...base, sessionId } });
+    (await owner.post('/v1/workspaces/:projectId/sessions/:sessionId/prompts', firstBody, { params: { ...base, sessionId } })).status(202);
+    const inbox = await owner.get('/v1/workspaces/:projectId/sessions/:sessionId/prompts', { params: { ...base, sessionId } });
     inbox.status(200);
     const serialized = JSON.stringify(inbox.json());
     if (!serialized.includes('eager.txt') || serialized.includes('untrusted.txt') || serialized.includes('data:')) throw new Error('Inbox did not use canonical handle metadata');
@@ -100,7 +100,7 @@ flow('SESS-30', {
   });
   await ctx.step('enqueue a follow-up using the same handle and deduplicate the repeated client message', async () => {
     const body = { client_message_id: 'SESS-30-followup', message_id: 'msg_0198f3a1b2c4AbCdEfGhIjKlMn', parts: [{ type: 'text', text: 'SESS-30 follow-up' }, { type: 'file', attachment_id: attachmentId }] };
-    const target = '/v1/projects/:projectId/sessions/:sessionId/prompts';
+    const target = '/v1/workspaces/:projectId/sessions/:sessionId/prompts';
     const options = { params: { ...base, sessionId } };
     const first = await owner.post(target, body, options); first.status(202);
     const second = await owner.post(target, body, options); second.status(200).body().has('$.deduped', true).has('$.prompt_id', first.json<any>().prompt_id);
@@ -109,10 +109,10 @@ flow('SESS-30', {
     const missing = { ...body, client_message_id: 'SESS-30-missing', parts: [{ type: 'file', attachment_id: crypto.randomUUID() }] };
     (await owner.post(target, missing, options)).status(404);
 
-    const token = await owner.post('/v1/projects/:projectId/cli-token', { name: 'SESS-30 descriptor' }, { params: base });
+    const token = await owner.post('/v1/workspaces/:projectId/cli-token', { name: 'SESS-30 descriptor' }, { params: base });
     token.status(201);
     const tokenBody = token.json<any>();
-    const descriptorPath = '/v1/projects/:projectId/runtime/prompt-attachments/:attachmentId';
+    const descriptorPath = '/v1/workspaces/:projectId/runtime/prompt-attachments/:attachmentId';
     const descriptorOptions = {
       params: { ...base, attachmentId },
       query: { command_id: first.json<any>().prompt_id, part_index: 1 },
@@ -156,7 +156,7 @@ flow('SESS-30', {
       ...descriptorOptions,
       query: { command_id: first.json<any>().prompt_id, part_index: 0 },
     })).status(404);
-    (await owner.del('/v1/projects/:projectId/cli-token/:tokenId', {
+    (await owner.del('/v1/workspaces/:projectId/cli-token/:tokenId', {
       params: { ...base, tokenId: tokenBody.token_id },
     })).status(200);
   });
@@ -183,7 +183,7 @@ flow('SESS-30', {
   // profile runs no maintenance worker, so the API integration test
   // (integration-prompt-attachments.test.ts, "session delete releases references") owns that half.
   await ctx.step('delete the session and release its attachment: no reference remains and the attachment is due for the next maintenance sweep', async () => {
-    (await owner.del('/v1/projects/:projectId/sessions/:sessionId', { params: { ...base, sessionId } })).status(200);
+    (await owner.del('/v1/workspaces/:projectId/sessions/:sessionId', { params: { ...base, sessionId } })).status(200);
     const retention = await readDatabasePromptAttachmentRetention(ctx.env, attachmentId);
     if (retention.references !== 0 || !retention.due) throw new Error(`session delete kept the attachment: ${JSON.stringify(retention)}`);
   });
@@ -227,8 +227,8 @@ flow(
     requires: ['database'],
     timeoutMs: 300_000,
     routes: [
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/prompts',
     ],
   },
   async (ctx) => {
@@ -245,7 +245,7 @@ flow(
     const retrySessionId = await seed();
     ctx.track('session', sessionId, { projectId: project.id });
     ctx.track('session', retrySessionId, { projectId: project.id });
-    const prompts = '/v1/projects/:projectId/sessions/:sessionId/prompts';
+    const prompts = '/v1/workspaces/:projectId/sessions/:sessionId/prompts';
     const inbox = async (id: string) => {
       const r = await owner.get(prompts, { params: { projectId: project.id, sessionId: id } });
       r.status(200);

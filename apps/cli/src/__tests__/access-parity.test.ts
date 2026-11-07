@@ -67,9 +67,9 @@ function startServer(): string {
       const body =
         req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
       calls.push({ method: req.method, path: url.pathname + url.search, body });
-      const base = `/v1/projects/${PROJECT}`;
+      const base = `/v1/workspaces/${PROJECT}`;
 
-      if (url.pathname === `/v1/projects/${PROJECT}` && req.method === 'GET') {
+      if (url.pathname === `/v1/workspaces/${PROJECT}` && req.method === 'GET') {
         return Response.json({ project_id: PROJECT, account_id: 'account_1', name: 'Access' });
       }
       if (url.pathname === `${base}/access` && req.method === 'GET') {
@@ -198,7 +198,7 @@ describe('kortix access — invites + access requests', () => {
       'requests ls',
       'requests approve <req-id>',
       'requests reject <req-id>',
-      'project.members.manage',
+      'workspace.members.manage',
     ]) {
       expect(r.stdout).toContain(fragment);
     }
@@ -210,7 +210,7 @@ describe('kortix access — invites + access requests', () => {
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'POST',
-      path: `/v1/projects/${PROJECT}/access/pending-invites/${INVITE}/resend`,
+      path: `/v1/workspaces/${PROJECT}/access/pending-invites/${INVITE}/resend`,
       body: {},
     });
     expect(r.stdout).toContain('Re-sent invite');
@@ -245,7 +245,7 @@ describe('kortix access — invites + access requests', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['access', 'requests', 'ls', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/projects/${PROJECT}/access-requests`);
+    expect(calls.at(-1)!.path).toBe(`/v1/workspaces/${PROJECT}/access-requests`);
     expect(r.stdout).toContain('newbie@corp.com');
     expect(r.stdout).toContain(REQUEST);
     expect(r.stdout).toContain('I need this for the launch');
@@ -267,7 +267,7 @@ describe('kortix access — invites + access requests', () => {
     expect(plain.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'POST',
-      path: `/v1/projects/${PROJECT}/access-requests/${REQUEST}/approve`,
+      path: `/v1/workspaces/${PROJECT}/access-requests/${REQUEST}/approve`,
       body: {},
     });
     expect(plain.stdout).toContain('newbie@corp.com → member');
@@ -299,7 +299,7 @@ describe('kortix access — invites + access requests', () => {
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'POST',
-      path: `/v1/projects/${PROJECT}/access-requests/${REQUEST}/reject`,
+      path: `/v1/workspaces/${PROJECT}/access-requests/${REQUEST}/reject`,
       body: {},
     });
     expect(r.stdout).toContain(`Rejected request ${REQUEST}`);
@@ -333,7 +333,7 @@ describe('kortix access — invites + access requests', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['access', 'ls', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls[calls.length - 1]?.path).toBe(`/v1/projects/${PROJECT}/access`);
+    expect(calls[calls.length - 1]?.path).toBe(`/v1/workspaces/${PROJECT}/access`);
     expect(r.stdout).toContain('MEMBER');
     expect(r.stdout).toContain('newbie@corp.com');
     expect(r.stdout).toContain('1 member');
@@ -349,7 +349,7 @@ describe('kortix access — invites + access requests', () => {
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'DELETE',
-      path: `/v1/projects/${PROJECT}/access/pending-invites/${INVITE}`,
+      path: `/v1/workspaces/${PROJECT}/access/pending-invites/${INVITE}`,
       body: null,
     });
     expect(r.stdout).toContain(`Cancelled invite ${INVITE}`);

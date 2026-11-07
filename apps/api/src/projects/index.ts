@@ -219,6 +219,9 @@ export function registerAllProjectRoutes(): void {
 export { projectsApp, projectWebhooksApp, sessionsApp };
 // `/v1/sessions` (one session by id). app.ts calls it right before mounting sessionsApp.
 export { registerSessionLookupRoutes };
+// The canonical workspace records (`workspaces/routes.ts` declares the routes).
+export { ProjectSchema } from './lib/app';
+export { createWorkspace, listCallerWorkspaces, patchWorkspace, readWorkspace } from './routes/workspace-records';
 
 // The service surface (git-proxy, session, trigger and manifest helpers).
 export * from './surface';

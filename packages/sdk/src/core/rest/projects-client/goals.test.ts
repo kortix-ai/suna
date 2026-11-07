@@ -2,22 +2,22 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { ApiError } from '../../http/api-client';
 import { configureKortix } from '../../http/config';
 import {
-  createProjectGoal,
+  createWorkspaceGoal,
   defaultGoalAgent,
-  getProjectGoal,
-  getProjectGoalFiles,
+  getWorkspaceGoal,
+  getWorkspaceGoalFiles,
   goalHealth,
-  listProjectGoalEvents,
-  listProjectGoals,
+  listWorkspaceGoalEvents,
+  listWorkspaceGoals,
   MAKE_GOAL_PROMPT,
   makeSessionGoal,
-  pauseProjectGoal,
-  ProjectGoalConflictError,
-  replyToProjectGoal,
-  restartProjectGoal,
-  resumeProjectGoal,
-  setProjectGoalBinding,
-  stopProjectGoal,
+  pauseWorkspaceGoal,
+  WorkspaceGoalConflictError,
+  replyToWorkspaceGoal,
+  restartWorkspaceGoal,
+  resumeWorkspaceGoal,
+  setWorkspaceGoalBinding,
+  stopWorkspaceGoal,
   type ProjectGoalDocument,
   type ProjectGoalEvent,
   type ProjectGoalRecord,
@@ -115,7 +115,7 @@ describe('goalHealth', () => {
   });
 });
 
-// ── The server goal record: `/v1/projects/:projectId/goals/*` ──────────────
+// ── The server goal record: `/v1/workspaces/:projectId/goals/*` ──────────────
 
 const RECORD: ProjectGoalRecord = {
   goal_id: '7d3f8a52-1c4e-4b7a-9f2d-0a1b2c3d4e5f',
@@ -184,11 +184,11 @@ describe('goal record: list, read, health', () => {
     serve(routes, calls);
   });
 
-  test('listProjectGoals reads GET /projects/:pid/goals and keeps the ProjectGoal shape', async () => {
+  test('listProjectGoals reads GET /workspaces/:pid/goals and keeps the ProjectGoal shape', async () => {
     const company = { ...RECORD, goal_id: 'g-company', slug: 'close', folder: '/Company/Goals/close', owner_session_id: null };
-    routes['GET /projects/p1/goals'] = { status: 200, body: { goals: [RECORD, company] } };
-    const [goal, other] = await listProjectGoals('p1', { now: NOW });
-    expect(calls.map((c) => c.key)).toEqual(['GET /projects/p1/goals']);
+    routes['GET /workspaces/p1/goals'] = { status: 200, body: { goals: [RECORD, company] } };
+    const [goal, other] = await listWorkspaceGoals('p1', { now: NOW });
+    expect(calls.map((c) => c.key)).toEqual(['GET /workspaces/p1/goals']);
     expect(goal).toMatchObject({
       projectId: 'p1',
       goalId: RECORD.goal_id,
@@ -224,25 +224,25 @@ describe('goal record: list, read, health', () => {
   });
 
   test('listProjectGoals is empty when the route is off (404, or 403 feature_disabled) and throws on any other error', async () => {
-    expect(await listProjectGoals('p1')).toEqual([]);
-    routes['GET /projects/p1/goals'] = { status: 403, body: { error: 'Goals is not enabled for this project.', code: 'feature_disabled' } };
-    expect(await listProjectGoals('p1')).toEqual([]);
-    routes['GET /projects/p1/goals'] = { status: 500, body: { message: 'boom' } };
-    await expect(listProjectGoals('p1')).rejects.toMatchObject({ status: 500 });
+    expect(await listWorkspaceGoals('p1')).toEqual([]);
+    routes['GET /workspaces/p1/goals'] = { status: 403, body: { error: 'Goals is not enabled for this project.', code: 'feature_disabled' } };
+    expect(await listWorkspaceGoals('p1')).toEqual([]);
+    routes['GET /workspaces/p1/goals'] = { status: 500, body: { message: 'boom' } };
+    await expect(listWorkspaceGoals('p1')).rejects.toMatchObject({ status: 500 });
   });
 
   test('getProjectGoal reads one goal by goal_id; a missing one is an ApiError 404', async () => {
-    routes[`GET /projects/p1/goals/${RECORD.goal_id}`] = { status: 200, body: { goal: RECORD } };
-    expect(await getProjectGoal('p1', RECORD.goal_id)).toMatchObject({ goalId: RECORD.goal_id, revision: 4 });
-    await expect(getProjectGoal('p1', 'gone')).rejects.toMatchObject({ status: 404 });
+    routes[`GET /workspaces/p1/goals/${RECORD.goal_id}`] = { status: 200, body: { goal: RECORD } };
+    expect(await getWorkspaceGoal('p1', RECORD.goal_id)).toMatchObject({ goalId: RECORD.goal_id, revision: 4 });
+    await expect(getWorkspaceGoal('p1', 'gone')).rejects.toMatchObject({ status: 404 });
   });
 
   test('listProjectGoalEvents pages through GET …/events with the cursor', async () => {
     const event: ProjectGoalEvent = { id: 'e1', goal_id: RECORD.goal_id, at: '2026-10-20T10:00:00Z', kind: 'created', actor_kind: 'user', actor_id: 'u1', from_state: null, to_state: 'draft', message: 'Goal created', data: {} };
-    routes[`GET /projects/p1/goals/${RECORD.goal_id}/events`] = { status: 200, body: { events: [event], next_cursor: 'c2' } };
-    routes[`GET /projects/p1/goals/${RECORD.goal_id}/events?cursor=c2`] = { status: 200, body: { events: [], next_cursor: null } };
-    expect(await listProjectGoalEvents('p1', RECORD.goal_id)).toEqual({ events: [event], nextCursor: 'c2' });
-    expect(await listProjectGoalEvents('p1', RECORD.goal_id, { cursor: 'c2' })).toEqual({ events: [], nextCursor: null });
+    routes[`GET /workspaces/p1/goals/${RECORD.goal_id}/events`] = { status: 200, body: { events: [event], next_cursor: 'c2' } };
+    routes[`GET /workspaces/p1/goals/${RECORD.goal_id}/events?cursor=c2`] = { status: 200, body: { events: [], next_cursor: null } };
+    expect(await listWorkspaceGoalEvents('p1', RECORD.goal_id)).toEqual({ events: [event], nextCursor: 'c2' });
+    expect(await listWorkspaceGoalEvents('p1', RECORD.goal_id, { cursor: 'c2' })).toEqual({ events: [], nextCursor: null });
   });
 
   test('goalHealth reads a record by its server fields', () => {
@@ -272,14 +272,14 @@ describe('goal record: list, read, health', () => {
       const files: Record<string, string> = { '/Company/Goals/close/GOAL.md': '# Close\n', '/Company/Goals/close/log.md': '# Log\n' };
       return path && files[path] ? new Response(files[path], { status: 200 }) : new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } });
     }) as unknown as typeof fetch;
-    expect(await getProjectGoalFiles('d1', '/Company/Goals/close')).toEqual({ brief: '# Close\n', log: '# Log\n', notes: null, verification: null });
+    expect(await getWorkspaceGoalFiles('d1', '/Company/Goals/close')).toEqual({ brief: '# Close\n', log: '# Log\n', notes: null, verification: null });
   });
 });
 
 describe('goal record: a person creates and controls a goal', () => {
   let calls: Call[] = [];
   const routes: Record<string, { status: number; body: unknown }> = {};
-  const base = `/projects/p1/goals/${RECORD.goal_id}`;
+  const base = `/workspaces/p1/goals/${RECORD.goal_id}`;
   beforeEach(() => {
     calls = [];
     for (const key of Object.keys(routes)) delete routes[key];
@@ -287,11 +287,11 @@ describe('goal record: a person creates and controls a goal', () => {
   });
 
   test('createProjectGoal POSTs the brief with goal_id as the idempotency key; a retry with the same id sends the same id', async () => {
-    routes['POST /projects/p1/goals'] = { status: 201, body: { goal: { ...RECORD, state: 'draft' } } };
+    routes['POST /workspaces/p1/goals'] = { status: 201, body: { goal: { ...RECORD, state: 'draft' } } };
     const input = { outcome: '  EU billing live\n- EUR\nall of it  ', criteria: ['Invoices in EUR', ' ', 'VAT on every invoice'], agent: 'billing', assignedUser: 'u1', goalId: RECORD.goal_id };
-    const created = await createProjectGoal('p1', input);
-    await createProjectGoal('p1', input);
-    expect(calls.map((c) => c.key)).toEqual(['POST /projects/p1/goals', 'POST /projects/p1/goals']);
+    const created = await createWorkspaceGoal('p1', input);
+    await createWorkspaceGoal('p1', input);
+    expect(calls.map((c) => c.key)).toEqual(['POST /workspaces/p1/goals', 'POST /workspaces/p1/goals']);
     expect(calls[0]!.body).toEqual({
       goal_id: RECORD.goal_id,
       // A plain line after a list item gets a blank line, so Markdown does not fold it into the item.
@@ -313,9 +313,9 @@ describe('goal record: a person creates and controls a goal', () => {
   });
 
   test('createProjectGoal maps the deprecated sessionId to goal_id, and generates one when neither is given', async () => {
-    routes['POST /projects/p1/goals'] = { status: 201, body: { goal: RECORD } };
-    await createProjectGoal('p1', { outcome: 'A', sessionId: '0b6c7c55-8f3e-4b8a-9d55-0e0f6a1c2d3e' });
-    await createProjectGoal('p1', { outcome: 'B' });
+    routes['POST /workspaces/p1/goals'] = { status: 201, body: { goal: RECORD } };
+    await createWorkspaceGoal('p1', { outcome: 'A', sessionId: '0b6c7c55-8f3e-4b8a-9d55-0e0f6a1c2d3e' });
+    await createWorkspaceGoal('p1', { outcome: 'B' });
     expect((calls[0]!.body as { goal_id: string }).goal_id).toBe('0b6c7c55-8f3e-4b8a-9d55-0e0f6a1c2d3e');
     const generated = (calls[1]!.body as { goal_id: string }).goal_id;
     expect(generated).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
@@ -324,8 +324,8 @@ describe('goal record: a person creates and controls a goal', () => {
   });
 
   test('createProjectGoal refuses an empty outcome and more than 8 criteria before any request', async () => {
-    await expect(createProjectGoal('p1', { outcome: '   ' })).rejects.toThrow('Describe the outcome.');
-    await expect(createProjectGoal('p1', { outcome: 'x', criteria: Array.from({ length: 9 }, (_, i) => `c${i}`) })).rejects.toThrow('at most 8');
+    await expect(createWorkspaceGoal('p1', { outcome: '   ' })).rejects.toThrow('Describe the outcome.');
+    await expect(createWorkspaceGoal('p1', { outcome: 'x', criteria: Array.from({ length: 9 }, (_, i) => `c${i}`) })).rejects.toThrow('at most 8');
     expect(calls).toEqual([]);
   });
 
@@ -333,13 +333,13 @@ describe('goal record: a person creates and controls a goal', () => {
     const next = { ...RECORD, revision: 5 };
     for (const action of ['pause', 'resume', 'stop', 'restart']) routes[`POST ${base}/${action}`] = { status: 200, body: { goal: next } };
     const [goal] = await (async () => {
-      routes['GET /projects/p1/goals'] = { status: 200, body: { goals: [RECORD] } };
-      return listProjectGoals('p1', { now: NOW });
+      routes['GET /workspaces/p1/goals'] = { status: 200, body: { goals: [RECORD] } };
+      return listWorkspaceGoals('p1', { now: NOW });
     })();
-    const paused = await pauseProjectGoal('p1', goal!, 'Paused from the goal page.');
-    await resumeProjectGoal('p1', goal!);
-    await stopProjectGoal('p1', goal!, 'Stopped.');
-    await restartProjectGoal('p1', goal!, 'Again.');
+    const paused = await pauseWorkspaceGoal('p1', goal!, 'Paused from the goal page.');
+    await resumeWorkspaceGoal('p1', goal!);
+    await stopWorkspaceGoal('p1', goal!, 'Stopped.');
+    await restartWorkspaceGoal('p1', goal!, 'Again.');
     expect(calls.slice(1).map((c) => [c.key, c.body])).toEqual([
       [`POST ${base}/pause`, { revision: 4, reason: 'Paused from the goal page.' }],
       [`POST ${base}/resume`, { revision: 4 }],
@@ -353,24 +353,24 @@ describe('goal record: a person creates and controls a goal', () => {
   test('a stale revision surfaces as a ProjectGoalConflictError carrying the current goal', async () => {
     const current = { ...RECORD, revision: 7, paused_at: '2026-10-21T11:00:00Z' };
     routes[`POST ${base}/pause`] = { status: 409, body: { error: 'goal_conflict', message: 'The goal changed.', goal: current } };
-    const error = await pauseProjectGoal('p1', { goalId: RECORD.goal_id, revision: 4 }, 'x').catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(ProjectGoalConflictError);
+    const error = await pauseWorkspaceGoal('p1', { goalId: RECORD.goal_id, revision: 4 }, 'x').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(WorkspaceGoalConflictError);
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ status: 409, goal: { goalId: RECORD.goal_id, revision: 7, record: current } });
   });
 
   test('a 409 without a goal body stays a plain ApiError', async () => {
     routes[`POST ${base}/stop`] = { status: 409, body: { message: 'busy' } };
-    const error = await stopProjectGoal('p1', { goalId: RECORD.goal_id, revision: 4 }, 'x').catch((e: unknown) => e);
+    const error = await stopWorkspaceGoal('p1', { goalId: RECORD.goal_id, revision: 4 }, 'x').catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ApiError);
-    expect(error).not.toBeInstanceOf(ProjectGoalConflictError);
+    expect(error).not.toBeInstanceOf(WorkspaceGoalConflictError);
   });
 
   test('replyToProjectGoal POSTs …/answer with an answer_id; the same answerId on a retry is sent again', async () => {
     routes[`POST ${base}/answer`] = { status: 200, body: { goal: RECORD } };
-    await replyToProjectGoal('p1', { goalId: RECORD.goal_id }, 'DE123456789', { answerId: 'a0b1c2d3-e4f5-4a6b-8c7d-8e9f0a1b2c3d' });
-    await replyToProjectGoal('p1', { goalId: RECORD.goal_id }, 'DE123456789', { answerId: 'a0b1c2d3-e4f5-4a6b-8c7d-8e9f0a1b2c3d' });
-    await replyToProjectGoal('p1', { goalId: RECORD.goal_id }, 'other');
+    await replyToWorkspaceGoal('p1', { goalId: RECORD.goal_id }, 'DE123456789', { answerId: 'a0b1c2d3-e4f5-4a6b-8c7d-8e9f0a1b2c3d' });
+    await replyToWorkspaceGoal('p1', { goalId: RECORD.goal_id }, 'DE123456789', { answerId: 'a0b1c2d3-e4f5-4a6b-8c7d-8e9f0a1b2c3d' });
+    await replyToWorkspaceGoal('p1', { goalId: RECORD.goal_id }, 'other');
     expect(calls.map((c) => c.key)).toEqual([`POST ${base}/answer`, `POST ${base}/answer`, `POST ${base}/answer`]);
     expect(calls[0]!.body).toEqual({ answer_id: 'a0b1c2d3-e4f5-4a6b-8c7d-8e9f0a1b2c3d', text: 'DE123456789' });
     expect(calls[1]!.body).toEqual(calls[0]!.body);
@@ -379,24 +379,24 @@ describe('goal record: a person creates and controls a goal', () => {
 
   test('an answer route that replies 202 with no goal body still resolves; a refusal throws', async () => {
     routes[`POST ${base}/answer`] = { status: 202, body: {} };
-    await expect(replyToProjectGoal('p1', { goalId: RECORD.goal_id }, 'ok')).resolves.toBeUndefined();
+    await expect(replyToWorkspaceGoal('p1', { goalId: RECORD.goal_id }, 'ok')).resolves.toBeUndefined();
     routes[`POST ${base}/answer`] = { status: 422, body: { error: 'goal_invalid', message: 'The goal is paused.' } };
-    await expect(replyToProjectGoal('p1', { goalId: RECORD.goal_id }, 'ok')).rejects.toMatchObject({ status: 422 });
+    await expect(replyToWorkspaceGoal('p1', { goalId: RECORD.goal_id }, 'ok')).rejects.toMatchObject({ status: 422 });
   });
 
   test('setProjectGoalBinding PATCHes the goal record (not goal.json): null clears, an absent key keeps', async () => {
     routes[`PATCH ${base}`] = { status: 200, body: { goal: { ...RECORD, revision: 5, space: 'finance', agent: null } } };
-    const doc = await setProjectGoalBinding({ projectId: 'p1', goalId: RECORD.goal_id, revision: 4 }, { space: 'finance', agent: null });
+    const doc = await setWorkspaceGoalBinding({ projectId: 'p1', goalId: RECORD.goal_id, revision: 4 }, { space: 'finance', agent: null });
     expect(calls.map((c) => [c.key, c.body])).toEqual([[`PATCH ${base}`, { revision: 4, space: 'finance', agent: null }]]);
     expect(doc).toMatchObject({ space: 'finance', agent: null, projectGoal: { revision: 5 } });
-    await setProjectGoalBinding({ projectId: 'p1', goalId: RECORD.goal_id, revision: 5 }, { space: 'ops' });
+    await setWorkspaceGoalBinding({ projectId: 'p1', goalId: RECORD.goal_id, revision: 5 }, { space: 'ops' });
     expect(calls[1]!.body).toEqual({ revision: 5, space: 'ops' });
   });
 
   test('makeSessionGoal asks that chat session to make a goal through the kortix-goals skill', async () => {
-    routes['POST /projects/p1/sessions/s-chat/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
+    routes['POST /workspaces/p1/sessions/s-chat/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
     await makeSessionGoal('p1', 's-chat');
-    expect(calls[0]!.key).toBe('POST /projects/p1/sessions/s-chat/prompts');
+    expect(calls[0]!.key).toBe('POST /workspaces/p1/sessions/s-chat/prompts');
     expect((calls[0]!.body as { parts: Array<{ text: string }> }).parts[0]!.text).toBe(MAKE_GOAL_PROMPT);
   });
 });

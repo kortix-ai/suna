@@ -137,6 +137,8 @@ const independentModules = createIndependentModules({
       '@kortix/api-contract/*': [at('../../packages/api-contract/src/*')],
       '@kortix/sdk/wire-message-id': [at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)],
       '@kortix/shared/peer-message-prompt': [at('../../packages/shared/src/peer-message-prompt.ts')],
+      // Tests only: platform-tools.test.ts holds the tool cards' Settings links equal to the registry.
+      '@kortix/shared/workspace-settings': [at('../../packages/shared/src/workspace-settings.ts')],
       '@kortix/voice/*': [at('../../packages/voice/src/*')],
     },
   },

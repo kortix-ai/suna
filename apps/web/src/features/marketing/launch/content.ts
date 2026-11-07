@@ -47,7 +47,7 @@ export const pillars = {
       title: 'Everything is code',
       body: 'Versioned, reviewable, portable, governable. Work reaches main through a change request a person approves.',
       href: '/docs/project',
-      link: 'Projects',
+      link: 'Workspaces',
     },
   ],
 } as const;

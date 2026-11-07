@@ -46,7 +46,7 @@ describe('first chat store', () => {
 
 describe('first chat link', () => {
   test('opens project home with the first-chat flag, id percent-encoded', () => {
-    expect(firstChatHref('p 1')).toBe('/projects/p%201?chat=first');
+    expect(firstChatHref('p 1')).toBe('/workspaces/p%201?chat=first');
   });
 
   // The welcome shows only when the person asked for it: the sidebar row or

@@ -1,6 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq } from 'drizzle-orm';
-import { projects, serviceAccounts } from '@kortix/db';
+import { serviceAccounts } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { groupInAccountRow } from '../../iam/group-read';
@@ -16,6 +16,8 @@ import { iamRouter, AccountIdParam } from './app';
 import { auditIam, requireEntitlement } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { loadSystemRoles } from '../../iam/catalog';
+import { accountIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 export function systemRoleWireId(scopeType: string, key: string): string {
   return scopeType === 'project' && key === 'member' ? 'builtin:user' : `builtin:${key}`;
@@ -41,7 +43,7 @@ export async function loadCustomRole(accountId: string, roleId: string) {
 }
 
 const Any = z.any();
-const PolicyIdParam = z.object({ accountId: z.string(), policyId: z.string() });
+const PolicyIdParam = z.object({ workspaceId: z.string(), policyId: z.string() });
 
 // Allow-only with no conditions: every binding is an unconditional allow. We
 // surface effect/conditions so the pre-built UI renders, but only 'allow' / {}
@@ -111,7 +113,7 @@ export function registerPolicyListRoute() {
   iamRouter.openapi(
   createRoute({
     method: 'get',
-    path: '/{accountId}/iam/policies',
+    path: '/{workspaceId}/iam/policies',
     tags: ['iam'],
     summary: 'List policies (optionally filtered)',
     ...auth,
@@ -119,7 +121,7 @@ export function registerPolicyListRoute() {
     responses: { 200: json(z.object({ policies: z.array(Any) }), 'Policies'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_READ);
 
     const pt = c.req.query('principalType');
@@ -150,7 +152,7 @@ export function registerPolicyWriteRoutes() {
   iamRouter.openapi(
   createRoute({
     method: 'post',
-    path: '/{accountId}/iam/policies',
+    path: '/{workspaceId}/iam/policies',
     tags: ['iam'],
     summary: 'Bind a principal to a custom role at a scope',
     ...auth,
@@ -158,7 +160,7 @@ export function registerPolicyWriteRoutes() {
     responses: { 201: json(Any, 'Created policy'), ...errors(400, 401, 403, 404) },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_CREATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
@@ -202,7 +204,7 @@ export function registerPolicyWriteRoutes() {
   iamRouter.openapi(
   createRoute({
     method: 'delete',
-    path: '/{accountId}/iam/policies/{policyId}',
+    path: '/{workspaceId}/iam/policies/{policyId}',
     tags: ['iam'],
     summary: 'Delete a policy',
     ...auth,
@@ -210,7 +212,7 @@ export function registerPolicyWriteRoutes() {
     responses: { 200: json(z.object({ deleted: z.boolean() }), 'Deleted'), ...errors(401, 403, 404) },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const policyId = c.req.param('policyId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_DELETE);
     // No entitlement gate: revoking a policy binding is cleanup, always allowed.
@@ -242,7 +244,7 @@ export function registerPolicyWriteRoutes() {
   iamRouter.openapi(
   createRoute({
     method: 'post',
-    path: '/{accountId}/iam/policies:bulk-delete',
+    path: '/{workspaceId}/iam/policies:bulk-delete',
     tags: ['iam'],
     summary: 'Delete multiple policies',
     ...auth,
@@ -250,7 +252,7 @@ export function registerPolicyWriteRoutes() {
     responses: { 200: json(z.object({ deleted: z.number() }), 'Deleted count'), ...errors(400, 401, 403) },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_DELETE);
     // No entitlement gate: bulk policy revocation is cleanup, always allowed.
     const body = await readJsonObject(c);
@@ -272,7 +274,7 @@ export function registerPolicyWriteRoutes() {
   iamRouter.openapi(
   createRoute({
     method: 'patch',
-    path: '/{accountId}/iam/policies/{policyId}',
+    path: '/{workspaceId}/iam/policies/{policyId}',
     tags: ['iam'],
     summary: 'Change a policy’s role / scope / expiry (principal is immutable)',
     ...auth,
@@ -280,7 +282,7 @@ export function registerPolicyWriteRoutes() {
     responses: { 200: json(Any, 'Updated policy'), ...errors(400, 401, 403, 404) },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     const policyId = c.req.param('policyId');
     // Editing an assignment is a create-class action — gate on POLICY_CREATE.
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_CREATE);
@@ -330,7 +332,7 @@ export function registerPolicyWriteRoutes() {
   iamRouter.openapi(
   createRoute({
     method: 'post',
-    path: '/{accountId}/iam/policies:bulk-import',
+    path: '/{workspaceId}/iam/policies:bulk-import',
     tags: ['iam'],
     summary: 'Create many policies, referencing roles by key (portable import)',
     ...auth,
@@ -338,7 +340,7 @@ export function registerPolicyWriteRoutes() {
     responses: { 200: json(Any, 'Import result'), ...errors(400, 401, 403) },
   }),
   async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_CREATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
@@ -476,11 +478,11 @@ async function parsePolicyInput(
   // agent-grant fold does NOT narrow (the fold only gates project scope) — a
   // standing-identity escalation surface. Keep token principals project-scoped.
   if (principalType === 'token' && scopeType === 'account') {
-    return { ok: false, status: 400, error: 'service-account (agent) policies must be project-scoped' };
+    return { ok: false, status: 400, error: 'service-account (agent) policies must have scopeType project' };
   }
   const scopeId = typeof body.scopeId === 'string' && body.scopeId ? body.scopeId : null;
   if (scopeType === 'project' && !scopeId) {
-    return { ok: false, status: 400, error: 'scopeId (project id) is required for project scope' };
+    return { ok: false, status: 400, error: 'scopeId (the workspace id) is required for scopeType project' };
   }
   // A project-scoped policy must target a project that actually belongs to this
   // account — otherwise a typo'd or cross-account scopeId creates a dangling
@@ -488,11 +490,11 @@ async function parsePolicyInput(
   // intent). Validate existence + ownership up front.
   if (scopeType === 'project' && scopeId) {
     const [proj] = await db
-      .select({ projectId: projects.projectId })
-      .from(projects)
-      .where(and(eq(projects.projectId, scopeId), eq(projects.accountId, accountId)))
+      .select({ projectId: projectsView.projectId })
+      .from(projectsView)
+      .where(and(eq(projectsView.projectId, scopeId), eq(projectsView.accountId, accountId)))
       .limit(1);
-    if (!proj) return { ok: false, status: 404, error: 'scopeId does not match a project in this account' };
+    if (!proj) return { ok: false, status: 404, error: 'scopeId does not match this workspace' };
   }
 
   if (body.effect !== undefined && body.effect !== 'allow') {
@@ -502,7 +504,7 @@ async function parsePolicyInput(
   const roleId = typeof body.roleId === 'string' ? body.roleId : '';
   if (!roleId) return { ok: false, status: 400, error: 'roleId is required' };
   if (await isSystemRoleId(roleId)) {
-    return { ok: false, status: 400, error: 'built-in roles are assigned via project members/groups, not policies' };
+    return { ok: false, status: 400, error: 'built-in roles are assigned via workspace members and groups, not policies' };
   }
   const role = await loadCustomRole(accountId, roleId);
   if (!role) return { ok: false, status: 404, error: 'role not found in this account' };

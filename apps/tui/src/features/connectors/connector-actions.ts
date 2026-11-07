@@ -115,7 +115,7 @@ export function useConnectorActions({
         onToast(
           draft.audience === 'members'
             ? 'Pick at least one person, group, or agent.'
-            : "Sharing an account needs permission to manage the project's connections.",
+            : "Sharing an account needs permission to manage the workspace's connections.",
           'error',
         );
         return;
@@ -136,7 +136,7 @@ export function useConnectorActions({
           return true;
         });
         if (ok) {
-          onToast(draft.audience === 'private' ? 'Connected privately — only you can use this' : 'Project connection created');
+          onToast(draft.audience === 'private' ? 'Connected privately — only you can use this' : 'Workspace connection created');
           setFlow(VIEW);
         } else setFlow(VIEW);
         return;
@@ -186,7 +186,7 @@ export function useConnectorActions({
   const saveShare = useCallback(
     (connection: Connection, audience: NewConnectorAccountAudience, selected: string[]) => {
       const accountId = data.accountId;
-      if (!accountId) return onToast('Could not find this project’s account.', 'error');
+      if (!accountId) return onToast('Could not find this workspace.', 'error');
       const picked = pickedLists(selected);
       if (audience === 'members' && picked.memberIds.length + picked.groupIds.length + (picked.agentIds?.length ?? 0) === 0) {
         return onToast('Pick at least one person, group, or agent.', 'error');

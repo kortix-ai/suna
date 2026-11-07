@@ -109,7 +109,7 @@ export const move = mutation({
 
 When Kortix has a connector for the system (Gmail, a CRM, an OpenAPI or MCP
 server), call it through `@kortix/sdk` instead of a raw API key: the gateway
-applies the project's policy, approvals and audit (connectors.md). Use a raw `fetch` with a key only for an API
+applies the workspace's policy, approvals and audit (connectors.md). Use a raw `fetch` with a key only for an API
 that has no connector:
 
 ```ts

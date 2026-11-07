@@ -21,7 +21,7 @@ flow(
   {
     domain: 'sessions',
     requires: ['database'],
-    routes: ['GET /v1/projects/:projectId/sessions/:sessionId/usage'],
+    routes: ['GET /v1/workspaces/:projectId/sessions/:sessionId/usage'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -63,7 +63,7 @@ flow(
         ],
       ),
     );
-    const route = '/v1/projects/:projectId/sessions/:sessionId/usage';
+    const route = '/v1/workspaces/:projectId/sessions/:sessionId/usage';
     const read = async (as: ReturnType<typeof ctx.client.as>, sessionId: string) =>
       (await as.get(route, { params: { projectId: project.id, sessionId } })).status(200).json<Usage>();
     const expect = (what: string, actual: unknown, wanted: unknown) => {

@@ -67,3 +67,38 @@ export function parseAssignableProjectRole(raw: unknown): ProjectRole | null {
 export function isAccountManager(role: AccountRole | string | null): boolean {
   return role === 'owner' || role === 'admin';
 }
+
+/**
+ * The ONE role ladder of a workspace (design.md §3.2 C3), strongest first:
+ * owner > admin > manager > member. Storage keeps the two scopes in R1:
+ * owner/admin = the account-scope system role; manager = account `member` +
+ * project `manager` on the workspace's project; member = account `member`
+ * (membership is access).
+ */
+export type WorkspaceRole = 'owner' | 'admin' | 'manager' | 'member';
+export const WORKSPACE_ROLES: readonly WorkspaceRole[] = ['owner', 'admin', 'manager', 'member'];
+
+/** Parse a ladder role from a request body; null for anything else. */
+export function parseWorkspaceRole(raw: unknown): WorkspaceRole | null {
+  if (typeof raw !== 'string') return null;
+  const v = raw.trim().toLowerCase();
+  return (WORKSPACE_ROLES as readonly string[]).includes(v) ? (v as WorkspaceRole) : null;
+}
+
+/** The account-scope system role that stores a ladder role. */
+export function accountRoleForWorkspaceRole(role: WorkspaceRole): AccountRole {
+  return role === 'owner' || role === 'admin' ? role : 'member';
+}
+
+/**
+ * A member's ladder role from the two stored rows: the account-scope system
+ * role, and the system project role held on the workspace's project (null when
+ * none). The pure half of `workspaceRoleFor`, for a list that already holds
+ * every member's rows (the Members table).
+ */
+export function workspaceRoleFromRows(accountRole: string | null, projectRoleOnWorkspace: string | null): WorkspaceRole | null {
+  if (accountRole === 'owner' || accountRole === 'admin') return accountRole;
+  if (projectRoleOnWorkspace === 'manager') return 'manager';
+  if (accountRole === 'member' || projectRoleOnWorkspace === 'member') return 'member';
+  return null;
+}

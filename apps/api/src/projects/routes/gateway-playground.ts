@@ -23,17 +23,18 @@ import {
   persistGatewayTrace,
   recordGatewayUsage,
 } from '../../llm-gateway/hooks';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerGatewayPlaygroundRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/gateway/playground',
+      path: '/{workspaceId}/gateway/playground',
       tags: ['gateway'],
       summary: 'Run a prompt in the project LLM gateway playground',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: {
           content: {
             'application/json': {
@@ -55,7 +56,7 @@ export function registerGatewayPlaygroundRoutes(): void {
       responses: { 200: json(z.any(), 'Playground results'), ...errors(400, 402, 404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(

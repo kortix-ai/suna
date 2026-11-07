@@ -104,6 +104,27 @@ export function billingStateNeedsTopUp(state: BillingState | null): boolean {
   return state === 'out_of_credits' || state === 'payment_failed';
 }
 
+/** The server's run floor in USD (`MINIMUM_CREDIT_FOR_RUN`, billing/services/tier-facts.ts). */
+export const RUN_FLOOR_USD = 0.01;
+
+/**
+ * Whether the billing modal leads with the top-up. True when adding credits
+ * unblocks the account: out of credits, a failed payment, or a Free account
+ * that may buy credits and sits below the run floor. The last case is a
+ * further workspace that gets no free credits, or a Free account that spent
+ * them: a top-up is the cheapest way to run, so the modal never offers only
+ * "Continue on Free" there (review finding 10).
+ */
+export function billingModalNeedsTopUp(
+  accountState: AccountStateLike | null | undefined,
+  state: BillingState | null,
+): boolean {
+  if (billingStateNeedsTopUp(state)) return true;
+  if (state !== 'no_subscription' || !accountState?.tier?.can_purchase_credits) return false;
+  const balance = accountState.credits?.total;
+  return typeof balance === 'number' && balance < RUN_FLOOR_USD;
+}
+
 /**
  * Warn below this wallet value (dollars) on an account that is still running,
  * or below a fifth of what the account has been given, whichever is lower

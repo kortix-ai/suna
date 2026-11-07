@@ -51,14 +51,14 @@ investigates, resolves what it can, and stops at a human for sensitive actions.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the support skill and the trigger, and opens
 a change request for you to review. Prefer clicks? Choose **Use this
 template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a support queue agent in this project.
+  code={`Set up a support queue agent in this workspace.
 
 1. Create the agent agents/support-agent.md. Its job is to work the Plain support queue. It may read the codebase and use the PLAIN_API_KEY and STRIPE_SECRET_KEY secrets.
 
@@ -80,7 +80,7 @@ template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect your code host. Add your
+Open **Connectors** in your workspace and connect your code host. Add your
 Plain and Stripe API keys as the `PLAIN_API_KEY` and `STRIPE_SECRET_KEY`
 secrets. Secrets are encrypted and injected at runtime, scoped to the agents you
 grant them to.
@@ -121,7 +121,7 @@ the schedule take over.
 The change request added this trigger to `kortix.yaml`. From now on the agent
 checks the queue every 15 minutes, each run in a new session on its own cloud
 computer.
-To change the time, edit the cron line, or open **Triggers** in the project.
+To change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

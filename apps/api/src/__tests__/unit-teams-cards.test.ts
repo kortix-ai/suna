@@ -309,10 +309,10 @@ describe('Slack parity cards, part 2', () => {
     const c = buildHomeCard({ projects: [project(1)] });
     expect(allExecuteActions(c)).toEqual([]);
     const json = JSON.stringify(c);
-    expect(json).toContain('Projects in this organization');
+    expect(json).toContain('Kortix workspaces here');
     expect(json).toContain('put together a one-pager on our Q2 numbers');
     expect(json).toContain('/login');
-    expect(JSON.stringify(buildHomeCard({ projects: [] }))).not.toContain('Projects in this organization');
+    expect(JSON.stringify(buildHomeCard({ projects: [] }))).not.toContain('Kortix workspaces here');
   });
 
   test('/sessions rows carry the repo preview', () => {
@@ -340,7 +340,7 @@ describe('Slack parity cards, part 2', () => {
     expect(texts(buildConnectedCard({ email: 'alex@example.test', resumed: true, hasAccess: true, projectId: 'p1' })).join(' ')).toContain('Picking up your message now.');
     expect(texts(buildConnectedCard({ email: null, resumed: false, hasAccess: true, projectId: 'p1' })).join(' ')).toContain('Mention me with a task');
     const noAccess = buildConnectedCard({ email: 'alex@example.test', resumed: false, hasAccess: false, projectId: 'p1' });
-    expect(texts(noAccess).join(' ')).toContain("can't run this project yet");
+    expect(texts(noAccess).join(' ')).toContain("can't run this Kortix workspace yet");
     expect(actions(noAccess)).toEqual([expect.objectContaining({ verb: 'teams_request_access', data: expect.objectContaining({ projectId: 'p1' }) })]);
   });
 

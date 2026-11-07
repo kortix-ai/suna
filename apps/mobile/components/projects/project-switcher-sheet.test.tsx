@@ -4,14 +4,15 @@ import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { readFileSync } from 'node:fs';
 
-// The project switcher sheet (KRTX-2461's characterization test): the
-// projects body's five states (in flight, error, empty, no matches, the
-// group), the invites group first, the account tab, and the hand-off
-// choreography (a `+` tap dismisses and only then opens the web hand-off;
-// "Not now" re-presents instead of dismissing into the void).
-// Real: the sheet body, `useSheetOpenMove` + `useCloseThen` (the
-// choreography under test) and the switcher helpers. Every import that
-// needs a native runtime is a stub.
+// The workspace switcher sheet (KRTX-2461's characterization test, reworked
+// for Workspaces ux.md §3): the list body's five states (in flight, error,
+// empty, no matches, the flat group across accounts), the invitations group
+// first, the bottom actions (Create workspace, Workspace settings; no account
+// tab, no New account), and the hand-off choreography (a `+` tap dismisses
+// and only then opens the web hand-off to `/new`, never `?account=`).
+// Real: the sheet body, the invitations group, `useSheetOpenMove` +
+// `useCloseThen` (the choreography under test) and the switcher helpers.
+// Every import that needs a native runtime is a stub.
 
 const source = readFileSync(`${import.meta.dir}/ProjectSwitcherSheet.tsx`, 'utf8');
 const host = (name: string) => ({ children, ...props }: any) => React.createElement(name, props, children);
@@ -19,13 +20,13 @@ const Empty = () => null;
 
 // The choreography's observable: every present/dismiss the sheet module sees.
 const sheetCalls: string[] = [];
-let projectsData: unknown[] | undefined;
-let projectsFail = false;
+let workspaceRows: unknown[] = [];
+let workspacesPending = false;
+let workspacesFail = false;
 let invitesData: unknown[] | undefined = [];
 const pushCalls: string[] = [];
 let webCreateUrl: string | null = null;
 let searchInput: ((text: string) => void) | null = null;
-let tabSelect: ((index: number) => void) | null = null;
 
 const fakes: Record<string, Record<string, unknown>> = {
   'react-native': {
@@ -55,7 +56,7 @@ const fakes: Record<string, Record<string, unknown>> = {
   'expo-router': { useRouter: () => ({ push: (href: string) => pushCalls.push(href), replace: () => {} }) },
   'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) },
   'react-native-reanimated': { useDerivedValue: (v: unknown) => v },
-  '@/lib/icons': { FolderIcon: host('FolderIcon'), PlusIcon: host('PlusIcon'), UserIcon: host('UserIcon') },
+  '@/lib/icons': { GearSixIcon: host('GearSixIcon'), PlusIcon: host('PlusIcon') },
   '@/components/ui/button': { Button: host('Button') },
   '@/components/ui/icon': { Icon: host('Icon') },
   '@/components/ui/text': { Text: host('Text') },
@@ -83,14 +84,6 @@ const fakes: Record<string, Record<string, unknown>> = {
     useSheetOpenMove: require('@/components/kortix/use-sheet-open-move').useSheetOpenMove,
     useCloseThen: require('@/components/kortix/use-close-then').useCloseThen,
   },
-  '@/components/kortix/pinned-bar': { PinnedBar: host('PinnedBar'), usePinnedBarInset: () => 0 },
-  '@/components/navigation/FloatingTabBar': {
-    FloatingTabCapsule: (props: any) => {
-      tabSelect = props.onSelect;
-      return React.createElement('FloatingTabCapsule', { items: props.items });
-    },
-  },
-  '@/components/navigation/tab-bar-layout': { FLOATING_BAR_HEIGHT: 49 },
   '@/components/kortix/kortix-loader': { KortixLoader: host('KortixLoader') },
   '@/components/kortix/settings-list': { SettingsGroup: host('Group'), SettingsRow: host('Row') },
   '@/components/kortix/SheetInput': {
@@ -109,14 +102,24 @@ const fakes: Record<string, Record<string, unknown>> = {
     }),
   },
   'react-i18next': { useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }) },
-  '@/contexts': { useLanguage: () => ({ t: (key: string) => key }) },
+  // English defaults with `{{name}}` interpolation, like the app's i18n.
+  '@/contexts': {
+    useLanguage: () => ({
+      t: (key: string, opt?: string | { defaultValue?: string; [k: string]: unknown }) =>
+        typeof opt === 'string'
+          ? opt
+          : (opt?.defaultValue ?? key).replace(/\{\{(\w+)\}\}/g, (_m, k) => String(opt?.[k] ?? '')),
+    }),
+  },
   '@/lib/haptics': { haptics: { tap() {}, selection() {}, medium() {}, warning() {} } },
   '@/lib/projects/hooks': {
-    // Reads the mutable module state, so a test can fail the query.
-    useProjects: (accountId: string | null) =>
-      accountId === null || projectsFail
-        ? { data: undefined, isPending: accountId === null && !projectsFail, isError: projectsFail, refetch() {} }
-        : { data: projectsData, isPending: false, isError: false, refetch() {} },
+    // Reads the mutable module state, so a test can fail or hold the lists.
+    useWorkspaces: () => ({
+      rows: workspaceRows,
+      isPending: workspacesPending,
+      isError: workspacesFail,
+      refetch: async () => {},
+    }),
   },
   '@/lib/invites/hooks': { useMyInvites: () => ({ data: invitesData }) },
   '@/lib/kortix-web': { KORTIX_WEB_URL: 'https://kortix.test' },
@@ -130,6 +133,7 @@ const fakes: Record<string, Record<string, unknown>> = {
 };
 const real = new Set([
   'react',
+  '@/components/projects/WorkspaceInvitations',
   '@/lib/ui/sheet-open',
   '@/lib/projects/switcher',
   '@/lib/invites/invite-landing',
@@ -164,7 +168,10 @@ beforeAll(async () => {
 
 const ACCOUNT = { account_id: 'acc-1', name: 'Acme' };
 const OTHER = { account_id: 'acc-2', name: 'Globex' };
-const PROJECT = (id: string, name: string, account_id = 'acc-1') => ({ project_id: id, account_id, name });
+const ROW = (id: string, name: string, account = ACCOUNT) => ({
+  project: { project_id: id, account_id: account.account_id, name },
+  account,
+});
 
 let tree: any;
 afterEach(() => {
@@ -172,12 +179,12 @@ afterEach(() => {
   tree = undefined;
   sheetCalls.length = 0;
   pushCalls.length = 0;
-  projectsData = undefined;
-  projectsFail = false;
+  workspaceRows = [];
+  workspacesPending = false;
+  workspacesFail = false;
   invitesData = [];
   webCreateUrl = null;
   searchInput = null;
-  tabSelect = null;
 });
 
 const rows = () => tree.root.findAll((n: any) => n.type === 'Row').map((n: any) => n.props);
@@ -198,92 +205,91 @@ async function openAs(props: Record<string, unknown> = {}) {
 describe('ProjectSwitcherSheet', () => {
   test('closed: never presented', async () => {
     await act(async () => {
-      tree = create(React.createElement(ProjectSwitcherSheet, { open: false, accounts: [ACCOUNT] } as never));
+      tree = create(React.createElement(ProjectSwitcherSheet, { open: false } as never));
       await new Promise((resolve) => setTimeout(resolve, 5));
     });
     expect(sheetCalls).toEqual([]);
   });
 
-  test('open presents; the picked account projects render as rows, the open one without a press', async () => {
-    projectsData = [PROJECT('p-1', 'Website'), PROJECT('p-2', 'API')];
-    await openAs({ accounts: [ACCOUNT], selectedAccountId: 'acc-1', currentProjectId: 'p-1' });
+  test('open presents one flat list across accounts, the open workspace checked, then the actions', async () => {
+    workspaceRows = [ROW('p-1', 'Acme'), ROW('p-2', 'Globex', OTHER), ROW('p-3', 'Globex Labs', OTHER)];
+    await openAs({ currentProjectId: 'p-1' });
     expect(sheetCalls).toContain('present');
-    const projectRows = rows();
-    expect(projectRows.map((r: any) => r.label)).toEqual(['Website', 'API']);
-    // Every row presses; tapping the open project closes instead of re-navigating
-    // (the same rule as the open session's row in the drawer).
-    expect(typeof projectRows[0].onPress).toBe('function');
-    expect(typeof projectRows[1].onPress).toBe('function');
+    const labels = rows().map((r: any) => r.label);
+    // No account headings, no account names as rows, no New account.
+    expect(labels).toEqual(['Acme', 'Globex', 'Globex Labs', 'Create workspace']);
+    expect(rows()[0].checked).toBe(true);
+    expect(rows()[1].checked).toBe(false);
+    // Every row presses; tapping the open workspace closes instead of re-navigating.
+    expect(typeof rows()[0].onPress).toBe('function');
+    expect(texts()).not.toContain('New account');
   });
 
-  test('no account chip yet: in flight (loader), never the empty state', async () => {
-    await openAs({ accounts: [ACCOUNT], selectedAccountId: null });
+  test('inside a workspace: "Workspace settings" closes the sheet and opens the settings page', async () => {
+    workspaceRows = [ROW('p-1', 'Acme')];
+    let opened = 0;
+    await openAs({ currentProjectId: 'p-1', onOpenWorkspaceSettings: () => (opened += 1) });
+    const settings = rows().find((r: any) => r.label === 'Workspace settings');
+    expect(settings).toBeTruthy();
+    act(() => settings.onPress());
+    expect(sheetCalls).toContain('dismiss');
+    expect(opened).toBe(1);
+  });
+
+  test('the lists still loading: the loader, never the empty state', async () => {
+    workspacesPending = true;
+    await openAs();
     expect(tree.root.findAll((n: any) => n.type === 'KortixLoader')).toHaveLength(1);
-    expect(rows()).toEqual([]);
+    expect(texts()).not.toContain('No workspaces yet');
   });
 
-  test('the account has no projects: the empty state with its create CTA', async () => {
-    projectsData = [];
-    await openAs({ accounts: [ACCOUNT], selectedAccountId: 'acc-1' });
-    expect(texts()).toContain('No projects yet');
+  test('no workspace: the empty line, and Create workspace stays', async () => {
+    await openAs();
+    expect(texts()).toContain('No workspaces yet');
+    expect(rows().map((r: any) => r.label)).toEqual(['Create workspace']);
   });
 
-  test('a failed projects read: the error line with a retry', async () => {
-    projectsFail = true;
-    try {
-      await openAs({ accounts: [ACCOUNT], selectedAccountId: 'acc-1' });
-      expect(texts()).toContain("Couldn't load projects");
-    } finally {
-      projectsFail = false;
-    }
+  test('every list failed: the error line with a retry', async () => {
+    workspacesFail = true;
+    await openAs();
+    expect(texts()).toContain("Couldn't load workspaces");
   });
 
   test('a query that matches nothing: the no-matches line', async () => {
-    projectsData = Array.from({ length: 7 }, (_, i) => PROJECT(`p-${i}`, `Project ${i}`));
-    await openAs({ accounts: [ACCOUNT], selectedAccountId: 'acc-1' });
+    workspaceRows = Array.from({ length: 3 }, (_, i) => ROW(`p-${i}`, `Workspace ${i}`));
+    await openAs();
+    // Search shows always in the switcher (ux.md §3).
+    expect(typeof searchInput).toBe('function');
     act(() => searchInput!('zzz'));
-    expect(rows()).toEqual([]);
-    expect(texts().some((t: unknown) => String(t).includes('No matches for'))).toBe(true);
+    expect(rows().map((r: any) => r.label)).toEqual(['Create workspace']);
+    expect(texts()).toContain('No matches for "zzz"');
   });
 
-  test('the switcher labels its tabs Accounts and Projects without changing their keys', async () => {
-    projectsData = [];
-    await openAs({ accounts: [ACCOUNT], selectedAccountId: 'acc-1' });
-    const capsule = tree.root.findByType('FloatingTabCapsule');
-    expect(capsule.props.items.map(({ key, label }: { key: string; label: string }) => ({ key, label }))).toEqual([
-      { key: 'account', label: 'Accounts' },
-      { key: 'projects', label: 'Projects' },
-    ]);
-  });
-
-  test('the account tab lists the other accounts plus New account', async () => {
-    projectsData = [PROJECT('p-1', 'Website')];
-    await openAs({ accounts: [ACCOUNT, OTHER], selectedAccountId: 'acc-1' });
-    expect(typeof tabSelect).toBe('function');
-    act(() => tabSelect!(0));
-    const accountRows = rows().map((r: any) => r.label);
-    expect(accountRows).toContain('Acme');
-    expect(accountRows).toContain('Globex');
-    expect(accountRows[accountRows.length - 1]).toBe('New account');
-  });
-
-  test('the invites group renders first (KRTX-1731)', async () => {
-    invitesData = [{ invite_id: 'inv-1', account_name: 'Globex', projects: [] }];
-    projectsData = [PROJECT('p-1', 'Website')];
-    await openAs({ accounts: [ACCOUNT], selectedAccountId: 'acc-1' });
+  test('the invitations group renders first, each row with Join (KRTX-1731)', async () => {
+    invitesData = [
+      { invite_id: 'inv-1', account_name: 'Globex', inviter_email: 'ada@example.com', initial_role: 'admin', projects: [] },
+    ];
+    workspaceRows = [ROW('p-1', 'Acme')];
+    await openAs();
     const groups = tree.root.findAll((n: any) => n.type === 'Group').map((n: any) => n.props);
-    expect(groups[0].title).toBe('invites.group');
+    expect(groups[0].title).toBe('Invitations');
+    const invite = rows()[0];
+    expect(invite.label).toBe('Globex');
+    expect(invite.value).toBe('Join');
+    expect(invite.description).toBe('ada@example.com · Admin');
+    act(() => invite.onPress());
+    expect(pushCalls).toHaveLength(1);
   });
 
-  test('a `+` tap dismisses the sheet first, then opens the web hand-off', async () => {
-    projectsData = [PROJECT('p-1', 'Website')];
-    await openAs({ accounts: [ACCOUNT], selectedAccountId: 'acc-1' });
+  test('a `+` tap dismisses the sheet first, then opens the web hand-off to /workspaces/new', async () => {
+    workspaceRows = [ROW('p-1', 'Acme')];
+    await openAs({ currentProjectId: 'p-1' });
     const add = tree.root.findAll(
-      (n: any) => n.type === 'Button' && n.props.accessibilityLabel === 'New project',
+      (n: any) => n.type === 'Button' && n.props.accessibilityLabel === 'Create workspace',
     );
     expect(add).toHaveLength(1);
     act(() => add[0].props.onPress());
     expect(sheetCalls).toContain('dismiss');
-    expect(webCreateUrl).toContain('kortix.test');
+    expect(webCreateUrl).toBe('https://kortix.test/workspaces/new');
   });
 });

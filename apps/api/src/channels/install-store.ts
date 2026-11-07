@@ -62,7 +62,7 @@ export async function listProjectsForWorkspace(
   const rows = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, platform), eq(chatInstalls.workspaceId, workspaceId)));
+    .where(and(eq(chatInstalls.platform, platform), eq(chatInstalls.platformTeamId, workspaceId)));
   return rows.map((r) => r.projectId);
 }
 

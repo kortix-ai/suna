@@ -80,7 +80,9 @@ beforeAll(async () => {
     { userId: OUTSIDER, accountId: OTHER_ACCOUNT, accountRole: 'owner' },
     { userId: PLATFORM_ADMIN, accountId: ADMIN_ACCOUNT, accountRole: 'owner' },
   ]);
-  await db.insert(platformUserRoles).values({ accountId: ADMIN_ACCOUNT, role: 'admin' });
+  // Platform roles are keyed by the person's id, as `requireAdmin` reads them
+  // (a legacy personal account had the same id). Not by an account they own.
+  await db.insert(platformUserRoles).values({ accountId: PLATFORM_ADMIN, role: 'admin' });
   await db.insert(projects).values({
     projectId: PROJECT,
     accountId: OWNER_ACCOUNT,
@@ -204,7 +206,7 @@ afterAll(async () => {
   await db.delete(sessionSandboxes).where(eq(sessionSandboxes.projectId, PROJECT));
   await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT));
   await db.delete(projects).where(eq(projects.projectId, PROJECT));
-  await db.delete(platformUserRoles).where(eq(platformUserRoles.accountId, ADMIN_ACCOUNT));
+  await db.delete(platformUserRoles).where(eq(platformUserRoles.accountId, PLATFORM_ADMIN));
   for (const accountId of [OWNER_ACCOUNT, OTHER_ACCOUNT, ADMIN_ACCOUNT]) {
     await db.delete(accounts).where(eq(accounts.accountId, accountId));
   }
@@ -217,10 +219,11 @@ describe('canAccessPreviewSandbox', () => {
   test.each([
     { who: 'a member of the owning account', userId: MEMBER, sandbox: EXTERNAL_ID, allowed: true },
     {
-      who: 'an account member with no role on the sandbox project',
+      // A 1:1 workspace: membership is access (design.md §3.2 C3).
+      who: 'a workspace member with no project role (membership is access)',
       userId: SECOND_MEMBER,
       sandbox: EXTERNAL_ID,
-      allowed: false,
+      allowed: true,
     },
     { who: 'a member of another account', userId: OUTSIDER, sandbox: EXTERNAL_ID, allowed: false },
     {

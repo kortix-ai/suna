@@ -7,6 +7,7 @@ import { projectsApp, ProjectSchema } from '../lib/app';
 import { RepositoryChangedError, RepositoryManifestMissingError, RepositoryValidationError, replaceProjectRepository } from '../lib/repository-replacement';
 import { RepositorySecretCopyError } from '../lib/repository-secret-copy';
 import { serializeProject, serializeProjectGitConnection } from '../lib/serializers';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const Body = z.object({
   repo_url: z.string().url(),
@@ -25,12 +26,12 @@ const Body = z.object({
 export function registerRepositoryReplacementRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'put',
-    path: '/{projectId}/git/repository',
+    path: '/{workspaceId}/git/repository',
     tags: ['github'],
     summary: 'Replace the Git repository for an existing project',
     ...auth,
     request: {
-      params: z.object({ projectId: z.string().uuid() }),
+      params: z.object({ workspaceId: z.string().uuid() }),
       body: { content: { 'application/json': { schema: Body } } },
     },
     responses: {
@@ -38,7 +39,7 @@ export function registerRepositoryReplacementRoutes(): void {
       ...errors(400, 403, 404, 409),
     },
   }), async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);

@@ -32,7 +32,7 @@ one. A stopped session's remedy is printed for you: run
 \`kortix sessions restart <session-id>\` first.
 
   --port <sandbox>[:<local>]  Forward a sandbox port (repeatable, required).
-  --project <id>              Pin this project id (skips the cross-host scan).
+  --workspace <id>            Pin this workspace id (skips the cross-host scan).
   --host <name>                Pin this Kortix host (skips the cross-host scan).
   -h, --help                  Show this help.
 
@@ -52,7 +52,7 @@ export async function runSessionsForward(argv: string[]): Promise<number> {
   let hostArg: string | undefined;
   let portArgs: string[];
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
     portArgs = takeFlagValues(rest, ['--port']);
   } catch (err) {

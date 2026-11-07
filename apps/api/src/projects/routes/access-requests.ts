@@ -6,7 +6,7 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { isAccountManager } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectAccessRequests, projects } from '@kortix/db';
+import { projectAccessRequests } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import {
   ensureOrgMembership,
@@ -25,6 +25,8 @@ import { readJsonObject } from '../../shared/http-body';
 import { enforceRateLimit } from '../../middleware/rate-limit';
 import { TokenBucketRateLimiter } from '../../shared/rate-limit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../../shared/rate-limit-audit';
+import { workspaceIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 // replica-local, like every limiter in middleware/rate-limit.ts. Each new
 // request emails every manager, so cap new requests per requester and per project.
@@ -57,12 +59,12 @@ export function registerAccessRequestsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/access-requests',
+      path: '/{workspaceId}/access-requests',
       tags: ['access'],
       summary: 'Request access to a project',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               message: z.string().optional().openapi({ description: 'Note to the project managers.' }),
             }) } } },
@@ -74,7 +76,7 @@ export function registerAccessRequestsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const userId = c.get('userId') as string;
     const requesterEmail = ((c.get('userEmail') as string | undefined) ?? '').trim().toLowerCase();
     const body = await readJsonObject(c);
@@ -83,12 +85,12 @@ export function registerAccessRequestsRoutes(): void {
 
     const [project] = await db
       .select({
-        accountId: projects.accountId,
-        projectId: projects.projectId,
-        status: projects.status,
+        accountId: projectsView.accountId,
+        projectId: projectsView.projectId,
+        status: projectsView.status,
       })
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
+      .from(projectsView)
+      .where(eq(projectsView.projectId, projectId))
       .limit(1);
     if (!project || project.status === 'archived') return c.json({ error: 'Not found' }, 404);
 
@@ -161,12 +163,12 @@ export function registerAccessRequestsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/access-requests',
+      path: '/{workspaceId}/access-requests',
       tags: ['access'],
       summary: 'List project access requests',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'Pending access requests'),
@@ -174,7 +176,7 @@ export function registerAccessRequestsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     // Floor is 'read' (project membership); the real gate is the members.manage
     // leaf below, so a custom role granting ONLY members.manage (no project.write)
     // works, and — matching the sibling approve/reject routes — a plain member
@@ -201,12 +203,12 @@ export function registerAccessRequestsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/access-requests/{requestId}/approve',
+      path: '/{workspaceId}/access-requests/{requestId}/approve',
       tags: ['access'],
       summary: 'Approve a project access request',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), requestId: z.string() }),
+          params: z.object({ workspaceId: z.string(), requestId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               role: z.enum(['manager', 'member']).optional().openapi({ description: 'Role to grant. Default member.' }),
             }) } } },
@@ -217,7 +219,7 @@ export function registerAccessRequestsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const requestId = c.req.param('requestId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -296,12 +298,12 @@ export function registerAccessRequestsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/access-requests/{requestId}/reject',
+      path: '/{workspaceId}/access-requests/{requestId}/reject',
       tags: ['access'],
       summary: 'Reject a project access request',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), requestId: z.string() }),
+          params: z.object({ workspaceId: z.string(), requestId: z.string() }),
         },
       responses: {
         200: json(z.any(), 'Access request rejected'),
@@ -309,7 +311,7 @@ export function registerAccessRequestsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const requestId = c.req.param('requestId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);

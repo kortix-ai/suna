@@ -19,14 +19,15 @@ import { auth, errors, json } from '../../openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import type { AppEnv } from '../../types';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const PHOTO_NAMES: Record<ChannelPhotoType, string> = { 'image/jpeg': 'JPEG', 'image/png': 'PNG', 'image/webp': 'WebP' };
 
-const UserParams = z.object({ projectId: z.string(), user_id: z.string() });
+const UserParams = z.object({ workspaceId: z.string(), user_id: z.string() });
 
 /** Load the project and check `capability` (none: project read is enough). */
 export async function channelContext(c: Context<AppEnv>, capability?: string) {
-  const projectId = c.req.param('projectId') ?? '';
+  const projectId = workspaceIdParam(c) ?? '';
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return { response: c.json({ error: 'Not found' }, 404) };
   if (capability) await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, capability);
@@ -38,7 +39,7 @@ export const channelNotConnected = (c: Context<AppEnv>, port: ChannelAccessPort)
 
 export function registerChannelAccessRoutes(port: ChannelAccessPort): void {
   const { platform, label } = port;
-  const base = `/{projectId}/channels/${platform}`;
+  const base = `/{workspaceId}/channels/${platform}`;
   const invalidUserId = (c: Context<AppEnv>) =>
     c.json({ error: `user_id must be a ${port.idDescription}`, code: `${platform}_user_ids_invalid` }, 400);
 
@@ -76,7 +77,7 @@ export function registerChannelAccessRoutes(port: ChannelAccessPort): void {
         `Allowed users in list order and requests newest first, with names and a photo version from ${label}. ` +
         'A request is a not-allowed user who messaged the bot privately in the last 30 days.',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: { 200: json(UsersSchema, 'OK'), ...errors(403, 404) },
     }),
     async (c: Context<AppEnv>) => {
@@ -137,7 +138,7 @@ export function registerChannelAccessRoutes(port: ChannelAccessPort): void {
       description: 'Adds the id unless it is listed, and drops its access request. Answers the installation.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         // `{ user_id }`, validated in the handler so every refusal carries a `code`.
         body: { content: { 'application/json': { schema: AnyObject } } },
       },

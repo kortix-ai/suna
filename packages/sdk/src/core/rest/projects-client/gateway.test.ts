@@ -77,7 +77,7 @@ test('a gateway log row reports the total the request cost the caller', () => {
 test('listGatewayLogs builds the query string from limit/offset/ok', async () => {
   nextResponse = { status: 200, body: { logs: [], next_offset: null } };
   await listGatewayLogs('P1', { limit: 10, offset: 20, ok: false });
-  expect(last().url).toContain('/projects/P1/gateway/logs?');
+  expect(last().url).toContain('/workspaces/P1/gateway/logs?');
   expect(last().url).toContain('limit=10');
   expect(last().url).toContain('offset=20');
   expect(last().url).toContain('ok=false');
@@ -96,7 +96,7 @@ test('getGatewayOverview omits the days param when not provided', async () => {
     },
   };
   await getGatewayOverview('P1');
-  expect(last().url).toBe('http://test.local/projects/P1/gateway/overview');
+  expect(last().url).toBe('http://test.local/workspaces/P1/gateway/overview');
 });
 
 test('getGatewayBudgets hits the budgets collection', async () => {
@@ -105,7 +105,7 @@ test('getGatewayBudgets hits the budgets collection', async () => {
     body: { project_spend: { requests: 0, cost: 0 }, budgets: [], members: [] },
   };
   const result = await getGatewayBudgets('P1');
-  expect(last().url).toContain('/projects/P1/gateway/budgets');
+  expect(last().url).toContain('/workspaces/P1/gateway/budgets');
   expect(result.budgets).toEqual([]);
 });
 
@@ -170,7 +170,7 @@ test('setGatewayBudget PUTs the budget input', async () => {
 test('deleteGatewayBudget deletes by budget id', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await deleteGatewayBudget('P1', 'B1');
-  expect(last().url).toContain('/projects/P1/gateway/budgets/B1');
+  expect(last().url).toContain('/workspaces/P1/gateway/budgets/B1');
   expect(last().method).toBe('DELETE');
 });
 
@@ -180,13 +180,13 @@ test('createGatewayKey posts a name and revokeGatewayKey deletes by id', async (
     body: { key_id: 'k1', name: 'ci', key_prefix: 'sk_', secret_key: 'sk_full' },
   };
   await createGatewayKey('P1', 'ci');
-  expect(last().url).toContain('/projects/P1/gateway/keys');
+  expect(last().url).toContain('/workspaces/P1/gateway/keys');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ name: 'ci' });
 
   nextResponse = { status: 200, body: { ok: true } };
   await revokeGatewayKey('P1', 'k1');
-  expect(last().url).toContain('/projects/P1/gateway/keys/k1');
+  expect(last().url).toContain('/workspaces/P1/gateway/keys/k1');
   expect(last().method).toBe('DELETE');
 });
 
@@ -216,7 +216,7 @@ test('runGatewayPlayground posts prompt + models and returns per-model results',
     },
   };
   const result = await runGatewayPlayground('P1', 'Say hi', ['gpt-4o', 'claude-3']);
-  expect(last().url).toContain('/projects/P1/gateway/playground');
+  expect(last().url).toContain('/workspaces/P1/gateway/playground');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ prompt: 'Say hi', models: ['gpt-4o', 'claude-3'] });
   expect(result.results[0]?.model).toBe('gpt-4o');
@@ -246,7 +246,7 @@ test('verifyGatewayProvider posts to the provider verify endpoint and returns th
     },
   };
   const result = await verifyGatewayProvider('P1', 'openai');
-  expect(last().url).toContain('/projects/P1/gateway/providers/openai/verify');
+  expect(last().url).toContain('/workspaces/P1/gateway/providers/openai/verify');
   expect(last().method).toBe('POST');
   expect(result.status).toBe('verified');
 });
@@ -257,7 +257,7 @@ test('verifyGatewayProvider URL-encodes the provider id', async () => {
     body: { status: 'unknown', message: 'x', checked_at: '2026-07-18T00:00:00Z' },
   };
   await verifyGatewayProvider('P1', 'weird/id');
-  expect(last().url).toContain('/projects/P1/gateway/providers/weird%2Fid/verify');
+  expect(last().url).toContain('/workspaces/P1/gateway/providers/weird%2Fid/verify');
 });
 
 test('usage value remains distinct from charges and unknown subscription fees on the public client', async () => {
@@ -298,7 +298,7 @@ test('listGatewayLogs sends every filter as a query parameter', async () => {
     until: '2026-11-04T01:00:00.000Z',
   });
   const url = new URL(last()!.url);
-  expect(url.pathname).toBe('/projects/p1/gateway/logs');
+  expect(url.pathname).toBe('/workspaces/p1/gateway/logs');
   expect(Object.fromEntries(url.searchParams)).toEqual({
     limit: '100',
     ok: 'false',
@@ -324,6 +324,6 @@ test('getGatewayLogFacets reads the window the caller names', async () => {
     body: { window_hours: 6, models: [{ value: 'm', count: 2 }], providers: [], error_codes: [], sessions: [] },
   };
   const facets = await getGatewayLogFacets('p1', { hours: 6 });
-  expect(last()!.url).toBe('http://test.local/projects/p1/gateway/logs/facets?hours=6');
+  expect(last()!.url).toBe('http://test.local/workspaces/p1/gateway/logs/facets?hours=6');
   expect(facets.models).toEqual([{ value: 'm', count: 2 }]);
 });

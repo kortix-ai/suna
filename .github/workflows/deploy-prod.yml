@@ -760,7 +760,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     env:
-      DESKTOP_URL: https://kortix.com/projects
+      DESKTOP_URL: https://kortix.com/workspaces
     strategy:
       fail-fast: false
       matrix:

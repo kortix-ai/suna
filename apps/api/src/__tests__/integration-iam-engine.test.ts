@@ -57,8 +57,8 @@ async function seedGroup(name: string): Promise<string> {
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'iam-engine-test' });
   await db.insert(projects).values([
-    { projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' },
-    { projectId: OTHER_PROJECT, accountId: ACCOUNT, name: 'other', repoUrl: 'https://example.com/o.git' },
+    { splitPending: true, projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' },
+    { splitPending: true, projectId: OTHER_PROJECT, accountId: ACCOUNT, name: 'other', repoUrl: 'https://example.com/o.git' },
   ]);
 });
 

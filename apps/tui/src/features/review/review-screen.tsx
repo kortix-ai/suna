@@ -35,6 +35,7 @@ import { layoutRow } from '../../ui/index.ts';
 import { ChangeList, type ChangeRow, toChangeRow } from './change-list.tsx';
 import { type DiffState, DiffView, type DiffViewMode, splitUnifiedPatch } from './diff-view.tsx';
 import { matchesReviewBinding } from './keys.ts';
+import { PICK_WORKSPACE_TEXT } from '../../lib/workspaces.ts';
 
 /** How often the age column is recomputed. A minute is its smallest unit. */
 const CLOCK_TICK_MS = 30_000;
@@ -84,7 +85,7 @@ export function compareRows(a: ChangeRow, b: ChangeRow): number {
 
 export function ReviewScreen(props: ReviewScreenProps) {
   if (!props.projectId) {
-    return <text fg={theme.faint}>No project selected. Type /projects to pick one.</text>;
+    return <text fg={theme.faint}>{PICK_WORKSPACE_TEXT}</text>;
   }
   return <ReviewScreenBody {...props} projectId={props.projectId} />;
 }

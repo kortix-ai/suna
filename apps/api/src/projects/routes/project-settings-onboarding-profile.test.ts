@@ -10,7 +10,7 @@
  * The nested write must use `metadataMergeSubtree`, which re-reads
  * `metadata->'onboarding'` inside the statement. A top-level `||` merge of the
  * whole sub-object would let two concurrent writers into DIFFERENT sub-keys lose
- * each other's update one level down — see `../lib/metadata-merge.ts`.
+ * each other's update one level down — see the metadata merge helpers in `workspaces/rows.ts`.
  *
  * This file drives the REAL `project-settings.ts` Hono handler (`projectsApp.request(...)`)
  * and asserts on the SQL the update actually SETs, serialized through Drizzle's
@@ -114,7 +114,7 @@ function metadataQuery(): { sql: string; params: unknown[] } {
   expect(setCalls).toHaveLength(1);
   const value = setCalls[0]?.metadata;
   // A plain object here would mean the handler went back to read-modify-write
-  // on the jsonb, which is exactly what metadata-merge.ts exists to prevent.
+  // on the jsonb, which is exactly what the metadata merge helpers exist to prevent.
   expect(typeof (value as SQL)?.getSQL).toBe('function');
   return dialect.sqlToQuery(value as SQL);
 }

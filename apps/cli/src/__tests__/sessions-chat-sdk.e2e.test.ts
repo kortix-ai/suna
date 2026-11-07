@@ -117,19 +117,19 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
       port: 0,
       fetch: async (request) => {
         const url = new URL(request.url);
-        if (request.method === 'POST' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
+        if (request.method === 'POST' && url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions`) {
           createBody = (await request.json()) as Record<string, unknown>;
           return Response.json(sessionRow());
         }
         if (
           request.method === 'GET' &&
-          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`
+          url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}`
         ) {
           return Response.json(sessionRow());
         }
         if (
           request.method === 'POST' &&
-          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`
+          url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}/start`
         ) {
           startPosts += 1;
           provisioning = false;
@@ -143,7 +143,7 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
         }
         if (
           request.method === 'POST' &&
-          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/prompts`
+          url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}/prompts`
         ) {
           // The inbox holds the prompt; the runtime answers it.
           runtimePromptPosts += 1;

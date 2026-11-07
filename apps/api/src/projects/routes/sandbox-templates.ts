@@ -26,6 +26,7 @@ import { templateProviderObservation } from '../lib/template-provider-observatio
 import { readJsonObject } from '../../shared/http-body';
 import { rethrowDatabaseError } from '../../shared/database-errors';
 import { uniqueViolationConstraint } from '../../shared/postgres-errors';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerSandboxTemplatesRoutes(): void {
   // ─── Template CRUD ─────────────────────────────────────────────────────────
@@ -38,12 +39,12 @@ export function registerSandboxTemplatesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sandbox-templates',
+      path: '/{workspaceId}/sandbox-templates',
       tags: ['sandboxes'],
       summary: 'List sandbox templates',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
         },
       responses: {
           200: json(z.array(SandboxTemplateSchema), 'Sandbox templates'),
@@ -51,7 +52,7 @@ export function registerSandboxTemplatesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // A page view: serve the warm git mirror, refresh it behind the response.
@@ -79,12 +80,12 @@ export function registerSandboxTemplatesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sandbox-templates',
+      path: '/{workspaceId}/sandbox-templates',
       tags: ['sandboxes'],
       summary: 'Create a sandbox template',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               slug: z.string().openapi({ description: 'Template slug.' }),
               name: z.string().optional().openapi({ description: 'Display name.' }),
@@ -105,7 +106,7 @@ export function registerSandboxTemplatesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
@@ -182,12 +183,12 @@ export function registerSandboxTemplatesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/sandbox-templates/{templateId}',
+      path: '/{workspaceId}/sandbox-templates/{templateId}',
       tags: ['sandboxes'],
       summary: 'Update a sandbox template',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), templateId: z.string() }),
+          params: z.object({ workspaceId: z.string(), templateId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               name: z.string().optional().openapi({ description: 'Display name.' }),
               image: z.string().optional().openapi({ description: 'Container image.' }),
@@ -207,7 +208,7 @@ export function registerSandboxTemplatesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const templateId = c.req.param('templateId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -280,12 +281,12 @@ export function registerSandboxTemplatesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/sandbox-templates/{templateId}',
+      path: '/{workspaceId}/sandbox-templates/{templateId}',
       tags: ['sandboxes'],
       summary: 'Delete a sandbox template',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), templateId: z.string() }),
+          params: z.object({ workspaceId: z.string(), templateId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -293,7 +294,7 @@ export function registerSandboxTemplatesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const templateId = c.req.param('templateId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -332,12 +333,12 @@ export function registerSandboxTemplatesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sandbox-templates/{templateId}/build',
+      path: '/{workspaceId}/sandbox-templates/{templateId}/build',
       tags: ['sandboxes'],
       summary: 'Build a sandbox template',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), templateId: z.string() }),
+          params: z.object({ workspaceId: z.string(), templateId: z.string() }),
         },
       responses: {
           202: json(z.any(), 'OK'),
@@ -345,7 +346,7 @@ export function registerSandboxTemplatesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const templateId = c.req.param('templateId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);

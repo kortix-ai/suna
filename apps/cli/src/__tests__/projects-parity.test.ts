@@ -107,7 +107,7 @@ function startServer(): string {
 
       // PATCH /v1/projects/:id — echo the request back as the updated row so
       // the CLI's "what did it become" output is driven by the real payload.
-      if (url.pathname === `/v1/projects/${PROJECT}` && req.method === 'PATCH') {
+      if (url.pathname === `/v1/workspaces/${PROJECT}` && req.method === 'PATCH') {
         const patch = (body ?? {}) as Record<string, unknown>;
         return Response.json(
           project({
@@ -123,13 +123,21 @@ function startServer(): string {
           }),
         );
       }
-      if (url.pathname === '/v1/projects' && req.method === 'GET') {
+      // `workspaces ls` reads the identity first, then each account's list.
+      if (url.pathname === '/v1/me' && req.method === 'GET') {
+        return Response.json({
+          user_id: 'user_1',
+          email: 'user@example.test',
+          accounts: [{ account_id: 'acct_1', slug: 'acct1', name: 'Parity', role: 'owner' }],
+        });
+      }
+      if (url.pathname === '/v1/workspaces' && req.method === 'GET') {
         return Response.json([
           project(),
           project({ project_id: 'proj_other', name: 'Other', repo_url: 'https://example.test/o.git' }),
         ]);
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/cli-token` && req.method === 'GET') {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/cli-token` && req.method === 'GET') {
         return Response.json({
           items: [
             {
@@ -145,7 +153,7 @@ function startServer(): string {
           ],
         });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/cli-token` && req.method === 'POST') {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/cli-token` && req.method === 'POST') {
         const name = ((body ?? {}) as { name?: string }).name ?? 'cli · Parity';
         return Response.json(
           {
@@ -162,12 +170,12 @@ function startServer(): string {
         );
       }
       if (
-        url.pathname === `/v1/projects/${PROJECT}/cli-token/tok_1` &&
+        url.pathname === `/v1/workspaces/${PROJECT}/cli-token/tok_1` &&
         req.method === 'DELETE'
       ) {
         return Response.json({ ok: true });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/files/archive` && req.method === 'GET') {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/files/archive` && req.method === 'GET') {
         return new Response(ZIP_BYTES, {
           status: 200,
           headers: { 'Content-Type': 'application/zip' },
@@ -248,7 +256,7 @@ describe('kortix projects set / rename', () => {
       config,
     );
     expect(r.code).toBe(0);
-    expect(callsTo('PATCH', `/v1/projects/${PROJECT}`)[0].body).toEqual({
+    expect(callsTo('PATCH', `/v1/workspaces/${PROJECT}`)[0].body).toEqual({
       name: 'Renamed',
       default_branch: 'trunk',
     });
@@ -260,13 +268,13 @@ describe('kortix projects set / rename', () => {
     const config = writeConfig(startServer());
     const set = await runCli(['projects', 'set', '--project', PROJECT, '--icon', '🚀'], config);
     expect(set.code).toBe(0);
-    expect(callsTo('PATCH', `/v1/projects/${PROJECT}`)[0].body).toEqual({ icon: '🚀' });
+    expect(callsTo('PATCH', `/v1/workspaces/${PROJECT}`)[0].body).toEqual({ icon: '🚀' });
     expect(set.stdout).toContain('icon     🚀');
 
     calls = [];
     const clear = await runCli(['projects', 'set', '--project', PROJECT, '--no-icon'], config);
     expect(clear.code).toBe(0);
-    expect(callsTo('PATCH', `/v1/projects/${PROJECT}`)[0].body).toEqual({ icon: null });
+    expect(callsTo('PATCH', `/v1/workspaces/${PROJECT}`)[0].body).toEqual({ icon: null });
     expect(clear.stdout).toContain('icon     (none)');
   });
 
@@ -277,7 +285,7 @@ describe('kortix projects set / rename', () => {
       config,
     );
     expect(set.code).toBe(0);
-    expect(callsTo('PATCH', `/v1/projects/${PROJECT}`)[0].body).toEqual({
+    expect(callsTo('PATCH', `/v1/workspaces/${PROJECT}`)[0].body).toEqual({
       icon_glyph: { name: 'Rocket', color: 'blue' },
     });
     expect(JSON.parse(set.stdout).icon_glyph).toEqual({ name: 'Rocket', color: 'blue' });
@@ -285,7 +293,7 @@ describe('kortix projects set / rename', () => {
     calls = [];
     const clear = await runCli(['projects', 'set', '--project', PROJECT, '--no-glyph'], config);
     expect(clear.code).toBe(0);
-    expect(callsTo('PATCH', `/v1/projects/${PROJECT}`)[0].body).toEqual({ icon_glyph: null });
+    expect(callsTo('PATCH', `/v1/workspaces/${PROJECT}`)[0].body).toEqual({ icon_glyph: null });
   });
 
   test('an unknown glyph name or color is refused locally, with no request sent', async () => {
@@ -319,7 +327,7 @@ describe('kortix projects set / rename', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['projects', 'rename', PROJECT, 'Fresh Name'], config);
     expect(r.code).toBe(0);
-    expect(callsTo('PATCH', `/v1/projects/${PROJECT}`)[0].body).toEqual({ name: 'Fresh Name' });
+    expect(callsTo('PATCH', `/v1/workspaces/${PROJECT}`)[0].body).toEqual({ name: 'Fresh Name' });
     expect(r.stdout).toContain('Updated Fresh Name');
   });
 
@@ -332,7 +340,7 @@ describe('kortix projects set / rename', () => {
 
   test('a 403 from the API surfaces the server message and exits 1', async () => {
     const config = writeConfig(startServer());
-    failWith[`PATCH /v1/projects/${PROJECT}`] = {
+    failWith[`PATCH /v1/workspaces/${PROJECT}`] = {
       status: 403,
       body: { error: 'customize.write required on this project' },
     };
@@ -358,7 +366,7 @@ describe('kortix projects cli-tokens', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['projects', 'cli-tokens', 'ls', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(callsTo('GET', `/v1/projects/${PROJECT}/cli-token`).length).toBe(1);
+    expect(callsTo('GET', `/v1/workspaces/${PROJECT}/cli-token`).length).toBe(1);
     expect(r.stdout).toContain('tok_1');
     expect(r.stdout).toContain('cli · Parity');
 
@@ -376,7 +384,7 @@ describe('kortix projects cli-tokens', () => {
       config,
     );
     expect(r.code).toBe(0);
-    expect(callsTo('POST', `/v1/projects/${PROJECT}/cli-token`)[0].body).toEqual({ name: 'laptop' });
+    expect(callsTo('POST', `/v1/workspaces/${PROJECT}/cli-token`)[0].body).toEqual({ name: 'laptop' });
     expect(r.stdout).toContain('kortix_pat_supersecret');
     expect(r.stdout.match(/kortix_pat_supersecret/g)?.length).toBe(1);
     expect(r.stdout).toContain('shown once');
@@ -386,7 +394,7 @@ describe('kortix projects cli-tokens', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['projects', 'cli-tokens', 'new', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(callsTo('POST', `/v1/projects/${PROJECT}/cli-token`)[0].body).toEqual({});
+    expect(callsTo('POST', `/v1/workspaces/${PROJECT}/cli-token`)[0].body).toEqual({});
   });
 
   test('rm -y DELETEs the token id', async () => {
@@ -396,7 +404,7 @@ describe('kortix projects cli-tokens', () => {
       config,
     );
     expect(r.code).toBe(0);
-    expect(callsTo('DELETE', `/v1/projects/${PROJECT}/cli-token/tok_1`).length).toBe(1);
+    expect(callsTo('DELETE', `/v1/workspaces/${PROJECT}/cli-token/tok_1`).length).toBe(1);
     expect(r.stdout).toContain('Revoked tok_1');
   });
 
@@ -410,7 +418,7 @@ describe('kortix projects cli-tokens', () => {
 
   test('ls explains the session tokens the API did not list (KRTX-1193)', async () => {
     const config = writeConfig(startServer());
-    failWith[`GET /v1/projects/${PROJECT}/cli-token`] = {
+    failWith[`GET /v1/workspaces/${PROJECT}/cli-token`] = {
       status: 200,
       body: {
         items: [
@@ -437,7 +445,7 @@ describe('kortix projects cli-tokens', () => {
 
   test('ls says what is not listed even when nothing else remains', async () => {
     const config = writeConfig(startServer());
-    failWith[`GET /v1/projects/${PROJECT}/cli-token`] = {
+    failWith[`GET /v1/workspaces/${PROJECT}/cli-token`] = {
       status: 200,
       body: {
         items: [],
@@ -446,13 +454,13 @@ describe('kortix projects cli-tokens', () => {
     };
     const r = await runCli(['projects', 'cli-tokens', 'ls', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('No CLI tokens on this project.');
+    expect(r.stdout).toContain('No CLI tokens in this workspace.');
     expect(r.stdout).toContain('1 session token');
   });
 
   test('ls without a session_tokens count (an older API) prints no note', async () => {
     const config = writeConfig(startServer());
-    failWith[`GET /v1/projects/${PROJECT}/cli-token`] = {
+    failWith[`GET /v1/workspaces/${PROJECT}/cli-token`] = {
       status: 200,
       body: {
         items: [
@@ -477,7 +485,7 @@ describe('kortix projects cli-tokens', () => {
 
   test('a 403 (agent-session token) surfaces the server message and exits 1', async () => {
     const config = writeConfig(startServer());
-    failWith[`POST /v1/projects/${PROJECT}/cli-token`] = {
+    failWith[`POST /v1/workspaces/${PROJECT}/cli-token`] = {
       status: 403,
       body: { error: 'Agent-session tokens cannot mint project tokens' },
     };
@@ -539,7 +547,7 @@ describe('kortix files download', () => {
       config,
     );
     expect(r.code).toBe(0);
-    const [call] = callsTo('GET', `/v1/projects/${PROJECT}/files/archive`);
+    const [call] = callsTo('GET', `/v1/workspaces/${PROJECT}/files/archive`);
     expect(call.search).toBe('?ref=feature%2Fx&path=.kortix');
     expect(call.authorization).toBe('Bearer tok_parity');
     // Byte-for-byte, and the parent directory was created for us.
@@ -552,7 +560,7 @@ describe('kortix files download', () => {
     const out = join(tmp, 'w.zip');
     const r = await runCli(['files', 'download', '--project', PROJECT, '-o', out], config);
     expect(r.code).toBe(0);
-    expect(callsTo('GET', `/v1/projects/${PROJECT}/files/archive`)[0].search).toBe('');
+    expect(callsTo('GET', `/v1/workspaces/${PROJECT}/files/archive`)[0].search).toBe('');
   });
 
   test('--json reports the written path and byte count', async () => {
@@ -581,7 +589,7 @@ describe('kortix files download', () => {
 
   test('a 403 on a scoped-out subtree surfaces the server message and exits 1', async () => {
     const config = writeConfig(startServer());
-    failWith[`GET /v1/projects/${PROJECT}/files/archive`] = {
+    failWith[`GET /v1/workspaces/${PROJECT}/files/archive`] = {
       status: 403,
       body: {
         error:

@@ -4,6 +4,7 @@
 //
 //   bun apps/web/scripts/generate-audit-actions-doc.mjs
 //   bun apps/web/scripts/generate-audit-actions-doc.mjs --check
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { code, onByDefault, repositoryRoot, runFileGenerator } from './docs-generated-region.mjs';
@@ -12,6 +13,25 @@ const outputPath = resolve(repositoryRoot, 'apps/web/content/docs/audit-actions.
 
 async function catalog() {
   return import(pathToFileURL(resolve(repositoryRoot, 'packages/shared/src/audit-labels.ts')).href);
+}
+
+/**
+ * `METHOD path` → the canonical route of a legacy key (`/v1/projects/…` →
+ * `/v1/workspaces/…`), from the one alias rule of the route manifest
+ * (`workspaceAliasOf`), or null. The audit catalog is keyed by the legacy
+ * name; the reference leads with the canonical one.
+ */
+async function canonicalRouteOf() {
+  const { workspaceAliasOf } = await import(pathToFileURL(resolve(repositoryRoot, 'packages/shared/src/workspace-routes.ts')).href);
+  const manifest = JSON.parse(readFileSync(resolve(repositoryRoot, 'tests/spec/routes.generated.json'), 'utf8'));
+  const seen = new Set(manifest.routes.map((route) => `${route.method} ${route.path}`));
+  return (key) => {
+    const space = key.indexOf(' ');
+    if (space < 0 || key.startsWith('ENTRY ') || key.startsWith('ALL ')) return null;
+    const method = key.slice(0, space);
+    const canonical = workspaceAliasOf(method, key.slice(space + 1), (m, path) => seen.has(`${m} ${path}`));
+    return canonical ? `${method} ${canonical}` : null;
+  };
 }
 
 function routeCell(key) {
@@ -80,9 +100,13 @@ export async function renderAuditActionsDoc() {
     else if (!hidden(value.action)) routes.push({ key, ...value });
   }
   const byAction = (a, b) => (a.action < b.action ? -1 : 1);
+  const canonicalOf = await canonicalRouteOf();
   const row = (route) => {
-    const aliases = (aliasesOf.get(route.key) ?? []).map(routeCell).join(', ');
-    const where = aliases ? `${routeCell(route.key)} (also ${aliases})` : routeCell(route.key);
+    const canonical = canonicalOf(route.key);
+    const legacy = [...(canonical ? [route.key] : []), ...(aliasesOf.get(route.key) ?? [])];
+    const aliases = legacy.map(routeCell).join(', ');
+    const primary = canonical ?? route.key;
+    const where = aliases ? `${routeCell(primary)} (also ${aliases})` : routeCell(primary);
     const action = [route.action, ...(route.events ?? [])].map(code).join(' or ');
     return `| ${action} | ${route.title} | ${where} |`;
   };

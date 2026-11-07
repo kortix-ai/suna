@@ -23,9 +23,9 @@ function menuContextForUrl(url) {
   } catch {
     return { inProject: false, hasActiveTab: false };
   }
-  const projectId = /^\/projects\/([^/]+)(?:\/|$)/.exec(pathname)?.[1];
+  const projectId = /^\/(?:workspaces|projects)\/([^/]+)(?:\/|$)/.exec(pathname)?.[1];
   const inProject = Boolean(projectId && projectId !== 'start' && projectId !== 'new');
-  const hasActiveTab = inProject && /^\/projects\/[^/]+\/(?:sessions\/[^/]+|customize)(?:\/|$)/.test(pathname);
+  const hasActiveTab = inProject && /^\/(?:workspaces|projects)\/[^/]+\/(?:sessions\/[^/]+|customize)(?:\/|$)/.test(pathname);
   return { inProject, hasActiveTab };
 }
 

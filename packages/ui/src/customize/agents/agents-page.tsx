@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /projects/[id]/customize/agents: the Agents index, where the sidebar's
+ * /workspaces/[id]/customize/agents: the Agents index, where the sidebar's
  * Customize row lands.
  *
  * Customize is agent-first. My Kortix is not listed: the project home starts

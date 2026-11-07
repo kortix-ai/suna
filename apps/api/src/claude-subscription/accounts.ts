@@ -241,7 +241,7 @@ export async function claudeCredentialsForGateway(principal: {
   personalUserId?: string | null;
 }, _model: string | null): Promise<ClaudeCodeCredentials> {
   if (!principal.projectId) {
-    return { error: { status: 400, code: 'provider_not_connected', message: 'Claude models run in a project session.', suggestion: 'Use a project session token.' } };
+    return { error: { status: 400, code: 'provider_not_connected', message: 'Claude models run in a workspace session.', suggestion: 'Use a workspace session token.' } };
   }
   // The provider switch applies to every call. A single turned-off model is
   // enforced where a turn's model is chosen (picker, session model change):
@@ -251,7 +251,7 @@ export async function claudeCredentialsForGateway(principal: {
   if (resolution.access.disabledProviders.includes(CLAUDE_AGENT_PROVIDER_ID)) {
     return { error: {
       status: 403, code: 'provider_disabled',
-      message: 'Claude subscription models are turned off in this project.',
+      message: 'Claude subscription models are turned off in this workspace.',
       suggestion: 'Turn them on under Models, or choose another model.',
     } };
   }

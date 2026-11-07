@@ -127,7 +127,7 @@ async function asked(opts: { questions?: typeof QUESTIONS; open?: boolean; metad
     createdBy: OWNER,
     metadata: { source: 'slack', slack: { team_id: TEAM, channel: CHANNEL, thread_ts: threadTs }, ...opts.metadata },
   });
-  await db.insert(chatThreads).values({ projectId: project.project_id, platform: 'slack', workspaceId: TEAM, threadId: threadTs, sessionId });
+  await db.insert(chatThreads).values({ projectId: project.project_id, platform: 'slack', platformTeamId: TEAM, threadId: threadTs, sessionId });
   const [row] = await db
     .insert(sessionPendingQuestions)
     .values({
@@ -191,13 +191,13 @@ const actionBlocks = (blocks: Array<{ type: string; block_id?: string }>) => blo
 
 beforeAll(async () => {
   project = await seedProject('slack-question-answer');
-  await db.insert(chatInstalls).values({ platform: 'slack', workspaceId: TEAM, projectId: project.project_id });
+  await db.insert(chatInstalls).values({ platform: 'slack', platformTeamId: TEAM, projectId: project.project_id });
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: project.account_id, accountRole: 'owner' });
   await insertIntoView(db, accountMembers, { userId: MEMBER, accountId: project.account_id, accountRole: 'member' });
   await insertIntoView(db, projectMembers, { accountId: project.account_id, projectId: project.project_id, userId: MEMBER, projectRole: 'member' });
   await db.insert(chatUserIdentities).values([
-    { platform: 'slack', workspaceId: TEAM, platformUserId: SLACK.owner, userId: OWNER },
-    { platform: 'slack', workspaceId: TEAM, platformUserId: SLACK.member, userId: MEMBER },
+    { platform: 'slack', platformTeamId: TEAM, platformUserId: SLACK.owner, userId: OWNER },
+    { platform: 'slack', platformTeamId: TEAM, platformUserId: SLACK.member, userId: MEMBER },
   ]);
 });
 
@@ -210,8 +210,8 @@ beforeEach(() => {
 });
 
 afterAll(async () => {
-  await db.delete(chatUserIdentities).where(eq(chatUserIdentities.workspaceId, TEAM));
-  await db.delete(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.workspaceId, TEAM));
+  await db.delete(chatUserIdentities).where(eq(chatUserIdentities.platformTeamId, TEAM));
+  await db.delete(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.platformTeamId, TEAM));
   await db.delete(chatTurnStreams).where(eq(chatTurnStreams.projectId, project.project_id));
   await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.projectId, project.project_id));
   await db.delete(sessionPendingQuestions).where(eq(sessionPendingQuestions.projectId, project.project_id));

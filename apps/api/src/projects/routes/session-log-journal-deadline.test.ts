@@ -58,6 +58,7 @@ async function waitUntilFinalized(): Promise<void> {
 }
 
 mock.module('../../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: () => true,
   db: {
     // sessionExists: the ingest's first await; it holds the handler past the

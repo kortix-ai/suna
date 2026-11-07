@@ -25,7 +25,7 @@ import {
   setSessionInbound,
 } from '@kortix/sdk';
 import { type ApiClient, ApiError, withCliErrors } from '../api/client.ts';
-import { splitHelp } from '../command-argv.ts';
+import { splitHelp, fromWorkspaceAlias } from '../command-argv.ts';
 import {
   emitJson,
   expandSessionIdPrefix,
@@ -52,7 +52,7 @@ function isInbound(value: unknown): value is SessionInbound {
 
 const MESSAGE_HELP = help`Usage: kortix sessions message <to> ["<text>"] [options]
 
-Send a message from one session to another session of the project. The
+Send a message from one session to another session of the workspace. The
 receiving agent reads it at its next step, or a new turn starts when it is
 idle. The text says it comes from another session: it is a request, never an
 approval. Reads stdin when no text is given.
@@ -68,8 +68,9 @@ Options:
   --notify-idle        Send one notice back to the sender when the receiver's
                        turn ends. Lapses after 12 h.
   --shutdown           Ask a teammate to finish and stop (agent teams).
-  --to-project <id>    Resolve <to> in another project you can prompt in.
-  --project <id>       Project of the sender (default: linked).
+  --to-workspace <id>  Resolve <to> in another workspace you can prompt in.
+                       Alias: --to-project.
+  --workspace <id>     Workspace of the sender (default: linked).
   --host <name>        Operate against a non-default Kortix host.
   --json               Print the send result.
   -h, --help           Show this help.
@@ -89,18 +90,18 @@ Examples:
 const REACHABLE_HELP = help`Usage: kortix sessions reachable [options]
 
 List the sessions a session can message: its parent, its children, its lead
-and teammates, and with --scope project every live session of the project.
+and teammates, and with --scope workspace every live session of the workspace.
 Each row shows the handle \`sessions message\` takes, its state, and whether it
 takes messages.
 
 Options:
-  --scope mine|project  mine (default): parent, children, lead, teammates.
-                        project: every live session of the project.
-  --from <session>      The asking session (default: $KORTIX_SESSION_ID).
-  --project <id>        Project (default: linked).
-  --host <name>         Operate against a non-default Kortix host.
-  --json                Print { self, agents }.
-  -h, --help            Show this help.
+  --scope mine|workspace  mine (default): parent, children, lead, teammates.
+                          workspace: every live session of the workspace.
+  --from <session>        The asking session (default: $KORTIX_SESSION_ID).
+  --workspace <id>        Workspace (default: linked).
+  --host <name>           Operate against a non-default Kortix host.
+  --json                  Print { self, agents }.
+  -h, --help              Show this help.
 `;
 
 const INBOUND_HELP = help`Usage: kortix sessions inbound <session> [accept|hold|refuse|ls|approve <id>|deny <id>]
@@ -122,7 +123,7 @@ Held messages:
 Without a mode it prints the session's current mode.
 
 Options:
-  --project <id>     Project of the session (default: linked).
+  --workspace <id>   Workspace of the session (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -142,7 +143,7 @@ interface Common {
 function takeCommon(rest: string[]): Common {
   return {
     json: takeFlagBool(rest, ['--json']),
-    projectArg: takeFlagValue(rest, ['--project']),
+    projectArg: takeFlagValue(rest, ['--project', '--workspace']),
     hostArg: takeFlagValue(rest, ['--host']),
   };
 }
@@ -154,7 +155,7 @@ async function resolveSessionRef(client: ApiClient, projectId: string, ref: stri
   const found = await expandSessionIdPrefix(client, projectId, ref);
   if (found === 'ambiguous') return fail(`"${ref}" matches more than one session: pass more characters.`);
   if (!found) {
-    process.stderr.write(`${status.err(`No session ${ref} in project ${projectId}.`)}\n`);
+    process.stderr.write(`${status.err(`No session ${ref} in workspace ${projectId}.`)}\n`);
     return 1;
   }
   return found.session_id;
@@ -189,7 +190,7 @@ export async function runSessionsMessage(argv: string[]): Promise<number> {
     common = takeCommon(rest);
     from = takeFlagValue(rest, ['--from']);
     summary = takeFlagValue(rest, ['--summary']);
-    toProject = takeFlagValue(rest, ['--to-project']);
+    toProject = takeFlagValue(rest, ['--to-project', '--to-workspace']);
     notifyIdle = takeFlagBool(rest, ['--notify-idle']);
     shutdown = takeFlagBool(rest, ['--shutdown']);
   } catch (err) {
@@ -279,13 +280,13 @@ export async function runSessionsReachable(argv: string[]): Promise<number> {
   try {
     common = takeCommon(rest);
     from = takeFlagValue(rest, ['--from']);
-    scope = takeFlagValue(rest, ['--scope']);
+    scope = fromWorkspaceAlias(takeFlagValue(rest, ['--scope']));
   } catch (err) {
     return fail((err as Error).message);
   }
   if (rest.length > 0) return fail(`Unexpected argument ${rest[0]}. Run kortix sessions reachable --help.`);
   const asked: ReachableScope | undefined = scope === 'mine' || scope === 'project' ? scope : undefined;
-  if (scope !== undefined && asked === undefined) return fail('--scope is mine or project.');
+  if (scope !== undefined && asked === undefined) return fail('--scope is mine or workspace.');
 
   const ctx = await resolveProjectContext({ projectArg: common.projectArg, hostArg: common.hostArg });
   if (!ctx) return 1;
@@ -304,7 +305,7 @@ export async function runSessionsReachable(argv: string[]): Promise<number> {
   }
   process.stdout.write(`  ${C.dim}You are${C.reset} ${C.bold}${data.self.handle}${C.reset} ${C.dim}(${data.self.short_id})${C.reset}\n`);
   if (data.agents.length === 0) {
-    process.stdout.write(`  ${C.dim}No other session to reach.${scope === 'project' ? '' : ' Pass --scope project for every live session of the project.'}${C.reset}\n`);
+    process.stdout.write(`  ${C.dim}No other session to reach.${scope === 'project' ? '' : ' Pass --scope workspace for every live session of the workspace.'}${C.reset}\n`);
     return 0;
   }
   const w = Math.max(6, ...data.agents.map((a) => a.handle.length));

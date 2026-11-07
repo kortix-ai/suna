@@ -34,6 +34,7 @@ const users = [OWNER, MEMBER, ACCOUNT_ONLY, STRANGER];
 const STALE_OVERRIDE = { experimental: { notification_center: false } };
 
 let project: SeededProject;
+let sibling: SeededProject | undefined;
 let privateSession: string;
 
 const deps = () =>
@@ -63,6 +64,10 @@ async function rowCount(userId: string, sessionId = privateSession): Promise<num
 
 beforeAll(async () => {
   project = await seedProject('push-recipients', { metadata: STALE_OVERRIDE });
+  // A legacy account (2 projects, split_pending): only there does an account
+  // member without a project role stay out of the project. In a 1:1
+  // workspace membership is access (design.md §3.2 C3).
+  sibling = await seedProject('push-recipients-sibling', { accountId: project.account_id });
   const user = (id: string) =>
     sql`(${id}::uuid, ${`push-${id.slice(0, 8)}@example.test`}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')`;
   await db.execute(sql`
@@ -81,7 +86,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!project) return;
-  await removeSeeded([project]);
+  await removeSeeded(sibling ? [sibling, project] : [project]);
   await db.execute(sql`DELETE FROM auth.users WHERE id IN (${sql.join(users.map((id) => sql`${id}::uuid`), sql`, `)})`);
 });
 

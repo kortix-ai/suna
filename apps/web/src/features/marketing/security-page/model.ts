@@ -167,7 +167,7 @@ export const layers = {
     {
       id: 'identity',
       title: 'Identity and roles',
-      description: 'Who may open a project, and which agents they may run.',
+      description: 'Who may open a workspace, and which agents they may run.',
       body: [
         'People sign in with SAML single sign-on, or a password with two-factor.',
         'Each person holds an account role and a role in each project. Groups grant a project to many people at once.',
@@ -203,7 +203,7 @@ export const layers = {
     {
       id: 'secrets',
       title: 'Secrets',
-      description: 'Encrypted per project, delivered only where allowed.',
+      description: 'Encrypted per workspace, delivered only where allowed.',
       body: [
         'Values are encrypted with AES-256-GCM under a key per project. No page or API shows a stored value again.',
         'A session gets a secret only when its audience and the agent’s grant both allow it.',

@@ -31,7 +31,7 @@ session is stopped: neither the list nor the bytes need its sandbox.
   --out <dir>                  Where downloads are written (default: .).
                                Created if missing. Nothing is overwritten.
   --json                       Emit structured JSON for scripting.
-  --project <id>               Operate on this project id (default: linked).
+  --workspace <id>             Operate on this workspace id (default: linked).
   --host <name>                Operate against a non-default Kortix host.
   -h, --help                   Show this help.
 
@@ -115,7 +115,7 @@ function parseAttachmentsArgs(rest: string[]) {
   let all = false;
   let json = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
     downloadId = takeFlagValue(rest, ['--download']);
     outDir = takeFlagValue(rest, ['--out', '-o']);

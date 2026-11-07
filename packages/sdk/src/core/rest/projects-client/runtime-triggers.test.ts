@@ -43,7 +43,7 @@ const WOKEN: UnifiedTrigger = {
 test('listUnifiedTriggers GETs kortix.yaml and runtime triggers together', async () => {
   nextBody = { triggers: [WOKEN], triggers_paused: false, account_automations_paused: false, errors: [] };
   const result = await listUnifiedTriggers('p1');
-  expect(last()).toMatchObject({ method: 'GET', url: 'http://test.local/projects/p1/triggers/all' });
+  expect(last()).toMatchObject({ method: 'GET', url: 'http://test.local/workspaces/p1/triggers/all' });
   expect(result.triggers[0]?.target).toEqual({ kind: 'session', session_id: 's1', session_name: 'Fix the build' });
 });
 
@@ -56,7 +56,7 @@ test('createRuntimeTrigger POSTs a source and a target', async () => {
   });
   expect(last()).toMatchObject({
     method: 'POST',
-    url: 'http://test.local/projects/p1/triggers/runtime',
+    url: 'http://test.local/workspaces/p1/triggers/runtime',
     body: { prompt: 'CR merged', source: { type: 'change_request', cr_id: 'cr1' }, target: { session_id: 's1' } },
   });
 });
@@ -70,27 +70,27 @@ test('an App source into a session carries expect_event_within: the watcher\'s s
   });
   expect(last()).toMatchObject({
     method: 'POST',
-    url: 'http://test.local/projects/p1/triggers/runtime',
+    url: 'http://test.local/workspaces/p1/triggers/runtime',
     body: { source: { type: 'app', app: 'github-status', expect_event_within: '1h' }, target: { session_id: 's1' } },
   });
 });
 
 test('update, run and delete address one runtime trigger by id', async () => {
   await updateRuntimeTrigger('p1', 'trigger.0123456789ab', { enabled: false });
-  expect(last()).toMatchObject({ method: 'PATCH', url: 'http://test.local/projects/p1/triggers/runtime/trigger.0123456789ab', body: { enabled: false } });
+  expect(last()).toMatchObject({ method: 'PATCH', url: 'http://test.local/workspaces/p1/triggers/runtime/trigger.0123456789ab', body: { enabled: false } });
   await runRuntimeTrigger('p1', 'trigger.0123456789ab');
-  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/p1/triggers/runtime/trigger.0123456789ab/run' });
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/workspaces/p1/triggers/runtime/trigger.0123456789ab/run' });
   await deleteRuntimeTrigger('p1', 'trigger.0123456789ab');
-  expect(last()).toMatchObject({ method: 'DELETE', url: 'http://test.local/projects/p1/triggers/runtime/trigger.0123456789ab' });
+  expect(last()).toMatchObject({ method: 'DELETE', url: 'http://test.local/workspaces/p1/triggers/runtime/trigger.0123456789ab' });
 });
 
 test('the facade binds the project: kortix.project(id).triggers', async () => {
   const kortix = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   nextBody = { triggers: [] };
   await kortix.project('p1').triggers.all();
-  expect(last().url).toBe('http://test.local/projects/p1/triggers/all');
+  expect(last().url).toBe('http://test.local/workspaces/p1/triggers/all');
   await kortix.project('p1').triggers.createRuntime({ prompt: 'x', source: { type: 'schedule', every: '1h' }, target: { agent: 'default' } });
-  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/p1/triggers/runtime' });
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/workspaces/p1/triggers/runtime' });
   await kortix.project('p1').triggers.runRuntime('trigger.0123456789ab');
-  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/p1/triggers/runtime/trigger.0123456789ab/run' });
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/workspaces/p1/triggers/runtime/trigger.0123456789ab/run' });
 });

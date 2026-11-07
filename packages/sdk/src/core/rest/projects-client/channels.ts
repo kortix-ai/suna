@@ -72,7 +72,7 @@ export interface SlackInstallation {
 
 export async function getSlackInstallation(projectId: string): Promise<SlackInstallation | null> {
   const res = await backendApi.get<SlackInstallation | null>(
-    `/projects/${encodeURIComponent(projectId)}/channels/slack/installation`,
+    `/workspaces/${encodeURIComponent(projectId)}/channels/slack/installation`,
     { showErrors: false },
   );
   if (!res.success) return null;
@@ -90,7 +90,7 @@ export async function connectSlack(
 ): Promise<SlackInstallation> {
   return unwrap(
     await backendApi.post<SlackInstallation>(
-      `/projects/${encodeURIComponent(projectId)}/channels/slack/connect`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/slack/connect`,
       input,
       { showErrors: false },
     ),
@@ -107,7 +107,7 @@ const DEFAULT_SLACK_MODE: SlackMode = { oauth_available: false, install_url: nul
 
 export async function getSlackMode(projectId: string): Promise<SlackMode> {
   const res = await backendApi.get<SlackMode>(
-    `/projects/${encodeURIComponent(projectId)}/channels/slack/mode`,
+    `/workspaces/${encodeURIComponent(projectId)}/channels/slack/mode`,
     { showErrors: false },
   );
   if (!res.success || !res.data) return DEFAULT_SLACK_MODE;
@@ -132,7 +132,7 @@ async function completeChannelInstall(
 ): Promise<ChannelInstallCompletion> {
   return unwrap(
     await backendApi.post<ChannelInstallCompletion>(
-      `/projects/${encodeURIComponent(projectId)}/channels/${service}/oauth/complete`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/${service}/oauth/complete`,
       { code: input.code, state: input.state },
       { showErrors: false },
     ),
@@ -173,7 +173,7 @@ export async function getSlackManifest(projectId: string): Promise<Record<string
 
 export async function disconnectSlack(projectId: string): Promise<void> {
   const res = await backendApi.delete(
-    `/projects/${encodeURIComponent(projectId)}/channels/slack/installation`,
+    `/workspaces/${encodeURIComponent(projectId)}/channels/slack/installation`,
     { showErrors: false },
   );
   if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect');
@@ -251,10 +251,10 @@ export interface ChannelAccessList {
 }
 
 const channelPath = (projectId: string, platform: ChannelAccessPlatform) =>
-  `/projects/${encodeURIComponent(projectId)}/channels/${platform}`;
+  `/workspaces/${encodeURIComponent(projectId)}/channels/${platform}`;
 // A literal path, so route-contract.test.ts resolves the Telegram-only routes
 // to `/channels/telegram/…` and fails when the API drops one.
-const telegramPath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/channels/telegram`;
+const telegramPath = (projectId: string) => `/workspaces/${encodeURIComponent(projectId)}/channels/telegram`;
 
 async function channelUsers(
   projectId: string,
@@ -473,7 +473,7 @@ export function getChannelUserPhoto(
 export async function getSlackChannelFile(projectId: string, url: string): Promise<Blob> {
   return unwrap(
     await backendApi.get<Blob>(
-      `/projects/${encodeURIComponent(projectId)}/channels/slack/file?url=${encodeURIComponent(url)}`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/slack/file?url=${encodeURIComponent(url)}`,
       { showErrors: false },
     ),
     'Failed to download Slack file',
@@ -501,7 +501,7 @@ export async function uploadSlackChannelFile(
 ): Promise<UploadSlackChannelFileResult> {
   return unwrap(
     await backendApi.post<UploadSlackChannelFileResult>(
-      `/projects/${encodeURIComponent(projectId)}/channels/slack/file/upload`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/slack/file/upload`,
       {
         channel: input.channel,
         filename: input.filename,
@@ -592,7 +592,7 @@ export async function getEmailInstallation(
 ): Promise<EmailConnectionInstallation | null> {
   const query = connectorSlug ? `?connector_slug=${encodeURIComponent(connectorSlug)}` : '';
   const res = await backendApi.get<EmailInstallationWire | null>(
-    `/projects/${encodeURIComponent(projectId)}/channels/email/installation${query}`,
+    `/workspaces/${encodeURIComponent(projectId)}/channels/email/installation${query}`,
     { showErrors: false },
   );
   if (!res.success) return null;
@@ -601,7 +601,7 @@ export async function getEmailInstallation(
 
 export async function getEmailMode(projectId: string): Promise<EmailMode> {
   const res = await backendApi.get<EmailMode>(
-    `/projects/${encodeURIComponent(projectId)}/channels/email/mode`,
+    `/workspaces/${encodeURIComponent(projectId)}/channels/email/mode`,
     { showErrors: false },
   );
   if (!res.success || !res.data) return DEFAULT_EMAIL_MODE;
@@ -625,7 +625,7 @@ export async function connectEmail(
 ): Promise<EmailConnectionInstallation> {
   const installation = unwrap(
     await backendApi.post<EmailInstallationWire>(
-      `/projects/${encodeURIComponent(projectId)}/channels/email/connect`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/email/connect`,
       input,
       { showErrors: false },
     ),
@@ -687,7 +687,7 @@ export async function listEmailDomains(
 ): Promise<EmailDomainList> {
   return unwrap(
     await backendApi.post<EmailDomainList>(
-      `/projects/${encodeURIComponent(projectId)}/channels/email/domains`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/email/domains`,
       input.apiKey ? { api_key: input.apiKey } : {},
       { showErrors: false },
     ),
@@ -702,7 +702,7 @@ export async function addEmailDomain(
 ): Promise<EmailDomainResult> {
   return unwrap(
     await backendApi.post<EmailDomainResult>(
-      `/projects/${encodeURIComponent(projectId)}/channels/email/domains/add`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/email/domains/add`,
       { api_key: input.apiKey, domain: input.domain },
       { showErrors: false },
     ),
@@ -717,7 +717,7 @@ export async function verifyEmailDomain(
 ): Promise<EmailDomainResult> {
   return unwrap(
     await backendApi.post<EmailDomainResult>(
-      `/projects/${encodeURIComponent(projectId)}/channels/email/domains/verify`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/email/domains/verify`,
       { api_key: input.apiKey, domain_id: input.domainId },
       { showErrors: false },
     ),
@@ -731,7 +731,7 @@ export async function disconnectEmail(
 ): Promise<void> {
   const query = connectorSlug ? `?connector_slug=${encodeURIComponent(connectorSlug)}` : '';
   const res = await backendApi.delete(
-    `/projects/${encodeURIComponent(projectId)}/channels/email/installation${query}`,
+    `/workspaces/${encodeURIComponent(projectId)}/channels/email/installation${query}`,
     { showErrors: false },
   );
   if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect email');
@@ -744,7 +744,7 @@ export async function updateEmailPolicy(
 ): Promise<EmailConnectionInstallation> {
   const installation = unwrap(
     await backendApi.patch<EmailInstallationWire>(
-      `/projects/${encodeURIComponent(projectId)}/channels/email/installation`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/email/installation`,
       { connector_slug: connectorSlug ?? 'kortix_email', sender_policy: senderPolicy },
       { showErrors: false },
     ),
@@ -821,7 +821,7 @@ export interface RemoveEmailInboxResult {
 export async function listEmailInboxes(projectId: string): Promise<EmailInbox[]> {
   const data = unwrap(
     await backendApi.get<{ inboxes: EmailInbox[] }>(
-      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/email/inboxes`,
       { showErrors: false },
     ),
     'Failed to list email inboxes',
@@ -833,7 +833,7 @@ export async function listEmailInboxes(projectId: string): Promise<EmailInbox[]>
 export async function addEmailInbox(projectId: string, input: AddEmailInboxInput): Promise<EmailInbox> {
   return unwrap(
     await backendApi.post<EmailInbox>(
-      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/email/inboxes`,
       input,
       { showErrors: false },
     ),
@@ -849,7 +849,7 @@ export async function updateEmailInbox(
 ): Promise<EmailInbox> {
   return unwrap(
     await backendApi.patch<EmailInbox>(
-      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes/${encodeURIComponent(connectionId)}`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/email/inboxes/${encodeURIComponent(connectionId)}`,
       input,
       { showErrors: false },
     ),
@@ -861,7 +861,7 @@ export async function updateEmailInbox(
 export async function removeEmailInbox(projectId: string, connectionId: string): Promise<RemoveEmailInboxResult> {
   return unwrap(
     await backendApi.delete<RemoveEmailInboxResult>(
-      `/projects/${encodeURIComponent(projectId)}/channels/email/inboxes/${encodeURIComponent(connectionId)}`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/email/inboxes/${encodeURIComponent(connectionId)}`,
       { showErrors: false },
     ),
     'Failed to remove the email inbox',
@@ -931,7 +931,7 @@ export interface ChannelBindingsResponse {
 export async function listChannelBindings(projectId: string): Promise<ChannelBindingsResponse> {
   return unwrap(
     await backendApi.get<ChannelBindingsResponse>(
-      `/projects/${encodeURIComponent(projectId)}/channels/bindings`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/bindings`,
       { showErrors: false },
     ),
     'Failed to load channel bindings',
@@ -953,7 +953,7 @@ export async function updateChannelBinding(
 ): Promise<ChannelBinding> {
   return unwrap(
     await backendApi.patch<ChannelBinding>(
-      `/projects/${encodeURIComponent(projectId)}/channels/bindings/${encodeURIComponent(bindingId)}`,
+      `/workspaces/${encodeURIComponent(projectId)}/channels/bindings/${encodeURIComponent(bindingId)}`,
       input,
       { showErrors: false },
     ),
@@ -980,7 +980,7 @@ export interface DiscordInstallation {
 
 // A literal path, so route-contract.test.ts resolves the Discord routes to
 // `/channels/discord/…` and fails when the API drops one.
-const discordPath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/channels/discord`;
+const discordPath = (projectId: string) => `/workspaces/${encodeURIComponent(projectId)}/channels/discord`;
 
 const DEFAULT_DISCORD_MODE: DiscordMode = { available: false, install_url: null };
 

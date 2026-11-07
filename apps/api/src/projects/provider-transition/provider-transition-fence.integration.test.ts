@@ -24,7 +24,9 @@ let accountId: string;
 async function freshProject(): Promise<string> {
   const [row] = await db
     .insert(projects)
-    .values({ accountId, name: 'ptx-fence', repoUrl: 'https://example.test/fence.git', metadata: {} })
+    // Every test adds a project to one account: a legacy (split_pending)
+    // account, as uq_projects_workspace_account requires for 2+ projects.
+    .values({ accountId, name: 'ptx-fence', repoUrl: 'https://example.test/fence.git', metadata: {}, splitPending: true })
     .returning();
   return row!.projectId;
 }

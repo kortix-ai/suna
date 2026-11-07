@@ -28,35 +28,35 @@ describe('spacesThreadHref: a finished turn opens in the thread panel only when 
   const cache = cacheWith({ 'sp-general': ['s1'], 'sp-dm': ['s2'] });
 
   test('a thread of the channel on screen opens in its panel', () => {
-    expect(spacesThreadHref(at('/projects/p1/c/general'), { sessionId: 's1', projectId: 'p1' }, cache)).toBe(
-      '/projects/p1/c/general?thread=s1',
+    expect(spacesThreadHref(at('/workspaces/p1/c/general'), { sessionId: 's1', projectId: 'p1' }, cache)).toBe(
+      '/workspaces/p1/c/general?thread=s1',
     );
   });
 
   test('a thread of the DM on screen keeps the page params and replaces the open thread', () => {
     expect(
-      spacesThreadHref(at('/projects/p1/dm/kortix', '?tab=files&thread=old'), { sessionId: 's2', projectId: 'p1' }, cache),
-    ).toBe('/projects/p1/dm/kortix?tab=files&thread=s2');
+      spacesThreadHref(at('/workspaces/p1/dm/kortix', '?tab=files&thread=old'), { sessionId: 's2', projectId: 'p1' }, cache),
+    ).toBe('/workspaces/p1/dm/kortix?tab=files&thread=s2');
   });
 
   test('a locale prefix is kept', () => {
-    expect(spacesThreadHref(at('/de/projects/p1/c/general'), { sessionId: 's1', projectId: 'p1' }, cache)).toBe(
-      '/de/projects/p1/c/general?thread=s1',
+    expect(spacesThreadHref(at('/de/workspaces/p1/c/general'), { sessionId: 's1', projectId: 'p1' }, cache)).toBe(
+      '/de/workspaces/p1/c/general?thread=s1',
     );
   });
 
   test('a session that is not a thread of the channel on screen keeps its session page', () => {
-    expect(spacesThreadHref(at('/projects/p1/c/general'), { sessionId: 's2', projectId: 'p1' }, cache)).toBeNull();
-    expect(spacesThreadHref(at('/projects/p1/c/general'), { sessionId: 'loose', projectId: 'p1' }, cache)).toBeNull();
+    expect(spacesThreadHref(at('/workspaces/p1/c/general'), { sessionId: 's2', projectId: 'p1' }, cache)).toBeNull();
+    expect(spacesThreadHref(at('/workspaces/p1/c/general'), { sessionId: 'loose', projectId: 'p1' }, cache)).toBeNull();
   });
 
   test("another project's session never opens in this project's channel", () => {
-    expect(spacesThreadHref(at('/projects/p1/c/general'), { sessionId: 's1', projectId: 'p2' }, cache)).toBeNull();
-    expect(spacesThreadHref(at('/projects/p1/c/general'), { sessionId: 's1', projectId: null }, cache)).toBeNull();
+    expect(spacesThreadHref(at('/workspaces/p1/c/general'), { sessionId: 's1', projectId: 'p2' }, cache)).toBeNull();
+    expect(spacesThreadHref(at('/workspaces/p1/c/general'), { sessionId: 's1', projectId: null }, cache)).toBeNull();
   });
 
   test('any other page has no thread panel', () => {
-    expect(spacesThreadHref(at('/projects/p1/sessions/s1'), { sessionId: 's1', projectId: 'p1' }, cache)).toBeNull();
-    expect(spacesThreadHref(at('/projects/p1'), { sessionId: 's1', projectId: 'p1' }, cache)).toBeNull();
+    expect(spacesThreadHref(at('/workspaces/p1/sessions/s1'), { sessionId: 's1', projectId: 'p1' }, cache)).toBeNull();
+    expect(spacesThreadHref(at('/workspaces/p1'), { sessionId: 's1', projectId: 'p1' }, cache)).toBeNull();
   });
 });

@@ -6,9 +6,9 @@
  * in-app browser (`expo-web-browser`).
  */
 
-/** `${frontendUrl}/projects/<projectId>/customize`, id encoded. */
+/** `${frontendUrl}/workspaces/<projectId>/customize`, id encoded. */
 export function projectCustomizeWebUrl(frontendUrl: string, projectId: string): string {
-  return `${frontendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(projectId)}/customize`;
+  return `${frontendUrl.replace(/\/$/, '')}/workspaces/${encodeURIComponent(projectId)}/customize`;
 }
 
 /**
@@ -21,41 +21,30 @@ export function projectCustomizeWebUrl(frontendUrl: string, projectId: string): 
 export const CONNECTORS_RETURN_URL = 'kortix://connectors';
 export const CONNECTORS_DONE_URI = 'kortix://connectors/done';
 
-/** `${frontendUrl}/projects/<projectId>/admin/connectors[?return_to=…]`, id encoded. */
+/** `${frontendUrl}/workspaces/<projectId>/admin/connectors[?return_to=…]`, id encoded. */
 export function projectConnectorsWebUrl(
   frontendUrl: string,
   projectId: string,
   returnTo?: string
 ): string {
-  const url = `${frontendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(projectId)}/admin/connectors`;
+  const url = `${frontendUrl.replace(/\/$/, '')}/workspaces/${encodeURIComponent(projectId)}/admin/connectors`;
   return returnTo ? `${url}?return_to=${encodeURIComponent(returnTo)}` : url;
 }
 
 /**
- * Project and account creation live on the web (KRTX-246): mobile has no
- * create form, no GitHub connect or import. Every create entry point opens
- * one of these two pages in an in-app auth session. Web never redirects to
- * `WEB_CREATE_RETURN_URL`: the user comes back by closing the browser, and
- * the app then refetches (`useWebCreateHandoff`).
+ * Workspace creation lives on the web (KRTX-246): mobile has no create form,
+ * no GitHub connect or import. Every create entry point opens web `/workspaces/new` in
+ * an in-app auth session. Web never redirects to `WEB_CREATE_RETURN_URL`:
+ * the user comes back by closing the browser, and the app then refetches
+ * (`useWebCreateHandoff`).
  */
 export const WEB_CREATE_RETURN_URL = 'kortix://web';
 
 /**
- * Web's create-project page, `/new`. With an account, `?account=<id>`
- * (web `readAccountParam`) preselects it — the account the user was on.
+ * Web's create-workspace page, `/workspaces/new`. No `?account=`: a workspace is its own
+ * account, so `/workspaces/new` creates the whole workspace (web reuses the newest
+ * account the user owns that has no project, else creates one).
  */
-export function newProjectWebUrl(frontendUrl: string, accountId?: string | null): string {
-  const url = `${frontendUrl.replace(/\/$/, '')}/new`;
-  return accountId ? `${url}?account=${encodeURIComponent(accountId)}` : url;
-}
-
-/**
- * Web has no create-account route: "New account" is a button on the account
- * hub's account list, a modal over any signed-in page opened by an empty
- * `?accountId=` (web `stores/account-panel-store.ts`). `/projects/start`
- * keeps the query when it forwards to the user's project, so the hub opens
- * there, one tap from the create form.
- */
-export function newAccountWebUrl(frontendUrl: string): string {
-  return `${frontendUrl.replace(/\/$/, '')}/projects/start?accountId=`;
+export function newWorkspaceWebUrl(frontendUrl: string): string {
+  return `${frontendUrl.replace(/\/$/, '')}/workspaces/new`;
 }

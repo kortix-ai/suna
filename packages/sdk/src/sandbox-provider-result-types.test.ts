@@ -7,14 +7,14 @@ import type {
   UpdateProjectSandboxProviderResult,
 } from './index';
 // Value imports so `typeof` works — the functions are NEVER invoked (no network).
-import { getProjectSandboxProviderTransition, updateProjectSandboxProvider } from './index';
+import { getWorkspaceSandboxProviderTransition, updateWorkspaceSandboxProvider } from './index';
 
 // FIX-L: updateProjectSandboxProvider resolves to the exported tagged union
 // (KortixProject-with-kind | PreparationView), keyed on `kind` — not a bare
 // KortixProject. These are compile-time assertions; a regression (e.g. the return
 // narrowed back to KortixProject) fails `tsc`, not just at runtime.
-type UpdateReturn = Awaited<ReturnType<typeof updateProjectSandboxProvider>>;
-type PollReturn = Awaited<ReturnType<typeof getProjectSandboxProviderTransition>>;
+type UpdateReturn = Awaited<ReturnType<typeof updateWorkspaceSandboxProvider>>;
+type PollReturn = Awaited<ReturnType<typeof getWorkspaceSandboxProviderTransition>>;
 
 test('PATCH result is the exported kind-tagged union with PreparationView exported', () => {
   const prep: PreparationView = {

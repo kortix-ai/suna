@@ -1,57 +1,14 @@
 import { accountMembers } from "@kortix/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
-import { profileNameFromMetadata } from "../accounts/core/account-name";
-import { bootstrapPersonalAccount } from "../accounts/core/bootstrap-personal-account";
-import { syncLegacyStripeSubscription } from "../billing/services/legacy-stripe-sync";
 import { db } from "./db";
 import {
   IMPERSONATION_INVALID_CODE,
   impersonatedAccountFor,
 } from "./impersonation";
-import { getSupabase } from "./supabase";
-import { ttlMemo } from "./ttl-memo";
 import { isUuid } from "./validate";
-import { withTimeout } from "./with-timeout";
-
-// Legacy Stripe recovery sync — throttled to once per account per hour and
-// bounded to 1.5s on the request path.
-//
-// This runs on resolveAccountId — i.e. on EVERY account-agnostic billing/
-// account request. When the account has canonical billing state it early-exits
-// on one DB read, but for accounts with a Stripe customer mapping and no
-// active paid subscription it used to re-run the FULL Stripe dance every
-// request (customers.search by email + retrieve + subscriptions.list per
-// candidate — observed 8-12s) because a no-find persists nothing. The memo
-// caches the attempt itself so at most one request per hour pays it, and the
-// timeout caps what that one request pays — the sync keeps running in the
-// background and its writes land for the next request. The sync is purely a
-// recovery side effect (its result is never read here), so skipping the wait
-// is always safe.
-const syncLegacySubscriptionThrottled = ttlMemo({
-  ttlMs: 60 * 60 * 1000,
-  keyFn: (accountId: string) => accountId,
-  loader: async (accountId: string): Promise<void> => {
-    const result = await syncLegacyStripeSubscription(accountId);
-    if (result.status === "error") {
-      console.warn(
-        `[resolve-account] Stripe sync error for ${accountId}: ${result.error}`,
-      );
-    }
-  },
-});
-
-async function syncLegacySubscription(accountId: string): Promise<void> {
-  try {
-    await withTimeout(
-      syncLegacySubscriptionThrottled(accountId),
-      1_500,
-      "legacy-stripe-sync",
-    );
-  } catch {
-    // Timeout or sync failure — never block account resolution on recovery.
-  }
-}
+import { noWorkspaceError } from "./no-workspace";
+import { accountsView, projectsView } from "../workspaces/rows";
 
 /**
  * The account a billing request targets, from plain values: the caller's user
@@ -60,11 +17,29 @@ async function syncLegacySubscription(accountId: string): Promise<void> {
  *
  *   1. A named account → verify the caller is a member of it, then return it.
  *      403 on miss.
- *   2. Otherwise `resolveAccountId(userId)` — the user's primary membership.
+ *   2. Otherwise the account the credential is bound to (`boundAccountId`:
+ *      a PAT's, an API key's, a service account's), when there is one.
+ *   3. Otherwise the user's primary MEMBERSHIP. Never the bare-id fallback
+ *      `resolveAccountId` keeps for API keys: a person whose id happens to
+ *      name an account they no longer belong to (a legacy personal account
+ *      they left) must not read or bill it. 409 `no_workspace` when the user
+ *      belongs to no account.
  */
+/**
+ * A membership that still serves the account: every member of a live
+ * workspace, and only the owners of a closing one (its deletion request is
+ * open, K2). A former admin or member reads nothing of it, billing included.
+ */
+function servedMember() {
+  return sql`(${accountMembers.accountRole} = 'owner' OR NOT EXISTS (
+    SELECT 1 FROM kortix.account_deletion_requests r
+     WHERE r.account_id = ${accountMembers.accountId} AND r.status IN ('pending', 'processing')))`;
+}
+
 export async function scopedAccountIdFor(
   userId: string,
   requested: string | undefined,
+  boundAccountId?: string,
 ): Promise<string> {
   // Acting as an account: the target IS the scope. An explicit `account_id`
   // that disagrees is refused rather than honoured — a console still holding a
@@ -72,12 +47,16 @@ export async function scopedAccountIdFor(
   // banner says the operator is inside.
   const impersonated = impersonatedAccountFor(userId);
   if (impersonated) {
-    if (requested && requested !== impersonated) {
+    if (
+      requested &&
+      requested !== impersonated &&
+      (await accountKeyForWorkspaceId(requested)) !== impersonated
+    ) {
       throw new HTTPException(403, {
-        message: "Impersonated requests cannot target another account",
+        message: "Impersonated requests cannot target another workspace",
         res: new Response(
           JSON.stringify({
-            error: "Impersonated requests cannot target another account",
+            error: "Impersonated requests cannot target another workspace",
             code: IMPERSONATION_INVALID_CODE,
           }),
           { status: 403, headers: { "content-type": "application/json" } },
@@ -88,7 +67,8 @@ export async function scopedAccountIdFor(
   }
 
   if (!requested) {
-    return resolveAccountId(userId);
+    if (boundAccountId) return boundAccountId;
+    return resolveAccountId(userId, { allowAccountCredential: false });
   }
 
   // A malformed account id must not reach the uuid-typed account_members
@@ -97,7 +77,7 @@ export async function scopedAccountIdFor(
   // membership miss — 403, no DB read, no hint whether the id exists.
   if (!isUuid(requested)) {
     throw new HTTPException(403, {
-      message: "Not a member of the requested account",
+      message: "Not a member of the requested workspace",
     });
   }
 
@@ -108,34 +88,102 @@ export async function scopedAccountIdFor(
       and(
         eq(accountMembers.userId, userId),
         eq(accountMembers.accountId, requested),
+        servedMember(),
       ),
     )
     .limit(1);
 
-  if (!member) {
-    throw new HTTPException(403, {
-      message: "Not a member of the requested account",
-    });
+  if (member) return requested;
+
+  // `account_id` also accepts the workspace id (`project_id`): map it to the
+  // workspace's account key and check membership there. Only on a miss, so an
+  // account key costs no extra query.
+  const accountKey = await accountKeyForWorkspaceId(requested);
+  if (accountKey) {
+    const [viaWorkspace] = await db
+      .select({ accountId: accountMembers.accountId })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountKey), servedMember()))
+      .limit(1);
+    if (viaWorkspace) return accountKey;
   }
 
-  return requested;
+  throw new HTTPException(403, {
+    message: "Not a member of the requested workspace",
+  });
 }
 
-export async function resolveAccountId(userId: string): Promise<string> {
+/**
+ * The workspace id of each account key: its one active project. An account
+ * with 0 active projects (dormant) or several (`split_pending`, not split yet)
+ * maps to null. One query for the whole list.
+ */
+export async function workspaceIdsForAccounts(accountIds: readonly string[]): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  const ids = [...new Set(accountIds.filter(isUuid))];
+  if (ids.length === 0) return out;
+  const rows = await db
+    .select({ accountId: projectsView.accountId, projectId: projectsView.projectId })
+    .from(projectsView)
+    .where(and(inArray(projectsView.accountId, ids), eq(projectsView.status, "active")));
+  for (const id of ids) out.set(id, null);
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(row.accountId, (counts.get(row.accountId) ?? 0) + 1);
+  for (const row of rows) if (counts.get(row.accountId) === 1) out.set(row.accountId, row.projectId);
+  return out;
+}
+
+/**
+ * The account key of an active workspace, by its workspace id (`project_id`).
+ * Null for any other id (an account key, an archived project, garbage).
+ * Request fields named `account_id` accept either workspace key through this.
+ */
+export async function accountKeyForWorkspaceId(id: string): Promise<string | null> {
+  if (!isUuid(id)) return null;
+  const [row] = await db
+    .select({ accountId: projectsView.accountId })
+    .from(projectsView)
+    .where(and(eq(projectsView.projectId, id), eq(projectsView.status, "active")))
+    .limit(1);
+  return row?.accountId ?? null;
+}
+
+async function accountExists(accountId: string): Promise<boolean> {
+  if (!isUuid(accountId)) return false;
+  const [row] = await db
+    .select({ accountId: accountsView.accountId })
+    .from(accountsView)
+    .where(eq(accountsView.accountId, accountId))
+    .limit(1);
+  return Boolean(row);
+}
+
+/**
+ * The caller's default account: their earliest-joined membership.
+ *
+ * Throws `noWorkspaceError()` (409 `no_workspace`) when the caller belongs to
+ * no account. Nothing is created here: account creation is always explicit.
+ *
+ * One exception keeps machine credentials working: a sandbox / account API
+ * key authenticates with `userId = accountId` (middleware/auth.ts,
+ * `resolveSandboxToken`). That id has no `account_members` row, so when the
+ * id IS an existing account it is returned as-is — the same answer the
+ * removed bootstrap gave such callers (its insert was a conflict no-op).
+ */
+export async function resolveAccountId(
+  userId: string,
+  options: { allowAccountCredential?: boolean } = {},
+): Promise<string> {
   // Impersonation is resolved BEFORE the membership lookup, not after: the
   // operator has no `account_members` row in the target account, so falling
   // through would return their OWN account and quietly mis-scope every write
   // the console believes it is making on the customer's behalf.
-  //
-  // The legacy-Stripe recovery sync below is deliberately skipped for an
-  // impersonated read — it is a write side effect on the customer's billing
-  // state, and an operator opening an account to look at it must not mutate it.
   const impersonated = impersonatedAccountFor(userId);
   if (impersonated) return impersonated;
 
   // NOTE: a failing membership lookup must THROW, not fall through — silently
   // treating a DB error as "no membership" would mis-scope a multi-account
-  // user to their personal account id below.
+  // user.
   const [membership] = await db
     .select({ accountId: accountMembers.accountId })
     .from(accountMembers)
@@ -146,45 +194,12 @@ export async function resolveAccountId(userId: string): Promise<string> {
     .orderBy(accountMembers.joinedAt)
     .limit(1);
 
-  if (membership) {
-    await syncLegacySubscription(membership.accountId);
-    return membership.accountId;
-  }
+  // No billing side effect here: the legacy Stripe recovery runs only from
+  // `POST /v1/billing/sync-subscription` (design.md §3.1 finding 8).
+  if (membership) return membership.accountId;
 
-  // First-time signup → create the user's personal account (id == userId) and a
-  // self-membership. Pending account invitations are auto-claimed on the first
-  // /v1/accounts call (see accounts/index.ts:autoClaimPendingInvites).
-  //
-  // GUARD: only self-provision the membership when we ACTUALLY created the
-  // account. Kortix tokens (PAT/session/sandbox) map accountId→userId in the auth
-  // middleware (middleware/auth.ts: `c.set('userId', result.accountId)`), so a
-  // token-authed caller reaches here with `userId` == an EXISTING account_id.
-  // Without this guard we'd insert a phantom account_members row
-  // (user_id == account_id, owner, super) — a "shadow user" that shows as a bare
-  // UUID in the members list (no auth email) AND inflates the per-seat count
-  // (countActiveMembers). Creating the membership only on a fresh account keeps
-  // genuine new-user signup working while never minting a self-membership for an
-  // account that already exists.
-  try {
-    // Resolve the signup email and profile name so the account gets a real,
-    // suggested name ("Ada's workspace" — never the email, KRTX-638). A
-    // token-authed caller reaches here with userId == an existing account_id,
-    // which is not an auth user — the lookup misses and the placeholder
-    // fallback inside bootstrapPersonalAccount still applies (the insert is a
-    // conflict no-op for those anyway).
-    let email: string | null = null;
-    let fullName: string | null = null;
-    try {
-      const { data } = await getSupabase().auth.admin.getUserById(userId);
-      email = data?.user?.email ?? null;
-      fullName = profileNameFromMetadata(data?.user?.user_metadata);
-    } catch {
-      /* name falls back to the email-derived suggestion */
-    }
-    await bootstrapPersonalAccount(userId, email, fullName);
-  } catch (err) {
-    console.warn("[resolve-account] Failed to initialize first account:", err);
-  }
+  // A sandbox / account API key: `userId` is the account id itself.
+  if (options.allowAccountCredential !== false && (await accountExists(userId))) return userId;
 
-  return userId;
+  throw noWorkspaceError();
 }

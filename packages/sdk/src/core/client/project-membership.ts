@@ -2,34 +2,34 @@ import * as P from '../rest/projects-client';
 import type { DropFirst } from './binding-types';
 export function bindProjectMembership(projectId: string) {
   return {
-    list: () => P.listProjectAccess(projectId),
+    list: () => P.listWorkspaceAccess(projectId),
     invite: (...a: DropFirst<Parameters<typeof P.inviteProjectMember>>) =>
       P.inviteProjectMember(projectId, ...a),
-    update: (...a: DropFirst<Parameters<typeof P.updateProjectAccess>>) =>
-      P.updateProjectAccess(projectId, ...a),
-    revoke: (userId: string) => P.revokeProjectAccess(projectId, userId),
-    pendingInvites: () => P.listPendingProjectInvites(projectId),
-    resendInvite: (...a: DropFirst<Parameters<typeof P.resendPendingProjectInvite>>) =>
-      P.resendPendingProjectInvite(projectId, ...a),
-    revokeInvite: (...a: DropFirst<Parameters<typeof P.revokePendingProjectInvite>>) =>
-      P.revokePendingProjectInvite(projectId, ...a),
-    requests: () => P.listProjectAccessRequests(projectId),
-    approveRequest: (...a: DropFirst<Parameters<typeof P.approveProjectAccessRequest>>) =>
-      P.approveProjectAccessRequest(projectId, ...a),
-    rejectRequest: (...a: DropFirst<Parameters<typeof P.rejectProjectAccessRequest>>) =>
-      P.rejectProjectAccessRequest(projectId, ...a),
-    groupGrants: () => P.listProjectGroupGrants(projectId),
-    attachGroupGrant: (...a: DropFirst<Parameters<typeof P.attachGroupToProject>>) =>
-      P.attachGroupToProject(projectId, ...a),
-    updateGroupGrant: (...a: DropFirst<Parameters<typeof P.updateProjectGroupGrant>>) =>
-      P.updateProjectGroupGrant(projectId, ...a),
-    detachGroupGrant: (groupId: string) => P.detachGroupFromProject(projectId, groupId),
+    update: (...a: DropFirst<Parameters<typeof P.updateWorkspaceAccess>>) =>
+      P.updateWorkspaceAccess(projectId, ...a),
+    revoke: (userId: string) => P.revokeWorkspaceAccess(projectId, userId),
+    pendingInvites: () => P.listPendingWorkspaceInvites(projectId),
+    resendInvite: (...a: DropFirst<Parameters<typeof P.resendPendingWorkspaceInvite>>) =>
+      P.resendPendingWorkspaceInvite(projectId, ...a),
+    revokeInvite: (...a: DropFirst<Parameters<typeof P.revokePendingWorkspaceInvite>>) =>
+      P.revokePendingWorkspaceInvite(projectId, ...a),
+    requests: () => P.listWorkspaceAccessRequests(projectId),
+    approveRequest: (...a: DropFirst<Parameters<typeof P.approveWorkspaceAccessRequest>>) =>
+      P.approveWorkspaceAccessRequest(projectId, ...a),
+    rejectRequest: (...a: DropFirst<Parameters<typeof P.rejectWorkspaceAccessRequest>>) =>
+      P.rejectWorkspaceAccessRequest(projectId, ...a),
+    groupGrants: () => P.listWorkspaceGroupGrants(projectId),
+    attachGroupGrant: (...a: DropFirst<Parameters<typeof P.attachGroupToWorkspace>>) =>
+      P.attachGroupToWorkspace(projectId, ...a),
+    updateGroupGrant: (...a: DropFirst<Parameters<typeof P.updateWorkspaceGroupGrant>>) =>
+      P.updateWorkspaceGroupGrant(projectId, ...a),
+    detachGroupGrant: (groupId: string) => P.detachGroupFromWorkspace(projectId, groupId),
     /** Per-resource (agent/skill/secret) grants to a member or a group. */
     resourceGrants: {
-      list: () => P.listProjectResourceGrants(projectId),
-      create: (input: Parameters<typeof P.createProjectResourceGrant>[1]) =>
-        P.createProjectResourceGrant(projectId, input),
-      remove: (grantId: string) => P.deleteProjectResourceGrant(projectId, grantId),
+      list: () => P.listWorkspaceResourceGrants(projectId),
+      create: (input: Parameters<typeof P.createWorkspaceResourceGrant>[1]) =>
+        P.createWorkspaceResourceGrant(projectId, input),
+      remove: (grantId: string) => P.deleteWorkspaceResourceGrant(projectId, grantId),
     },
   };
 }

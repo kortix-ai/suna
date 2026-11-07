@@ -41,9 +41,10 @@ import {
   serializeSessionReminder,
   setSessionReminderEnabled,
 } from '../lib/session-reminders';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const ReminderSchema = z.record(z.string(), z.any());
-const sessionParams = z.object({ projectId: z.string(), sessionId: z.string() });
+const sessionParams = z.object({ workspaceId: z.string(), sessionId: z.string() });
 const reminderParams = sessionParams.extend({ reminderId: z.string() });
 
 /**
@@ -52,7 +53,7 @@ const reminderParams = sessionParams.extend({ reminderId: z.string() });
  * session-target trigger, not its session.
  */
 export async function authorizeReminderSession(c: Context<AppEnv>, sessionIdOverride?: string) {
-  const projectId = c.req.param('projectId') ?? '';
+  const projectId = workspaceIdParam(c) ?? '';
   const sessionId = sessionIdOverride ?? c.req.param('sessionId') ?? '';
   if (!isUuid(sessionId)) return { response: c.json({ error: 'Invalid session id' }, 400) };
   const loaded = await loadProjectForUser(c, projectId, 'session');
@@ -222,18 +223,18 @@ export function registerSessionRemindersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/reminders',
+      path: '/{workspaceId}/reminders',
       tags: ['sessions'],
       summary: 'List the loops of a project',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: json(z.object({ reminders: z.array(ReminderSchema) }), 'Loops on sessions the caller can open'),
         ...errors(403, 404),
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const disabled = requireFeatureFlag(c, loaded.row.metadata, 'reminders');
@@ -257,7 +258,7 @@ export function registerSessionRemindersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/reminders',
+      path: '/{workspaceId}/sessions/{sessionId}/reminders',
       tags: ['sessions'],
       summary: 'List the loops of a session',
       ...auth,
@@ -280,7 +281,7 @@ export function registerSessionRemindersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/reminders',
+      path: '/{workspaceId}/sessions/{sessionId}/reminders',
       tags: ['sessions'],
       summary: 'Create a loop on a session',
       ...auth,
@@ -335,7 +336,7 @@ export function registerSessionRemindersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/sessions/{sessionId}/reminders/{reminderId}',
+      path: '/{workspaceId}/sessions/{sessionId}/reminders/{reminderId}',
       tags: ['sessions'],
       summary: 'Pause or resume a loop',
       ...auth,
@@ -369,7 +370,7 @@ export function registerSessionRemindersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/reminders/{reminderId}/run',
+      path: '/{workspaceId}/sessions/{sessionId}/reminders/{reminderId}/run',
       tags: ['sessions'],
       summary: 'Run a loop now',
       ...auth,
@@ -391,7 +392,7 @@ export function registerSessionRemindersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/sessions/{sessionId}/reminders/{reminderId}',
+      path: '/{workspaceId}/sessions/{sessionId}/reminders/{reminderId}',
       tags: ['sessions'],
       summary: 'Delete a loop',
       ...auth,

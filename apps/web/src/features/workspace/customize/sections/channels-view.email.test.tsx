@@ -67,7 +67,7 @@ mock.module('@kortix/ui/internal/hooks/use-channel-bindings', () => ({
 }));
 mock.module('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
-  usePathname: () => '/projects/email-test/connectors',
+  usePathname: () => '/workspaces/email-test/connectors',
   useRouter: () => ({ replace: mock() }),
 }));
 // Unrelated channel setup and session pickers need live runtime providers.

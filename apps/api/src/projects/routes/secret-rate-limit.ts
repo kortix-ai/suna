@@ -14,5 +14,5 @@ import { projectsApp } from '../lib/app';
 import { createProjectSecretWriteRateLimitMiddleware } from '../../middleware/rate-limit';
 
 export function registerSecretRateLimitRoutes(): void {
-  projectsApp.use('/:projectId/secrets/' + '*', createProjectSecretWriteRateLimitMiddleware());
+  projectsApp.use('/:workspaceId/secrets/' + '*', createProjectSecretWriteRateLimitMiddleware());
 }

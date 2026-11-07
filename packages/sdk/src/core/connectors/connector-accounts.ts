@@ -51,7 +51,7 @@ export function connectorConnectionRows<
  * direct connector that needs no credential (`requestAuthType` `'none'`) has
  * none: its first account already works.
  */
-export function emptyProjectConnectionSlot(
+export function emptyWorkspaceConnectionSlot(
   connector: Pick<AdminConnector, 'provider'> & Partial<Pick<AdminConnector, 'requestAuthType'>>,
   rows: readonly Connection[],
 ): Connection | null {
@@ -65,6 +65,9 @@ export function emptyProjectConnectionSlot(
   return slot?.authorized === false && slot.metadata?.default_slot === 'project' ? slot : null;
 }
 
+/** @deprecated Use `emptyWorkspaceConnectionSlot`. Kept permanently. */
+export const emptyProjectConnectionSlot = emptyWorkspaceConnectionSlot;
+
 /**
  * A connector's accounts as a person sees them: its rows minus revoked ones
  * and the server's empty shared slot (a placeholder, not an account anyone
@@ -76,7 +79,7 @@ export function listedConnectorAccounts(
   connector: Pick<AdminConnector, 'slug' | 'provider'> & Partial<Pick<AdminConnector, 'requestAuthType'>>,
 ): Connection[] {
   const rows = connectorConnectionRows(connections, connector.slug);
-  const slot = emptyProjectConnectionSlot(connector, rows);
+  const slot = emptyWorkspaceConnectionSlot(connector, rows);
   return rows.filter((connection) => connection !== slot && connection.status !== 'revoked');
 }
 

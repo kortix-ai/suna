@@ -215,7 +215,7 @@ export function ReviewPage({
               versionsSheetRef.current?.present();
             }}
             accessibilityLabel="Versions"
-            accessibilityHint="Opens the project's versions">
+            accessibilityHint="Opens the workspace's versions">
             <Icon as={ClockCounterClockwiseIcon} size={HEADER_ICON_SIZE} className="text-foreground" />
           </Button>
         }

@@ -319,6 +319,7 @@ describe('approvals inbox + resolution', () => {
   test('session reconstruction returns rows without account or project context, in insertion order', async () => {
     if (!ctx) return;
     await db.insert(projects).values({
+      splitPending: true,
       projectId: CHAIN_PROJECT,
       accountId: ctx.accountId,
       name: 'audit-chain-test',

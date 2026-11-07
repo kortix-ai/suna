@@ -21,7 +21,7 @@ mock.module('@tanstack/react-query', () => ({
   }),
 }));
 
-const { useProjectSecrets, projectSecretsKey } = await import('./use-project-secrets');
+const { useWorkspaceSecrets, workspaceSecretsKey } = await import('./use-project-secrets');
 const { qk } = await import('./query-keys');
 
 beforeEach(() => {
@@ -30,20 +30,20 @@ beforeEach(() => {
 
 describe('useProjectSecrets (query-key stability + invalidation wiring)', () => {
   test('builds the query key from projectSecretsKey, which now delegates to qk.project.secrets', () => {
-    const result = useProjectSecrets('proj-1') as any;
-    expect(result.queryKey).toEqual(projectSecretsKey('proj-1'));
+    const result = useWorkspaceSecrets('proj-1') as any;
+    expect(result.queryKey).toEqual(workspaceSecretsKey('proj-1'));
     expect(result.queryKey).toEqual(qk.project.secrets('proj-1'));
   });
 
   test('is disabled without a projectId, enabled once one is supplied', () => {
-    expect((useProjectSecrets(undefined) as any).enabled).toBe(false);
-    expect((useProjectSecrets(null) as any).enabled).toBe(false);
-    expect((useProjectSecrets('proj-1') as any).enabled).toBe(true);
+    expect((useWorkspaceSecrets(undefined) as any).enabled).toBe(false);
+    expect((useWorkspaceSecrets(null) as any).enabled).toBe(false);
+    expect((useWorkspaceSecrets('proj-1') as any).enabled).toBe(true);
   });
 
   test('upsert/remove/setPersonal/removePersonal all invalidate the same list key on success', () => {
-    const result = useProjectSecrets('proj-1') as any;
-    const expectedKey = [...projectSecretsKey('proj-1')];
+    const result = useWorkspaceSecrets('proj-1') as any;
+    const expectedKey = [...workspaceSecretsKey('proj-1')];
 
     result.upsert.onSuccess();
     result.remove.onSuccess();
@@ -54,8 +54,8 @@ describe('useProjectSecrets (query-key stability + invalidation wiring)', () => 
   });
 
   test('a different projectId gets its own (non-colliding) query key', () => {
-    const a = useProjectSecrets('proj-a') as any;
-    const b = useProjectSecrets('proj-b') as any;
+    const a = useWorkspaceSecrets('proj-a') as any;
+    const b = useWorkspaceSecrets('proj-b') as any;
     expect(a.queryKey).not.toEqual(b.queryKey);
   });
 });

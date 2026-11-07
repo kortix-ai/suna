@@ -604,7 +604,6 @@
     "cancelRequestDescription": "削除日前ならいつでもこのリクエストをキャンセルできます。キャンセルすると、すべてのデータが保存されます。",
     "scheduledBadge": "予定済み",
     "notAvailableTitle": "このサーバーでは利用できません",
-    "projectsAndSessions": "プロジェクトとセッション",
     "credentialsAndConnections": "認証情報と接続",
     "subscriptionAndBilling": "サブスクリプション",
     "when": "削除のタイミング",
@@ -618,8 +617,9 @@
     "deleting": "削除中…",
     "cancelling": "キャンセル中…",
     "finalTitle": "本当によろしいですか？",
-    "finalDescriptionNow": "プロジェクト、セッション、認証情報は今すぐ削除されます。請求記録は法律で定められた期間保管されます。元に戻すことはできません。",
-    "finalDescriptionScheduled": "プロジェクト、セッション、認証情報は14日後に削除されます。請求記録は法律で定められた期間保管されます。それまではキャンセルできます。"
+    "finalDescriptionNow": "ワークスペース、セッション、認証情報は今すぐ削除されます。請求記録は法律で定められた期間保管されます。元に戻すことはできません。",
+    "finalDescriptionScheduled": "ワークスペース、セッション、認証情報は14日後に削除されます。請求記録は法律で定められた期間保管されます。それまではキャンセルできます。",
+    "workspacesAndSessions": "ワークスペースとセッション"
   },
   "models": {
     "selectModel": "モデルを選択",
@@ -676,7 +676,7 @@
     "upgradeYourPlan": "プランをアップグレード",
     "upgradeDescription": "もっとクレジットを手に入れてプレミアム機能を解除",
     "topUp": "チャージ",
-    "topUpDescription": "アカウントに追加のクレジットをチャージ",
+    "topUpDescription": "ワークスペースに追加のクレジットをチャージ",
     "upgrade": "アップグレード",
     "totalUsage": "総使用量",
     "selectedPeriod": "選択した期間",
@@ -1149,7 +1149,6 @@
     "sounds": "サウンド",
     "richAnswers": "リッチな回答",
     "workspace": "ワークスペース",
-    "accounts": "アカウント",
     "help": "ヘルプ",
     "docs": "ドキュメント",
     "support": "サポート",
@@ -1165,7 +1164,7 @@
     "current": "現在",
     "currentPlan": "現在のプラン",
     "includes": "{{plan}}に含まれるもの",
-    "askOwner": "アカウントのオーナーまたは管理者にアップグレードを依頼してください",
+    "askOwner": "ワークスペースのオーナーまたは管理者にアップグレードを依頼してください",
     "contactSales": "営業に問い合わせる",
     "upgradeTo": "{{plan}}にアップグレード",
     "switchTo": "{{plan}}に切り替え",
@@ -1176,7 +1175,8 @@
     "creditsPlan": "Kortix Credits",
     "pickAmount": "月額は Web で自由に選べます。メンバーは無制限で、1つのクレジットプールを共有します。",
     "includes": "含まれるもの",
-    "notNow": "後で"
+    "notNow": "後で",
+    "continueFree": "Free で続ける"
   },
   "sessions": {
     "showMoreSubsessions_one": "さらに{{count}}件を表示",
@@ -1200,7 +1200,7 @@
     "archivedView": "アーカイブ済み",
     "archivedEmpty": "アーカイブしたセッションはここに表示されます。",
     "stoppedBy": "{{name}} が停止しました",
-    "stopNotAllowed": "この実行を停止できるのは、開始したメンバー、セッションのオーナー、またはプロジェクトのマネージャーのみです。"
+    "stopNotAllowed": "この実行を停止できるのは、開始したメンバー、セッションのオーナー、またはワークスペースのマネージャーのみです。"
   },
   "genui": {
     "call": "電話",
@@ -1229,12 +1229,6 @@
   "invites": {
     "group": "招待",
     "fallbackTitle": "招待",
-    "invitedYouToProject": "{{inviter}} さんからプロジェクトに招待されました。",
-    "invitedToProject": "プロジェクトに招待されました。",
-    "invitedYouToTeam": "{{inviter}} さんからチームに招待されました。",
-    "invitedToTeam": "チームに招待されました。",
-    "joinProject": "{{project}} に{{role}}として参加します。",
-    "joinAccount": "このアカウントに{{role}}として参加し、オーナーがアクセスを許可したプロジェクトを表示できます。",
     "roleMember": "メンバー",
     "roleManager": "マネージャー",
     "roleAdmin": "管理者",
@@ -1253,15 +1247,19 @@
     "wrongAccountTitle": "アカウントを切り替え",
     "wrongAccountBody": "この招待は別のアカウント宛てです。現在 {{email}} でログインしています。",
     "directoryTitle": "シングルサインオンでサインイン",
-    "directoryBody": "組織のディレクトリによって、このアカウントに追加されました。この招待をブラウザで開いて組織のシングルサインオンでサインインするか、アカウント管理者に招待の再送を依頼してください。",
+    "directoryBody": "組織のディレクトリによって、このワークスペースに追加されました。この招待をブラウザで開いて組織のシングルサインオンでサインインするか、ワークスペースの管理者に招待の再送を依頼してください。",
     "ssoDomainUnverifiedBody": "シングルサインオンのプロバイダーがこのメールのドメインを検証していません。この招待を使うには、サインアウトしてメールアドレスでサインインし直してください。",
     "signOutAndContinue": "ログアウトして続行",
-    "backToProjects": "プロジェクトに戻る"
+    "invitedYouToWorkspace": "{{inviter}} さんからワークスペースに招待されました。",
+    "invitedToWorkspace": "ワークスペースに招待されました。",
+    "joinWorkspace": "{{workspace}} に{{role}}として参加します。",
+    "joinThisWorkspace": "このワークスペースに{{role}}として参加します。",
+    "backToWorkspaces": "ワークスペースに戻る"
   },
   "approvals": {
-    "waitingManagers": "このプロジェクトを管理する人が、この呼び出しを承認または拒否できます。",
+    "waitingManagers": "このワークスペースを管理する人が、この呼び出しを承認または拒否できます。",
     "waitingTitle": "承認待ち",
-    "waitingWho": "このセッションを開始した人、またはこのプロジェクトを管理する人が、この呼び出しを承認または拒否できます。"
+    "waitingWho": "このセッションを開始した人、またはこのワークスペースを管理する人が、この呼び出しを承認または拒否できます。"
   },
   "imageGen": {
     "generating": "画像を生成中",
@@ -1285,10 +1283,69 @@
     "states": {
       "resolving": "このセッションのイメージを選択しています。",
       "serving_last_ready": "最後に準備できたイメージで起動します。新しいイメージはバックグラウンドでビルドされます。",
-      "waiting_for_build": "このプロジェクトの最初のイメージをビルド中です。準備ができるとセッションが開始します。",
-      "building": "このプロジェクトの最初のイメージをビルドしています。これは一度だけで、数分かかります。",
+      "waiting_for_build": "このワークスペースの最初のイメージをビルド中です。準備ができるとセッションが開始します。",
+      "building": "このワークスペースの最初のイメージをビルドしています。これは一度だけで、数分かかります。",
       "copying_to_region": "このセッションのリージョンにイメージをコピーしています。",
       "waiting_for_provider": "イメージを仕上げています。準備ができるとセッションが開始します。"
+    }
+  },
+  "workspace": {
+    "switcherTitle": "ワークスペース",
+    "create": "ワークスペースを作成",
+    "createTitle": "ワークスペースを作成",
+    "createBody": "ワークスペースは、会社が Kortix で働く場所です。メンバー、エージェント、そして彼らが作るすべてがここにあります。",
+    "createOnWebTitle": "ウェブでワークスペースを作成",
+    "createOnWebLine": "ワークスペースは kortix.com で作成します。",
+    "invitedHint": "招待されましたか？メールの招待リンクを開くか、管理者に {{email}} を招待するよう依頼してください。",
+    "yours": "あなたのワークスペース",
+    "openNamed": "{{workspace}} を開く",
+    "open": "ワークスペースを開く",
+    "settings": "ワークスペースの設定",
+    "search": "ワークスペースを検索",
+    "loadFailed": "ワークスペースを読み込めませんでした",
+    "loadFailedBody": "接続を確認して、もう一度お試しください。",
+    "loadOneFailed": "このワークスペースを読み込めませんでした",
+    "emptyTitle": "ワークスペースはまだありません",
+    "noMatches": "「{{query}}」に一致するものはありません",
+    "noMatchesBody": "別のキーワードでお試しください",
+    "allWorkspaces": "すべてのワークスペース",
+    "switch": "ワークスペースを切り替え",
+    "switchNamed": "ワークスペースを切り替え、{{workspace}}",
+    "actions": "ワークスペースの操作",
+    "actionsNamed": "ワークスペースの操作、{{workspace}}",
+    "archive": "ワークスペースをアーカイブ",
+    "archiveConfirm": "「{{workspace}}」をアーカイブしますか？",
+    "archiveFailed": "アーカイブできませんでした。接続を確認して、もう一度お試しください。",
+    "archiving": "アーカイブ中…",
+    "archived": "ワークスペースをアーカイブしました",
+    "delete": "ワークスペースを削除",
+    "deleteBody": "「{{workspace}}」とその中のすべてを、全メンバーから削除します。元に戻すことはできません。確認のためワークスペース名を入力してください。",
+    "deleteTypeName": "確認のためワークスペース名を入力してください",
+    "deleteConfirmTitle": "このワークスペースを削除しますか？",
+    "deleteConfirmBody": "「{{workspace}}」を全メンバーから削除します。元に戻すことはできません。",
+    "deleteFailed": "ワークスペースを削除できませんでした",
+    "name": "ワークスペース名",
+    "billing": "請求",
+    "billingAndMembers": "請求とメンバー",
+    "onWeb": "kortix.com で",
+    "members": "メンバー",
+    "git": "Git",
+    "auditLog": "監査ログ",
+    "join": "参加",
+    "joinNamed": "{{workspace}} に参加",
+    "inviteFrom": "{{inviter}} · {{role}}",
+    "roleOwner": "オーナー",
+    "roleAdmin": "管理者",
+    "roleManager": "マネージャー",
+    "roleMember": "メンバー",
+    "startFailure": {
+      "sessionTitle": "セッションが終了しました",
+      "sessionBody": "続けるには、もう一度サインインしてください。",
+      "unreachableTitle": "Kortix に接続できません",
+      "unreachableBody": "接続を確認してから、もう一度お試しください。",
+      "serverTitle": "ワークスペースを開けませんでした",
+      "serverBody": "もう一度お試しいただくか、別のワークスペースを開いてください。",
+      "signInAgain": "もう一度サインイン"
     }
   }
 }

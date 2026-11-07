@@ -99,7 +99,7 @@ export function projectWebUrl(
   dashboardUrl?: string | null,
 ): string {
   if (dashboardUrl && dashboardUrl.trim()) return stripTrailingSlash(dashboardUrl.trim());
-  return `${webDashboardUrl(apiBase)}/projects/${projectId}`;
+  return `${webDashboardUrl(apiBase)}/workspaces/${projectId}`;
 }
 
 /** Web (dashboard) URL for a session within a project. */

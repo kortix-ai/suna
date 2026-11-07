@@ -16,10 +16,10 @@ export function bindSessionActionsResources(ctx: SessionBindingContext) {
       ctx.model = model;
     },
     /** Read the server-side pin, not this handle's local send preference. */
-    getModel: () => P.getProjectSessionModel(ctx.projectId, ctx.sessionId),
+    getModel: () => P.getWorkspaceSessionModel(ctx.projectId, ctx.sessionId),
     /** Persist a model and queue a continuation without interrupting this turn. */
     switchModel: async (input: P.SessionModelSwitchInput) => {
-      const result = await P.switchProjectSessionModel(ctx.projectId, ctx.sessionId, input);
+      const result = await P.switchWorkspaceSessionModel(ctx.projectId, ctx.sessionId, input);
       ctx.clearPersistedDefaults();
       return result;
     },
@@ -33,7 +33,7 @@ export function bindSessionActionsResources(ctx: SessionBindingContext) {
      * reports whether the live sandbox accepted those settings.
      */
     changeModel: async (model: string) => {
-      const result = await P.setProjectSessionModel(ctx.projectId, ctx.sessionId, model);
+      const result = await P.setWorkspaceSessionModel(ctx.projectId, ctx.sessionId, model);
       ctx.clearPersistedDefaults();
       return result;
     },

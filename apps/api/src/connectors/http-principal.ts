@@ -1,5 +1,4 @@
 /** The connector router's request authorizers: who is calling, read from the Hono request. */
-import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -20,6 +19,7 @@ import {
   sessionChannelConnectorSlugs,
 } from './db-deps-principal';
 import { bearerToken } from '../shared/bearer-token';
+import { projectsView } from '../workspaces/rows';
 
 /** The connector router's request authorizers: each reads who is calling from the Hono request. */
 export interface ConnectorRouterAuth {
@@ -111,13 +111,13 @@ export async function resolveProjectPrincipal(
     // freshness as the account_id this branch already read.
     const [project] = await db
       .select({
-        accountId: projects.accountId,
-        repoUrl: projects.repoUrl,
-        defaultBranch: projects.defaultBranch,
-        manifestPath: projects.manifestPath,
+        accountId: projectsView.accountId,
+        repoUrl: projectsView.repoUrl,
+        defaultBranch: projectsView.defaultBranch,
+        manifestPath: projectsView.manifestPath,
       })
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
+      .from(projectsView)
+      .where(eq(projectsView.projectId, projectId))
       .limit(1);
     if (!project || !accountId || project.accountId !== accountId) return null;
     accountId = project.accountId;
@@ -208,9 +208,9 @@ async function resolveProjectUserWith(
   const userId = c.get('userId') as string | undefined;
   if (!userId) return null;
   const [proj] = await db
-    .select({ accountId: projects.accountId })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ accountId: projectsView.accountId })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!proj) return null;
   // The acting credential comes with the Actor, so the agent-grant fold and the

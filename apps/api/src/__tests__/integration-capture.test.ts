@@ -35,7 +35,7 @@ mock.module('../capture/store', () => ({
   deviceEndpoint: () => 'https://store.test',
 }));
 
-const { accounts, captureDevices, captureWorkspaces, timelineChunks } = await import('@kortix/db');
+const { accounts, captureDevices, captureTenants, timelineChunks } = await import('@kortix/db');
 const { and, eq, sql } = await import('drizzle-orm');
 const { db } = await import('../shared/db');
 const { ingestManifest } = await import('../capture/ingest');
@@ -61,7 +61,7 @@ async function count(table: string, where = sql`TRUE`): Promise<number> {
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'capture-test-acct' });
   // Capture's tenant is the account: its workspace row is the switch. No project anywhere.
-  await db.insert(captureWorkspaces).values({ accountId: ACCOUNT, enabled: true });
+  await db.insert(captureTenants).values({ accountId: ACCOUNT, enabled: true });
   const [device] = await db
     .insert(captureDevices)
     .values({ accountId: ACCOUNT, userId: MEMBER, machineKeySha256: MACHINE })
@@ -164,7 +164,7 @@ describe('ingestion', () => {
   });
 
   test('an account with Capture off indexes nothing', async () => {
-    await db.update(captureWorkspaces).set({ enabled: false }).where(eq(captureWorkspaces.accountId, ACCOUNT));
+    await db.update(captureTenants).set({ enabled: false }).where(eq(captureTenants.accountId, ACCOUNT));
     const key = day.manifestKeys[0]!;
     // Forget the item entirely (its lines too), as if it had never been indexed.
     const [gone] = await db.delete(timelineChunks).where(eq(timelineChunks.manifestKey, key)).returning({ chunkId: timelineChunks.chunkId });
@@ -172,7 +172,7 @@ describe('ingestion', () => {
       await db.execute(sql`DELETE FROM ${sql.identifier('kortix')}.${sql.identifier(table)} WHERE chunk_id = ${gone!.chunkId}::uuid`);
     }
     expect(await ingestManifest(key)).toEqual({ status: 'skipped', reason: 'capture is off for the account' });
-    await db.update(captureWorkspaces).set({ enabled: true }).where(eq(captureWorkspaces.accountId, ACCOUNT));
+    await db.update(captureTenants).set({ enabled: true }).where(eq(captureTenants.accountId, ACCOUNT));
     expect((await ingestManifest(key)).status).toBe('indexed');
   });
 });
@@ -183,7 +183,7 @@ describe('multiple displays', () => {
     // Its own account, so the retention test below counts only its own items.
     const ACCOUNT = crypto.randomUUID();
     await db.insert(accounts).values({ accountId: ACCOUNT, name: 'capture-test-dual' });
-    await db.insert(captureWorkspaces).values({ accountId: ACCOUNT, enabled: true });
+    await db.insert(captureTenants).values({ accountId: ACCOUNT, enabled: true });
     const [dual] = await db.insert(captureDevices).values({ accountId: ACCOUNT, userId: MEMBER, machineKeySha256: 'c'.repeat(64) }).returning();
     const day = vendoredDevice({ prefix: accountPrefix(ACCOUNT), deviceId: dual!.deviceId, machineKeySha256: 'c'.repeat(64), displays: 2 });
     for (const object of day.objects) objects.set(object.key, object.body);

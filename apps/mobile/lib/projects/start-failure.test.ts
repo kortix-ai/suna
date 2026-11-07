@@ -40,8 +40,8 @@ describe('startFailureCopy', () => {
       body: 'Sign in again to continue.',
     });
     expect(startFailureCopy('server')).toEqual({
-      title: 'Could not open your project',
-      body: 'Try again, or open another project.',
+      title: 'Could not open your workspace',
+      body: 'Try again, or open another workspace.',
     });
   });
 });

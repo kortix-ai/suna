@@ -23,6 +23,7 @@ import { getSandboxUrl } from './urls';
 // known inside the sandbox — hydrate them client-side by joining against the
 // sandbox member list (which does carry emails).
 
+/** @deprecated Use `SandboxWorkspaceMember`. Kept permanently. */
 export interface SandboxProjectMember {
   user_id: string;
   role: 'owner' | 'admin' | 'member';
@@ -30,10 +31,17 @@ export interface SandboxProjectMember {
   added_at: string;
 }
 
+/** The workspace name of {@link SandboxProjectMember}: the same type. */
+export type SandboxWorkspaceMember = SandboxProjectMember;
+
+/** @deprecated Use `SandboxWorkspaceMembersResponse`. Kept permanently. */
 export interface SandboxProjectMembersResponse {
   project_id: string;
   members: SandboxProjectMember[];
 }
+
+/** The workspace name of {@link SandboxProjectMembersResponse}: the same type. */
+export type SandboxWorkspaceMembersResponse = SandboxProjectMembersResponse;
 
 async function fetchKortixMaster<T>(
   sandbox: SandboxInfo,
@@ -53,7 +61,7 @@ async function fetchKortixMaster<T>(
   return (await res.json()) as T;
 }
 
-export async function listSandboxProjectMembers(
+export async function listSandboxWorkspaceMembers(
   sandbox: SandboxInfo,
   projectId: string,
 ): Promise<SandboxProjectMembersResponse> {
@@ -64,7 +72,10 @@ export async function listSandboxProjectMembers(
   );
 }
 
-export async function grantSandboxProjectAccess(
+/** @deprecated Use `listSandboxWorkspaceMembers`. Kept permanently. */
+export const listSandboxProjectMembers = listSandboxWorkspaceMembers;
+
+export async function grantSandboxWorkspaceAccess(
   sandbox: SandboxInfo,
   projectId: string,
   userId: string,
@@ -80,7 +91,10 @@ export async function grantSandboxProjectAccess(
   );
 }
 
-export async function revokeSandboxProjectAccess(
+/** @deprecated Use `grantSandboxWorkspaceAccess`. Kept permanently. */
+export const grantSandboxProjectAccess = grantSandboxWorkspaceAccess;
+
+export async function revokeSandboxWorkspaceAccess(
   sandbox: SandboxInfo,
   projectId: string,
   userId: string,
@@ -91,4 +105,7 @@ export async function revokeSandboxProjectAccess(
     { method: 'DELETE' },
   );
 }
+
+/** @deprecated Use `revokeSandboxWorkspaceAccess`. Kept permanently. */
+export const revokeSandboxProjectAccess = revokeSandboxWorkspaceAccess;
 

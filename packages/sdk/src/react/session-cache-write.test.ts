@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
 import {
   applyToCachedSessionShape,
-  removeCachedProjectSession,
-  updateCachedProjectSessions,
-  upsertCachedProjectSession,
+  removeCachedWorkspaceSession,
+  updateCachedWorkspaceSessions,
+  upsertCachedWorkspaceSession,
   upsertIntoCachedSessionShape,
 } from './session-cache-write';
 import { qk } from './query-keys';
@@ -156,7 +156,7 @@ describe('session cache writers reach session caches only', () => {
 
   test('upsert of a new session leaves prompts, messages and turn untouched', () => {
     const { client, prompts, messages, turn } = seeded();
-    upsertCachedProjectSession(client, PID, row('S-NEW'));
+    upsertCachedWorkspaceSession(client, PID, row('S-NEW'));
 
     expect(client.getQueryData<unknown>(qk.project.sessionPrompts(PID, OPEN))).toBe(prompts);
     expect(client.getQueryData<unknown>(qk.project.messages(PID, OPEN))).toBe(messages);
@@ -173,7 +173,7 @@ describe('session cache writers reach session caches only', () => {
 
   test('a map-style update leaves prompts, messages and turn untouched', () => {
     const { client, prompts, messages, turn } = seeded();
-    updateCachedProjectSessions(client, PID, (sessions) => [row('S-NEW'), ...sessions]);
+    updateCachedWorkspaceSessions(client, PID, (sessions) => [row('S-NEW'), ...sessions]);
 
     expect(client.getQueryData<unknown>(qk.project.sessionPrompts(PID, OPEN))).toBe(prompts);
     expect(client.getQueryData<unknown>(qk.project.messages(PID, OPEN))).toBe(messages);
@@ -194,7 +194,7 @@ describe('removeCachedProjectSession', () => {
     });
     client.setQueryData(qk.project.session('p1', 'b'), row('b'));
 
-    removeCachedProjectSession(client, 'p1', 'b');
+    removeCachedWorkspaceSession(client, 'p1', 'b');
 
     expect((client.getQueryData(qk.project.sessions('p1')) as ProjectSession[]).map((r) => r.session_id)).toEqual(['a']);
     const paged = client.getQueryData(qk.project.sessionsPaged('p1')) as { pages: Array<{ items: ProjectSession[] }> };
@@ -208,7 +208,7 @@ describe('removeCachedProjectSession', () => {
     client.setQueryData(qk.project.sessions('p1'), flat);
     client.setQueryData(qk.project.session('p1', 'b'), row('b'));
 
-    const restore = removeCachedProjectSession(client, 'p1', 'b');
+    const restore = removeCachedWorkspaceSession(client, 'p1', 'b');
     restore();
 
     expect(client.getQueryData(qk.project.sessions('p1')) as unknown).toEqual(flat);
@@ -244,7 +244,7 @@ describe('filtered list caches (KRTX-639)', () => {
     const kids = qk.project.sessionChildren('P1', 'S0');
     qc.setQueryData(mine, pagedOf([row('S1')]));
     qc.setQueryData(kids, pagedOf([row('S2')]));
-    updateCachedProjectSessions(qc, 'P1', rename('S2', 'renamed'));
+    updateCachedWorkspaceSessions(qc, 'P1', rename('S2', 'renamed'));
     expect((qc.getQueryData(kids) as ReturnType<typeof pagedOf>).pages[0].items[0].custom_name).toBe('renamed');
     expect(ids(qc, mine)).toEqual(['S1']);
   });
@@ -256,7 +256,7 @@ describe('filtered list caches (KRTX-639)', () => {
     const auto = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'automated' });
     const kids = qk.project.sessionChildren('P1', 'S0');
     for (const key of [me, others, auto, kids]) qc.setQueryData(key, pagedOf([]));
-    upsertCachedProjectSession(
+    upsertCachedWorkspaceSession(
       qc,
       'P1',
       withInitiator('NEW', { initiator: { type: 'member', id: 'u1', label: 'Ann' } }),
@@ -272,7 +272,7 @@ describe('filtered list caches (KRTX-639)', () => {
     const me = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'me' });
     const auto = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'automated' });
     for (const key of [me, auto]) qc.setQueryData(key, pagedOf([]));
-    upsertCachedProjectSession(
+    upsertCachedWorkspaceSession(
       qc,
       'P1',
       withInitiator('NEW', { initiator: { type: 'trigger', id: 'nightly', label: 'nightly' } }),
@@ -287,7 +287,7 @@ describe('filtered list caches (KRTX-639)', () => {
     const mine = qk.project.sessionChildren('P1', 'S0');
     const other = qk.project.sessionChildren('P1', 'S7');
     for (const key of [root, mine, other]) qc.setQueryData(key, pagedOf([]));
-    upsertCachedProjectSession(
+    upsertCachedWorkspaceSession(
       qc,
       'P1',
       withInitiator('KID', {
@@ -304,7 +304,7 @@ describe('filtered list caches (KRTX-639)', () => {
     const qc = new QueryClient();
     const searched = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'me', q: 'x' });
     qc.setQueryData(searched, pagedOf([]));
-    upsertCachedProjectSession(
+    upsertCachedWorkspaceSession(
       qc,
       'P1',
       withInitiator('NEW', { initiator: { type: 'member', id: 'u1', label: 'Ann' } }),
@@ -317,7 +317,7 @@ describe('filtered list caches (KRTX-639)', () => {
     const pinned = qk.project.sessionsPaged('P1', 'visible', { view: 'pinned' });
     const archived = qk.project.sessionsPaged('P1', 'visible', { view: 'archived' });
     for (const key of [pinned, archived]) qc.setQueryData(key, pagedOf([]));
-    upsertCachedProjectSession(
+    upsertCachedWorkspaceSession(
       qc,
       'P1',
       withInitiator('NEW', { initiator: { type: 'member', id: 'u1', label: 'Ann' }, pinned_at: null }),
@@ -330,7 +330,7 @@ describe('filtered list caches (KRTX-639)', () => {
     const qc = new QueryClient();
     const deleted = qk.project.sessionsPaged('P1', 'visible', { view: 'deleted' });
     qc.setQueryData(deleted, pagedOf([]));
-    upsertCachedProjectSession(qc, 'P1', withInitiator('NEW', { initiator: { type: 'member', id: 'u1', label: 'Ann' } }));
+    upsertCachedWorkspaceSession(qc, 'P1', withInitiator('NEW', { initiator: { type: 'member', id: 'u1', label: 'Ann' } }));
     expect(ids(qc, deleted)).toEqual([]);
   });
 
@@ -338,7 +338,7 @@ describe('filtered list caches (KRTX-639)', () => {
     const qc = new QueryClient();
     const pinned = qk.project.sessionsPaged('P1', 'visible', { view: 'pinned' });
     qc.setQueryData(pinned, pagedOf([]));
-    upsertCachedProjectSession(qc, 'P1', withInitiator('PIN', { pinned_at: '2026-10-16T00:00:00Z' }));
+    upsertCachedWorkspaceSession(qc, 'P1', withInitiator('PIN', { pinned_at: '2026-10-16T00:00:00Z' }));
     expect(ids(qc, pinned)).toEqual(['PIN']);
   });
 
@@ -347,8 +347,8 @@ describe('filtered list caches (KRTX-639)', () => {
     const spaceA = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', spaceId: 'A' });
     const spaceB = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', spaceId: 'B' });
     for (const key of [spaceA, spaceB]) qc.setQueryData(key, pagedOf([]));
-    upsertCachedProjectSession(qc, 'P1', withInitiator('IN-A', { space_id: 'A' }));
-    upsertCachedProjectSession(qc, 'P1', withInitiator('NO-SPACE', {}));
+    upsertCachedWorkspaceSession(qc, 'P1', withInitiator('IN-A', { space_id: 'A' }));
+    upsertCachedWorkspaceSession(qc, 'P1', withInitiator('NO-SPACE', {}));
     expect(ids(qc, spaceA)).toEqual(['IN-A']);
     expect(ids(qc, spaceB)).toEqual([]);
   });
@@ -359,9 +359,9 @@ describe('filtered list caches (KRTX-639)', () => {
     const groupB = qk.project.sessionsPaged('P1', 'visible', { group: 'GB' });
     const ungrouped = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', group: 'none' });
     for (const key of [groupA, groupB, ungrouped]) qc.setQueryData(key, pagedOf([]));
-    upsertCachedProjectSession(qc, 'P1', withInitiator('IN-A', { group_id: 'GA' }));
-    upsertCachedProjectSession(qc, 'P1', withInitiator('LOOSE', { group_id: null }));
-    upsertCachedProjectSession(qc, 'P1', withInitiator('OLDER-API', {}));
+    upsertCachedWorkspaceSession(qc, 'P1', withInitiator('IN-A', { group_id: 'GA' }));
+    upsertCachedWorkspaceSession(qc, 'P1', withInitiator('LOOSE', { group_id: null }));
+    upsertCachedWorkspaceSession(qc, 'P1', withInitiator('OLDER-API', {}));
     expect(ids(qc, groupA)).toEqual(['IN-A']);
     expect(ids(qc, groupB)).toEqual([]);
     expect(ids(qc, ungrouped).sort()).toEqual(['LOOSE', 'OLDER-API']);
@@ -374,10 +374,10 @@ describe('filtered list caches (KRTX-639)', () => {
     const byPerson = qk.project.sessionsPaged('P1', 'visible', { group: 'GA', createdBy: 'u1' });
     const recent = qk.project.sessionsPaged('P1', 'visible', { group: 'GA', updatedAfter: '2026-10-27T00:00:00.000Z' });
     for (const key of [labelled, byAgent, byPerson, recent]) qc.setQueryData(key, pagedOf([]));
-    upsertCachedProjectSession(qc, 'P1', withInitiator('PLAIN', {
+    upsertCachedWorkspaceSession(qc, 'P1', withInitiator('PLAIN', {
       group_id: 'GA', labels: [], agent_name: 'default', created_by: 'u2', updated_at: '2026-10-26T00:00:00.000Z',
     }));
-    upsertCachedProjectSession(qc, 'P1', withInitiator('MATCH', {
+    upsertCachedWorkspaceSession(qc, 'P1', withInitiator('MATCH', {
       group_id: 'GA', labels: ['urgent', 'ops'], agent_name: 'shopper', created_by: 'u1', updated_at: '2026-10-27T09:00:00.000Z',
     }));
     for (const key of [labelled, byAgent, byPerson, recent]) expect(ids(qc, key)).toEqual(['MATCH']);
@@ -394,7 +394,7 @@ describe('filtered list caches (KRTX-639)', () => {
     const qc = new QueryClient();
     const legacy = qk.project.sessionsPaged('P1');
     qc.setQueryData(legacy, pagedOf([]));
-    upsertCachedProjectSession(qc, 'P1', withInitiator('NEW', { parent_session_id: 'S0' }));
+    upsertCachedWorkspaceSession(qc, 'P1', withInitiator('NEW', { parent_session_id: 'S0' }));
     expect(ids(qc, legacy)).toEqual(['NEW']);
   });
 });

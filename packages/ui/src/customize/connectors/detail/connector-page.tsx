@@ -52,7 +52,7 @@ import { useConnectorDetail } from './use-connector-detail';
 /** The column `CapabilityPageShell` gives the list page beside this one. */
 
 /**
- * `/projects/<id>/admin/connectors/<app>/<connector>` — one connector, as
+ * `/workspaces/<id>/admin/connectors/<app>/<connector>` — one connector, as
  * a page: its accounts, its tools, its settings.
  *
  * `appSegment` is navigation context only. It decides where Back goes: the

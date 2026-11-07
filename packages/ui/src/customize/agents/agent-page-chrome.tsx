@@ -25,7 +25,7 @@ import { type MouseEvent, type ReactNode, useCallback } from 'react';
 import { useTranslations as useI18nTranslations } from '../../i18n';
 import { AgentMark, agentDisplayName } from '../../internal/components/agent-mark';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
-import { SETTINGS_SIDEBAR_WIDTH_PX } from '../../internal/account-hub/account-settings-shell';
+import { SETTINGS_SIDEBAR_WIDTH_PX } from '../../internal/components/nav-rail';
 import { CaretRightIcon } from '@phosphor-icons/react';
 import { useInCustomizeFrame } from '../shared/customize-tab-bar';
 import { cn } from '../../internal/lib/utils';

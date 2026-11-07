@@ -7,7 +7,7 @@ import type { UiTranslator } from '../../i18n';
  * and what each section is called. A section id is the `?accountTab=` value.
  *
  * Shared by the hub body (`account-hub-content.tsx`, which renders the pane)
- * and the settings shell (`account-settings-shell.tsx`, which renders the
+ * and Workspace settings (`project-admin-dashboard.tsx`, which renders the
  * sidebar nav and the breadcrumb). Nothing here fetches — it is names, icons,
  * and order.
  */
@@ -98,7 +98,7 @@ export const NAV_GROUPS: readonly AccountNavGroup[] = [
     items: [
       { id: 'members', label: 'Members', icon: UsersIcon },
       { id: 'groups', label: 'Groups', icon: NetworkIcon },
-      { id: 'access-projects', label: 'Projects', icon: FolderOpenIcon },
+      { id: 'access-projects', label: 'Workspaces', icon: FolderOpenIcon },
       { id: 'roles', label: 'Roles', icon: ShieldIcon },
       { id: 'identity', label: 'Identity', icon: FingerprintIcon },
       { id: 'audit', label: 'Audit log', icon: ScrollIcon },
@@ -117,11 +117,11 @@ export const NAV_GROUPS: readonly AccountNavGroup[] = [
 // Header block for sections whose content doesn't carry its own title.
 export const PANE_META: Partial<Record<AccountSection, { title: string; description: string }>> = {
   git: { title: 'Git', description: '' },
-  members: { title: 'Members', description: 'People with access to this account.' },
-  billing: { title: 'Plan', description: 'Plan, wallet, and spend for this account.' },
+  members: { title: 'Members', description: 'People with access to this workspace.' },
+  billing: { title: 'Plan', description: 'Plan, wallet, and spend for this workspace.' },
   transactions: {
     title: 'Usage',
-    description: 'Kortix charges and credit ledger for this account.',
+    description: 'Kortix charges and credit ledger for this workspace.',
   },
   tokens: {
     title: 'API keys',
@@ -135,20 +135,20 @@ export const PANE_META: Partial<Record<AccountSection, { title: string; descript
   },
   audit: {
     title: 'Audit log',
-    description: "Read access to the account's own audit trail.",
+    description: "Read access to the workspace's own audit trail.",
   },
   roles: {
     title: 'Roles',
-    description: 'Built-in and custom roles. Assign them from Members and Projects.',
+    description: 'Built-in and custom roles. Assign them from Members and Workspaces.',
   },
   help: {
     title: 'Help',
-    description: 'How access works in this account.',
+    description: 'How access works in this workspace.',
   },
-  settings: { title: 'Settings', description: 'Name and security for this account.' },
+  settings: { title: 'Settings', description: 'Name and security for this workspace.' },
   branding: {
     title: 'Branding',
-    description: 'Your logo, icon, favicon, and product name for everyone in this account.',
+    description: 'Your logo, icon, favicon, and product name for everyone in this workspace.',
   },
 };
 

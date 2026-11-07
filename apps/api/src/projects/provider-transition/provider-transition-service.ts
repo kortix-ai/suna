@@ -4,7 +4,7 @@
  * resume worker, and the prebuild script all go through here.
  */
 import { and, eq, ne } from 'drizzle-orm';
-import { projects, sandboxTemplates, type Database } from '@kortix/db';
+import { sandboxTemplates, type Database } from '@kortix/db';
 import { db as appDb } from '../../shared/db';
 import { getSandboxProvider } from '../../snapshots/providers';
 import {
@@ -40,8 +40,9 @@ import {
 import { emitProviderTransitionEvent } from './provider-transition-metrics';
 import { logger } from '../../lib/logger';
 import { DEPRECATED_PROVIDER_ERROR, isDeprecatedProvider } from '../../platform/providers/deprecated';
+import { projectsView } from '../../workspaces/rows';
 
-type ProjectRow = typeof projects.$inferSelect;
+type ProjectRow = typeof projectsView.$inferSelect;
 
 function toGitBackedProject(row: ProjectRow): GitBackedProject & { accountId: string } {
   return {
@@ -145,7 +146,7 @@ export function defaultTransitionDeps(database: Database = appDb): TransitionDep
     },
     resolvePrepIdentity,
     loadProject: async (projectId) => {
-      const [row] = await database.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+      const [row] = await database.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
       if (!row || row.status === 'archived') return null;
       return toGitBackedProject(row);
     },
@@ -197,7 +198,7 @@ export async function requestProviderTransition(input: {
   const database = input.database ?? appDb;
   const target = normalizeTargetProvider(input.targetRaw);
 
-  const [row] = await database.select().from(projects).where(eq(projects.projectId, input.projectId)).limit(1);
+  const [row] = await database.select().from(projectsView).where(eq(projectsView.projectId, input.projectId)).limit(1);
   if (!row || row.status === 'archived') throw new ProviderTransitionError('project not found', 'not_found');
 
   // Validate the target (enabled provider) — a disabled/unknown target is a hard
@@ -224,7 +225,7 @@ export async function requestProviderTransition(input: {
     if (kind === 'immediate_clear') {
       emitProviderTransitionEvent('cancelled', { target: 'default', source: sourceProvider, projectId: input.projectId });
     }
-    const [updated] = await database.select().from(projects).where(eq(projects.projectId, input.projectId)).limit(1);
+    const [updated] = await database.select().from(projectsView).where(eq(projectsView.projectId, input.projectId)).limit(1);
     return { kind: 'immediate', pin: target, projectRow: updated ?? row };
   }
 

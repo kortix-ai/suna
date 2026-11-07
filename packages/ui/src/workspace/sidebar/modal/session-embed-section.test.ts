@@ -11,7 +11,7 @@ describe('sessionEmbedSnippet', () => {
     // The real session page URL, on the app origin — not a token-gated viewer
     // or widget route.
     expect(snippet).toBe(
-      '<iframe src="https://kortix.com/projects/11111111-1111-4111-8111-111111111111/sessions/22222222-2222-4222-8222-222222222222" style="height:640px;width:100%;border:0;border-radius:12px" title="Kortix session" loading="lazy"></iframe>',
+      '<iframe src="https://kortix.com/workspaces/11111111-1111-4111-8111-111111111111/sessions/22222222-2222-4222-8222-222222222222" style="height:640px;width:100%;border:0;border-radius:12px" title="Kortix session" loading="lazy"></iframe>',
     );
   });
 

@@ -159,8 +159,8 @@ flow(
     routes: [
       'POST /v1/notifications/device-token',
       'DELETE /v1/notifications/device-token/:token',
-      'GET /v1/accounts/me/devices',
-      'DELETE /v1/accounts/me/devices/:sessionId',
+      'GET /v1/me/devices',
+      'DELETE /v1/me/devices/:sessionId',
     ],
   },
   async (ctx) => {
@@ -180,7 +180,7 @@ flow(
         });
         signIn.status(200);
         phone.access = signIn.json<any>().session.access_token;
-        const devices = await ctx.client.as(here).get('/v1/accounts/me/devices');
+        const devices = await ctx.client.as(here).get('/v1/me/devices');
         devices.status(200);
         phone.id = (devices.json<any>().devices as Array<{ session_id: string; current: boolean }>).find(
           (d) => !d.current,
@@ -194,7 +194,7 @@ flow(
       });
 
       await ctx.step("signing the phone out drops the phone's token: a delete finds nothing (deleted=false)", async () => {
-        (await ctx.client.as(here).del(`/v1/accounts/me/devices/${phone.id}`)).status(200).body().has('$.ok', true);
+        (await ctx.client.as(here).del(`/v1/me/devices/${phone.id}`)).status(200).body().has('$.ok', true);
         (await del(phoneToken)).status(200).body().has('$.deleted', false);
       });
 
@@ -280,13 +280,13 @@ async function teamWithTwoMembers(ctx: FlowContext) {
   return { team, project, a, b };
 }
 
-const watchRoute = '/v1/projects/:projectId/sessions/:sessionId/watch';
+const watchRoute = '/v1/workspaces/:projectId/sessions/:sessionId/watch';
 const QUESTION = 'Which region should the service deploy to?';
 
 /** The daemon relays an agent question for the session (the sandbox credential unless `who` is given). */
 function relayQuestion(turn: TurnSession, projectId: string, requestId: string, who: Client = turn.sandbox) {
   return who.post(
-    '/v1/projects/:projectId/turn-question',
+    '/v1/workspaces/:projectId/turn-question',
     {
       session_id: turn.sessionId,
       request_id: requestId,
@@ -300,7 +300,7 @@ function relayQuestion(turn: TurnSession, projectId: string, requestId: string, 
 /** The daemon relays a tool permission request for the session. */
 function relayPermission(turn: TurnSession, projectId: string, requestId: string, who: Client = turn.sandbox) {
   return who.post(
-    '/v1/projects/:projectId/turn-permission',
+    '/v1/workspaces/:projectId/turn-permission',
     { session_id: turn.sessionId, request_id: requestId, permission: 'bash', patterns: ['git push origin main'] },
     { params: { projectId } },
   );
@@ -511,8 +511,8 @@ flow(
     requires: ['database'],
     routes: [
       'POST /v1/accounts/tokens',
-      'POST /v1/projects/:projectId/turn-stream',
-      'PUT /v1/projects/:projectId/sessions/:sessionId/watch',
+      'POST /v1/workspaces/:projectId/turn-stream',
+      'PUT /v1/workspaces/:projectId/sessions/:sessionId/watch',
       'GET /v1/notifications',
     ],
   },
@@ -570,7 +570,7 @@ flow(
     domain: 'notifications',
     requires: ['database'],
     routes: [
-      'PUT /v1/projects/:projectId/sessions/:sessionId/sharing',
+      'PUT /v1/workspaces/:projectId/sessions/:sessionId/sharing',
       'GET /v1/notifications',
     ],
   },
@@ -587,7 +587,7 @@ flow(
       metadata: { name: 'Launch checklist' },
     });
     const params = { projectId: project.id, sessionId };
-    const share = (body: unknown) => ctx.client.as(ctx.P.OWNER).put('/v1/projects/:projectId/sessions/:sessionId/sharing', body, { params });
+    const share = (body: unknown) => ctx.client.as(ctx.P.OWNER).put('/v1/workspaces/:projectId/sessions/:sessionId/sharing', body, { params });
     const sharedRow = (row: InboxRow) => row.session_id === sessionId && row.kind === 'shared';
     const db = await openFlowDb(ctx.env);
     try {
@@ -707,8 +707,8 @@ flow(
     requires: ['database'],
     routes: [
       'PUT /v1/notifications/preferences',
-      'POST /v1/projects/:projectId/triggers',
-      'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'POST /v1/workspaces/:projectId/triggers',
+      'POST /v1/workspaces/:projectId/triggers/:slug/fire',
       'GET /v1/notifications',
     ],
   },
@@ -722,7 +722,7 @@ flow(
       const slug = 'notif-digest';
       const name = `Nightly digest ${randomUUID().slice(0, 8)}`;
       const params = { projectId: project.id };
-      const fire = () => ctx.client.as(creator).post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug } });
+      const fire = () => ctx.client.as(creator).post('/v1/workspaces/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug } });
       const alert = (row: InboxRow) => row.kind === 'automation_failed' && row.project_id === project.id && row.trigger_slug === slug;
 
       // A failure streak's email is opt-in (2026-11-06): the creator turns it on.
@@ -733,7 +733,7 @@ flow(
 
       await ctx.step('a project manager creates a cron trigger → 201, and follows its alerts', async () => {
         const created = await ctx.client.as(creator).post(
-          '/v1/projects/:projectId/triggers',
+          '/v1/workspaces/:projectId/triggers',
           { name, slug, type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'Summarize the day.' },
           { params },
         );
@@ -801,7 +801,7 @@ flow(
     requires: ['database'],
     routes: [
       'POST /v1/accounts/tokens',
-      'POST /v1/projects/:projectId/turn-stream',
+      'POST /v1/workspaces/:projectId/turn-stream',
       'GET /v1/notifications',
     ],
   },
@@ -846,10 +846,10 @@ flow(
     domain: 'notifications',
     requires: ['database'],
     routes: [
-      'GET /v1/projects/:projectId/sessions/:sessionId/watch',
-      'PUT /v1/projects/:projectId/sessions/:sessionId/watch',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/watch',
+      'PUT /v1/workspaces/:projectId/sessions/:sessionId/watch',
       'POST /v1/accounts/tokens',
-      'POST /v1/projects/:projectId/turn-stream',
+      'POST /v1/workspaces/:projectId/turn-stream',
       'GET /v1/notifications',
     ],
   },
@@ -866,9 +866,9 @@ flow(
     const setWatch = (who: Principal, value: boolean) =>
       ctx.client.as(who).put(watchRoute, { watching: value }, { params }).then((r) => r.status(200).body().has('$.watching', value));
     try {
-      await ctx.step('ANON → 401; a user outside the account → 403', async () => {
+      await ctx.step('ANON → 401; a user outside the account → 404 workspace_not_found', async () => {
         (await ctx.client.as(ctx.P.ANON).get(watchRoute, { params })).status(401);
-        (await ctx.client.as(ctx.P.NONMEMBER).get(watchRoute, { params })).status(403);
+        (await ctx.client.as(ctx.P.NONMEMBER).get(watchRoute, { params })).status(404).body().has('$.code', 'workspace_not_found');
       });
 
       await ctx.step('the creator watches by default (true); a member who never wrote in it does not (false)', async () => {
@@ -932,9 +932,9 @@ flow(
     requires: ['database'],
     routes: [
       'POST /v1/accounts/tokens',
-      'PUT /v1/projects/:projectId/sessions/:sessionId/watch',
-      'POST /v1/projects/:projectId/turn-question',
-      'POST /v1/projects/:projectId/turn-permission',
+      'PUT /v1/workspaces/:projectId/sessions/:sessionId/watch',
+      'POST /v1/workspaces/:projectId/turn-question',
+      'POST /v1/workspaces/:projectId/turn-permission',
       'GET /v1/notifications',
     ],
   },
@@ -1018,12 +1018,12 @@ flow(
     domain: 'notifications',
     requires: ['database'],
     routes: [
-      'GET /v1/projects/:projectId',
-      'PATCH /v1/projects/:projectId/features',
-      'GET /v1/projects/:projectId/sessions/:sessionId/watch',
+      'GET /v1/workspaces/:projectId',
+      'PATCH /v1/workspaces/:projectId/features',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/watch',
       'POST /v1/accounts/tokens',
-      'POST /v1/projects/:projectId/turn-stream',
-      'POST /v1/projects/:projectId/turn-question',
+      'POST /v1/workspaces/:projectId/turn-stream',
+      'POST /v1/workspaces/:projectId/turn-question',
       'GET /v1/notifications',
     ],
   },

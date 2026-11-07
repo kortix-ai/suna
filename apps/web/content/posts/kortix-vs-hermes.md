@@ -77,7 +77,7 @@ Where Hermes keeps a hash of before and after, Kortix keeps the change itself on
 
 The review gate comes with the product, wherever you run it. Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free. The cloud bills credits. A reviewer who never runs an agent still needs an account. As published on [Kortix pricing](https://kortix.com/pricing), checked October 2026:
 
-Free is $0 with 500 credits per month, every feature and 1 project, on the user's own provider keys or ChatGPT subscription. Managed models are on the Credits plan only. The paid plan is credits at one rate: 100 credits per dollar, so 5,000 credits a month costs $50. A larger monthly amount buys more credits, never a cheaper credit.
+Free is $0 with 500 credits per month on your first workspace and every feature, on your own provider keys or ChatGPT subscription. Managed models are on the Credits plan only. The paid plan is credits at one rate: 100 credits per dollar, so 5,000 credits a month costs $50. A larger monthly amount buys more credits, never a cheaper credit.
 
 Members are unlimited and free, and the account shares one credit pool. Unused monthly credits roll over one month. A reviewer adds no charge. The pricing page puts the last piece plainly: "Credits pay for the agent computer." Model usage goes straight to your provider on your own keys.
 

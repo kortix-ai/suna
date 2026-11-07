@@ -155,7 +155,7 @@ async function asked(opts: { questions?: unknown[]; open?: boolean; policy?: str
       ...(opts.deleted ? { deletedAt: new Date().toISOString() } : {}),
     },
   });
-  await db.insert(chatThreads).values({ projectId: project.project_id, platform: 'teams', workspaceId: TENANT, threadId: convo, sessionId });
+  await db.insert(chatThreads).values({ projectId: project.project_id, platform: 'teams', platformTeamId: TENANT, threadId: convo, sessionId });
   const [row] = await db
     .insert(sessionPendingQuestions)
     .values({
@@ -231,13 +231,13 @@ async function relayed(q: { sessionId: string; convo: string; pendingId: string 
 
 beforeAll(async () => {
   project = await seedProject('teams-question-answer');
-  await db.insert(chatInstalls).values({ platform: 'teams', workspaceId: TENANT, projectId: project.project_id });
+  await db.insert(chatInstalls).values({ platform: 'teams', platformTeamId: TENANT, projectId: project.project_id });
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: project.account_id, accountRole: 'owner' });
   await insertIntoView(db, accountMembers, { userId: MEMBER, accountId: project.account_id, accountRole: 'member' });
   await insertIntoView(db, projectMembers, { accountId: project.account_id, projectId: project.project_id, userId: MEMBER, projectRole: 'member' });
   await db.insert(chatUserIdentities).values([
-    { platform: 'teams', workspaceId: TENANT, platformUserId: AAD.owner, userId: OWNER },
-    { platform: 'teams', workspaceId: TENANT, platformUserId: AAD.member, userId: MEMBER },
+    { platform: 'teams', platformTeamId: TENANT, platformUserId: AAD.owner, userId: OWNER },
+    { platform: 'teams', platformTeamId: TENANT, platformUserId: AAD.member, userId: MEMBER },
   ]);
 });
 
@@ -250,16 +250,16 @@ beforeEach(() => {
 afterAll(async () => {
   jwks.stop(true);
   globalThis.fetch = realFetch;
-  await db.delete(chatUserIdentities).where(eq(chatUserIdentities.workspaceId, TENANT));
-  await db.delete(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.workspaceId, TENANT));
-  await db.delete(chatThreadParticipants).where(eq(chatThreadParticipants.workspaceId, TENANT));
-  await db.delete(chatChannelBindings).where(eq(chatChannelBindings.workspaceId, TENANT));
+  await db.delete(chatUserIdentities).where(eq(chatUserIdentities.platformTeamId, TENANT));
+  await db.delete(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.platformTeamId, TENANT));
+  await db.delete(chatThreadParticipants).where(eq(chatThreadParticipants.platformTeamId, TENANT));
+  await db.delete(chatChannelBindings).where(eq(chatChannelBindings.platformTeamId, TENANT));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `teams:%${TENANT}%`));
   await db.delete(chatTurnStreams).where(eq(chatTurnStreams.projectId, project.project_id));
   await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.projectId, project.project_id));
   await db.delete(sessionPendingQuestions).where(eq(sessionPendingQuestions.projectId, project.project_id));
   await db.delete(chatThreads).where(eq(chatThreads.projectId, project.project_id));
-  await db.delete(chatInstalls).where(eq(chatInstalls.workspaceId, TENANT));
+  await db.delete(chatInstalls).where(eq(chatInstalls.platformTeamId, TENANT));
   await db.delete(projectSessions).where(eq(projectSessions.projectId, project.project_id));
   await removeSeeded([project]);
 });

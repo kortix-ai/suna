@@ -122,7 +122,7 @@ export function createModelPricingLookup(
 export function useModelPricingLookup(
   providers: ProviderListResponse | undefined,
 ): ModelPricingLookup {
-  // Every caller renders under `/projects/[id]/…` (session chat, the
+  // Every caller renders under `/workspaces/[id]/…` (session chat, the
   // sub-session modal, the context modal). No project id → no fallback.
   const projectId = useSessionIds().projectId ?? null;
 

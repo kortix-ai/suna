@@ -1,5 +1,6 @@
 // Generated from the final user-visible i18n audit. Keys are SHA-256(message)[0:12].
 export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
+  'Danger zone': 'textfd8b8dae4421',
   "trigger": 'text683259feabbf',
   "New trigger": 'texta38f4ea67a30',
   "Search triggers": 'textcf789cba73dc',
@@ -63,7 +64,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Active: 'text92340695899b',
   'Active accounts': 'text2c7765e1edc9',
   Add: 'text9fd728c66c9a',
-  'Add a project secret': 'text134c461eb9c4',
+  'Add a workspace secret': 'text134c461eb9c4',
   'Add an image or document': 'text5aaf2a8498fd',
   Added: 'text6b02e0d363a4',
   Admin: 'textc1c224b03cd9',
@@ -136,7 +137,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Choose which agent answers': 'texta33bc2792173',
   'Choose which model runs this turn': 'text0e22e022480d',
   'Claude Code': 'text246ef8c1130d',
-  'Clone a full, working Kortix project in one click, or add skills from every source into your own.':
+  'Clone a full, working Kortix workspace in one click, or add skills from every source into your own.':
     'text5a7b24722fae',
   Closed: 'textc21ead0614e7',
   'Cloud runtime': 'texta5a909060ba4',
@@ -229,8 +230,8 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Every Kortix release, straight from the source.': 'text526c3dafbee8',
   'Every Kortix release, straight from the source. New features, fixes, and improvements — versioned and dated.':
     'text3efe2d7294ba',
-  'Every member of this project': 'text7b9908a3c44a',
-  'Every member of this project.': 'text78fc0a25db23',
+  'Every member of this workspace': 'text7b9908a3c44a',
+  'Every member of this workspace.': 'text78fc0a25db23',
   'Every morning at 07:00, build the revenue report from the warehouse and post it to the team channel.':
     'textbfdab44d056f',
   'Every run is routed through a single gateway, so the model stays a setting instead of an architecture. Switch per agent, per task, or to whatever ships next week.':
@@ -238,7 +239,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Every session boots its own cloud sandbox on its own Git branch, preloaded with your repo and tools. Thousands run in parallel with zero crossover, none of it on your laptop.':
     'text493e963ae62a',
   'Every tool runs without asking. Only the rules below can stop one.': 'texta63fb2eebd02',
-  'Everything an owner can do except deleting the account or transferring ownership. Also Manager on every project.':
+  'Everything an owner can do except deleting the workspace or transferring ownership. Also has Manager access.':
     'textc8ef36aed650',
   Expired: 'text424a2551d356',
   Extensions: 'textfe3436af86b4',
@@ -256,10 +257,10 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Free includes 200 credits each month for Agent Computer runtime. Those credits do not pay for managed LLM calls.':
     'text531d0e1f0c72',
   'Frequently asked questions': 'texte956a9404b46',
-  'Full control of the account. Can transfer ownership, delete the account, and manage billing — and is Manager on every project.':
+  'Full control of the workspace. Can transfer ownership, delete the workspace, and manage billing — and has Manager access.':
     'texta36cac573efd',
   'Full Lockdown': 'text84175b810ac7',
-  'Full project control — edit, deploy, triggers, members, delete.': 'texta9bbb082ce1b',
+  'Full workspace control — edit, deploy, triggers, members, delete.': 'texta9bbb082ce1b',
   'Game of Life — Kortix': 'textc94d0e1fcb3d',
   Gateway: 'text41ed52921661',
   'General knowledge worker — full tool access; codes, researches, writes and runs ops end-to-end in an isolated sandbox.':
@@ -284,7 +285,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Info Banner': 'textb139c4cffca9',
   Input: 'text36ecb4f86691',
   'Input Needed': 'text6e8c98a8560e',
-  'Install it to your workspace': 'text8e8d76bd474e',
+  'Install it to your Slack workspace': 'text8e8d76bd474e',
   'Install the CLI and drive Kortix from your shell.': 'text1f1146934bab',
   'Internal Kortix presentations.': 'text2e7ba6cc8aa3',
   'iPhone and iPad': 'text0c567ac76e89',
@@ -325,9 +326,9 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Manager: 'text8b2085f74dfa',
   Markdown: 'text0e52f6b9d025',
   Marketplace: 'textc608981d8d68',
-  'Marketplace — Clone a ready-made Kortix project': 'text7eebc3924618',
+  'Marketplace — Clone a ready-made Kortix workspace': 'text7eebc3924618',
   Member: 'text7c968fb71f50',
-  "Members, billing, roles, and audit live in each organization's own settings.":
+  "Members, billing, roles, and audit live in each workspace's own settings.":
     'textfde028796e58',
   Memory: 'textc3963aedaac6',
   'Memory Search': 'text9993673dd585',
@@ -372,7 +373,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Opened a change request': 'text8ba30093bb74',
   Operations: 'text358cc201f87d',
   'Optional content category.': 'text88ccecac6aa5',
-  Organizations: 'text2730183d6b77',
   Output: 'textb2439bcb8dee',
   Owner: 'text4b1b8aa3608a',
   'Owner approval': 'text94001501b514',
@@ -398,11 +398,11 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Productivity: 'textf42bca637cb3',
   'Profiles the warehouse, writes performant SQL and ships a dashboard from a plain question.':
     'text4ea9bc9c2acc',
-  Project: 'text985959785319',
-  'Project config, tasks, context': 'text85231c543c71',
-  'Project members can join': 'text9caa5b92ed0c',
-  'Project-wide': 'textb22e4d6719d8',
-  Projects: 'text04e2a9728af7',
+  Workspace: 'text985959785319',
+  'Workspace config, tasks, context': 'text85231c543c71',
+  'Workspace members can join': 'text9caa5b92ed0c',
+  'Workspace-wide': 'textb22e4d6719d8',
+  Workspaces: 'text04e2a9728af7',
   Providers: 'text996c32b35f21',
   'Pulled **312 rows** from `metrics.q3`. Revenue is up **18% QoQ**, burn down **9%**. Drafting the board narrative and charts now.':
     'text807eb0fa47c8',
@@ -413,7 +413,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Ran the billing suite': 'text5d405d8955db',
   'Read the Markdown representation of a Kortix public page.': 'text768b4b146c74',
   'Read the webhook handler': 'text2bdb956493fd',
-  'Read, run sessions, and fire triggers — no editing or config. The project floor role.':
+  'Read, run sessions, and fire triggers — no editing or config. The workspace floor role.':
     'texta808a5ca5a95',
   'Reading CRM activity…': 'text752762fe49bd',
   'Reading the latest financials…': 'textfac6d5c5a0ac',
@@ -452,7 +452,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Sales & marketing': 'text8228542fed70',
   'Sales deck': 'text14d04a4900a4',
   Sandbox: 'text67fc62497e85',
-  'scaffold a new Kortix project': 'textaeb72f2ccad6',
+  'scaffold a new Kortix workspace': 'textaeb72f2ccad6',
   'Scanning commits since Monday…': 'text70e8adbbc0b2',
   Scheduled: 'text4724f344c1c0',
   Schedules: 'text221ff19c904c',
@@ -515,10 +515,10 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'The company is a directory.': 'text2c8c07e01e73',
   'The company narrative: where Kortix came from, what it is, and why a company runs on a repo and a workforce of agents.':
     'textec2392b36354',
-  "The floor role for the account. No implicit project access — they see only the projects they've been added to, directly or via a group.":
+  "The floor role for the workspace. No implicit access — they see only what they've been granted, directly or through a group.":
     'text6562d4f7e6fb',
   'The gate': 'textb46788a7c320',
-  'The in-depth platform walkthrough — the full Kortix surface, from projects and sessions to connectors, channels and change requests.':
+  'The in-depth platform walkthrough — the full Kortix surface, from workspaces and sessions to connectors, channels and change requests.':
     'text7484ed6d3897',
   'The Kortix team': 'text49e7ba9f095d',
   'The open-source CompanyOS. Every agent, skill, and memory is a file in one versioned repo you own — a workforce of AI agents that does real work, shared across your whole team from Slack, Teams, the web, or the CLI. Self-hostable, any model, your keys.':
@@ -556,12 +556,12 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'What changed in our repos since Monday?': 'texte7d31219b7f4',
   'What you own': 'text008e94f6ea7c',
   'Where work arrives': 'text2838bfc7ddc2',
-  'Which providers and models this project can use.': 'text3786f1f8d4fd',
+  'Which providers and models this workspace can use.': 'text3786f1f8d4fd',
   White: 'text3495e757855a',
   'Who can access this': 'text3998a1eb7588',
   'Who can open this session': 'textfe86607fd694',
   "Who does the work — each one's instructions, model, and access.": 'text9a6a77d58095',
-  'Whole project': 'text28ff734e9722',
+  'Whole workspace': 'text28ff734e9722',
   'Wide brandmark — the header and loading screens. SVG or PNG, up to 1 MB.': 'text6ec66e4cf9c5',
   Windows: 'textd598026a9cbc',
   'Work reaches main through a change request. Merging is a separate power, refused by default.':
@@ -595,18 +595,18 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Agent environment': 'text1774cca7f6a4',
   'Agent sections': 'text7be318295927',
   'Agent updated': 'textd24a95381c8e',
-  'Agents granted this connector cannot call it until a project manager authorizes a connection.':
+  'Agents granted this connector cannot call it until a workspace manager authorizes a connection.':
     'text6a05ddf8cca1',
-  'Agents granted this connector cannot call it until a project connection is authorized.':
+  'Agents granted this connector cannot call it until a workspace connection is authorized.':
     'text7acd4ac590c6',
   'All connectors': 'textd83250185d41',
   'All secrets': 'text0b38e3daeb93',
   'All skills': 'text78abcbbfb830',
   'An agent scaffolds it and opens a change request.': 'text31e3ed0f6798',
-  "Anyone whose project role includes the project.trigger.update permission — Project manager by default — plus account owners and admins. The trigger's own agent always can.":
+  "Anyone whose access role includes the project.trigger.update permission — Manager by default — plus workspace owners and admins. The trigger's own agent always can.":
     'text77ff6343ff46',
-  'Attach to a project — every member inherits the role.': 'text60cbc40cdfac',
-  'Attached to project': 'text4c646014b529',
+  'Attach to a workspace — every member inherits the role.': 'text60cbc40cdfac',
+  'Attached to workspace': 'text4c646014b529',
   'Average duration of each provisioning phase, in execution order, for successful provisions.':
     'text73741827862b',
   'Balance ≤': 'text9437e4118b7d',
@@ -631,7 +631,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Connect my account': 'text9676bdc9332f',
   'Connect now': 'textf5e732583fb2',
   'Connected accounts': 'text2fc385cd2008',
-  'Connectors added to this project appear here for the agent to pick from.': 'text9bf8fe539046',
+  'Connectors added to this workspace appear here for the agent to pick from.': 'text9bf8fe539046',
   Consoles: 'textacf0b83e8622',
   'Copy the workspace to your computer': 'text7114f5d2fafa',
   'Could not copy to the clipboard': 'text4cb23f3c3b90',
@@ -639,7 +639,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   "Could not load this workspace's repository": 'text6c07047e9e83',
   'Couldn’t load the catalog': 'text3f2d97c61a7e',
   "Couldn't load the source": 'text2f2f540650bf',
-  "Couldn't load this project's agents": 'textd70d09b7d701',
+  "Couldn't load this workspace's agents": 'textd70d09b7d701',
   'Create a workspace…': 'texte51ebf3dc9f6',
   'Create in chat': 'textb1895f6ddd9d',
   'Credits debited': 'text3efd6742a383',
@@ -665,15 +665,15 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'End time': 'text2e46006a5eeb',
   'Enter a valid positive amount': 'texta9e82cd23e9d',
   'Errored sessions': 'textc92bd77c8ce2',
-  'Every connector in this project, including ones added later.': 'text35e54cea7f41',
-  'Every project across every account, most-active first.': 'text035b0d33b63d',
-  'Every project member.': 'text7cdd0673dce5',
-  'Every secret in this project, including ones added later.': 'text86fdc0c950d5',
-  'Every skill in this project, including ones added later.': 'textf059c2dbe260',
+  'Every connector in this workspace, including ones added later.': 'text35e54cea7f41',
+  'Every workspace across every account, most-active first.': 'text035b0d33b63d',
+  'Every workspace member.': 'text7cdd0673dce5',
+  'Every secret in this workspace, including ones added later.': 'text86fdc0c950d5',
+  'Every skill in this workspace, including ones added later.': 'textf059c2dbe260',
   'Failed to debit credits': 'text16cf9ca5c085',
   'Failed to grant credits': 'text9538346557b5',
   'Failed to grant trial': 'texte8ea82789107',
-  'Failed to load project': 'textb84177fa1580',
+  'Failed to load workspace': 'textb84177fa1580',
   'Failed to revoke trial': 'text05da7af7e394',
   'Failed to save overrides': 'text222b8d57e366',
   'Failed to set enterprise demo': 'textcb7d3df7dd59',
@@ -689,7 +689,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Finish setup inside the new folder': 'texte7f187cbe20d',
   'follows the default model again': 'texta48097353991',
   'Git repo': 'text95ddc9c4dfd3',
-  'Granted in kortix.yaml, but this project no longer declares it.': 'textfecc36d012be',
+  'Granted in kortix.yaml, but this workspace no longer declares it.': 'textfecc36d012be',
   'Granted of — some failed.': 'text21b1727307b8',
   Health: 'text55898449eb74',
   'How the model samples, and how many tool calls one run may make.': 'text33439eb47c9a',
@@ -705,8 +705,8 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'text51df486e7027',
   'is back on its billed tier.': 'textd9d0364fb8bc',
   'is now .': 'textf4d149d4f9a4',
-  'is now the project default': 'text384c077e42b5',
-  "It may have been renamed or removed from the project's configuration.": 'text2ad30464c3ed',
+  'is now the workspace default': 'text384c077e42b5',
+  "It may have been renamed or removed from the workspace's configuration.": 'text2ad30464c3ed',
   "Kortix can't reach this repository": 'textcb25ff313d81',
   'Kortix did not create this repository, so it cannot add collaborators to it. Manage access from the repository settings on GitHub.':
     'text6e5a03445559',
@@ -714,7 +714,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Leave without saving?': 'text2190d03af90a',
   'Live fleet': 'text2d2827ffc214',
   'Maintenance notifications cleared': 'text6af04bb05dd8',
-  'Make project default': 'texte8f43f910a4e',
+  'Make workspace default': 'texte8f43f910a4e',
   'Manage on GitHub': 'text03298bf58cdb',
   'Managed models updated': 'text13811c334c6d',
   'Manifest file': 'textcef30be178a6',
@@ -732,8 +732,8 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'No account ID': 'text6335879539ad',
   'No accounts match these filters': 'text56f26c55e418',
   'No experimental features': 'text68cbe6ae66c8',
-  'No one is granted this agent yet. Project managers can always use it.': 'text011c4e48df01',
-  'No projects match these filters': 'text93ae826087ca',
+  'No one is granted this agent yet. Workspace managers can always use it.': 'text011c4e48df01',
+  'No workspaces match these filters': 'text93ae826087ca',
   'No sandboxes match this search': 'text062bccfdad1c',
   'No value': 'text4fd0272a5628',
   'Nothing starts this agent automatically yet.': 'textb254c6e02e1a',
@@ -754,10 +754,10 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'texta21a3edd0a56',
   picked: 'text5887e718dea1',
   Preferences: 'text66962f72a088',
-  "Project secrets handed to this agent's sessions as environment variables.": 'text7f619d9e30a8',
+  "Workspace secrets handed to this agent's sessions as environment variables.": 'text7f619d9e30a8',
   "Project secrets handed to this agent's sessions as environment variables. Click one to edit it.":
     'textbb74cc7dce98',
-  'Project settings': 'textfccd73a69e8b',
+  'Workspace settings': 'textfccd73a69e8b',
   'Provider model': 'text34455bf1d857',
   'Provider split, failover, the live fleet, and provisioning latency.': 'text7b49132b286b',
   'Provider, status, session, account, external ID': 'texte7a5e2570fb6',
@@ -774,16 +774,16 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Save failed': 'text53ad6f999b1f',
   'Saving clears every active maintenance notification and restores normal access.':
     'text21e4c72a597b',
-  'Saving commits to your project repo.': 'textc8134fda3694',
+  'Saving commits to your workspace repo.': 'textc8134fda3694',
   'Scale and spend. Cost figures cover the last 24 hours.': 'text80037a202e3f',
   'Schedule updated': 'text5e2e76e79516',
   'Scope updated for': 'text97a81dfde630',
   'Search accounts, owner emails, IDs': 'text9640e38947da',
   'Search features': 'text5535245f3459',
-  'Search projects, accounts, owners': 'text005b4c1dad87',
+  'Search workspaces, accounts, owners': 'text005b4c1dad87',
   'Search: " "': 'textc4cb548dad6d',
   'Secret deleted': 'text50c9e2de86db',
-  'Secrets added to this project appear here for the agent to pick from.': 'textfc7605717e58',
+  'Secrets added to this workspace appear here for the agent to pick from.': 'textfc7605717e58',
   'Secrets command': 'text68269b6f8874',
   'Send test notification': 'textd0ef86e220fc',
   'Service account API keys for CI and automations, and the rules they follow.': 'textff0149f3aca8',
@@ -796,7 +796,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Setup command': 'text6300595b1dfd',
   Share: 'text29887a5ff984',
   'Signing key updated': 'textd5c147e93f23',
-  'Skills declared in this project appear here for the agent to pick from.': 'text62d220bbfcc8',
+  'Skills declared in this workspace appear here for the agent to pick from.': 'text62d220bbfcc8',
   'Some invites were created without email delivery — share links manually.': 'textc32c6c7ee51b',
   'Sound pack played for session events.': 'text0005b85debac',
   Sounds: 'text6f305c4b1874',
@@ -826,7 +826,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Thinking effort': 'text264c28cbf01c',
   'This account does not hold admin permissions. Contact a workspace admin if that looks wrong.':
     'text997173af651f',
-  'This deployment exposes no per-project feature flags.': 'text8d3df7003a8d',
+  'This deployment exposes no per-workspace feature flags.': 'text8d3df7003a8d',
   'Throw some confetti': 'texteff2ec3d9dcd',
   'Tier:': 'text50c519cd51cc',
   'Told to this agent at the start of every session. Markdown. Leave empty to use the default instructions.':
@@ -841,13 +841,13 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Unsaved changes.': 'textefa5855ff509',
   'Use the agent&apos;s usual model': 'text6960ac83d152',
   'Use your own Git client': 'textd29222de0472',
-  'Uses the selected agent, project, or platform default.': 'text4eb861e5d86e',
+  'Uses the selected agent, workspace, or platform default.': 'text4eb861e5d86e',
   'What every user is seeing right now.': 'text8070bf46e184',
   'What is wrong right now. Zero is the expected value for all three counts.': 'text75779b882b3d',
-  'What this account has left to spend, and what it spent this period.': 'textb091005190d7',
-  'What this agent may do to the project itself — sessions, triggers, secrets, members — from inside a session.':
+  'What this workspace has left to spend, and what it spent this period.': 'textb091005190d7',
+  'What this agent may do to the workspace itself — sessions, triggers, secrets, members — from inside a session.':
     'text15365eb45e29',
-  'Whatever the project default is, now and after it changes.': 'textb23625948eee',
+  'Whatever the workspace default is, now and after it changes.': 'textb23625948eee',
   'When this agent starts on its own.': 'text1a1e4d549e85',
   'Where each kind of support request gets resolved.': 'textb3feb3946ecf',
   'Where new sandboxes are placed, how that placement performs, and the live fleet it produces.':
@@ -861,36 +861,36 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'You need the project&apos;s settings permission to change a feature flag.':
     'text6d484ed8c1a0',
   'Your browser does not support notifications.': 'text51464281894d',
-  'Your plan, credits, and billing for this account.': 'text5dffd4db88c5',
+  'Your plan, credits, and billing for this workspace.': 'text5dffd4db88c5',
   Attach: 'textd406ade2958c',
   'Grant access ({count})': 'text7697f2d90676',
-  'Pick account members to add to this group.': 'text2f5525e787a5',
-  'Pick people or groups, or type an email to invite someone new — everyone selected gets the same role on this project.':
+  'Pick workspace members to add to this group.': 'text2f5525e787a5',
+  'Pick people or groups, or type an email to invite someone new — everyone selected gets the same role on this workspace.':
     'textae79dce0e646',
-  'Pick people, or type an email to invite someone new — everyone selected gets the same role on this account.':
+  'Pick people, or type an email to invite someone new — everyone selected gets the same role on this workspace.':
     'text3a5ae4d7de8e',
   'Pick the group these {count} people join.': 'textdb16253b2304',
   'Pick the group this person joins.': 'text8e4a6d907944',
-  'this account': 'text2faca96de47e',
+  'this workspace': 'text2faca96de47e',
   people: 'textc9022680f888',
   'What does an agent actually run on?': 'text7b84ea95f8ae',
   'Its own machine. Every session boots an isolated Linux cloud computer with your repo and your tools already on it, on its own git branch — the session id, the sandbox id and the branch name are one and the same string. The agent can install, run and break anything inside it; only what it commits survives, because the machine is destroyed with everything on it.':
     'text97bbd1c3b346',
   'What stops it doing something I did not want?': 'textc145665dd580',
-  'You set allow, ask or block per action, and a rule can match on a glob, a regular expression, or the arguments of the call itself. Be aware that nothing is switched on for you: a project with no policy declared runs every action, so this is a thing you configure rather than a thing you inherit. Session work reaches main through a change request, and merge is default-deny for an agent unless an admin grants it.':
+  'You set allow, ask or block per action, and a rule can match on a glob, a regular expression, or the arguments of the call itself. Be aware that nothing is switched on for you: a workspace with no policy declared runs every action, so this is a thing you configure rather than a thing you inherit. Session work reaches main through a change request, and merge is default-deny for an agent unless an admin grants it.':
     'texta9fe46474f33',
   'Can I see everything an agent did?': 'text3a8d0e57770e',
   'It is all recorded, on every plan. Recording is never gated — actions, approvals and the session transcript are captured whatever you pay. Reading, exporting and streaming that audit trail out to your own SIEM is an Enterprise entitlement, so on the lower plans the record exists but the export does not.':
     'text36814e8d3c88',
   'Is my company data yours?': 'text618ad8d1c91a',
-  'No. A project is a git repository — clone it and the agents, the skills and everything the company has learned come with you. Self-host and the database, the files, the repos, the secrets and the audit record all sit on disk you control, on one Docker Compose stack built from the same images the managed cloud runs. It is not air-gapped, and we will not pretend otherwise: agent sandboxes run on the compute provider you configure, and your instance has to be reachable so they can call back.':
+  'No. A workspace is backed by a git repository — clone it and the agents, the skills and everything the company has learned come with you. Self-host and the database, the files, the repos, the secrets and the audit record all sit on disk you control, on one Docker Compose stack built from the same images the managed cloud runs. It is not air-gapped, and we will not pretend otherwise: agent sandboxes run on the compute provider you configure, and your instance has to be reachable so they can call back.':
     'textda09b5e9847d',
   'Can I use the models I already pay for?': 'text151863950f0e',
   'Yes. Bring your own API key for any major provider, or sign in with the ChatGPT subscription you already pay for, or use the managed gateway and bring no key at all. The model is a line of configuration in your repo, so switching provider is a diff rather than a migration.':
     'text055026a9c10e',
   'What does it cost?': 'texte8dc9deba44c',
-  'Free is $0 — one project, 500 credits a month and every feature, with your own key or ChatGPT subscription for models. Kortix-managed models need a paid plan. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.':
-    'text79c0703d2226',
+  'Free is $0: 500 credits a month on your first workspace and every feature, with your own key or ChatGPT subscription for models. Kortix-managed models need a paid plan. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole workspace. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.':
+    'text1554fd387f25',
   'Why we are building it': 'text7ee5a6d5e8ad',
   'Read the source': 'text625b22ba31d0',
   'who does the work': 'textf16b8eb8dbdc',
@@ -1018,4 +1018,11 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'How do runs stay isolated?': 'text48b78a9ab65b',
   'Every session runs in its own sandbox on its own git branch. Nothing is shared between runs.':
     'text4af0b7d8bfb1',
+  "Full control: billing, people, and deleting the workspace.": 'textfda15274a752',
+  "Full control of the workspace: billing, people, transferring ownership and deleting it.": 'text02faaaef698b',
+  "Billing and people. Everything except deleting the workspace or transferring ownership.": 'texte1a2cfde722b',
+  "Everything an owner can do except deleting the workspace or transferring ownership.": 'text77148a20ce2e',
+  "Works in sessions with the agents they are granted.": 'text378393bbfa9f',
+  "The floor role. Works in sessions with the agents they are granted, directly or through a group. No Customize.": 'texte82608318c7f',
+  "Customize and everything in it: every agent, skill, connector, secret and trigger.": 'text7788f20533ea',
 };

@@ -196,13 +196,13 @@ describe('accessDialogCopy', () => {
     );
     expect(accessDialogCopy(GROUP, grant, undefined, testUiTranslator).title).toBe('Grant access');
     expect(accessDialogCopy(ACCOUNT, grant, undefined, testUiTranslator).description).toContain(
-      'on this account.',
+      'on this workspace.',
     );
     expect(accessDialogCopy(PROJECT, grant, undefined, testUiTranslator).description).toContain(
-      'on this project.',
+      'on this workspace.',
     );
     expect(accessDialogCopy(GROUP, grant, undefined, testUiTranslator).description).toBe(
-      'Pick account members to add to this group.',
+      'Pick workspace members to add to this group.',
     );
   });
 
@@ -228,14 +228,14 @@ describe('accessDialogCopy', () => {
     });
   });
 
-  test('account scope falls back to "this account" without an account name', () => {
+  test('account scope falls back to "this workspace" without an account name', () => {
     const mode: AccessDialogMode = {
       kind: 'edit',
       principal: { type: 'member', id: 'u_1', label: 'alice@corp.com' },
       current: { role: builtinRole('member') },
     };
     expect(accessDialogCopy(ACCOUNT, mode, undefined, testUiTranslator).description).toContain(
-      'in this account.',
+      'in this workspace.',
     );
     expect(
       accessDialogCopy(ACCOUNT, mode, { accountName: 'Kortix' }, testUiTranslator).description,
@@ -249,7 +249,7 @@ describe('accessDialogCopy', () => {
     };
     expect(accessDialogCopy(GROUP, mode, undefined, testUiTranslator)).toEqual({
       title: 'Grant access',
-      description: 'Attach Engineering to a project — every member inherits the role.',
+      description: 'Attach Engineering to a workspace — every member inherits the role.',
       submitLabel: 'Attach',
     });
   });

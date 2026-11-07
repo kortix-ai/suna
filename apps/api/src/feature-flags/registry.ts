@@ -260,7 +260,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'us_region',
     name: 'US Region',
     description:
-      "Place this project's Files and newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Files stay in the region where they were created, and every new sandbox runs where the project's Files live, so changing this setting after the Files exist does not move them or their sessions. Existing sandboxes keep their region, including on restart. This changes compute and Files placement, not API, database, or archive residency. A new sandbox image is copied to the region before sessions use it.",
+      "Place this workspace's Files and newly provisioned Platinum sandboxes in the configured US region instead of the provider's home region. Files stay in the region where they were created, and every new sandbox runs where the workspace's Files live, so changing this setting after the Files exist does not move them or their sessions. Existing sandboxes keep their region, including on restart. This changes compute and Files placement, not API, database, or archive residency. A new sandbox image is copied to the region before sessions use it.",
     stability: 'experimental',
     // Two operator gates: Platinum must be the configured provider, and the
     // environment must name the region (KORTIX_PLATINUM_US_REGION), which is
@@ -419,7 +419,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // The key keeps its name: it is in the SDK's FeatureFlagKey and stored on projects.
     name: 'Stateless sandboxes',
     description:
-      "Every new Platinum session keeps only /workspace, on its own Platinum volume, so the sandbox is disposable: one stopped for an hour (KORTIX_SANDBOX_IDLE_DELETE_MINUTES) is deleted, and the next open boots a new sandbox on the same files and conversation. Programs that ran in the old sandbox are not running, and the agent is told so. Not a Settings toggle: Kortix enables it per project.",
+      "Every new Platinum session keeps only /workspace, on its own Platinum volume, so the sandbox is disposable: one stopped for an hour (KORTIX_SANDBOX_IDLE_DELETE_MINUTES) is deleted, and the next open boots a new sandbox on the same files and conversation. Programs that ran in the old sandbox are not running, and the agent is told so. Not a Settings toggle: Kortix enables it per workspace.",
     stability: 'experimental',
     // Every workspace volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
@@ -442,7 +442,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'session_groups',
     name: 'Session groups',
     description:
-      "Group the sidebar's sessions into named folders that everyone in the project shares, for example one per store or client. Move a session into a group from its menu or by dragging it; reorder and collapse the groups.",
+      "Group the sidebar's sessions into named folders that everyone in the workspace shares, for example one per store or client. Move a session into a group from its menu or by dragging it; reorder and collapse the groups.",
     stability: 'experimental',
     wip: true,
     available: () => true,

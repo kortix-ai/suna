@@ -2,6 +2,7 @@
 
 import { backendApi } from '../../http/api-client';
 import type { ApiError } from '../../http/api/errors';
+import type { WorkspaceRole } from './workspaces';
 import {
   type AccountRole,
   type ProjectRole,
@@ -52,6 +53,12 @@ export interface AccountBrandingState {
 
 export interface KortixAccount {
   account_id: string;
+  /**
+   * The workspace this account holds (its one active project's id). `null`
+   * for an account with no workspace (a dormant account) or a legacy account
+   * that still holds several projects. Absent from older servers.
+   */
+  workspace_id?: string | null;
   name: string;
   slug?: string;
   /** Absent from APIs older than these fields. */
@@ -67,6 +74,8 @@ export interface KortixAccount {
 
 export interface AccountDetail {
   account_id: string;
+  /** The workspace this account holds. Same semantics as `KortixAccount.workspace_id`. */
+  workspace_id?: string | null;
   name: string;
   member_count: number;
   project_count: number;
@@ -84,15 +93,22 @@ export interface AccountMemberGroup {
   name: string;
 }
 
+/** @deprecated Use `AccountMemberWorkspace`. Kept permanently. */
 export interface AccountMemberProject {
   project_id: string;
   name: string;
   role: ProjectRole;
 }
 
+/** The workspace name of {@link AccountMemberProject}: the same type. */
+export type AccountMemberWorkspace = AccountMemberProject;
+
 export interface AccountMember {
   user_id: string;
   email: string | null;
+  /** The workspace ladder role (`owner`, `admin`, `manager`, `member`). An older API omits it: read `account_role`. */
+  role?: WorkspaceRole;
+  /** The stored account-scope role. Prefer `role`. */
   account_role: AccountRole;
   is_super_admin?: boolean;
   explicit_project_count?: number;
@@ -109,10 +125,14 @@ export interface AccountMember {
   joined_at: string;
 }
 
+/** @deprecated Use `InviteWorkspaceGrant`. Kept permanently. */
 export interface InviteProjectGrant {
   project_id: string;
   role?: ProjectRole;
 }
+
+/** The workspace name of {@link InviteProjectGrant}: the same type. */
+export type InviteWorkspaceGrant = InviteProjectGrant;
 
 export type InviteMemberResult =
   | {
@@ -201,6 +221,8 @@ export type AccountInviteDescribe = AccountInviteDescribeFull | AccountInviteDes
 export interface MyAccountInvite {
   invite_id: string;
   account_id: string;
+  /** The workspace the invite joins. Absent from older servers. */
+  workspace_id?: string | null;
   account_name: string | null;
   initial_role: AccountRole;
   inviter_email: string | null;
@@ -222,6 +244,7 @@ export async function getAccount(accountId: string) {
   return unwrap(await backendApi.get<AccountDetail>(`/accounts/${accountId}`));
 }
 
+/** @deprecated Use `updateWorkspace(workspaceId, { name })`: the workspace has one name. Kept permanently. */
 export async function updateAccountName(accountId: string, name: string) {
   return unwrap(await backendApi.patch<AccountDetail>(`/accounts/${accountId}`, { name }));
 }
@@ -286,10 +309,12 @@ export async function resetAccountBranding(accountId: string) {
   return unwrap(await backendApi.delete<AccountBrandingState>(`/accounts/${accountId}/branding`));
 }
 
+/** @deprecated Use `listWorkspaceMembers(workspaceId)`. Kept permanently. */
 export async function listAccountMembers(accountId: string) {
   return unwrap(await backendApi.get<AccountMember[]>(`/accounts/${accountId}/members`));
 }
 
+/** @deprecated Use `inviteWorkspaceMember(workspaceId, input)`. Kept permanently. */
 export async function inviteAccountMember(
   accountId: string,
   input: { email: string; role?: AccountRole; project_grants?: InviteProjectGrant[] },
@@ -302,16 +327,19 @@ export async function inviteAccountMember(
   );
 }
 
+/** @deprecated Use `listWorkspaceInvites(workspaceId)`. Kept permanently. */
 export async function listAccountInvites(accountId: string) {
   return unwrap(await backendApi.get<AccountInvitation[]>(`/accounts/${accountId}/invites`));
 }
 
+/** @deprecated Use `cancelWorkspaceInvite(workspaceId, inviteId)`. Kept permanently. */
 export async function cancelAccountInvite(accountId: string, inviteId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(`/accounts/${accountId}/invites/${inviteId}`),
   );
 }
 
+/** @deprecated Use `resendWorkspaceInvite(workspaceId, inviteId)`. Kept permanently. */
 export async function resendAccountInvite(accountId: string, inviteId: string) {
   return unwrap(
     await backendApi.post<ResendInviteResult>(
@@ -327,14 +355,14 @@ export async function resendAccountInvite(accountId: string, inviteId: string) {
  */
 export async function listMyAccountInvites() {
   const res = unwrap(
-    await backendApi.get<{ invites: MyAccountInvite[] }>('/account-invites', { showErrors: false }),
+    await backendApi.get<{ invites: MyAccountInvite[] }>('/invites', { showErrors: false }),
   );
   return res.invites;
 }
 
 export async function describeAccountInvite(inviteId: string) {
   return unwrap(
-    await backendApi.get<AccountInviteDescribe>(`/account-invites/${inviteId}`, {
+    await backendApi.get<AccountInviteDescribe>(`/invites/${inviteId}`, {
       // The redirect/landing page handles "not for you" / expired states inline.
       showErrors: false,
     }),
@@ -350,7 +378,7 @@ export async function acceptAccountInvite(inviteId: string) {
       /** The projects the invite granted, in order: where to land (KRTX-1731). */
       bootstrap_grants_applied?: Array<{ project_id: string; role: string }>;
     }>(
-      `/account-invites/${inviteId}/accept`,
+      `/invites/${inviteId}/accept`,
       {},
     ),
   );
@@ -391,15 +419,17 @@ export async function acceptAccountInviteAndLand(
 }
 
 export async function declineAccountInvite(inviteId: string) {
-  return unwrap(await backendApi.post<{ ok: boolean }>(`/account-invites/${inviteId}/decline`, {}));
+  return unwrap(await backendApi.post<{ ok: boolean }>(`/invites/${inviteId}/decline`, {}));
 }
 
+/** @deprecated Use `removeWorkspaceMember(workspaceId, userId)`. Kept permanently. */
 export async function removeAccountMember(accountId: string, userId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(`/accounts/${accountId}/members/${userId}`),
   );
 }
 
+/** @deprecated Use `updateWorkspaceMemberRole(workspaceId, userId, role)`. Kept permanently. */
 export async function updateAccountMemberRole(
   accountId: string,
   userId: string,
@@ -410,6 +440,7 @@ export async function updateAccountMemberRole(
   );
 }
 
+/** @deprecated Use `leaveWorkspace(workspaceId)`. Kept permanently. */
 export async function leaveAccount(accountId: string) {
   return unwrap(await backendApi.post<{ ok: boolean }>(`/accounts/${accountId}/leave`, {}));
 }
@@ -460,7 +491,7 @@ export interface ValidateTokenResult {
  * token" inline rather than catch an exception.
  */
 export async function validateToken(): Promise<ValidateTokenResult> {
-  const res = await backendApi.get<AccountIdentity>('/accounts/me', { showErrors: false });
+  const res = await backendApi.get<AccountIdentity>('/me', { showErrors: false });
   if (!res.success || !res.data) {
     return { valid: false, error: res.error };
   }

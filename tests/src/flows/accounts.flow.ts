@@ -32,20 +32,17 @@ flow('ACCT-1', { domain: 'accounts', routes: ['GET /v1/accounts'] }, async (ctx)
     const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts');
     r.status(200).body().schema(AccountSummarySchema.array());
   });
-  await ctx.step(
-    "the personal account is named, never after the email (KRTX-638: no \"<email>'s Account\")",
-    async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts');
-      r.status(200);
-      const personal = r
-        .json<Array<{ account_id: string; name: string }>>()
-        .find((account) => account.account_id === ctx.P.OWNER.userId);
-      if (!personal) throw new Error('OWNER has no personal account in GET /v1/accounts');
-      if (!personal.name.trim()) throw new Error('personal account has an empty name');
-      if (personal.name.includes('@') || personal.name.endsWith("'s Account"))
-        throw new Error(`personal account is still named after the email: ${personal.name}`);
-    },
-  );
+  await ctx.step('the OWNER lists the account it created explicitly, under the name it chose (no account exists at sign-up)', async () => {
+    const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts');
+    r.status(200);
+    const rows = r.json<Array<{ account_id: string; name: string; account_role: string }>>();
+    const own = rows.find((account) => account.account_id === ctx.P.OWNER.accountId);
+    if (!own) throw new Error(`OWNER's account ${ctx.P.OWNER.accountId} is missing from GET /v1/accounts`);
+    if (own.account_role !== 'owner') throw new Error(`OWNER holds ${own.account_role} on its own account`);
+    if (rows.some((account) => account.account_id === ctx.P.OWNER.userId)) {
+      throw new Error('GET /v1/accounts lists an account whose id is the user id: a personal account was created implicitly');
+    }
+  });
 });
 
 flow(
@@ -956,12 +953,10 @@ flow(
 );
 
 // DEL-4 — the `/v1/account/*` deletion mount
-// (apps/api/src/billing/routes/account-deletion.ts). Drives `GET .../deletion-status` and
-// the real, destructive `DELETE .../delete-immediately` on a THROWAWAY user's
-// own personal account (never OWNER/team accounts other flows depend on).
-// Immediate self-deletion removes the auth identity, invalidates its token and
-// removes the account row itself. A nonmember gets the same 403 as for any
-// foreign or nonexistent account (KRTX-2402); the row check needs `database`.
+// (apps/api/src/billing/routes/account-deletion.ts) for a THROWAWAY person
+// with no workspace. No account is created at sign-up (Workspaces D3), so the
+// person deletes only their login: `DELETE .../delete-immediately` removes the
+// auth identity and invalidates its token, and no account row is involved.
 flow(
   'DEL-4',
   {
@@ -969,12 +964,12 @@ flow(
     routes: [
       'DELETE /v1/account/delete-immediately',
       'GET /v1/account/deletion-status',
+      'POST /v1/account/request-deletion',
       'GET /v1/accounts/me',
-      'GET /v1/accounts/:accountId',
     ],
   },
   async (ctx) => {
-    const victim = await ctx.fixtures.user({ label: 'DEL-4' });
+    const victim = await ctx.fixtures.user({ label: 'DEL-4', noAccount: true });
     const asVictim = ctx.client.as(victim);
 
     await ctx.step('ANON cannot read deletion status → 401', async () => {
@@ -985,7 +980,8 @@ flow(
       const r = await ctx.client.as(ctx.P.ANON).del('/v1/account/delete-immediately');
       r.status(401);
     });
-    await ctx.step('fresh throwaway account has no pending deletion', async () => {
+    await ctx.step('a person with no workspace has no pending deletion → 200', async () => {
+      (await asVictim.get('/v1/accounts/me')).status(200).body().has('$.accounts', []);
       const r = await asVictim.get('/v1/account/deletion-status');
       r.status(200)
         .body()
@@ -993,25 +989,51 @@ flow(
         .has('$.deletion_scheduled_for', null)
         .has('$.can_cancel', false);
     });
-    let victimAccountId = '';
-    await ctx.step('a nonmember is forbidden from the throwaway account → 403', async () => {
-      // The personal account is the victim's first (and only) membership.
-      const me = await asVictim.get('/v1/accounts/me');
-      me.status(200).body().exists('$.accounts[0].account_id');
-      victimAccountId = me.json().accounts[0].account_id;
-      (
-        await ctx.client
-          .as(ctx.P.OWNER)
-          .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } })
-      ).status(403);
+    await ctx.step('a scheduled deletion has nothing to keep for a grace period → 409 no_workspace', async () => {
+      const r = await asVictim.post('/v1/account/request-deletion', { reason: 'e2e' });
+      r.status(409).body().has('$.code', 'no_workspace');
     });
-    await ctx.step('throwaway account deletes itself immediately → 200', async () => {
+    await ctx.step('the person deletes their login immediately → 200', async () => {
       const r = await asVictim.del('/v1/account/delete-immediately');
       r.status(200).body().has('$.success', true).has('$.message', 'Account deleted');
     });
-    await ctx.step('old token cannot read account or deletion status → 401', async () => {
+    await ctx.step('old token cannot read the identity or deletion status → 401', async () => {
       (await asVictim.get('/v1/accounts/me')).status(401);
       (await asVictim.get('/v1/account/deletion-status')).status(401);
+    });
+    await ctx.step('the auth user is gone', async () => {
+      if (!ctx.env.capabilities.database) return;
+      const left = await withDb(ctx, (db) => db.query('SELECT 1 FROM auth.users WHERE id = $1', [victim.userId]));
+      if (left.rowCount !== 0) throw new Error(`the deleted auth user still exists: ${victim.userId}`);
+    });
+    await ctx.step('repeated deletion cannot restore old-token access → 401', async () => {
+      (await asVictim.del('/v1/account/delete-immediately')).status(401);
+      (await asVictim.get('/v1/accounts/me')).status(401);
+    });
+  },
+);
+
+// DEL-6 — a workspace owner's immediate deletion removes the workspace: the
+// account row is gone and a nonmember gets the same 403 as for any foreign or
+// nonexistent account (KRTX-2402); the row check needs `database`.
+flow(
+  'DEL-6',
+  {
+    domain: 'accounts',
+    routes: ['DELETE /v1/account/delete-immediately', 'GET /v1/accounts/me', 'GET /v1/accounts/:accountId'],
+  },
+  async (ctx) => {
+    const victim = await ctx.fixtures.user({ label: 'DEL-6' });
+    const asVictim = ctx.client.as(victim);
+    const victimAccountId = victim.accountId!;
+
+    await ctx.step('the owner\'s one account is its only membership; a nonmember is forbidden from it → 403', async () => {
+      (await asVictim.get('/v1/accounts/me')).status(200).body().has('$.accounts[0].account_id', victimAccountId);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } })).status(403);
+    });
+    await ctx.step('the owner deletes it immediately → 200', async () => {
+      const r = await asVictim.del('/v1/account/delete-immediately');
+      r.status(200).body().has('$.success', true).has('$.message', 'Account deleted');
     });
     await ctx.step('the deleted account answers a nonmember like any foreign account → 403, and its row is gone', async () => {
       const r = await ctx.client
@@ -1023,10 +1045,6 @@ flow(
         db.query('SELECT 1 FROM kortix.accounts WHERE account_id = $1', [victimAccountId]),
       );
       if (left.rowCount !== 0) throw new Error(`the deleted account row still exists: ${victimAccountId}`);
-    });
-    await ctx.step('repeated deletion cannot restore old-token access → 401', async () => {
-      (await asVictim.del('/v1/account/delete-immediately')).status(401);
-      (await asVictim.get('/v1/accounts/me')).status(401);
     });
   },
 );
@@ -1290,9 +1308,9 @@ flow(
   },
 );
 
-// TOK-4 — project-scoped PAT (enforceTokenProjectScope): allowed only on its
-// own project + the `/accounts/me` self-identity probe; every other surface
-// (a different project, project-list, account-level routes) → 403.
+// TOK-4 — project-scoped PAT (enforceTokenProjectScope): it reaches its own
+// workspace (the project list names only it) and the `/accounts/me` probe;
+// another project and the person's own routes → 403.
 flow(
   'TOK-4',
   {
@@ -1344,13 +1362,15 @@ flow(
       const r = await pat().get('/v1/projects/:projectId', { params: { projectId: projB.id } });
       r.status(403);
     });
-    await ctx.step('denied: enumerate projects → 403', async () => {
+    await ctx.step('the project list names only its own project → 200 [A]', async () => {
       const r = await pat().get('/v1/projects');
-      r.status(403);
+      r.status(200);
+      const ids = r.json<Array<{ project_id: string }>>().map((row) => row.project_id);
+      if (ids.length !== 1 || ids[0] !== projA.id) throw new Error(`listed ${JSON.stringify(ids)}`);
     });
-    await ctx.step('denied: account-level route → 403', async () => {
+    await ctx.step("denied: the person's own key list → 403 credential_fence_refused", async () => {
       const r = await pat().get('/v1/accounts/tokens');
-      r.status(403);
+      r.status(403).body().has('$.code', 'credential_fence_refused').has('$.check', 'person-route');
     });
     await ctx.step('revoke the project token → 200', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/cli-token/:tokenId', {
@@ -1602,9 +1622,9 @@ flow(
 );
 
 // ACCT-5 — an invite-first signup. The invites exist before the identity
-// does, and the identity is a raw Supabase user with no fixture bootstrap, so
-// its first Kortix read is the one that must create the personal account
-// before claiming the invites.
+// does, and the identity is a raw Supabase user with no fixture account. No
+// account is created at sign-up (Workspaces D3): its first Kortix read only
+// claims the invites, so its list is exactly the inviting accounts.
 flow(
   'ACCT-5',
   {
@@ -1630,7 +1650,7 @@ flow(
         .status(201).body().has('$.status', 'pending');
     };
     try {
-      await ctx.step('an invite-first signup invited as admin by two accounts: the first GET /v1/accounts lists its own account AND both accounts; a repeat adds nothing', async () => {
+      await ctx.step('an invite-first signup invited as admin by two accounts: the first GET /v1/accounts lists exactly both accounts and no account of its own; a repeat adds nothing', async () => {
         const teamA = await ctx.fixtures.team();
         const teamB = await ctx.fixtures.team();
         const email = `${ctx.fixtures.name('invite-first')}@${ctx.env.testEmailDomain}`.toLowerCase();
@@ -1642,10 +1662,9 @@ flow(
           r.status(200);
           const rows = r.json<Array<{ account_id: string; account_role: string; is_primary_owner: boolean }>>();
           const byId = new Map(rows.map((a) => [a.account_id, a]));
-          const own = byId.get(userId);
           const ok =
-            rows.length === 3 &&
-            own?.account_role === 'owner' && own.is_primary_owner === true &&
+            rows.length === 2 &&
+            !byId.has(userId) &&
             [teamA.id, teamB.id].every((id) => byId.get(id)?.account_role === 'admin' && byId.get(id)?.is_primary_owner === false);
           if (!ok) throw new Error(`call ${attempt}: ${JSON.stringify(rows)}`);
         }
@@ -1655,7 +1674,7 @@ flow(
           if (r.json<Array<{ email: string }>>().some((i) => i.email === email)) throw new Error('the invite was not claimed');
         }
       });
-      await ctx.step('an invite-first signup whose first read is GET /v1/accounts/me gets its own account (owner) plus the inviting account (member); a repeat adds nothing', async () => {
+      await ctx.step('an invite-first signup whose first read is GET /v1/accounts/me gets exactly the inviting account (member); a repeat adds nothing', async () => {
         const team = await ctx.fixtures.team();
         const email = `${ctx.fixtures.name('invite-first-me')}@${ctx.env.testEmailDomain}`.toLowerCase();
         await invite(team.id, email, 'member');
@@ -1665,12 +1684,12 @@ flow(
           r.status(200);
           const accounts = r.json<{ accounts: Array<{ account_id: string; role: string }> }>().accounts;
           const roles = new Map(accounts.map((a) => [a.account_id, a.role]));
-          if (accounts.length !== 2 || roles.get(userId) !== 'owner' || roles.get(team.id) !== 'member') {
+          if (accounts.length !== 1 || roles.has(userId) || roles.get(team.id) !== 'member') {
             throw new Error(`call ${attempt}: ${JSON.stringify(accounts)}`);
           }
         }
       });
-      await ctx.step('a user who already has a membership gets no retroactive personal account from GET /v1/accounts or /accounts/me', async () => {
+      await ctx.step('a team member gets no account of its own from GET /v1/accounts or /accounts/me', async () => {
         const team = await ctx.fixtures.team();
         const member = await team.addMember('member');
         for (const path of ['/v1/accounts', '/v1/accounts/me'] as const) {
@@ -1684,6 +1703,172 @@ flow(
     } finally {
       for (const id of created) await adminDeleteUser(ctx.env, id).catch(() => {});
     }
+  },
+);
+
+// ACCT-6 — no account at sign-up (Workspaces D3, 2026-11-05). A brand-new
+// person has 0 workspaces until they create or join one. Every read answers
+// an empty list; every action that needs a workspace answers the typed
+// 409 `no_workspace`; nothing creates an account behind their back.
+flow(
+  'ACCT-6',
+  {
+    domain: 'accounts',
+    routes: [
+      'GET /v1/accounts',
+      'GET /v1/accounts/me',
+      'GET /v1/projects',
+      'POST /v1/accounts/tokens',
+      'POST /v1/cli/device/start',
+      'POST /v1/cli/device/decide',
+      'POST /v1/projects/provision',
+      'POST /v1/projects/provision-stream',
+    ],
+  },
+  async (ctx) => {
+    const fresh = await ctx.fixtures.user({ label: 'NO-WS', noAccount: true });
+    const asFresh = ctx.client.as(fresh);
+    const listIsEmpty = async () => {
+      (await asFresh.get('/v1/accounts')).status(200).body().has('$', []);
+      (await asFresh.get('/v1/accounts/me')).status(200).body().has('$.accounts', []);
+    };
+
+    await ctx.step('a new person lists no account: GET /v1/accounts → [], /accounts/me → accounts: [], GET /v1/projects → []', async () => {
+      await listIsEmpty();
+      (await asFresh.get('/v1/projects')).status(200).body().has('$', []);
+    });
+    await ctx.step('the reads created no account row', async () => {
+      if (!ctx.env.capabilities.database) return;
+      const rows = await withDb(ctx, (db) =>
+        db.query(
+          `SELECT 1 FROM kortix.accounts WHERE account_id = $1
+           UNION ALL SELECT 1 FROM kortix.account_members WHERE user_id = $1`,
+          [fresh.userId],
+        ),
+      );
+      if (rows.rowCount !== 0) throw new Error(`a person with no workspace has ${rows.rowCount} account rows`);
+    });
+    await ctx.step('minting an API key needs a workspace → 409 no_workspace', async () => {
+      const r = await asFresh.post('/v1/accounts/tokens', { name: ctx.fixtures.name('no-ws-token') });
+      r.status(409).body().has('$.code', 'no_workspace').has('$.message', 'Create or join a workspace first.');
+    });
+    await ctx.step('approving a CLI login needs a workspace → 409 no_workspace; the grant stays pending', async () => {
+      const started = await ctx.client.as(ctx.P.ANON).post('/v1/cli/device/start', {});
+      started.status(200);
+      const { user_code, device_code } = started.json<{ user_code: string; device_code: string }>();
+      (await asFresh.post('/v1/cli/device/decide', { user_code, approve: true })).status(409).body().has('$.code', 'no_workspace');
+      (await ctx.client.as(ctx.P.ANON).post('/v1/cli/device/poll', { device_code }))
+        .status(200)
+        .body()
+        .has('$.error', 'authorization_pending');
+    });
+    await ctx.step('a browser sign-in is a person: its JWT carries a Supabase session_id, and new_workspace is not refused as a scoped credential', async () => {
+      // Regression: the JWT's own `session_id` claim lands in the request's
+      // `sessionId`, which once read as a project-session credential → 403
+      // new_workspace_requires_person for every web user. The person check
+      // runs before the request checks, so any other answer proves it passed.
+      const jwt = (fresh.auth as { token: string }).token;
+      const claims = JSON.parse(Buffer.from(jwt.split('.')[1]!, 'base64url').toString('utf8')) as { session_id?: string };
+      if (!claims.session_id) throw new Error('the fixture JWT carries no session_id claim; the regression is not exercised');
+      for (const path of ['/v1/projects/provision', '/v1/projects/provision-stream'] as const) {
+        // 400 (bad name) where managed git is configured, 503 where it is not.
+        const r = await asFresh.post(path, { name: 'bad/name', new_workspace: true });
+        r.status([400, 503]);
+        if (r.json<{ code?: string }>()?.code === 'new_workspace_requires_person') throw new Error(`${path} refused a person`);
+      }
+      await listIsEmpty();
+    });
+    await ctx.step('new_workspace together with account_id → 400 new_workspace_with_account_id', async () => {
+      const r = await asFresh.post('/v1/projects/provision', {
+        name: ctx.fixtures.name('ws-conflict'),
+        new_workspace: true,
+        account_id: ctx.P.OWNER.accountId,
+      });
+      r.status(400).body().has('$.code', 'new_workspace_with_account_id');
+    });
+    await ctx.step('a new workspace on a server without managed git → 503, and no account is left behind', async () => {
+      // On a managed-git target the create succeeds; ACCT-7 covers that.
+      if (ctx.env.capabilities.managedGit) return;
+      const r = await asFresh.post('/v1/projects/provision', { name: ctx.fixtures.name('ws-no-git'), new_workspace: true });
+      r.status(503);
+      await listIsEmpty();
+    });
+  },
+);
+
+// ACCT-7 — "Create workspace" is one request: `new_workspace: true` on
+// provision picks or creates the account (projects/new-workspace.ts) and
+// provisions its one project. Workspace name = account name = project name.
+flow(
+  'ACCT-7',
+  {
+    domain: 'accounts',
+    requires: ['managedGit'],
+    routes: [
+      'POST /v1/projects/provision',
+      'POST /v1/accounts',
+      'GET /v1/accounts',
+      'GET /v1/accounts/:accountId',
+      'PATCH /v1/projects/:projectId',
+    ],
+  },
+  async (ctx) => {
+    await ctx.step('a person with no workspace creates one → 201; its account is new, listed, owned, and named after the project', async () => {
+      const fresh = await ctx.fixtures.user({ label: 'NEW-WS', noAccount: true });
+      const asFresh = ctx.client.as(fresh);
+      const name = ctx.fixtures.name('first-ws');
+      const r = await asFresh.post('/v1/projects/provision', { name, new_workspace: true, idempotency_key: crypto.randomUUID() });
+      r.status(201).body().exists('$.project_id').exists('$.account_id');
+      const { project_id, account_id } = r.json<{ project_id: string; account_id: string }>();
+      ctx.track('project', project_id);
+      if (account_id === fresh.userId) throw new Error('the new workspace reused the user id as its account id');
+      const accounts = (await asFresh.get('/v1/accounts')).status(200).json<Array<{ account_id: string; account_role: string }>>();
+      if (accounts.length !== 1 || accounts[0]!.account_id !== account_id || accounts[0]!.account_role !== 'owner') {
+        throw new Error(`GET /v1/accounts after the create: ${JSON.stringify(accounts)}`);
+      }
+      (await asFresh.get('/v1/accounts/:accountId', { params: { accountId: account_id } }))
+        .status(200)
+        .body()
+        .has('$.name', name)
+        .has('$.project_count', 1);
+    });
+    await ctx.step('a person who owns an empty account creates a workspace → a NEW account; the empty one is never reused', async () => {
+      const owner = await ctx.fixtures.user({ label: 'EMPTY-WS' });
+      const asOwner = ctx.client.as(owner);
+      const name = ctx.fixtures.name('no-reuse-ws');
+      const r = await asOwner.post('/v1/projects/provision', { name, new_workspace: true });
+      r.status(201);
+      const { project_id, account_id } = r.json<{ project_id: string; account_id: string }>();
+      ctx.track('project', project_id);
+      if (account_id === owner.accountId) throw new Error('the create reused the empty account');
+      (await asOwner.get('/v1/accounts/:accountId', { params: { accountId: account_id } }))
+        .status(200)
+        .body()
+        .has('$.name', name);
+    });
+    await ctx.step('a retry with the same idempotency_key returns the same project, not a second workspace', async () => {
+      const fresh = await ctx.fixtures.user({ label: 'RETRY-WS', noAccount: true });
+      const asFresh = ctx.client.as(fresh);
+      const body = { name: ctx.fixtures.name('retry-ws'), new_workspace: true, idempotency_key: crypto.randomUUID() };
+      const first = await asFresh.post('/v1/projects/provision', body);
+      first.status(201);
+      ctx.track('project', first.json<{ project_id: string }>().project_id);
+      const again = await asFresh.post('/v1/projects/provision', body);
+      again.status(201).body().has('$.project_id', first.json<{ project_id: string }>().project_id);
+      const accounts = (await asFresh.get('/v1/accounts')).status(200).json<unknown[]>();
+      if (accounts.length !== 1) throw new Error(`a retried create left ${accounts.length} accounts`);
+    });
+    await ctx.step('renaming the workspace project renames its account', async () => {
+      const fresh = await ctx.fixtures.user({ label: 'RENAME-WS', noAccount: true });
+      const asFresh = ctx.client.as(fresh);
+      const r = await asFresh.post('/v1/projects/provision', { name: ctx.fixtures.name('rename-ws'), new_workspace: true });
+      r.status(201);
+      const { project_id, account_id } = r.json<{ project_id: string; account_id: string }>();
+      ctx.track('project', project_id);
+      const renamed = ctx.fixtures.name('renamed-ws');
+      (await asFresh.patch('/v1/projects/:projectId', { name: renamed }, { params: { projectId: project_id } })).status(200);
+      (await asFresh.get('/v1/accounts/:accountId', { params: { accountId: account_id } })).status(200).body().has('$.name', renamed);
+    });
   },
 );
 
@@ -1744,23 +1929,30 @@ flow(
         .status(400).body().has('$.code', 'token_expiry_in_past');
     });
 
-    await ctx.step('a browser session still mints a token with no expiry → 201', async () => {
-      await mintProjectToken();
+    await ctx.step('a browser session minting with no expiry gets the default 90 days → 201', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/projects/:projectId/cli-token', { name: ctx.fixtures.name('tok7') }, params);
+      r.status(201);
+      const days = (Date.parse(r.json<{ expires_at: string }>().expires_at) - Date.now()) / 86_400_000;
+      if (!(days > 89.9 && days <= 90)) throw new Error(`default expiry ${days} days`);
     });
 
-    await ctx.step('a project PAT that expires in 60 min: no expiry or a later one → 403 token_mint_exceeds_parent; an earlier one → 201', async () => {
-      const parent = ctx.client.withBearer(await mintProjectToken(at(60)), 'PAT_PROJ');
-      (await parent.post('/v1/projects/:projectId/cli-token', {}, params))
-        .status(403).body().has('$.code', 'token_mint_exceeds_parent');
+    await ctx.step('a project PAT that expires in 60 min: a later expiry → 403 token_mint_exceeds_parent; none → its own expiry; an earlier one → 201', async () => {
+      const parentExpiry = at(60);
+      const parent = ctx.client.withBearer(await mintProjectToken(parentExpiry), 'PAT_PROJ');
       (await parent.post('/v1/projects/:projectId/cli-token', { expires_at: at(120) }, params))
         .status(403).body().has('$.code', 'token_mint_exceeds_parent');
+      const child = await parent.post('/v1/projects/:projectId/cli-token', {}, params);
+      child.status(201);
+      if (Date.parse(child.json<{ expires_at: string }>().expires_at) !== Date.parse(parentExpiry)) {
+        throw new Error(`a default child expiry outlives its parent: ${child.json<any>().expires_at} vs ${parentExpiry}`);
+      }
       (await parent.post('/v1/projects/:projectId/cli-token', { expires_at: at(30) }, params)).status(201);
     });
 
-    await ctx.step('a project PAT with no expiry must still pass one: none → 403 token_mint_exceeds_parent; one → 201', async () => {
+    await ctx.step('a project PAT never mints a key without expiry: null → 400 expiry_required', async () => {
       const parent = ctx.client.withBearer(await mintProjectToken(), 'PAT_PROJ');
-      (await parent.post('/v1/projects/:projectId/cli-token', {}, params))
-        .status(403).body().has('$.code', 'token_mint_exceeds_parent');
+      (await parent.post('/v1/projects/:projectId/cli-token', { expires_at: null }, params))
+        .status(400).body().has('$.code', 'expiry_required');
       (await parent.post('/v1/projects/:projectId/cli-token', { expires_at: at(30) }, params)).status(201);
     });
   },

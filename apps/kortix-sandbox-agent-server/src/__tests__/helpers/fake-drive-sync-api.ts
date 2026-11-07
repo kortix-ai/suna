@@ -95,7 +95,7 @@ export function startFakeDriveSyncApi(): FakeDriveSyncApi {
     port: 0,
     async fetch(req) {
       const url = new URL(req.url)
-      const prefix = `/v1/projects/${projectId}/sessions/${sessionId}/drive-sync`
+      const prefix = `/v1/workspaces/${projectId}/sessions/${sessionId}/drive-sync`
       if (req.headers.get('authorization') !== `Bearer ${token}` || !url.pathname.startsWith(prefix)) {
         return Response.json({ error: 'forbidden' }, { status: 403 })
       }

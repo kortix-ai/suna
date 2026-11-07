@@ -133,6 +133,7 @@ function staleRow(sessionId: string | null): typeof sandboxComputeSessions.$infe
   const now = new Date().toISOString();
   return {
     id: 'cs_row',
+    workspaceId: null,
     accountId: 'acct_tick_' + Math.random().toString(36).slice(2),
     sandboxId: 'sb_row',
     sessionId,

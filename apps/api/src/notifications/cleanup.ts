@@ -3,9 +3,10 @@
 // foreign key to auth.users, so nothing cascades when a person leaves an
 // account or erases their account.
 import { and, eq, inArray } from 'drizzle-orm';
-import { notificationPreferences, notificationWatchers, notifications, projects, triggerWatchers } from '@kortix/db';
+import { notificationPreferences, notificationWatchers, notifications, triggerWatchers } from '@kortix/db';
 import { db } from '../shared/db';
 import { deleteWebPushSubscriptionsForUser } from './web-push-subscriptions';
+import { projectsView } from '../workspaces/rows';
 
 /**
  * A member left, was removed, or was deprovisioned by SCIM: their inbox rows
@@ -13,7 +14,7 @@ import { deleteWebPushSubscriptionsForUser } from './web-push-subscriptions';
  * go. Their rows in other accounts stay.
  */
 export async function deleteMemberNotificationData(accountId: string, userId: string): Promise<void> {
-  const accountProjects = db.select({ id: projects.projectId }).from(projects).where(eq(projects.accountId, accountId));
+  const accountProjects = db.select({ id: projectsView.projectId }).from(projectsView).where(eq(projectsView.accountId, accountId));
   await db.delete(notifications).where(and(eq(notifications.userId, userId), eq(notifications.accountId, accountId)));
   await db
     .delete(notificationWatchers)

@@ -65,7 +65,11 @@ function createQueryBuilder(record: QueryRecord, rows: unknown[]) {
   return builder;
 }
 
+const realDb = await import('./db');
 mock.module('./db', () => ({
+  // Spread the real module: the import graph reads exports this file never
+  // calls (withDbTransaction, hasDatabase), and a wholesale mock drops them.
+  ...realDb,
   db: {
     select: (fields: Record<string, unknown>) => ({
       from: (table: unknown) => {
@@ -147,13 +151,14 @@ describe('mergeProjectCostRows', () => {
     expect(rows[0]).toMatchObject({ project_id: 'p2', llm_cost: 0, compute_cost: 2.14 });
   });
 
-  test('falls back to the project id when the name is unknown', () => {
+  test('a project the account paid for that now lives in another workspace is labelled moved, never by its id', () => {
     const rows = mergeProjectCostRows(
       [{ projectId: 'p9', llmCost: 1, sessionCount: 1, lastAt: null }],
       [],
       names,
     );
-    expect(rows[0].project_name).toBe('p9');
+    expect(rows[0]).toMatchObject({ project_id: 'p9', project_name: 'Moved to another workspace', moved: true, llm_cost: 1 });
+    expect('moved' in mergeProjectCostRows([{ projectId: 'p1', llmCost: 1, sessionCount: 1, lastAt: null }], [], names)[0]!).toBe(false);
   });
 
   test('takes the larger session count across both sources', () => {

@@ -6,7 +6,7 @@ import {
   agentMountsQueryOptions,
   folderAccessQueryOptions,
   folderPrincipalsQueryOptions,
-  projectDriveQueryOptions,
+  workspaceDriveQueryOptions,
   sessionDrivesQueryOptions,
 } from './use-project-files';
 
@@ -14,16 +14,16 @@ const D = '11111111-2222-4333-8444-555555555555';
 
 describe('project Files queries', () => {
   test('the project drive is keyed by user and waits for one', () => {
-    expect(projectDriveQueryOptions('p1', 'u1').queryKey).toEqual(qk.drives.list('u1', { projectId: 'p1' }));
-    expect(projectDriveQueryOptions('p1', 'u1').enabled).toBe(true);
-    expect(projectDriveQueryOptions('p1', null).enabled).toBe(false);
-    expect(projectDriveQueryOptions('p1', 'u1', false).enabled).toBe(false);
+    expect(workspaceDriveQueryOptions('p1', 'u1').queryKey).toEqual(qk.drives.list('u1', { projectId: 'p1' }));
+    expect(workspaceDriveQueryOptions('p1', 'u1').enabled).toBe(true);
+    expect(workspaceDriveQueryOptions('p1', null).enabled).toBe(false);
+    expect(workspaceDriveQueryOptions('p1', 'u1', false).enabled).toBe(false);
   });
 
   test('every Files query sits under the drives scope, so one write refreshes them all', () => {
     const scope = qk.drives.scope();
     for (const options of [
-      projectDriveQueryOptions('p1', 'u1'),
+      workspaceDriveQueryOptions('p1', 'u1'),
       driveFolderQueryOptions(D, '/a'),
       folderAccessQueryOptions(D, '/a'),
       folderPrincipalsQueryOptions(D),

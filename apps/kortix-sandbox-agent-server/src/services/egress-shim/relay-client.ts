@@ -51,6 +51,7 @@ import {
 } from '@kortix/api-contract/secret-relay'
 
 import type { ShimBrokerRule } from '@kortix/api-contract/egress-shim-rules'
+import { kortixApiFetch } from '@/lib/kortix-api/workspace-routes'
 
 /** Everything the relay client needs from the shim's options. */
 export interface RelayClientOptions {
@@ -88,7 +89,7 @@ export function canStreamDecode(contentEncoding: string): boolean {
 
 function relayUrl(options: RelayClientOptions, identifier: string): string {
   return (
-    `${options.apiUrl.replace(/\/$/, '')}/projects/${options.projectId}` +
+    `${options.apiUrl.replace(/\/$/, '')}/workspaces/${options.projectId}` +
     `/secrets/${encodeURIComponent(identifier)}/relay`
   )
 }
@@ -106,7 +107,7 @@ export async function probeRelay(
   identifier: string,
 ): Promise<boolean> {
   try {
-    const response = await fetch(relayUrl(options, identifier), {
+    const response = await kortixApiFetch(relayUrl(options, identifier), {
       method: 'POST',
       headers: {
         authorization: `Bearer ${options.token}`,
@@ -249,7 +250,7 @@ export async function relayStreaming(
     hasBody: body !== null,
   })
 
-  const response = await fetch(relayUrl(options, rule.identifier), {
+  const response = await kortixApiFetch(relayUrl(options, rule.identifier), {
     method: 'POST',
     headers: {
       authorization: `Bearer ${options.token}`,

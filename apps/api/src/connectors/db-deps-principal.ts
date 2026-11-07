@@ -1,5 +1,5 @@
 /** Who is calling: resolve the connector principal from a token or a project path, and the admin/reader/manager authorization checks. */
-import { connectors, projectSessions, projects } from '@kortix/db';
+import { connectors, projectSessions } from '@kortix/db';
 import { CHANNEL_PLATFORM_IDS } from '@kortix/shared/channel-descriptors';
 import { and, eq } from 'drizzle-orm';
 import { reconcileStoredSessionAgentGrant } from '../projects/lib/session-token-grant';
@@ -20,6 +20,7 @@ import { callPolicySetOf, principalMayUseConnector } from './principal-access';
 import type { ConnectorPrincipal } from './router-contract';
 import { resolveShareSubject } from './share';
 import { channelPlatform } from './db-deps-rows';
+import { projectsView } from '../workspaces/rows';
 
 // The request authorizers (`resolvePrincipal`, `resolveProjectPrincipal`,
 // `resolveAdmin`, `resolveConnectionsManager`, `resolveSecretBindingAdmin`,
@@ -197,7 +198,7 @@ export async function rebuildHeldCallPrincipal(held: HeldCallInput): Promise<Hel
   const sessionId = held.session_id;
 
   const [[project], [member], serviceAccountActive] = await Promise.all([
-    db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, projectId)).limit(1),
+    db.select({ accountId: projectsView.accountId }).from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1),
     accountMemberRow(accountId, userId),
     isServiceAccountActive(accountId, userId),
   ]);

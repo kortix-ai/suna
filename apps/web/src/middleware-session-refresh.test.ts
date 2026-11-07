@@ -31,7 +31,7 @@ function sessionRequest(secondsUntilExpiry: number) {
     refresh_token: 'synthetic-refresh-token',
     expires_at: Math.floor(Date.now() / 1000) + secondsUntilExpiry,
   })).toString('base64url')}`;
-  const request = new NextRequest('https://example.test/projects');
+  const request = new NextRequest('https://example.test/workspaces');
   request.cookies.set(KORTIX_SUPABASE_AUTH_COOKIE, value);
   return { request, value };
 }
@@ -40,7 +40,7 @@ function expectAuthBounce(response: Response) {
   expect(response.status).toBe(307);
   const location = new URL(response.headers.get('location') ?? '');
   expect(location.pathname).toBe('/auth');
-  expect(location.searchParams.get('redirect')).toBe('/projects');
+  expect(location.searchParams.get('redirect')).toBe('/workspaces');
 }
 
 function expectRetained(request: NextRequest, value: string, response: Response) {
@@ -74,7 +74,7 @@ describe('middleware leaves session refresh to the browser', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('location')).toBeNull();
     // The accepted user's verified profile, not the cookie, picks the locale.
-    expect(new URL(response.headers.get('x-middleware-rewrite') ?? '').pathname).toBe('/de/projects');
+    expect(new URL(response.headers.get('x-middleware-rewrite') ?? '').pathname).toBe('/de/workspaces');
     expectRetained(request, value, response);
   });
 
@@ -110,7 +110,7 @@ test('blocking maintenance redirects signed-in locale-prefixed app routes', asyn
   const original = await getMaintenanceConfig();
   await setMaintenanceConfig({ ...original, level: 'blocking' }, 'synthetic-token');
   try {
-    for (const path of ['/en/settings?tab=profile', '/fr/projects']) {
+    for (const path of ['/en/settings?tab=profile', '/fr/workspaces']) {
       const { request } = sessionRequest(3600);
       request.nextUrl.pathname = path.split('?')[0];
       request.nextUrl.search = path.includes('?') ? '?tab=profile' : '';

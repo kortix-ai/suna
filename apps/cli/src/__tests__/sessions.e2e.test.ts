@@ -126,7 +126,7 @@ describe('sessions new CLI flow', () => {
       fetch: async (req) => {
         const url = new URL(req.url);
         apiRequests.push(`${req.method} ${url.pathname}`);
-        if (req.method === 'GET' && url.pathname === `/v1/projects/${PROJECT_ID}`) {
+        if (req.method === 'GET' && url.pathname === `/v1/workspaces/${PROJECT_ID}`) {
           return Response.json({
             project_id: PROJECT_ID,
             account_id: ACCOUNT_ID,
@@ -141,7 +141,7 @@ describe('sessions new CLI flow', () => {
             updated_at: '2026-01-01T00:00:00.000Z',
           });
         }
-        if (req.method === 'POST' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
+        if (req.method === 'POST' && url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions`) {
           sessionCreateBody = await req.json() as Record<string, unknown>;
           const sessionId = (sessionCreateBody.session_id as string | undefined)
             ?? '00000000-0000-4000-a000-000000000333';
@@ -170,17 +170,17 @@ describe('sessions new CLI flow', () => {
         }
         if (
           req.method === "GET" &&
-          new RegExp(`^/v1/projects/${PROJECT_ID}/sessions/[^/]+$`).test(url.pathname)
+          new RegExp(`^/v1/workspaces/${PROJECT_ID}/sessions/[^/]+$`).test(url.pathname)
         ) {
           return Response.json({
             session_id: "00000000-0000-4000-a000-000000000333",
             status: readinessStage === "ready" ? "running" : readinessStage,
           });
         }
-        if (req.method === 'GET' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
+        if (req.method === 'GET' && url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions`) {
           return Response.json(sessionList);
         }
-        const logMatch = url.pathname.match(new RegExp(`^/v1/projects/${PROJECT_ID}/sessions/([^/]+)/log$`));
+        const logMatch = url.pathname.match(new RegExp(`^/v1/workspaces/${PROJECT_ID}/sessions/([^/]+)/log$`));
         if (req.method === 'GET' && logMatch) {
           logRequests.push(url);
           const common = {
@@ -472,8 +472,8 @@ describe('sessions new CLI flow', () => {
     expect(code).toBe(0);
     expect(logRequests).toHaveLength(2);
     expect(logRequests.map((url) => url.pathname)).toEqual(expect.arrayContaining([
-      `/v1/projects/${PROJECT_ID}/sessions/${runningId}/log`,
-      `/v1/projects/${PROJECT_ID}/sessions/${stoppedId}/log`,
+      `/v1/workspaces/${PROJECT_ID}/sessions/${runningId}/log`,
+      `/v1/workspaces/${PROJECT_ID}/sessions/${stoppedId}/log`,
     ]));
     for (const request of logRequests) expect(request.searchParams.get('limit')).toBe('5');
     expect(apiRequests.filter((request) => request.includes('/transcript'))).toEqual([]);

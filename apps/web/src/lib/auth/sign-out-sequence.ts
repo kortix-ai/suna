@@ -183,7 +183,7 @@ export function __resetSignOutLatchForTests(): void {
  *     the IndexedDB purge can be outrun, and each saved copy there names its
  *     user (`saved-copy-store.ts` refuses another user's copy), so the next
  *     account cannot read them.
- *  4. **Nothing is stranded, and a SECOND press still leaves.** `/new`'s button
+ *  4. **Nothing is stranded, and a SECOND press still leaves.** `/workspaces/new`'s button
  *     neither awaited nor navigated, so it signed the user out and left them on
  *     the create form. The re-entry branch below is the other half of that: it
  *     refuses to run a second sequence but still navigates, because a user can

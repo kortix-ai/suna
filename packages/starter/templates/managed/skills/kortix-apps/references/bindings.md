@@ -1,6 +1,6 @@
 # Apps that use other Apps
 
-An App can **use** other Apps of the same project. The link does two things:
+An App can **use** other Apps of the same workspace. The link does two things:
 
 1. **Sign-in tokens.** Code in the App gets a token for an App it uses
    (`/_kortix/token?audience=<slug>`, sign-in.md). For any other App it gets
@@ -41,7 +41,7 @@ apps:
 
 `kortix apps deploy` with no arguments deploys every block that has a `path`
 or `image`, used Apps first; a block with neither is skipped.
-A slug that names no App of the project answers `400 app_not_found`.
+A slug that names no App of the workspace answers `400 app_not_found`.
 
 ## Use a binding in code
 
