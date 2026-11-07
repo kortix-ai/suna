@@ -83,7 +83,7 @@ test('rename and exit cleanup preserve concurrent smoke and suite tokens; login 
   let names: string[] = [];
   let credential = '';
   const server = Bun.serve({ port: 0, async fetch(req) {
-    if (new URL(req.url).pathname.endsWith('/accounts/me')) {
+    if (/\/(accounts\/)?me$/.test(new URL(req.url).pathname)) {
       credential = req.headers.get('authorization') ?? '';
       names = (await db`SELECT name FROM kortix.account_tokens ORDER BY name`).map(r => r.name);
       return Response.json({ error: 'Unauthorized' }, { status: 401 });

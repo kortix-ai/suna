@@ -13,7 +13,7 @@ import type { SessionLog } from '../core/session-log/types';
 let flag: boolean | undefined = true;
 const detailCalls: string[] = [];
 mock.module('../core/rest/projects-client', () => ({
-  getProjectDetail: async (projectId: string) => {
+  getWorkspaceDetail: async (projectId: string) => {
     detailCalls.push(projectId);
     return { project: { project_id: projectId, experimental: flag === undefined ? undefined : { session_log: flag } } };
   },

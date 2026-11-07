@@ -224,13 +224,13 @@ export default function PublicSessionSharePage() {
   // internal detail the recipient has no context for.
   const title = isFileShare ? fileName : meta.share.label;
   const authHref = `/auth?next=${encodeURIComponent(`/share/session/${token}`)}`;
-  const sessionHref = `/projects/${meta.share.project_id}/sessions/${meta.share.session_id}`;
+  const sessionHref = `/workspaces/${meta.share.project_id}/sessions/${meta.share.session_id}`;
   const offlineTitle = isFileShare
     ? 'This shared file is offline'
     : 'This shared preview is offline';
   const offlineDescription = isFileShare
-    ? 'The session runtime that serves this file is not active. Sign in with access to this project to start it.'
-    : 'The session runtime is not active. Sign in with access to this project to start it.';
+    ? 'The session runtime that serves this file is not active. Sign in with access to this workspace to start it.'
+    : 'The session runtime is not active. Sign in with access to this workspace to start it.';
 
   const openAppLabel = tI18nHardcoded.raw(
     'autoAppPublicShareSessionTokenPageJsxTextOpenAppa9aa1bb9',

@@ -52,6 +52,7 @@ function row(
 }
 
 mock.module('../../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: () => true,
   // Import-time safety only: the handler under test touches neither `db` nor
   // the real repository query (both are stubbed below), so any use here is a

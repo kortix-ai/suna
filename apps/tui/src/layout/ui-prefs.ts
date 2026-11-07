@@ -53,7 +53,7 @@ export const MODULES: readonly ModuleSpec[] = [
   {
     id: 'sidebar',
     label: 'Sidebar',
-    description: 'Projects, every screen, and the session list.',
+    description: 'The workspace, every screen, and the session list.',
     sides: ['left', 'right'],
     command: 'sidebar',
   },
@@ -110,7 +110,7 @@ export const PRESETS: readonly Preset[] = [
   {
     id: 'sidebar',
     label: 'Sidebar',
-    description: 'Plus projects, screens and sessions on the left.',
+    description: 'Plus the workspace, screens and sessions on the left.',
     ui: { ...DEFAULT_UI, sidebar: { on: true, side: 'left' } },
   },
   {

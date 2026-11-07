@@ -34,12 +34,14 @@ beforeAll(async () => {
 
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'detail-cap-test' });
   await db.insert(projects).values({
+    splitPending: true,
     projectId: PROJECT,
     accountId: ACCOUNT,
     name: 'detail-cap-test-project',
     repoUrl: upstream.repoUrl,
   });
   await db.insert(projects).values({
+    splitPending: true,
     projectId: DECLARED,
     accountId: ACCOUNT,
     name: 'detail-declared-project',

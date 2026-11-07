@@ -1,11 +1,12 @@
 import { numberValue, isoValue } from './cost-values';
-import { gatewayRequestLogs, projectSessions, projects, sandboxComputeSessions, storageCharges } from '@kortix/db';
+import { gatewayRequestLogs, projectSessions, sandboxComputeSessions, storageCharges } from '@kortix/db';
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
 
 import type { CostSort, CostWindow } from './cost-window';
 import { db } from './db';
 import { kortixBilledSpendSql, providerBilledSpendSql } from './llm-spend';
 import { billedComputeSecondsExpression } from './session-costs';
+import { projectsView } from '../workspaces/rows';
 
 export interface ProjectCostRow {
   project_id: string;
@@ -22,6 +23,8 @@ export interface ProjectCostRow {
   storage_gib_hours: number;
   total_cost: number;
   last_activity_at: string | null;
+  /** True when the project now lives in another workspace; `project_name` is then MOVED_PROJECT_LABEL. */
+  moved?: boolean;
 }
 
 export interface ProjectCostPage {
@@ -73,6 +76,9 @@ function laterIso(left: string | null, right: string | null): string | null {
   return left > right ? left : right;
 }
 
+/** The name of a project row whose project moved to another workspace (design.md §3.1 finding 31). */
+export const MOVED_PROJECT_LABEL = 'Moved to another workspace';
+
 // Pure merge of the two windowed, per-project aggregates into one row per
 // project. Both inputs already carry numeric-ish values straight out of a
 // `coalesce(sum(...), 0)::float8` — this never re-sums money itself, it only
@@ -90,7 +96,11 @@ export function mergeProjectCostRows(
     if (existing) return existing;
     const created: ProjectCostRow = {
       project_id: projectId,
-      project_name: projectNames.get(projectId) ?? projectId,
+      // A project this account paid for that now lives in another workspace
+      // (a split or a transfer): the money stays here, the name does not.
+      // Never resolve its new name across accounts, never show a bare id.
+      project_name: projectNames.get(projectId) ?? MOVED_PROJECT_LABEL,
+      ...(projectNames.has(projectId) ? {} : { moved: true }),
       session_count: 0,
       llm_cost: 0,
       llm_kortix_cost: 0,
@@ -230,11 +240,11 @@ export async function listCostByProject(input: {
       )
       .groupBy(projectSessions.projectId),
     db
-      .select({ projectId: projects.projectId, name: projects.name })
-      .from(projects)
+      .select({ projectId: projectsView.projectId, name: projectsView.name })
+      .from(projectsView)
       .where(and(
-        eq(projects.accountId, accountId),
-        input.projectId ? eq(projects.projectId, input.projectId) : undefined,
+        eq(projectsView.accountId, accountId),
+        input.projectId ? eq(projectsView.projectId, input.projectId) : undefined,
       )),
     // Volume storage (idx_storage_charges_account_day), charged per UTC day.
     db

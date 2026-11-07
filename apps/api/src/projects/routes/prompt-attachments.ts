@@ -14,6 +14,7 @@ import {
   resolveRuntimePromptAttachmentDescriptor,
   uploadPromptAttachmentChunk,
 } from '../prompt-attachments';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const metadata = z.object({
   attachment_id: z.string(),
@@ -32,7 +33,7 @@ const uploadTarget = z.union([
   }),
   z.object({ kind: z.literal('chunked'), chunk_size: z.number().int().positive() }),
 ]);
-const scopeParams = z.object({ projectId: z.string().uuid(), attachmentId: z.string().uuid() });
+const scopeParams = z.object({ workspaceId: z.string().uuid(), attachmentId: z.string().uuid() });
 const descriptor = z.object({
   version: z.literal(1),
   command_id: z.string().uuid(),
@@ -47,7 +48,7 @@ const descriptor = z.object({
   download_expires_at: z.string(),
 });
 async function scope(c: any) {
-  const projectId = c.req.param('projectId');
+  const projectId = workspaceIdParam(c);
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return null;
   assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
@@ -65,7 +66,7 @@ export function registerPromptAttachmentsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/runtime/prompt-attachments/{attachmentId}',
+      path: '/{workspaceId}/runtime/prompt-attachments/{attachmentId}',
       tags: ['sessions'],
       summary: 'Resolve one running command attachment for its session sandbox',
       ...auth,
@@ -90,7 +91,7 @@ export function registerPromptAttachmentsRoutes(): void {
       if (!accountId || !sandboxId) {
         return c.json({ error: 'runtime attachment descriptor requires a sandbox token' }, 403);
       }
-      const { projectId, attachmentId } = c.req.valid('param');
+      const { workspaceId: projectId, attachmentId } = c.req.valid('param');
       const query = c.req.valid('query');
       const result = await resolveRuntimePromptAttachmentDescriptor({
         accountId,
@@ -108,12 +109,12 @@ export function registerPromptAttachmentsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/attachments',
+      path: '/{workspaceId}/attachments',
       tags: ['sessions'],
       summary: 'Begin a private prompt attachment upload, or re-sign an unfinished one',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid() }),
         body: {
           content: {
             'application/json': {
@@ -145,7 +146,7 @@ export function registerPromptAttachmentsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/attachments/{attachmentId}/chunks/{index}',
+      path: '/{workspaceId}/attachments/{attachmentId}/chunks/{index}',
       tags: ['sessions'],
       summary: 'Upload one ordered attachment chunk (chunked upload mode only)',
       ...auth,
@@ -182,7 +183,7 @@ export function registerPromptAttachmentsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/attachments/{attachmentId}/complete',
+      path: '/{workspaceId}/attachments/{attachmentId}/complete',
       tags: ['sessions'],
       summary: 'Finalize and verify a private prompt attachment',
       ...auth,
@@ -199,7 +200,7 @@ export function registerPromptAttachmentsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/attachments/{attachmentId}',
+      path: '/{workspaceId}/attachments/{attachmentId}',
       tags: ['sessions'],
       summary: 'Remove an unsubmitted prompt attachment',
       ...auth,

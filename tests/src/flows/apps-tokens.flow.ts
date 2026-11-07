@@ -32,12 +32,12 @@ flow(
     domain: "apps",
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
-      "POST /v1/projects/:projectId/apps",
-      "GET /v1/projects/:projectId/apps/:appId",
-      "DELETE /v1/projects/:projectId/apps/:appId",
-      "GET /v1/projects/:projectId/apps",
-      "PATCH /v1/projects/:projectId/apps/:appId",
-      "POST /v1/projects/:projectId/apps/:appId/token",
+      "POST /v1/workspaces/:projectId/apps",
+      "GET /v1/workspaces/:projectId/apps/:appId",
+      "DELETE /v1/workspaces/:projectId/apps/:appId",
+      "GET /v1/workspaces/:projectId/apps",
+      "PATCH /v1/workspaces/:projectId/apps/:appId",
+      "POST /v1/workspaces/:projectId/apps/:appId/token",
     ],
   },
   async (ctx) => {
@@ -53,10 +53,10 @@ flow(
       // for the old 403 `feature_disabled` on the token route, and for the old
       // operator-only 403 on the features write.
       const params = { ...projectParams, appId: UNKNOWN_ID };
-      (await owner.post("/v1/projects/:projectId/apps/:appId/token", {}, { params }))
+      (await owner.post("/v1/workspaces/:projectId/apps/:appId/token", {}, { params }))
         .status(404);
       const flagWrite = await owner.patch(
-        "/v1/projects/:projectId/features",
+        "/v1/workspaces/:projectId/features",
         { feature: "apps", enabled: true },
         { params: projectParams },
       );
@@ -66,13 +66,13 @@ flow(
 
     await ctx.step("an invalid slug answers 400", async () => {
       (
-        await owner.post("/v1/projects/:projectId/apps", { slug: "Bad Slug", name: "x" }, { params: projectParams })
+        await owner.post("/v1/workspaces/:projectId/apps", { slug: "Bad Slug", name: "x" }, { params: projectParams })
       ).status(400);
     });
 
     await ctx.step("a create answers 201 with capabilities, no kind, no instance and no budget; a `kind` in the body is ignored", async () => {
       const created = await owner.post(
-        "/v1/projects/:projectId/apps",
+        "/v1/workspaces/:projectId/apps",
         { slug: appSlug("site"), name: "site", kind: "convex" },
         { params: projectParams },
       );
@@ -95,7 +95,7 @@ flow(
 
     await ctx.step("the real CLI: link/unlink set `uses`, show prints capabilities, a retired subcommand exits nonzero, token prints a JWT", async () => {
       const otherSlug = appSlug("other");
-      const other = await owner.post("/v1/projects/:projectId/apps", { slug: otherSlug, name: "other" }, { params: projectParams });
+      const other = await owner.post("/v1/workspaces/:projectId/apps", { slug: otherSlug, name: "other" }, { params: projectParams });
       other.status(201);
       otherAppId = other.json<{ app_id: string }>().app_id;
       const cli = new CliSandbox("app9");
@@ -110,7 +110,7 @@ flow(
         if (JSON.stringify(JSON.parse(link.stdout).uses) !== JSON.stringify([otherSlug])) {
           throw new Error(`link answered uses ${link.stdout.slice(0, 300)}`);
         }
-        (await owner.get("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId: otherAppId } }))
+        (await owner.get("/v1/workspaces/:projectId/apps/:appId", { params: { ...projectParams, appId: otherAppId } }))
           .status(200)
           .body()
           .has("$.used_by", [JSON.parse(link.stdout).slug]);
@@ -142,18 +142,18 @@ flow(
     });
 
     await ctx.step("an unknown App answers 404 on the token route", async () => {
-      (await owner.post("/v1/projects/:projectId/apps/:appId/token", {}, { params: { ...projectParams, appId: UNKNOWN_ID } })).status(404);
+      (await owner.post("/v1/workspaces/:projectId/apps/:appId/token", {}, { params: { ...projectParams, appId: UNKNOWN_ID } })).status(404);
     });
 
     await ctx.step("NONMEMBER learns nothing (403/404); ANON → 401", async () => {
       const params = { ...projectParams, appId: webAppId };
-      (await ctx.client.as(ctx.P.NONMEMBER).post("/v1/projects/:projectId/apps/:appId/token", {}, { params })).status([403, 404]);
-      (await ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/apps/:appId/token", {}, { params })).status(401);
+      (await ctx.client.as(ctx.P.NONMEMBER).post("/v1/workspaces/:projectId/apps/:appId/token", {}, { params })).status([403, 404]);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/workspaces/:projectId/apps/:appId/token", {}, { params })).status(401);
     });
 
     await ctx.step("cleanup: delete the Apps", async () => {
       for (const appId of [webAppId, otherAppId].filter(Boolean)) {
-        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } })).status(200);
+        (await owner.del("/v1/workspaces/:projectId/apps/:appId", { params: { ...projectParams, appId } })).status(200);
       }
     });
   },
@@ -185,12 +185,12 @@ flow(
     timeoutMs: 180_000,
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
-      "POST /v1/projects/:projectId/apps",
-      "POST /v1/projects/:projectId/apps/:appId/token",
-      "POST /v1/projects/:projectId/apps/:appId/access-session",
-      "GET /v1/projects/:projectId/.well-known/openid-configuration",
-      "GET /v1/projects/:projectId/jwks.json",
-      "DELETE /v1/projects/:projectId/apps/:appId",
+      "POST /v1/workspaces/:projectId/apps",
+      "POST /v1/workspaces/:projectId/apps/:appId/token",
+      "POST /v1/workspaces/:projectId/apps/:appId/access-session",
+      "GET /v1/workspaces/:projectId/.well-known/openid-configuration",
+      "GET /v1/workspaces/:projectId/jwks.json",
+      "DELETE /v1/workspaces/:projectId/apps/:appId",
     ],
   },
   async (ctx) => {
@@ -231,19 +231,19 @@ flow(
 
     try {
       await ctx.step("ANON reads the project issuer: openid-configuration names it and its key set; unknown → 404, malformed → 400", async () => {
-        (await anon.get("/v1/projects/:projectId/.well-known/openid-configuration", { params: { projectId: project.id } }))
+        (await anon.get("/v1/workspaces/:projectId/.well-known/openid-configuration", { params: { projectId: project.id } }))
           .status(200)
           .body()
           .has("$.issuer", issuer)
           .has("$.jwks_uri", `${issuer}/jwks.json`);
-        (await anon.get("/v1/projects/:projectId/jwks.json", { params: { projectId: UNKNOWN_ID } })).status(404);
-        (await anon.get("/v1/projects/:projectId/.well-known/openid-configuration", { params: { projectId: UNKNOWN_ID } })).status(404);
-        (await anon.get("/v1/projects/:projectId/jwks.json", { params: { projectId: "not-a-uuid" } })).status(400);
+        (await anon.get("/v1/workspaces/:projectId/jwks.json", { params: { projectId: UNKNOWN_ID } })).status(404);
+        (await anon.get("/v1/workspaces/:projectId/.well-known/openid-configuration", { params: { projectId: UNKNOWN_ID } })).status(404);
+        (await anon.get("/v1/workspaces/:projectId/jwks.json", { params: { projectId: "not-a-uuid" } })).status(400);
       });
 
       await ctx.step("create C, B, and A that uses C in one, D in the other", async () => {
         const create = async (projectId: string, name: string, uses: string[] = []) => {
-          const created = await owner.post("/v1/projects/:projectId/apps", { slug: name, name, uses }, { params: { projectId } });
+          const created = await owner.post("/v1/workspaces/:projectId/apps", { slug: name, name, uses }, { params: { projectId } });
           created.status(201).body().has("$.uses", uses);
           return created.json<{ app_id: string; url: string; auth: { issuer: string; audience: string } }>();
         };
@@ -257,9 +257,9 @@ flow(
       });
 
       await ctx.step("the owner mints a member token for A: aud = A, iss = the project, verified with the published key set", async () => {
-        const minted = await owner.post("/v1/projects/:projectId/apps/:appId/token", {}, { params: { projectId: project.id, appId: ids.a } });
+        const minted = await owner.post("/v1/workspaces/:projectId/apps/:appId/token", {}, { params: { projectId: project.id, appId: ids.a } });
         minted.status(200).body().exists("$.token").exists("$.expires_at");
-        jwks = (await anon.get("/v1/projects/:projectId/jwks.json", { params: { projectId: project.id } })).status(200).json();
+        jwks = (await anon.get("/v1/workspaces/:projectId/jwks.json", { params: { projectId: project.id } })).status(200).json();
         const claims = verifiedClaims(minted.json<{ token: string }>().token, jwks);
         if (claims.iss !== issuer || claims.aud !== ids.a || claims.project_id !== project.id) {
           throw new Error(`claims ${JSON.stringify(claims)}`);
@@ -269,13 +269,13 @@ flow(
 
       await ctx.step("NONMEMBER mints nothing (403/404); ANON → 401", async () => {
         const params = { projectId: project.id, appId: ids.a };
-        (await ctx.client.as(ctx.P.NONMEMBER).post("/v1/projects/:projectId/apps/:appId/token", {}, { params })).status([403, 404]);
-        (await anon.post("/v1/projects/:projectId/apps/:appId/token", {}, { params })).status(401);
+        (await ctx.client.as(ctx.P.NONMEMBER).post("/v1/workspaces/:projectId/apps/:appId/token", {}, { params })).status([403, 404]);
+        (await anon.post("/v1/workspaces/:projectId/apps/:appId/token", {}, { params })).status(401);
       });
 
       await ctx.step("sign in to A through its access link", async () => {
         const session = await owner.post(
-          "/v1/projects/:projectId/apps/:appId/access-session",
+          "/v1/workspaces/:projectId/apps/:appId/access-session",
           {},
           { params: { projectId: project.id, appId: ids.a } },
         );
@@ -311,7 +311,7 @@ flow(
       });
     } finally {
       for (const [projectId, appId] of [[project.id, ids.a], [project.id, ids.b], [project.id, ids.c], [otherProject.id, ids.d]]) {
-        if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: { projectId, appId } }).catch(() => {});
+        if (appId) await owner.del("/v1/workspaces/:projectId/apps/:appId", { params: { projectId, appId } }).catch(() => {});
       }
     }
   },
@@ -325,14 +325,14 @@ flow(
     timeoutMs: 180_000,
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
-      "POST /v1/projects/:projectId/apps",
-      "PATCH /v1/projects/:projectId/apps/:appId/access",
-      "POST /v1/projects/:projectId/apps/:appId/access-session",
-      "GET /v1/projects/:projectId/apps",
-      "GET /v1/projects/:projectId/apps/:appId",
-      "POST /v1/projects/:projectId/apps/:appId/token",
-      "GET /v1/projects/:projectId/jwks.json",
-      "DELETE /v1/projects/:projectId/apps/:appId",
+      "POST /v1/workspaces/:projectId/apps",
+      "PATCH /v1/workspaces/:projectId/apps/:appId/access",
+      "POST /v1/workspaces/:projectId/apps/:appId/access-session",
+      "GET /v1/workspaces/:projectId/apps",
+      "GET /v1/workspaces/:projectId/apps/:appId",
+      "POST /v1/workspaces/:projectId/apps/:appId/token",
+      "GET /v1/workspaces/:projectId/jwks.json",
+      "DELETE /v1/workspaces/:projectId/apps/:appId",
     ],
   },
   async (ctx) => {
@@ -364,28 +364,28 @@ flow(
 
     try {
       await ctx.step("the owner creates a private backend and an App that uses it, restricted to the reader", async () => {
-        const backend = await owner.post("/v1/projects/:projectId/apps", { slug: names.backend, name: names.backend }, { params });
+        const backend = await owner.post("/v1/workspaces/:projectId/apps", { slug: names.backend, name: names.backend }, { params });
         backend.status(201).body().has("$.access_mode", "private");
         ids.backend = backend.json<any>().app_id;
         hosts.backend = new URL(backend.json<any>().url).hostname;
-        const app = await owner.post("/v1/projects/:projectId/apps", { slug: names.app, name: names.app, uses: [names.backend] }, { params });
+        const app = await owner.post("/v1/workspaces/:projectId/apps", { slug: names.app, name: names.app, uses: [names.backend] }, { params });
         app.status(201).body().has("$.uses", [names.backend]);
         ids.app = app.json<any>().app_id;
         hosts.app = new URL(app.json<any>().url).hostname;
-        (await owner.patch("/v1/projects/:projectId/apps/:appId/access", { mode: "restricted", member_ids: [readerPrincipal.userId] },
+        (await owner.patch("/v1/workspaces/:projectId/apps/:appId/access", { mode: "restricted", member_ids: [readerPrincipal.userId] },
           { params: { ...params, appId: ids.app } })).status(200);
       });
 
       await ctx.step("the reader lists the App and not the private backend; the backend refuses them a member token and an access link", async () => {
-        const listed = (await reader.get("/v1/projects/:projectId/apps", { params })).status(200).json<any>();
+        const listed = (await reader.get("/v1/workspaces/:projectId/apps", { params })).status(200).json<any>();
         const slugs = (listed.apps ?? listed).map((app: { slug: string }) => app.slug);
         if (!slugs.includes(names.app) || slugs.includes(names.backend)) throw new Error(`reader lists ${JSON.stringify(slugs)}`);
-        (await reader.post("/v1/projects/:projectId/apps/:appId/token", {}, { params: { ...params, appId: ids.backend } })).status([403, 404]);
-        (await reader.post("/v1/projects/:projectId/apps/:appId/access-session", {}, { params: { ...params, appId: ids.backend } })).status([403, 404]);
+        (await reader.post("/v1/workspaces/:projectId/apps/:appId/token", {}, { params: { ...params, appId: ids.backend } })).status([403, 404]);
+        (await reader.post("/v1/workspaces/:projectId/apps/:appId/access-session", {}, { params: { ...params, appId: ids.backend } })).status([403, 404]);
       });
 
       await ctx.step("the reader signs in to the App through their own access link", async () => {
-        const session = await reader.post("/v1/projects/:projectId/apps/:appId/access-session", {}, { params: { ...params, appId: ids.app } });
+        const session = await reader.post("/v1/workspaces/:projectId/apps/:appId/access-session", {}, { params: { ...params, appId: ids.app } });
         session.status(200);
         const link = new URL(session.json<any>().url);
         const redeemed = await gate(hosts.app, `${link.pathname}${link.search}`);
@@ -399,7 +399,7 @@ flow(
           const r = await gate(hosts.app, `/_kortix/token?audience=${audience}`);
           if (r.status !== 200) throw new Error(`token for ${audience}: ${r.status} ${r.text.slice(0, 200)}`);
           // The project key exists from its first token on.
-          if (!jwks.keys.length) jwks = (await ctx.client.as(ctx.P.ANON).get("/v1/projects/:projectId/jwks.json", { params })).status(200).json();
+          if (!jwks.keys.length) jwks = (await ctx.client.as(ctx.P.ANON).get("/v1/workspaces/:projectId/jwks.json", { params })).status(200).json();
           const claims = verifiedClaims(r.body.token, jwks);
           if (claims.aud !== ids.backend || claims.sub !== readerPrincipal.userId || claims.via_app_id !== ids.app) {
             throw new Error(`claims ${JSON.stringify(claims)}`);
@@ -422,7 +422,7 @@ flow(
       });
     } finally {
       for (const appId of [ids.app, ids.backend]) {
-        if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...params, appId } }).catch(() => {});
+        if (appId) await owner.del("/v1/workspaces/:projectId/apps/:appId", { params: { ...params, appId } }).catch(() => {});
       }
     }
   },

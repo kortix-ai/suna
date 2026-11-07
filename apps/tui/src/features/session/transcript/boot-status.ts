@@ -59,8 +59,8 @@ export const SLOW_BOOT_MS = 45_000;
 const IMAGE_STEP_TEXT: Record<SessionStartImageStep['state'], { text: string; note?: string }> = {
   resolving: { text: 'Choosing the image' },
   serving_last_ready: { text: 'Starting from the last ready image while the new one builds' },
-  waiting_for_build: { text: 'Waiting for the first image for this project to finish building' },
-  building: { text: 'Building the first image for this project' },
+  waiting_for_build: { text: 'Waiting for the first image for this workspace to finish building' },
+  building: { text: 'Building the first image for this workspace' },
   copying_to_region: { text: "Copying the image to the session's region" },
   waiting_for_provider: { text: 'Waiting for the provider to finish the image', note: 'retrying' },
 };
@@ -75,7 +75,7 @@ export function formatStepElapsed(ms: number): string {
 }
 
 /**
- * One image step as a label: `Building the first image for this project (0:42)`.
+ * One image step as a label: `Building the first image for this workspace (0:42)`.
  * The clock counts from `step.since` to `now`. A state a newer API adds reads
  * humanized.
  */

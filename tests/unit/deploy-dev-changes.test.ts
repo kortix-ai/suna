@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
+import { REPO_ROOT as root, readWorkflow } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const script = resolve(root, 'scripts/ci/deploy-dev-changes.sh');
 
 /**
@@ -77,7 +77,7 @@ describe('deploy-dev-changes.sh', () => {
   });
 
   it('parses the real deploy-dev.yml filters: every surface, every glob', () => {
-    const workflow = readFileSync(resolve(root, '.github/workflows/deploy-dev.yml'), 'utf8');
+    const workflow = readWorkflow('deploy-dev.yml');
     const start = workflow.indexOf('          FILTERS: |\n') + '          FILTERS: |\n'.length;
     const end = workflow.indexOf('        run: |', start);
     const filters = workflow.slice(start, end);

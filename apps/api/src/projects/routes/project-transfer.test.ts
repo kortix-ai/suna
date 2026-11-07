@@ -41,6 +41,8 @@ let authorizeCalls: Array<{ accountId: string; action: string }> = [];
 /** What the (stubbed) IAM engine answers for the TARGET-account authorize. */
 let targetVerdict: { allowed: boolean; reason: string } = { allowed: false, reason: 'not_a_member' };
 let quotaDenial: Record<string, unknown> | null = null;
+/** The target already holds its one active project (Workspaces 1:1). */
+let targetOccupied = false;
 let transferCalls: Array<{ projectId: string; fromAccountId: string; toAccountId: string }> = [];
 let transferError: Error | null = null;
 let targetExists = true;
@@ -103,7 +105,12 @@ mock.module('../../iam/actor', () => ({
 const realQuota = await import('../lib/project-quota');
 mock.module('../lib/project-quota', () => ({
   ...realQuota,
-  projectQuotaDenial: async () => quotaDenial,
+  projectCreationDenial: async () =>
+    targetOccupied
+      ? { status: 409, body: { error: 'occupied', code: 'workspace_has_project', account_id: TARGET_ACCOUNT, workspace_id: null } }
+      : quotaDenial
+        ? { status: 403, body: quotaDenial }
+        : null,
 }));
 
 // The handler reads the target account through `db.select(...)`.
@@ -136,6 +143,7 @@ beforeEach(() => {
   transferError = null;
   targetVerdict = { allowed: false, reason: 'not_a_member' };
   quotaDenial = null;
+  targetOccupied = false;
   targetExists = true;
   loadedProject = projectRow();
 });
@@ -186,6 +194,15 @@ describe('POST /v1/projects/:projectId/transfer', () => {
     const res = await post({ account_id: TARGET_ACCOUNT });
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual(quotaDenial);
+    expect(transferCalls).toEqual([]);
+  });
+
+  test('a target that already holds its project answers 409 workspace_has_project before the movement', async () => {
+    targetVerdict = { allowed: true, reason: 'role' };
+    targetOccupied = true;
+    const res = await post({ account_id: TARGET_ACCOUNT });
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('workspace_has_project');
     expect(transferCalls).toEqual([]);
   });
 

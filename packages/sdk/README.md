@@ -31,7 +31,7 @@ const kortix = createKortix({
   backendUrl: "https://api.kortix.com/v1",
   getToken,
 });
-await kortix.projects.list();
+await kortix.workspaces.list();
 ```
 
 ### Call external systems through Connectors
@@ -328,9 +328,9 @@ const kortix = createKortix({
       .then((s) => s.data.session?.access_token ?? null),
 });
 
-// Projects
-const projects = await kortix.projects.list();
-const detail = await kortix.project(pid).detail();
+// Workspaces (a workspace id is the project id: `kortix.project(pid)` still works)
+const workspaces = await kortix.workspaces.list();
+const detail = await kortix.workspace(pid).detail();
 await kortix.project(pid).secrets.upsert({
   name: "LOCAL_TOOL_TOKEN",
   value,
@@ -362,7 +362,7 @@ const projectInventory = await kortix
 const mine = await kortix.project(pid).sessions.list({ parent: "root", startedBy: "me" });
 const found = await kortix.project(pid).sessions.list({ parent: "root", q: "nightly" }); // searches every visible session
 const spawned = await kortix.project(pid).sessions.list({ parent: mine[0].session_id });
-// React: useProjectSessions(pid, { parent: "root", startedBy: "me" }), useSessionChildren(pid, parentId)
+// React: useWorkspaceSessions(pid, { parent: "root", startedBy: "me" }), useSessionChildren(pid, parentId)
 
 // Sessions (id-bound handle)
 const s = kortix.session(pid, sid);
@@ -453,7 +453,7 @@ Every session carries `labels: string[]` and a free-form `metadata` object. Set 
 at `project.sessions.create({ labels, metadata })`. `session.update({ labels })`
 replaces the labels; `session.update({ metadata })` merges keys, and a `null` value
 removes a key. `project.sessions.listPage({ labels })` returns only sessions that carry
-every given label, and `useProjectSessions(projectId, { labels })` does the same in
+every given label, and `useWorkspaceSessions(projectId, { labels })` does the same in
 React. Each label is 1–64 characters, at most 20 per session; one metadata write is at
 most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
 
@@ -554,7 +554,7 @@ await s.workflows.control(runId, { action: 'pause' }) // 'resume' | 'stop' | 're
 approves it), `refused`, or `dropped` (a duplicate). A `to` that names several sessions is a
 `409` with the candidates. A session row carries `board_state` (`working`, `needs_input`,
 `idle`, `completed`, `failed`, `stopped`), `attention`, `last_activity_at`, `result_excerpt`,
-`agent_handle`, `team_lead_session_id` and `inbound`; `listProjectSessionsPage(projectId,
+`agent_handle`, `team_lead_session_id` and `inbound`; `listWorkspaceSessionsPage(projectId,
 { teamLead })` lists a lead's teammates. In React: `useReachableAgents(pid, sid, scope?)`,
 `usePeerMessages(pid, sid, direction?)` (with `approve` and `deny`), `useTeamTasks(pid, lead)`,
 `useTeammates(pid, lead)` and `useSessionWorkflows(pid, sid)` (with `control`). Each polls
@@ -662,19 +662,19 @@ sessions, limits and verification; the goal's Drive folder holds the brief
 `GOAL.md` change nothing.
 
 ```ts
-import { createProjectGoal, listProjectGoals, pauseProjectGoal, ProjectGoalConflictError } from '@kortix/sdk';
+import { createWorkspaceGoal, listWorkspaceGoals, pauseWorkspaceGoal, WorkspaceGoalConflictError } from '@kortix/sdk';
 
 // goalId is the idempotency key: retry with the same id, get the same goal.
-const { goal } = await createProjectGoal(projectId, { outcome: 'EU billing live', goalId });
+const { goal } = await createWorkspaceGoal(projectId, { outcome: 'EU billing live', goalId });
 
-const [first] = await listProjectGoals(projectId);
+const [first] = await listWorkspaceGoals(projectId);
 if (first?.capabilities.pause) {
   try {
-    const { projectGoal } = await pauseProjectGoal(projectId, first, 'Paused from my app.');
+    const { projectGoal } = await pauseWorkspaceGoal(projectId, first, 'Paused from my app.');
     console.log(projectGoal.revision); // the new revision
   } catch (error) {
     // Someone changed the goal first: error.goal is the goal as it is now.
-    if (error instanceof ProjectGoalConflictError) console.log(error.goal.record.state);
+    if (error instanceof WorkspaceGoalConflictError) console.log(error.goal.record.state);
     else throw error;
   }
 }
@@ -686,13 +686,13 @@ if (first?.capabilities.pause) {
   `criteria[].reported_met` is the agent's claim.
 - `blockedReason` says why a goal cannot go on (`credits`, `wake_cap`,
   `session_cap`, `owner_lost`, `storage`, `flag_off`, `setup`).
-- `replyToProjectGoal(projectId, goal, text, { answerId })` answers as the
+- `replyToWorkspaceGoal(projectId, goal, text, { answerId })` answers as the
   caller; one answer per `answerId`.
-- React: `useProjectGoals`, `useProjectGoal`, `useProjectGoalEvents`,
-  `useProjectGoalFiles`, `useSessionGoal`, and `useProjectGoalControl` (one
+- React: `useWorkspaceGoals`, `useWorkspaceGoal`, `useWorkspaceGoalEvents`,
+  `useWorkspaceGoalFiles`, `useSessionGoal`, and `useWorkspaceGoalControl` (one
   request per double submit, the cache updated on success and on a `409`).
-- Deprecated: `ProjectGoal.heartbeat` is always `null`;
-  `CreateProjectGoalInput.sessionId` is sent as the goal id.
+- Deprecated: `WorkspaceGoal.heartbeat` is always `null`;
+  `CreateWorkspaceGoalInput.sessionId` is sent as the goal id.
 
 ## The facade surface
 
@@ -701,7 +701,9 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 
 | namespace | what |
 |---|---|
-| `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
+| `kortix.workspaces` | `list` (every workspace the caller can open, across accounts, one request) · `get` (role + state + settings) · `update` · `create` · `delete` · `restore`. See [Workspaces](#workspaces) |
+| `kortix.workspace(id)` | everything on `kortix.project(id)`, except that `get` / `update` read and change the `Workspace` and `tokens` manages workspace keys (the project CLI tokens are `cliTokens`), plus `delete` · `restore` · `setup` · `accountId` · `members.{list,invite,updateRole,remove,invites,cancelInvite,resendInvite}` · `leave` · `billing.state` · `iam.{assignments.{list,create,revoke},roles,groups,can,canBatch}` |
+| `kortix.projects` | project-named calls, kept permanently: list · get · detail · create · provision · createWorkspace · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
 | `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,retry,remove,grant,revoke,setAccess}` · `subscriptions.{list,usage}` (project-authorized usage for named and legacy ChatGPT logins; reads credentials in place) · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,activity,webhooks.*}` (filterable project/session reconstruction log; `activity` = who was active and how often, per UTC day) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` (with `min_monthly_usd` / `max_monthly_usd`) — plus a curated mutation surface: `setPlan` (subscribe to or change the credits plan; `useSetBillingPlan()` in `@kortix/sdk/react`) · `subscription.{createPortalSession,cancel,reactivate}` · `credits.{purchase,redeem,autoTopupSettings,configureAutoTopup}` (`redeem({ code, accountId })` adds a credit code's amount to the non-expiring credits, once per account). `checkout.{createSession,confirmSession}`, `subscription.{scheduleDowngrade,cancelScheduledChange,prorationPreview}`, `createPerSeatCheckout` and `claimPerSeatBilling` are deprecated: they reject with `ENDPOINT_RETIRED` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}`. A project installs an item through `createMarketplaceInstallSession(projectId, itemId)`, which starts a session whose agent merges the item into the project and opens a change request; it resolves `{ session_id }` |
@@ -709,7 +711,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
 | `kortix.notifications` | native push for a person's devices: `registerDeviceToken` · `unregisterDeviceToken` (Expo push tokens) · `releaseDeviceToken(token, { backendUrl?, signal? })` (**no token needed**: a signed-out app removes its device token from a backend, `POST /v1/notifications/device-token/release`; resolves `{ ok: true }`, a non-2xx answer throws `ApiError` with `status`). A session push reaches the phone of the person who created the session |
 | `kortix.mobileClientPolicy()` | the operator's mobile release policy, `GET /v1/clients/mobile`, **no token needed** (read before login): resolves `{ minimum_version, store_url_ios, store_url_android }`, each a string or `null`; a non-200 answer throws `ApiError`. A mobile host compares its app version to `minimum_version` with `compareSemver(a, b)` (`-1 \| 0 \| 1`, or `null` when either side does not parse; ignores a leading `v` and `-pre`/`+build` suffixes) and fails open on `null`. Also exported standalone as `getMobileClientPolicy` and the `MobileClientPolicy` type. The operator sets `MOBILE_MIN_VERSION`, `MOBILE_STORE_URL_IOS`, `MOBILE_STORE_URL_ANDROID` on the API |
-| `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
+| `kortix.validateToken()` | pasted-API-key validation helper — `GET /me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
 | `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / app; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.skills`, `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`restore`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`setPinned`/`setArchived`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind` (needs `session.rewind`)/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · the session verbs (`messages`/`pending`/`answerPermission`/`answerQuestion`/`compact`) · `stream()` · the deprecated `.runtime` |
@@ -1103,7 +1105,7 @@ the root import — offers the same agents and models and sends the same pick.
 
 | Function | Input → output |
 |---|---|
-| `projectConfigAgentsToRuntimeAgents(config)` | `/projects/:id/detail` config → agent roster, project default first |
+| `projectConfigAgentsToRuntimeAgents(config)` | `/workspaces/:id/detail` config → agent roster, project default first |
 | `composerSelectableAgents(agents, { enableProjects?, includeSubagents? })` | roster → picker list (no hidden agents, no subagents, `project-manager` only with `enableProjects`) |
 | `resolveComposerAgent({ agents, boundAgent, defaultAgent, selectedAgent })` | → the agent to send, and `disabled` when none is accessible |
 | `pickerProviderList({ modelPicker })` | `/model-picker` catalog → provider list (the single `kortix` provider). `gatewayEnabled`, `runtimeProviders`, `llmCatalogProviders` and `secretNames` are deprecated and ignored |
@@ -1140,6 +1142,156 @@ the root barrel; `@kortix/sdk/react` re-exports them too). They're real classes:
 - `SessionNotReadyError` (root barrel) — a session handle's runtime-scoped
   member (`.runtime`, `.previewUrl()`, `.proxyUrl()`) was touched before
   `ensureReady()` resolved this session's own sandbox.
+- `isNoWorkspaceError(err)` — HTTP 409 with `code: NO_WORKSPACE_CODE`
+  (`'no_workspace'`): the caller belongs to no workspace. Sign-up creates no
+  account; show "Create a workspace or join one" and call `createWorkspace`.
+
+## Workspaces
+
+A workspace is the one top-level Kortix entity, like a Slack workspace: one
+company's members, roles, billing, secrets, agents and sessions. The
+workspace id (`workspace_id`) is the project id, so every session URL,
+`kortix.project(id)` call and `KORTIX_PROJECT_ID` already carries it. The
+account id stays an internal billing and directory key; no `Workspace*` call
+asks for it.
+
+```ts
+import { createKortix } from "@kortix/sdk";
+
+const kortix = createKortix({ backendUrl, getToken });
+
+const list = await kortix.workspaces.list(); // every workspace, every account, ONE request
+const ws = kortix.workspace(list[0].workspace_id);
+
+const workspace = await ws.get(); // Workspace: role + state + settings (mfa_required, branding, …)
+await ws.update({ name: "Northwind" }); // one name, everywhere
+const members = await ws.members.list();
+await ws.members.invite({ email: "person@example.com", role: "manager" });
+const state = await ws.billing.state(); // plan, credits, limits
+const { secret_key } = await ws.tokens.create({ name: "ci" }); // a workspace key, returned once
+await ws.session(sessionId).send("hello"); // every project(id) member is here too
+```
+
+| Name | What |
+|---|---|
+| `Workspace` | one workspace: every `KortixWorkspace` field + `workspace_id` + `role` + `state` + the settings (`mfa_required`, `branding`, `member_count`, `session_*`, `pat_*`, `split_pending`, `secret_default_strategy`, …) |
+| `WorkspaceSummary` | one list row: every `KortixWorkspace` field + `workspace_id` + `role` + `state` (+ `split_pending`, `deletion_scheduled_for`) |
+| `WorkspaceRole` | `'owner' \| 'admin' \| 'manager' \| 'member'` |
+| `WorkspaceState` | `'active'` · `'setup_required'` (pays, no repository yet: `setupWorkspace`) · `'deleting'` (owners only, until `deletion_scheduled_for`: `restoreWorkspace`) |
+| `listWorkspaces({ includeInactive? })` · `getWorkspace(id)` · `updateWorkspace(id, input)` | the entity. `listWorkspaces` is one `GET /v1/workspaces`; active workspaces unless `includeInactive` |
+| `createWorkspace(input, onEvent?)` · `deleteWorkspace(id)` · `restoreWorkspace(id)` · `setupWorkspace(id, input?)` | the lifecycle |
+| `listWorkspaceMembers` · `inviteWorkspaceMember` · `updateWorkspaceMemberRole` · `removeWorkspaceMember` · `listWorkspaceInvites` · `cancelWorkspaceInvite` · `resendWorkspaceInvite` · `leaveWorkspace` | people, on the `WorkspaceRole` ladder (an owner is made by transfer, never by invite) |
+| `listWorkspaceTokens` · `createWorkspaceToken` · `revokeWorkspaceToken` | workspace keys (`kortix_pat_…` that act on this workspace only) |
+| `listPersonalTokens()` · `revokePersonalToken(id)` | the caller's personal keys (the CLI login; act as the person in every workspace) |
+| `getPersonDeletionPlan()` | what "Delete my account" would do: the workspaces deleted, left, and the shared ones to hand over first |
+| `getWorkspaceBillingState` | plan, credits, limits (`AccountState`) |
+| `listWorkspaceAssignments` · `createWorkspaceAssignment` · `revokeWorkspaceAssignment` · `listWorkspaceRoles` · `listWorkspaceGroups` · `probeWorkspacePermission(s)` | identity and access |
+| `buildWorkspaceSummaries` · `compareWorkspacesByRecent` · `workspaceFromProject` · `workspaceRole` | pure helpers for a host that already holds per-account lists (an older API) |
+| `resolveWorkspaceAccountId(id)` | the account behind a workspace, for an older `Account*` call |
+| `useWorkspaces({ userId })` · `useWorkspace(id)` (`@kortix/sdk/react`) | the hooks. `useWorkspaces` reads `listWorkspaces()` (key `qk.projects.workspaces(userId)`) and returns `{ workspaces, accounts, isLoading, isError, failedAccountIds, refetchFailed }` |
+
+**The workspace handle.** `kortix.workspace(id)` carries every member of
+`kortix.project(id)`. Three keys have the workspace meaning there: `get` and
+`update` read and change the `Workspace`, and `tokens` manages workspace keys.
+The project CLI tokens of `kortix.project(id).tokens` are `cliTokens` on the
+workspace handle. The handle adds `delete`, `restore`, `setup`, `accountId`,
+`members`, `leave`, `billing` and `iam`.
+
+Every response that names a workspace carries `workspace_id` next to
+`project_id` (projects, sessions, secrets, tokens, access and member rows,
+accounts, `/v1/me`). `account_id` stays, deprecated. Older servers omit
+`workspace_id`.
+
+**Compatibility is permanent.** Every `Project*` and `Account*` name keeps
+working; none is scheduled for removal. Every `Project*` name has a workspace
+twin (the same function, class, value or type; see [Legacy names](#legacy-names)),
+and the project name carries `@deprecated Use <twin>`. An `Account*` name with
+an exact workspace equivalent carries `@deprecated` naming it
+(`listAccountMembers` → `listWorkspaceMembers`, …). `listAccounts` and
+`createAccountToken` (a personal key, not a workspace key) stay current: they
+have no exact equivalent.
+
+**Not the sandbox directory.** `RuntimeWorkspace*`, `useRuntimeWorkspace`,
+`@kortix/sdk/workspace-search`, `toWorkspaceRelative` and
+`normalizeWorkspacePath` are about the session sandbox's `/workspace`
+directory. `CaptureWorkspace` is a Kortix Capture tenant. Neither is a Kortix
+workspace.
+
+### Legacy names
+
+Every public name that says Project has a workspace twin. The rule is
+mechanical: `Project` → `Workspace`, `project` → `workspace`, `PROJECT` →
+`WORKSPACE` (`listProjectSessions` → `listWorkspaceSessions`, `ProjectSession`
+→ `WorkspaceSession`, `useProjectTriggers` → `useWorkspaceTriggers`,
+`PROJECT_WIDE_SPACE` → `WORKSPACE_WIDE_SPACE`). The twin is the same function,
+class, value or type, so `listProjectSessions === listWorkspaceSessions`. The
+project name stays exported permanently and is `@deprecated`. Facade members
+(`kortix.projects.*`, `kortix.project(id).*`) keep their names.
+
+These project names have no identical twin:
+
+| Legacy name | Use instead | Why |
+|---|---|---|
+| `listProjects()` | `listWorkspaces()` | Lists one account's projects; `listWorkspaces` lists every workspace of the caller |
+| `useProjects(accountId?)`, `UseProjectsOptions`, `projectsQueryOptions`, `ProjectsKey`, `ProjectsListKey` | `useWorkspaces()`, `UseWorkspacesOptions` | The same difference, in React |
+| `getProject(id)` | `getWorkspace(id)` | `getWorkspace` adds the role, the state and the settings block |
+| `updateProject(id, input)` | `updateWorkspace(id, input)` | `updateWorkspace` refuses a settings key with `workspace_setting_read_only` |
+| `createProject(input)` | `linkRepository(input)` | Both import a repository; `createWorkspace` makes a new one |
+| `inviteProjectMember(id, email, role)` | `inviteWorkspaceMember(id, input)` | Membership is access: one invite, one role |
+| `ProjectHandle` | `WorkspaceHandle` | `kortix.workspace(id)` carries every member of `kortix.project(id)` plus the workspace itself |
+| `ProjectRole` | `WorkspaceRole` | One role ladder: `owner`, `admin`, `manager`, `member` |
+| `PROJECT_ACTIONS`, `ProjectAction` | (current) | The values are the IAM action ids (`project.*`); `WorkspaceAction` and `toWorkspaceAction` give the workspace ids |
+
+Names that say project and are not the workspace keep their names: the
+sandbox daemon's board project (`KortixMasterProject`, `listKortixProjects`,
+… in `@kortix/sdk/react`, `KortixProject` is the daemon's), the session
+runtime's project record (`Project`, `ProjectVcs`, `RuntimeProjectInfo`), the
+verb "project" (`projectWorking`, `projectSessionConnection`), the wire code
+`WORKSPACE_HAS_PROJECT_CODE`, and the removed warm-session and mount calls.
+`src/workspace-names.test.ts` fails on a new project name without a twin or a
+reason.
+
+### Workspace errors
+
+| Code | Status | Meaning | Predicate / constant |
+|---|---|---|---|
+| `workspace_not_found` | 404 | No such workspace, an account id on a canonical path, or no access | `WORKSPACE_NOT_FOUND_CODE` |
+| `workspace_setup_required` | 409 | The workspace has no repository yet: `setupWorkspace` | `WORKSPACE_SETUP_REQUIRED_CODE` |
+| `workspace_deleting` | 409 | The workspace is being deleted: an owner restores it first | `WORKSPACE_DELETING_CODE` |
+| `workspace_has_project` | 409 | The account already holds its workspace's project; the body names it (`workspace_id`). Create another workspace instead | `WORKSPACE_HAS_PROJECT_CODE` · `isWorkspaceHasProjectError` |
+| `workspace_setting_read_only` | 400 | `updateWorkspace` named a setting; `field` and `writer` (the route that writes it) are in the body | `WORKSPACE_SETTING_READ_ONLY_CODE` |
+| `workspace_ambiguous` | 409 | A legacy account key names several workspaces (not split yet): name the workspace id | — |
+| `no_workspace` | 409 | The caller belongs to no workspace | `NO_WORKSPACE_CODE` · `isNoWorkspaceError` |
+| `new_workspace_requires_person` | 403 | Only a person creates a workspace (not an API key, a service account or a workspace key) | — |
+| `account_creation_restricted` | 403 | The deployment lets only its admin create workspaces | — |
+| `project_limit_reached` | 403 | Deprecated: an older API's plan cap. Current APIs answer `workspace_has_project` | — |
+
+## Create a workspace
+
+`createWorkspace(input, onEvent?, options?)` (also `kortix.workspaces.create`
+and `kortix.projects.createWorkspace`) creates a whole workspace with
+`POST /v1/workspaces`: always a new account, the caller its owner. An
+idempotent retry (the same `idempotency_key`) answers the workspace that key
+already created. It answers the `Workspace`. `input` is
+`CreateWorkspaceInput`: the name and the repository fields, without
+`account_id`. Pass `onEvent` to stream the phases (`Accept:
+text/event-stream`); omit it on React Native. On an older API the call sends
+`new_workspace: true` to `POST /v1/projects/provision` instead.
+
+```ts
+import { createWorkspace } from "@kortix/sdk";
+
+const ws = await createWorkspace(
+  { name: "Northwind", idempotency_key: crypto.randomUUID() },
+  (e) => e.type === "phase" && console.log(e.phase),
+);
+// ws.workspace_id === ws.project_id; ws.role === "owner".
+```
+
+Codes: `403 account_creation_restricted` (the deployment restricts account
+creation), `403 new_workspace_requires_person` (an API key, a service account
+or a workspace key), `403 impersonation_invalid`, `409 provision_in_flight`
+(retry with the same key).
 
 The canonical server-side wrapper shape — catch a 402 and pass the payload
 through to your own client for re-billing, instead of leaking a Kortix error:
@@ -1363,6 +1515,40 @@ Its only platform code for the session runtime is the event transport
 - **React data** comes from `@kortix/sdk/react` hooks; **imperative actions** from
   the `createKortix` facade.
 
+## Route names and older APIs
+
+The SDK calls the canonical workspace routes. The API serves the older names
+permanently:
+
+| Canonical | Legacy (permanent) | Note |
+|---|---|---|
+| `GET /v1/workspaces` | `GET /v1/projects` | Not an alias: canonical lists every workspace of the caller in one request; legacy lists one account's projects (`?account_id=`) |
+| `POST /v1/workspaces` | `POST /v1/projects/provision` with `new_workspace: true` | Not an alias: `POST /v1/projects` imports a GitHub repository into an account |
+| `GET`/`PATCH /v1/workspaces/:id` | `GET`/`PATCH /v1/projects/:id` | Not an alias: canonical adds `role`, `state` and the settings block, and refuses a settings key |
+| `/v1/workspaces/:id/<sub-path>` | `/v1/projects/:id/<sub-path>` | Same handler |
+| `/v1/workspaces/:id/<family>` (members, invites, iam, audit, tokens, branding, capture, …) | `/v1/accounts/:accountId/<family>` | Same handler; `GET …/audit` is the workspace log, not the project slice |
+| `/v1/me[/…]` · `/v1/invites[/…]` | `/v1/accounts/me[/…]` · `/v1/account-invites[/…]` | Same handler |
+| `/v1/connectors/workspaces/:id/…` · `/scim/v2/workspaces/:id/…` | `/v1/connectors/projects/:id/…` · `/scim/v2/accounts/:accountId/…` | Same handler |
+| `GET /v1/workspaces/:id/audit/events` | `GET /v1/projects/:id/audit` | Same handler: the project audit slice |
+| `POST /v1/workspaces/{link-repository,create-repo}` · `/v1/workspaces/:id/transfer` | `POST /v1/projects/{link-repository,create-repo}` · `/v1/projects/:id/transfer` | Same handler |
+| `POST /v1/webhooks/workspaces/:id/:slug` | `POST /v1/webhooks/projects/:id/:slug` | Same handler |
+| — | `/v1/projects/{provision,provision-stream,quota}` | Legacy only: account-scoped managed create and quota; `POST /v1/workspaces` has no quota |
+| `GET`/`POST /v1/workspaces` · `GET`/`PATCH /v1/workspaces/:id` · `/v1/workspaces/:id/tokens` | `/v1/accounts` · `/v1/accounts/:accountId` · `/v1/accounts/tokens` | Not aliases: deprecated in the OpenAPI spec (`x-kortix-replaced-by`) |
+
+**Ids.** A canonical path takes the workspace id only. An account id, an
+unknown id or a workspace the caller cannot read answers `404
+workspace_not_found` on every sub-path, so a caller cannot probe which ids
+exist. A legacy path accepts either id forever. Ids are case-insensitive. An
+`Account*` function that holds an account id calls the legacy name.
+
+An API older than the workspace routes answers a canonical name with its
+unknown-route 404 (`{ "error": true, "message": "Not found", "status": 404
+}`). The SDK then sends the same request once more on the older name and uses
+the older names for that API base until the process restarts (a legacy-only
+route retries without marking the base). A 404 that a route returns for a
+missing resource is returned as is. Function names and signatures do not
+change.
+
 ## Auth
 
 `Authorization: Bearer <token>` — a Supabase JWT (user sessions), a Kortix PAT
@@ -1497,7 +1683,7 @@ await kortix.projects.setModelAccess(projectId, {
 
 `kortix` identifies Kortix Managed Models. Other provider IDs identify BYOK, Codex, or custom providers. Provider disable takes precedence over individual model choices. Each write changes one target and preserves credentials. Disabling the current project default or its provider returns `409 cannot_disable_default`; select another default first.
 
-`useModelAccess(projectId)` from `@kortix/sdk/react` exposes the policy, write state, and `setEnabled(change)`. Successful writes refresh both picker caches. Rejected writes leave the displayed policy unchanged. The policy blocks gateway inference; legacy `setProjectModelEnablement` remains display-only. The LLM gateway is the only model path, so `enforced` is always `true`.
+`useModelAccess(projectId)` from `@kortix/sdk/react` exposes the policy, write state, and `setEnabled(change)`. Successful writes refresh both picker caches. Rejected writes leave the displayed policy unchanged. The policy blocks gateway inference; legacy `setWorkspaceModelEnablement` remains display-only. The LLM gateway is the only model path, so `enforced` is always `true`.
 
 ### Custom LLM providers
 
@@ -1677,7 +1863,7 @@ visible origin session and returns its ID. It uses queue delivery, so a running
 turn is not interrupted. The origin prompt updates the existing change request
 and leaves application to the person. A visible archived origin creates a child;
 an unavailable origin creates a root with `metadata.origin_session_id`.
-`createProjectSession` accepts an optional `parent_session_id` for a visible
+`createWorkspaceSession` accepts an optional `parent_session_id` for a visible
 same-project parent. This groups the new session without inheriting the parent's
 sharing or automation identity. A session-bound credential retains its own
 server-derived parent regardless of that field.

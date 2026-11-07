@@ -191,8 +191,8 @@ export function SubjectPicker({
   allowInvite = false,
   kinds = ['member', 'group'],
   excludeUserIds,
-  emptyLabel = 'No members or groups in this project yet.',
-  allExcludedLabel = 'Everyone is already added.',
+  emptyLabel,
+  allExcludedLabel,
 }: {
   projectId?: string;
   accountId?: string;

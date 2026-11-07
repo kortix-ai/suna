@@ -61,7 +61,7 @@ for (const command of ['ls', 'list']) {
           ],
         });
         expect(requests).toEqual([
-          '/v1/connectors/projects/synthetic-project/catalog?include_schemas=false',
+          '/v1/connectors/workspaces/synthetic-project/catalog?include_schemas=false',
         ]);
       } finally {
         server.stop(true);

@@ -13,6 +13,7 @@ export async function sendViaResend(
     headers: {
       Authorization: `Bearer ${target.apiKey}`,
       'Content-Type': 'application/json',
+      ...(msg.idempotencyKey ? { 'Idempotency-Key': msg.idempotencyKey } : {}),
     },
     body: JSON.stringify({
       from: formatEmailAddress(msg.from),

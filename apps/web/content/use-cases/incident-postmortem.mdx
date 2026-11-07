@@ -56,14 +56,14 @@ postmortem on its own.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the postmortem-draft skill and the
 15-minute trigger, and opens a change request for you to review.
 Prefer clicks? Choose **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up an incident postmortem agent in this project.
+  code={`Set up an incident postmortem agent in this workspace.
 
 1. Create the agent agents/incident-postmortem.md. Its job is to draft a postmortem for each resolved incident in #incidents and open it as a pull request in owner/repo. It may use the GitHub and Datadog connectors, the Slack channel and the GH_TOKEN secret.
 
@@ -84,7 +84,7 @@ Prefer clicks? Choose **Use this template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect GitHub and Datadog, add a
+Open **Connectors** in your workspace and connect GitHub and Datadog, add a
 GitHub token as the `GH_TOKEN` secret, and connect Slack under **Channels**.
 Credentials are brokered server-side and never enter the agent's machine.
 
@@ -123,7 +123,7 @@ draft before you let the schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every 15 minutes, each run in a new session on its own cloud computer.
-To change the time, edit the cron line, or open **Triggers** in the project.
+To change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

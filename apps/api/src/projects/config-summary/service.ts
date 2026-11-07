@@ -22,7 +22,7 @@
  *   or meaning.
  */
 
-import { projectConfigSummaries, projects } from '@kortix/db';
+import { projectConfigSummaries } from '@kortix/db';
 import { and, eq, lt, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { runOutsideRequestContext } from '../../lib/request-context';
@@ -35,6 +35,7 @@ import { refreshMirror, viewTipProofSince } from '../git/mirror';
 import { resolveRefSha } from '../git/read-cache';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from '../git/types';
 import { getProjectGitConnection } from '../lib/git';
+import { projectsView } from '../../workspaces/rows';
 
 /**
  * The shape version of a saved summary. A row of any other format is rebuilt.
@@ -249,14 +250,14 @@ export function refreshConfigSummaryIfMoved(
 async function loadSummaryProject(projectId: string): Promise<GitBackedProject | null> {
   const [row] = await db
     .select({
-      projectId: projects.projectId,
-      repoUrl: projects.repoUrl,
-      defaultBranch: projects.defaultBranch,
-      manifestPath: projects.manifestPath,
-      status: projects.status,
+      projectId: projectsView.projectId,
+      repoUrl: projectsView.repoUrl,
+      defaultBranch: projectsView.defaultBranch,
+      manifestPath: projectsView.manifestPath,
+      status: projectsView.status,
     })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!row || row.status === 'archived' || !row.repoUrl) return null;
   // No token: the store resolves the project's credential itself (`ensureMirrorAccess`).

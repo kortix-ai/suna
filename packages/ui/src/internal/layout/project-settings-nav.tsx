@@ -91,7 +91,7 @@ const TAB_ICONS: Record<CapabilityTab['key'], Icon> = {
  * a working row, rather than a link to a page that 403s.
  *
  * Commands is intentionally absent: its standalone capability page was removed,
- * so there is no `/projects/<id>/commands` route to land on. Commands stays
+ * so there is no `/workspaces/<id>/commands` route to land on. Commands stays
  * reachable through the Customize overlay (`/customize/commands` via the
  * `proj-commands` palette entry and the Settings row).
  */
@@ -175,7 +175,7 @@ export const TAB_PREFERENCE: readonly {
     action: PROJECT_ACTIONS.PROJECT_REVIEW_READ,
     manage: [PROJECT_ACTIONS.PROJECT_REVIEW_ACT],
   },
-  // Settings (`/projects/<id>/admin/general`) is configuration by
+  // Settings (`/workspaces/<id>/admin/general`) is configuration by
   // definition: its read leaf is already a write leaf.
   { key: 'config', action: PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE },
 ];

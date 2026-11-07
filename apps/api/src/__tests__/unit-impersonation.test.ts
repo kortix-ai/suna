@@ -14,6 +14,7 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { canonicalWorkspaceRoute } from '@kortix/shared/workspace-routes';
 
 const state = {
   grant: null as
@@ -99,6 +100,61 @@ function decide(overrides: Record<string, unknown> = {}) {
     ...overrides,
   } as Parameters<typeof decideImpersonation>[0]);
 }
+
+const ACC_PREFIX = '/v1/accounts/33333333-3333-4333-8333-333333333333';
+/** Every route that mints durable access outliving the 1h grant (legacy names). */
+const DURABLE_ACCESS_PATHS = [
+  // Membership — account-scoped AND project-scoped invite (both INSERT
+  // account_members directly / return an invite_url).
+  `${ACC_PREFIX}/members`,
+  `${ACC_PREFIX}/invites`,
+  '/v1/projects/p1/access/invite',
+  '/v1/account-invites/abc',
+  // IAM durable principals: super-admin PATCH, group/role/policy writes.
+  `${ACC_PREFIX}/iam/members/u1/super-admin`,
+  `${ACC_PREFIX}/iam/groups/g1/members`,
+  `${ACC_PREFIX}/iam/roles`,
+  `${ACC_PREFIX}/iam/policies`,
+  // Identity the operator could log in through afterwards.
+  `${ACC_PREFIX}/iam/sso/provider`,
+  `${ACC_PREFIX}/iam/scim/tokens`,
+  // Audit exfiltration.
+  `${ACC_PREFIX}/audit/webhooks`,
+  '/v1/projects/p1/audit/webhooks',
+  // Machine credentials — the whole tunnel management surface, incl. the
+  // device-auth approve path that the single connections entry missed.
+  '/v1/tunnel/connections',
+  '/v1/tunnel/device-auth/CODE123/approve',
+  '/v1/tunnel/connections/x',
+  '/v1/projects/p1/computers',
+  // Public shares without expiry = permanent unauthenticated link.
+  '/v1/projects/p1/sessions/s1/public-shares',
+  // Agent governance written into kortix.yaml.
+  '/v1/projects/p1/agents/researcher/scope',
+  '/v1/projects/p1/secrets/OPENAI_API_KEY/grant',
+  // Connector credentials + OAuth state, both mounts; channel binds; and
+  // the 7-day public setup-link mints.
+  '/v1/projects/p1/connections/me',
+  '/v1/connectors/projects/p1/connectors/slack/connect/finalize',
+  '/v1/projects/p1/channels/teams/connect',
+  '/v1/projects/p1/connect-requests',
+  '/v1/projects/p1/secret-requests',
+  // Durable project persistence: templates, manifest merge, provider
+  // login, App deploys.
+  '/v1/projects/p1/sandbox-templates/t1/build',
+  '/v1/projects/p1/change-requests/cr1/merge',
+  '/v1/projects/p1/oauth/codex/start',
+  '/v1/projects/p1/apps',
+  // Machine credentials minted per workspace or account.
+  `${ACC_PREFIX}/iam/service-accounts`,
+  '/v1/projects/p1/cli-token',
+  '/v1/projects/p1/git-token',
+  '/v1/projects/p1/gateway/keys',
+  '/v1/connectors/projects/p1/policies',
+  // Workspace-keyed PAT mint and revoke.
+  `${ACC_PREFIX}/tokens`,
+  `${ACC_PREFIX}/tokens/t1`,
+];
 
 describe('decideImpersonation', () => {
   test('a live grant held by a current platform admin is allowed', () => {
@@ -274,53 +330,33 @@ describe('decideImpersonation', () => {
   // durable access outliving the 1h grant MUST be refused for state changes.
   // A hand-maintained deny-list drifts; this list is the contract.
   test('every durable-access route is refused for state-changing methods', () => {
-    const ACC = '/v1/accounts/33333333-3333-4333-8333-333333333333';
-    for (const path of [
-      // Membership — account-scoped AND project-scoped invite (both INSERT
-      // account_members directly / return an invite_url).
-      `${ACC}/members`,
-      `${ACC}/invites`,
-      '/v1/projects/p1/access/invite',
-      '/v1/account-invites/abc',
-      // IAM durable principals: super-admin PATCH, group/role/policy writes.
-      `${ACC}/iam/members/u1/super-admin`,
-      `${ACC}/iam/groups/g1/members`,
-      `${ACC}/iam/roles`,
-      `${ACC}/iam/policies`,
-      // Identity the operator could log in through afterwards.
-      `${ACC}/iam/sso/provider`,
-      `${ACC}/iam/scim/tokens`,
-      // Audit exfiltration.
-      `${ACC}/audit/webhooks`,
-      '/v1/projects/p1/audit/webhooks',
-      // Machine credentials — the whole tunnel management surface, incl. the
-      // device-auth approve path that the single connections entry missed.
-      '/v1/tunnel/connections',
-      '/v1/tunnel/device-auth/CODE123/approve',
-      '/v1/tunnel/connections/x',
-      '/v1/projects/p1/computers',
-      // Public shares without expiry = permanent unauthenticated link.
-      '/v1/projects/p1/sessions/s1/public-shares',
-      // Agent governance written into kortix.yaml.
-      '/v1/projects/p1/agents/researcher/scope',
-      '/v1/projects/p1/secrets/OPENAI_API_KEY/grant',
-      // Connector credentials + OAuth state, both mounts; channel binds; and
-      // the 7-day public setup-link mints.
-      '/v1/projects/p1/connections/me',
-      '/v1/connectors/projects/p1/connectors/slack/connect/finalize',
-      '/v1/projects/p1/channels/teams/connect',
-      '/v1/projects/p1/connect-requests',
-      '/v1/projects/p1/secret-requests',
-      // Durable project persistence: templates, manifest merge, provider
-      // login, App deploys.
-      '/v1/projects/p1/sandbox-templates/t1/build',
-      '/v1/projects/p1/change-requests/cr1/merge',
-      '/v1/projects/p1/oauth/codex/start',
-      '/v1/projects/p1/apps',
-    ]) {
+    for (const path of DURABLE_ACCESS_PATHS) {
       expect(isImpersonationForbiddenPath(path, 'POST'), `POST ${path}`).toBe(true);
     }
     expect(isImpersonationForbiddenPath('/v1/projects/p1', 'PATCH')).toBe(true);
+  });
+
+  // The canonical workspace routes reach the same handlers as the legacy
+  // names on the list. A canonical spelling must never pass the gate.
+  test('the canonical name of every durable-access route is refused too', () => {
+    let canonicalCount = 0;
+    for (const path of DURABLE_ACCESS_PATHS) {
+      const canonical = canonicalWorkspaceRoute(path);
+      if (!canonical) continue;
+      canonicalCount += 1;
+      expect(isImpersonationForbiddenPath(canonical, 'POST'), `POST ${canonical}`).toBe(true);
+      expect(decide({ path: canonical, method: 'POST' })).toEqual({ ok: false, reason: 'route_forbidden' });
+    }
+    expect(canonicalCount).toBeGreaterThan(20);
+    expect(isImpersonationForbiddenPath('/v1/workspaces/p1', 'PATCH')).toBe(true);
+    expect(isImpersonationForbiddenPath('/v1/workspaces/p1/cli-token', 'POST')).toBe(true);
+    expect(isImpersonationForbiddenPath('/v1/invites/x/accept', 'POST')).toBe(true);
+    expect(isImpersonationForbiddenPath('/v1/connectors/workspaces/p1/connectors', 'POST')).toBe(true);
+    // Reads of the same surfaces stay open on the canonical names.
+    expect(isImpersonationForbiddenPath('/v1/workspaces/p1/members', 'GET')).toBe(false);
+    expect(isImpersonationForbiddenPath('/v1/workspaces/p1/tokens', 'GET')).toBe(false);
+    expect(isImpersonationForbiddenPath('/v1/workspaces/p1', 'GET')).toBe(false);
+    expect(isImpersonationForbiddenPath('/v1/workspaces/p1/sessions/s1/messages', 'POST')).toBe(false);
   });
 
   test('reads and non-durable writes next to the durable-persistence routes stay open', () => {
@@ -337,6 +373,40 @@ describe('decideImpersonation', () => {
     ] as const) {
       expect(isImpersonationForbiddenPath(path, method), `${method} ${path}`).toBe(false);
     }
+  });
+
+  // Finding 14: the whole IAM subtree refuses state changes on both spellings,
+  // so a new leaf never drifts out of the list; DELETE closes the workspace.
+  test('every IAM write and the workspace DELETE are refused on the canonical and legacy spellings', () => {
+    const WS = '44444444-4444-4444-8444-444444444444';
+    const leaves = [
+      ['iam/assignments', 'POST'],
+      ['iam/assignments/a1', 'DELETE'],
+      ['iam/oauth-clients', 'POST'],
+      ['iam/oauth-clients/c1/rotate-secret', 'POST'],
+      ['iam/pat-policy', 'PATCH'],
+      ['iam/mfa-required', 'PATCH'],
+      ['iam/session-policy', 'PATCH'],
+      ['iam/session-oversight', 'PATCH'],
+      ['iam/sessions/s1/revoke', 'POST'],
+      ['iam/enterprise-demo', 'PUT'],
+      ['iam/roles/r1/permissions', 'PUT'],
+      ['iam/policies:bulk-import', 'POST'],
+      ['iam/members/u1/super-admin', 'PATCH'],
+    ] as const;
+    for (const prefix of [`/v1/workspaces/${WS}`, `/v1/accounts/${WS}`]) {
+      for (const [leaf, method] of leaves) {
+        expect(isImpersonationForbiddenPath(`${prefix}/${leaf}`, method), `${method} ${prefix}/${leaf}`).toBe(true);
+        expect(decide({ path: `${prefix}/${leaf}`, method })).toEqual({ ok: false, reason: 'route_forbidden' });
+      }
+      // Reads and the permission probe stay open.
+      expect(isImpersonationForbiddenPath(`${prefix}/iam/assignments`, 'GET')).toBe(false);
+      expect(isImpersonationForbiddenPath(`${prefix}/iam/members/u1/effective`, 'GET')).toBe(false);
+      expect(isImpersonationForbiddenPath(`${prefix}/iam/members/u1/effective:batch`, 'POST')).toBe(false);
+    }
+    expect(isImpersonationForbiddenPath(`/v1/workspaces/${WS}`, 'DELETE')).toBe(true);
+    expect(isImpersonationForbiddenPath(`/v1/projects/${WS}`, 'DELETE')).toBe(true);
+    expect(isImpersonationForbiddenPath(`/v1/workspaces/${WS}`, 'GET')).toBe(false);
   });
 
   // The deletion routes run as the real caller, so an operator inside the

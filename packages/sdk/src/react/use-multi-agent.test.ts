@@ -131,7 +131,7 @@ describe('multi-agent hooks', () => {
     const { configureKortix } = await import('../core/http/config');
     configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
     expect(await (useTeammates('p1', 's1') as any).queryFn()).toEqual([]);
-    expect(calls[0]).toBe('http://test.local/projects/p1/sessions?limit=50&team_lead=s1');
+    expect(calls[0]).toBe('http://test.local/workspaces/p1/sessions?limit=50&team_lead=s1');
   });
 });
 

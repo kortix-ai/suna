@@ -1544,7 +1544,7 @@ flow(
     await ctx.step('the grant is visible on the project access read model', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/access', { params: { projectId: project.id } });
       r.status(200);
       const row = (r.json<any>().members as any[]).find((m) => m.user_id === member.userId);
       if (!row || row.project_role !== 'manager') {
@@ -1571,7 +1571,7 @@ flow(
     await ctx.step('the revoke is gone from the read model too', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/access', { params: { projectId: project.id } });
       r.status(200);
       const row = (r.json<any>().members as any[]).find((m) => m.user_id === member.userId);
       if (row && row.project_role !== null) {
@@ -1767,8 +1767,8 @@ flow(
     domain: 'iam',
     routes: [
       'GET /v1/accounts/:accountId/iam/resource-grants',
-      'GET /v1/projects/:projectId/resource-grants',
-      'GET /v1/projects/:projectId/access',
+      'GET /v1/workspaces/:projectId/resource-grants',
+      'GET /v1/workspaces/:projectId/access',
       'GET /v1/accounts/:accountId/iam/members/:userId/project-access',
     ],
   },
@@ -1795,7 +1795,7 @@ flow(
     await ctx.step('every read model reports the same grant', async () => {
       const access = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/access', { params: { projectId: project.id } });
       access.status(200).body().has('$.project_id', project.id).exists('$.group_access');
       const row = (access.json<any>().members as any[]).find((m) => m.user_id === member.userId);
       if (!row || row.project_role !== 'manager' || row.effective_project_role !== 'manager') {
@@ -1834,7 +1834,7 @@ flow(
     await ctx.step('resource-grant read models answer for an unscoped project', async () => {
       const perProject = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/resource-grants', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/resource-grants', { params: { projectId: project.id } });
       perProject.status(200).body().exists('$.grants');
 
       const accountWide = await ctx.client
@@ -1879,8 +1879,8 @@ flow(
     routes: [
       'GET /v1/accounts/:accountId/iam/session-oversight',
       'PATCH /v1/accounts/:accountId/iam/session-oversight',
-      'GET /v1/projects/:projectId/sessions',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/workspaces/:projectId/sessions',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
       'GET /v1/accounts/:accountId/audit',
     ],
     timeoutMs: 240_000,
@@ -1909,11 +1909,11 @@ flow(
     });
 
     const readSession = (as: typeof owner) =>
-      as.get('/v1/projects/:projectId/sessions/:sessionId', {
+      as.get('/v1/workspaces/:projectId/sessions/:sessionId', {
         params: { projectId: project.id, sessionId: privateSessionId },
       });
     const inventoryIds = async (as: typeof owner, scope?: 'project') => {
-      const r = await as.get('/v1/projects/:projectId/sessions', {
+      const r = await as.get('/v1/workspaces/:projectId/sessions', {
         params: { projectId: project.id },
         ...(scope ? { query: { scope } } : {}),
       });
@@ -2060,13 +2060,13 @@ flow(
     routes: [
       'POST /v1/accounts/:accountId/iam/assignments',
       'GET /v1/accounts/:accountId/iam/assignments',
-      'GET /v1/projects/:projectId',
+      'GET /v1/workspaces/:projectId',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project();
-    // A signed-in user who owns (and is super-admin of) only their personal account.
+    // A signed-in user who owns (and is super-admin of) only their own account.
     const outsider = await ctx.fixtures.user({ label: 'OUTSIDER' });
     const ownAccount = { accountId: outsider.accountId! };
 
@@ -2111,7 +2111,7 @@ flow(
       if ((own.json<any>().assignments as any[]).some((a) => a.scope_id === project.id)) {
         throw new Error('a project-scoped row for a foreign project was stored');
       }
-      (await ctx.client.as(outsider).get('/v1/projects/:projectId', { params: { projectId: project.id } }))
+      (await ctx.client.as(outsider).get('/v1/workspaces/:projectId', { params: { projectId: project.id } }))
         .status([403, 404]);
     });
 
@@ -2210,11 +2210,11 @@ flow(
     domain: 'iam',
     routes: [
       'POST /v1/accounts/:accountId/iam/assignments',
-      'GET /v1/projects/:projectId',
-      'GET /v1/projects/:projectId/detail',
-      'GET /v1/projects/:projectId/resource-grants',
-      'GET /v1/projects/:projectId/access',
-      'DELETE /v1/projects/:projectId/resource-grants/:grantId',
+      'GET /v1/workspaces/:projectId',
+      'GET /v1/workspaces/:projectId/detail',
+      'GET /v1/workspaces/:projectId/resource-grants',
+      'GET /v1/workspaces/:projectId/access',
+      'DELETE /v1/workspaces/:projectId/resource-grants/:grantId',
     ],
   },
   async (ctx) => {
@@ -2237,7 +2237,7 @@ flow(
 
     // `/detail` narrows `config.agents` to the agents the caller may use.
     const visibleAgents = async (who: typeof member): Promise<string[]> => {
-      const r = await ctx.client.as(who).get('/v1/projects/:projectId/detail', {
+      const r = await ctx.client.as(who).get('/v1/workspaces/:projectId/detail', {
         params: { projectId: project.id },
       });
       r.status(200);
@@ -2304,23 +2304,25 @@ flow(
       grantId = r.json<any>().assignment_id;
     });
 
-    await ctx.step('the member now lists the agent; the account member outside the project still reaches nothing', async () => {
-      const agents = await visibleAgents(member);
-      assert({
-        kind: 'body',
-        description: 'member sees the agent granted to everyone',
-        pass: agents.includes(AGENT),
-        expected: AGENT,
-        actual: agents,
-      });
-      const r = await ctx.client.as(outsider).get('/v1/projects/:projectId', {
+    await ctx.step('the member and every other account member (membership is access) list the agent; a non-member reaches nothing', async () => {
+      for (const who of [member, outsider]) {
+        const agents = await visibleAgents(who);
+        assert({
+          kind: 'body',
+          description: `${who.label} sees the agent granted to everyone in the workspace`,
+          pass: agents.includes(AGENT),
+          expected: AGENT,
+          actual: agents,
+        });
+      }
+      const r = await ctx.client.as(ctx.P.NONMEMBER).get('/v1/workspaces/:projectId', {
         params: { projectId: project.id },
       });
       r.status([403, 404]);
     });
 
     await ctx.step('the resource-grants list shows the grant as everyone, labelled with the project name', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/resource-grants', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/resource-grants', {
         params: { projectId: project.id },
       });
       r.status(200);
@@ -2335,7 +2337,7 @@ flow(
     });
 
     await ctx.step('the access screen folds it onto every member as source "project", never as a group', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/access', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/access', {
         params: { projectId: project.id },
       });
       r.status(200);
@@ -2362,7 +2364,7 @@ flow(
     await ctx.step('deleting the grant closes the agent to the member again', async () => {
       const del = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/projects/:projectId/resource-grants/:grantId', {
+        .del('/v1/workspaces/:projectId/resource-grants/:grantId', {
           params: { projectId: project.id, grantId },
         });
       del.status(200);
@@ -2395,13 +2397,13 @@ flow(
     routes: [
       'POST /v1/accounts/:accountId/iam/roles',
       'POST /v1/accounts/:accountId/iam/policies',
-      'POST /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
-      'POST /v1/projects/:projectId/apps/artifacts',
-      'POST /v1/projects/:projectId/apps',
-      'POST /v1/projects/:projectId/secrets',
-      'GET /v1/projects/:projectId/secrets',
-      'DELETE /v1/projects/:projectId/secrets/:name',
+      'POST /v1/workspaces/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
+      'POST /v1/workspaces/:projectId/apps/artifacts',
+      'POST /v1/workspaces/:projectId/apps',
+      'POST /v1/workspaces/:projectId/secrets',
+      'GET /v1/workspaces/:projectId/secrets',
+      'DELETE /v1/workspaces/:projectId/secrets/:name',
     ],
   },
   async (ctx) => {
@@ -2441,11 +2443,11 @@ flow(
       async () => {
         const author = await leafHolder('trigger_author', ['project.trigger.read', 'project.trigger.create']);
         const trigger = { name: 'Leaf Only', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'noop' };
-        (await once(() => author.post('/v1/projects/:projectId/triggers', trigger, { params }), 'trigger create'))
+        (await once(() => author.post('/v1/workspaces/:projectId/triggers', trigger, { params }), 'trigger create'))
           .status(201);
-        (await author.patch('/v1/projects/:projectId/triggers/:slug', { prompt_template: 'x' }, { params: { ...params, slug: 'leaf-only' } }))
+        (await author.patch('/v1/workspaces/:projectId/triggers/:slug', { prompt_template: 'x' }, { params: { ...params, slug: 'leaf-only' } }))
           .status(403);
-        (await asFloor.post('/v1/projects/:projectId/triggers', { ...trigger, name: 'Floor' }, { params })).status(403);
+        (await asFloor.post('/v1/workspaces/:projectId/triggers', { ...trigger, name: 'Floor' }, { params })).status(403);
       },
     );
 
@@ -2454,12 +2456,12 @@ flow(
       async () => {
         const deployer = await leafHolder('app_deployer', ['project.app.read', 'project.app.deploy']);
         const artifact = { kind: 'oci_image', image: 'docker.io/library/nginx:alpine' };
-        (await once(() => deployer.post('/v1/projects/:projectId/apps/artifacts', artifact, { params }), 'artifact register'))
+        (await once(() => deployer.post('/v1/workspaces/:projectId/apps/artifacts', artifact, { params }), 'artifact register'))
           .status(201)
           .body()
           .exists('$.artifact.artifact_id');
-        (await deployer.post('/v1/projects/:projectId/apps', { slug: 'leaf-only', name: 'Leaf only' }, { params })).status(403);
-        (await asFloor.post('/v1/projects/:projectId/apps/artifacts', artifact, { params })).status(403);
+        (await deployer.post('/v1/workspaces/:projectId/apps', { slug: 'leaf-only', name: 'Leaf only' }, { params })).status(403);
+        (await asFloor.post('/v1/workspaces/:projectId/apps/artifacts', artifact, { params })).status(403);
       },
     );
 
@@ -2467,11 +2469,11 @@ flow(
       'a custom role with project.secret.write (+ project.read, project.secret.read) writes, lists with can_manage: true and deletes a shared secret; a floor member → 403',
       async () => {
         const writer = await leafHolder('secret_writer', ['project.secret.read', 'project.secret.write']);
-        (await once(() => writer.post('/v1/projects/:projectId/secrets', { name: 'LEAF_ONLY', value: 'v1' }, { params }), 'secret write'))
+        (await once(() => writer.post('/v1/workspaces/:projectId/secrets', { name: 'LEAF_ONLY', value: 'v1' }, { params }), 'secret write'))
           .status([200, 201]);
-        (await writer.get('/v1/projects/:projectId/secrets', { params })).status(200).body().has('$.can_manage', true);
-        (await writer.del('/v1/projects/:projectId/secrets/:name', { params: { ...params, name: 'LEAF_ONLY' } })).status(200);
-        (await asFloor.post('/v1/projects/:projectId/secrets', { name: 'FLOOR_TRY', value: 'v1' }, { params })).status(403);
+        (await writer.get('/v1/workspaces/:projectId/secrets', { params })).status(200).body().has('$.can_manage', true);
+        (await writer.del('/v1/workspaces/:projectId/secrets/:name', { params: { ...params, name: 'LEAF_ONLY' } })).status(200);
+        (await asFloor.post('/v1/workspaces/:projectId/secrets', { name: 'FLOOR_TRY', value: 'v1' }, { params })).status(403);
       },
     );
   },

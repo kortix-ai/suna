@@ -35,9 +35,9 @@ flow(
     // A cold provider image build can take ~7 min before the first turn.
     timeoutMs: 1_200_000,
     routes: [
-      'PUT /v1/projects/:projectId/sessions/:sessionId/sharing',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'PUT /v1/workspaces/:projectId/sessions/:sessionId/sharing',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
     ],
   },
   async (ctx) => {
@@ -57,7 +57,7 @@ flow(
       await waitForSessionReady(ctx, project.id, session.id, 540_000);
       const shared = await ctx.client
         .as(ctx.P.OWNER)
-        .put('/v1/projects/:projectId/sessions/:sessionId/sharing', { mode: 'project' }, { params });
+        .put('/v1/workspaces/:projectId/sessions/:sessionId/sharing', { mode: 'project' }, { params });
       shared.status(200);
     });
 
@@ -66,7 +66,7 @@ flow(
         if (!who.email) throw new Error(`${label} has no email in the principal matrix`);
         const nonce = `sess39-${run}-${n}`;
         const sent = await ctx.client.as(who).post(
-          '/v1/projects/:projectId/sessions/:sessionId/prompts',
+          '/v1/workspaces/:projectId/sessions/:sessionId/prompts',
           {
             client_message_id: crypto.randomUUID(),
             message_id: mintWireMessageId(),
@@ -113,11 +113,11 @@ flow(
     domain: 'sessions',
     requires: ['database'],
     routes: [
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'PATCH /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry',
-      'DELETE /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'PATCH /v1/workspaces/:projectId/sessions/:sessionId/prompts/:promptId',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts/:promptId/retry',
+      'DELETE /v1/workspaces/:projectId/sessions/:sessionId/prompts/:promptId',
       'POST /v1/accounts/:accountId/iam/assignments',
     ],
   },
@@ -161,8 +161,8 @@ flow(
       userId: ctx.P.OWNER.userId!,
     });
     const params = { projectId: project.id, sessionId };
-    const PROMPTS = '/v1/projects/:projectId/sessions/:sessionId/prompts';
-    const PROMPT = '/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId';
+    const PROMPTS = '/v1/workspaces/:projectId/sessions/:sessionId/prompts';
+    const PROMPT = '/v1/workspaces/:projectId/sessions/:sessionId/prompts/:promptId';
     type Listed = { prompt_id: string; full_text: string; author_user_id?: string | null };
     const send = async (as: typeof owner, text: string) => {
       const r = await as.post(
@@ -249,12 +249,12 @@ flow(
     domain: 'sessions',
     requires: ['database'],
     routes: [
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'PATCH /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
-      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'GET /v1/projects/:projectId/sessions/:sessionId/message-authors',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/turn',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts/hold',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'PATCH /v1/workspaces/:projectId/sessions/:sessionId/prompts/:promptId',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/message-authors',
       'POST /v1/accounts/:accountId/iam/assignments',
     ],
   },
@@ -296,11 +296,11 @@ flow(
     });
     ctx.track('session', sessionId, { projectId: project.id });
     const params = { projectId: project.id, sessionId };
-    const TURN = '/v1/projects/:projectId/sessions/:sessionId/turn';
-    const HOLD = '/v1/projects/:projectId/sessions/:sessionId/prompts/hold';
-    const PROMPTS = '/v1/projects/:projectId/sessions/:sessionId/prompts';
-    const PROMPT = '/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId';
-    const AUTHORS = '/v1/projects/:projectId/sessions/:sessionId/message-authors';
+    const TURN = '/v1/workspaces/:projectId/sessions/:sessionId/turn';
+    const HOLD = '/v1/workspaces/:projectId/sessions/:sessionId/prompts/hold';
+    const PROMPTS = '/v1/workspaces/:projectId/sessions/:sessionId/prompts';
+    const PROMPT = '/v1/workspaces/:projectId/sessions/:sessionId/prompts/:promptId';
+    const AUTHORS = '/v1/workspaces/:projectId/sessions/:sessionId/message-authors';
     const canStop = async (as: typeof owner) => {
       const r = await as.get(TURN, { params });
       r.status(200);

@@ -99,7 +99,7 @@ function view(props: Partial<React.ComponentProps<typeof AccountView>> = {}) {
       billing={ACTIVE_BILLING}
       loading={false}
       errorMessage={null}
-      billingUrl="https://kortix.com/projects?accountId=acc-1&accountTab=billing"
+      billingUrl="https://kortix.com/workspaces?accountId=acc-1&accountTab=billing"
       onBack={() => {}}
       onInvite={() => {}}
       onCancelInvite={() => {}}
@@ -325,7 +325,7 @@ describe('<AccountView/> — billing', () => {
     await act(async () => mockInput.pressKey('u'));
     await flush();
     expect(toasts).toEqual([
-      'Billing lives on the web: https://kortix.com/projects?accountId=acc-1&accountTab=billing',
+      'Billing lives on the web: https://kortix.com/workspaces?accountId=acc-1&accountTab=billing',
     ]);
     renderer.destroy();
   });

@@ -3,6 +3,7 @@
 // byte-identical. The `unwrap` helper in `./shared` stays internal.
 
 export * from './accounts';
+export * from './workspaces';
 export * from './spaces';
 export * from './projects';
 export * from './skills';
@@ -74,8 +75,8 @@ export type {
   AccountRole,
   ProjectRole,
   ConnectorSharing,
-  ProjectGitConnection,
-  ProjectFileEntry,
+  ProjectGitConnection, WorkspaceGitConnection,
+  ProjectFileEntry, WorkspaceFileEntry,
 } from './shared';
 
 export * from './model-access';

@@ -5,31 +5,31 @@ import type { DropFirst } from './binding-types';
 export function bindProjectOperationsWorkspace(projectId: string) {
   return {
     files: {
-      write: (input: Parameters<typeof P.writeProjectFile>[1]) => P.writeProjectFile(projectId, input),
-      list: (options?: Parameters<typeof P.listProjectFiles>[1]) =>
-        P.listProjectFiles(projectId, options),
+      write: (input: Parameters<typeof P.writeWorkspaceFile>[1]) => P.writeWorkspaceFile(projectId, input),
+      list: (options?: Parameters<typeof P.listWorkspaceFiles>[1]) =>
+        P.listWorkspaceFiles(projectId, options),
       /** One folder level, complete up to its entry cap (not cut at 1,000 recursive files). */
-      listDirectory: (options?: Parameters<typeof P.listProjectDirectory>[1]) =>
-        P.listProjectDirectory(projectId, options),
-      read: (path: string, ref?: string) => P.readProjectFile(projectId, path, ref),
-      search: (...a: DropFirst<Parameters<typeof P.searchProjectFiles>>) =>
-        P.searchProjectFiles(projectId, ...a),
-      archive: (...a: DropFirst<Parameters<typeof P.fetchProjectArchive>>) =>
-        P.fetchProjectArchive(projectId, ...a),
+      listDirectory: (options?: Parameters<typeof P.listWorkspaceDirectory>[1]) =>
+        P.listWorkspaceDirectory(projectId, options),
+      read: (path: string, ref?: string) => P.readWorkspaceFile(projectId, path, ref),
+      search: (...a: DropFirst<Parameters<typeof P.searchWorkspaceFiles>>) =>
+        P.searchWorkspaceFiles(projectId, ...a),
+      archive: (...a: DropFirst<Parameters<typeof P.fetchWorkspaceArchive>>) =>
+        P.fetchWorkspaceArchive(projectId, ...a),
       /** The archive download as a request the host streams to disk itself. */
-      archiveRequest: (...a: DropFirst<Parameters<typeof P.projectArchiveRequest>>) =>
-        P.projectArchiveRequest(projectId, ...a),
-      history: (...a: DropFirst<Parameters<typeof P.getProjectFileHistory>>) =>
-        P.getProjectFileHistory(projectId, ...a),
+      archiveRequest: (...a: DropFirst<Parameters<typeof P.workspaceArchiveRequest>>) =>
+        P.workspaceArchiveRequest(projectId, ...a),
+      history: (...a: DropFirst<Parameters<typeof P.getWorkspaceFileHistory>>) =>
+        P.getWorkspaceFileHistory(projectId, ...a),
     },
 
     git: {
       /** Newest first. `ref` reads another branch, `path` one file or folder. */
-      commits: (options?: Parameters<typeof P.listProjectCommits>[1]) =>
-        P.listProjectCommits(projectId, options),
-      commit: (sha: string) => P.getProjectCommit(projectId, sha),
-      commitDiff: (sha: string) => P.getProjectCommitDiff(projectId, sha),
-      branches: () => P.listProjectBranches(projectId),
+      commits: (options?: Parameters<typeof P.listWorkspaceCommits>[1]) =>
+        P.listWorkspaceCommits(projectId, options),
+      commit: (sha: string) => P.getWorkspaceCommit(projectId, sha),
+      commitDiff: (sha: string) => P.getWorkspaceCommitDiff(projectId, sha),
+      branches: () => P.listWorkspaceBranches(projectId),
       versionDiff: (...a: DropFirst<Parameters<typeof P.getVersionDiff>>) =>
         P.getVersionDiff(projectId, ...a),
       /** Invite a GitHub user as a collaborator on a Kortix-managed repo. */

@@ -63,7 +63,7 @@ function row(overrides: Partial<InboxNotification> = {}): InboxNotification {
     session_id: 'ses-a',
     trigger_slug: null,
     actor_user_id: null,
-    url: '/projects/p1/sessions/ses-a',
+    url: '/workspaces/p1/sessions/ses-a',
     read: false,
     created_at: '2026-10-09T10:00:00.000Z',
     ...overrides,

@@ -67,7 +67,7 @@ export function openSessionQuickView(
   // session is maintained on every route (tab dashboard AND the standalone
   // session page), unlike kortix-computer-store's `_activeSessionId`, which
   // is tab-gated — relying on the latter silently dropped the terminal open
-  // on /projects/:id/sessions/:id.
+  // on /workspaces/:id/sessions/:id.
   const activePanelSessionId = getActivePanelSessionId();
 
   // Reminders and Desktop are Easy details with no Advanced tab: they take the request path in both modes.

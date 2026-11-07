@@ -74,9 +74,9 @@ beforeAll(async () => {
   `);
   await db.insert(accounts).values({ accountId: ACCOUNT, name: `model-usage-${tag}` });
   await db.insert(projects).values([
-    { projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' },
-    { projectId: OTHER_PROJECT, accountId: ACCOUNT, name: 'q', repoUrl: 'https://example.com/q.git' },
-    { projectId: SPEND_PROJECT, accountId: ACCOUNT, name: 's', repoUrl: 'https://example.com/s.git' },
+    { splitPending: true, projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' },
+    { splitPending: true, projectId: OTHER_PROJECT, accountId: ACCOUNT, name: 'q', repoUrl: 'https://example.com/q.git' },
+    { splitPending: true, projectId: SPEND_PROJECT, accountId: ACCOUNT, name: 's', repoUrl: 'https://example.com/s.git' },
   ]);
 });
 

@@ -15,7 +15,6 @@ const WEB_GLOBALS = join(PKG, '..', '..', 'apps', 'web', 'src', 'app', 'globals.
 /** Classes apps/web styles on purpose: the desktop shell's window geometry
  *  (CLAUDE.md "Desktop parity"). A library host has no native title bar. */
 const HOST_HOOKS = new Set([
-  'kx-account-hub-header',
   'kx-auth-mobile-logo',
   'kx-below-titlebar',
   'kx-desktop-back',

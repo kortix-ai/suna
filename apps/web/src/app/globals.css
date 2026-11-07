@@ -181,7 +181,7 @@
  * Interface themes — the neutral ramp of each palette in the theme picker.
  *
  * <html> carries `data-light-theme` / `data-dark-theme` (lib/interface-themes.ts),
- * only on the themed product routes — /new, /projects/**, /settings — where
+ * only on the themed product routes — /new, /workspaces/**, /settings — where
  * INTERFACE_THEME_INIT_SCRIPT sets them before paint and ThemeChoiceSync keeps
  * them in sync on navigation (see "Themed routes" in that file). Every other page (auth,
  * marketing, pricing, SEO, checkout, invites, system pages) has no attribute,
@@ -441,7 +441,7 @@
   }
 }
 
-/* Page-enter motion: soft fade-up for standalone pages (/projects). `both`
+/* Page-enter motion: soft fade-up for standalone pages (/workspaces). `both`
    keeps delayed elements hidden until their turn. Stagger delays are capped
    so long lists never feel slow — everything past the sixth child enters
    together. */
@@ -1006,7 +1006,7 @@ html[data-desktop-platform='macos'] .kx-desktop-drag {
   height: 100%;
   width: 100%;
 }
-/* A page without a titlebar owner (auth, `/projects`, `/new`, onboarding)
+/* A page without a titlebar owner (auth, `/workspaces`, `/workspaces/new`, onboarding)
    has no row in the band, so the 6px strip was its only drag area. Grow the
    strip to the full band there. Pages with an owner keep the 6px strip: the
    owner's rows carry the band.
@@ -1187,7 +1187,7 @@ html[data-desktop='true'] .kx-desktop-back {
 html[data-desktop='true'] body:has([data-kx-titlebar-owner]) .kx-desktop-back {
   display: none;
 }
-/* A row pinned to the top of a screen without a shell (`/new`, the landing
+/* A row pinned to the top of a screen without a shell (`/workspaces/new`, the landing
    door's Log out) sits in the band on desktop: under Back and the traffic
    lights on the left, below Back on every platform. Wear
    `.kx-below-titlebar` and it drops below the band and clears the controls. */
@@ -1197,7 +1197,7 @@ html[data-desktop='true'] .kx-below-titlebar {
 }
 
 /* A top row positioned on a full-screen frame with no product navigation:
-   `/new` and the `/projects/start` sign-out. The top of the window is the
+   `/workspaces/new` and the `/workspaces/start` sign-out. The top of the window is the
    title-bar band, where the traffic lights (macOS) and Back sit. On desktop
    the row clears both the band and Back, with one spacing step of air.
 
@@ -1267,8 +1267,8 @@ html[data-desktop='true'] .kx-titlebar-spacer {
    `initial` keeps the element out of the region list.
 
    The reset applies only under a titlebar owner, whose opaque rows hide the
-   content scrolled beneath them. Pages without one (auth, `/projects`,
-   `/new`) get the transparent root band below instead. Content under it is
+   content scrolled beneath them. Pages without one (auth, `/workspaces`,
+   `/workspaces/new`) get the transparent root band below instead. Content under it is
    visible, so the shell's rule must keep every control there clickable.
    `:where()` keeps the specificity of the owner rule below unchanged. */
 html[data-desktop-titlebar='overlay']
@@ -1425,7 +1425,7 @@ html[data-desktop-platform='macos']
    drag and left clearance; use `.kx-titlebar-band-height` when the row must
    center on the traffic-light band.
 
-   The standalone Files header (/projects/[id]/files) wears this too. It used
+   The standalone Files header (/workspaces/[id]/files) wears this too. It used
    to carry a Files-only near-duplicate of these rules, with its own md+ and
    per-platform split, for a header that no longer exists in that shape — see
    `drive-header.tsx`.
@@ -1477,20 +1477,8 @@ html[data-desktop-platform='macos'] .kx-overlay-sidebar-titlebar {
   padding-left: var(--kx-titlebar-control-left);
   justify-content: flex-end;
 }
-/* With the account sidebar hidden, its opener occupies the first web-control
-   slot. The breadcrumb follows it, rather than starting under the lights. */
-html[data-desktop-titlebar='overlay'] .kx-account-hub-header[data-sidebar-collapsed],
-html[data-desktop-platform='macos'] .kx-account-hub-header[data-sidebar-collapsed] {
-  padding-left: var(--kx-titlebar-control-left);
-}
 html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true'] .kx-overlay-sidebar-titlebar,
 html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-overlay-sidebar-titlebar {
-  padding-left: 0.5rem;
-}
-html[data-desktop-titlebar='overlay'][data-desktop-fullscreen='true']
-  .kx-account-hub-header[data-sidebar-collapsed],
-html[data-desktop-platform='macos'][data-desktop-fullscreen='true']
-  .kx-account-hub-header[data-sidebar-collapsed] {
   padding-left: 0.5rem;
 }
 /* The mobile Settings headers (list and pane) share the native titlebar band:

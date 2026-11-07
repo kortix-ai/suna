@@ -73,7 +73,7 @@ function refuse(c: Ctx, status: 400 | 403 | 404 | 413, error: string): Response 
 
 /** The session box calling, or a refusal. */
 async function scopeOf(c: Ctx): Promise<SyncScope | Response> {
-  const projectId = param(c, 'projectId');
+  const projectId = param(c, 'workspaceId');
   const sessionId = param(c, 'sessionId');
   if (!isUuid(sessionId) || !isSessionSandboxCredential(c) || c.get('sessionId') !== sessionId) {
     return refuse(c, 403, 'Drive sync takes the session sandbox credential');
@@ -147,7 +147,7 @@ const notFound = (): never => {
   throw new DriveStorageError(404, 'File or folder not found', 'path_not_found');
 };
 
-const base = '/:projectId/sessions/:sessionId/drive-sync';
+const base = '/:workspaceId/sessions/:sessionId/drive-sync';
 
 const REMOTE_CHANGED = Symbol('remote_changed');
 

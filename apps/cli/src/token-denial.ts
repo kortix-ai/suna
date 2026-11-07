@@ -7,6 +7,7 @@ import {
   type TokenIdentity,
 } from './api/token-identity.ts';
 import type { MeResponse } from './api/types.ts';
+import { toLegacyAction, toWorkspaceAction } from '@kortix/shared/workspace-actions';
 import { C } from './style.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,6 +47,13 @@ export interface DenialDetail {
 
 let denial: RecordedDenial | null = null;
 
+/** The credential fence refused the route: a workspace-bound credential
+ *  (a workspace key, a session or agent token) reached outside its own
+ *  workspace, or a route no bound credential may call. No grant fixes it. */
+export const CREDENTIAL_FENCE_REFUSED = 'credential_fence_refused';
+/** The fence's message tag, on servers before the typed code. */
+const FENCE_CHECK_TAG = '[check=token-project-scope:';
+
 /** The session's workspace runs without the project repository. A workspace
  *  policy, not a token scope: no kortix_permissions entry changes it. */
 export const SESSION_REPOSITORY_ACCESS_DENIED = 'session_repository_access_denied';
@@ -78,15 +86,25 @@ export function denialDetailFromBody(body: unknown): DenialDetail {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return {};
   const record = body as Record<string, unknown>;
   // Servers before the typed code send the workspace denial as a bare message.
+  const message = typeof record.message === 'string' ? record.message : typeof record.error === 'string' ? record.error : '';
   const code =
     typeof record.code === 'string'
       ? record.code
-      : record.message === REPOSITORY_DENIAL_MESSAGE || record.error === REPOSITORY_DENIAL_MESSAGE
+      : message === REPOSITORY_DENIAL_MESSAGE
         ? SESSION_REPOSITORY_ACCESS_DENIED
+        : message.includes(FENCE_CHECK_TAG)
+          ? CREDENTIAL_FENCE_REFUSED
+          : undefined;
+  // The workspace name leads (`workspace_action`); `action` is the legacy name.
+  const action =
+    typeof record.workspace_action === 'string'
+      ? record.workspace_action
+      : typeof record.action === 'string'
+        ? toWorkspaceAction(record.action)
         : undefined;
   return {
     ...(code ? { code } : {}),
-    ...(typeof record.action === 'string' ? { action: record.action } : {}),
+    ...(action ? { action } : {}),
   };
 }
 
@@ -95,8 +113,29 @@ export function denialDetailFromBody(body: unknown): DenialDetail {
  * Only a grant miss is fixed in kortix.yaml; a ceiling miss is fixed by an
  * admin; a human-only action is not an agent's at all.
  */
-function agentFixLine(agent: string, pending: RecordedDenial): string {
+/** True when the grant already names `action`, under either spelling. */
+export function grantHolds(granted: string[] | 'all' | null | undefined, action: string | undefined): boolean {
+  if (!action || granted == null) return false;
+  if (granted === 'all') return true;
+  const legacy = toLegacyAction(action);
+  return granted.some((entry) => entry === '*' || toLegacyAction(entry) === legacy);
+}
+
+/** The remedy line for a fence refusal: the credential, never the grant. */
+const FENCE_FIX_LINE =
+  'this credential is bound to one workspace and this route is outside it; no grant changes that. ' +
+  'Run it in that workspace, or ask a person with access to do it';
+
+function agentFixLine(agent: string, pending: RecordedDenial, granted?: string[] | 'all' | null): string {
   const actionText = pending.action ? `${C.cyan}${pending.action}${C.reset}` : 'the action';
+  if (pending.code === CREDENTIAL_FENCE_REFUSED) return FENCE_FIX_LINE;
+  if ((pending.code === undefined || pending.code === 'agent_scope_insufficient') && grantHolds(granted, pending.action)) {
+    // The grant already holds it: kortix.yaml is not the cause.
+    return (
+      `${actionText} is already granted — the refusal has another cause; read the error above ` +
+      `(${C.cyan}kortix whoami --token-only${C.reset} shows this session's permissions)`
+    );
+  }
   switch (pending.code) {
     case 'agent_ceiling_insufficient':
       return `${actionText} is outside agent ${C.bold}${agent}${C.reset}'s role — ask an admin to raise agent ${agent}'s role`;
@@ -105,7 +144,7 @@ function agentFixLine(agent: string, pending: RecordedDenial): string {
     case 'agent_session_forbidden':
       // A route that refuses every agent session outright (e.g. granting a
       // secret to an agent). No kortix_permissions entry unlocks it.
-      return 'agent sessions cannot do this — a person with project access must do this';
+      return 'agent sessions cannot do this — a person with workspace access must do this';
     case undefined:
     case 'agent_scope_insufficient':
       return (
@@ -146,7 +185,7 @@ async function resolveIdentity(credential: ApiErrorCredential): Promise<TokenIde
   try {
     // The client records the identity for us (api/client.ts captureIdentity),
     // so this both answers now and warms the cache for the next command.
-    await clientFromAuth(auth).get<MeResponse>('/accounts/me');
+    await clientFromAuth(auth).get<MeResponse>('/me');
   } catch {
     // The token may be dead (401) or the network down. A stale entry still
     // names the credential, which is the point.
@@ -213,13 +252,14 @@ export async function printPermissionDenialIdentity(): Promise<void> {
   if (pending.code === SESSION_REPOSITORY_ACCESS_DENIED) {
     // Two layers: the token's scopes allowed the call; the workspace policy refused it.
     if (identity.agent) lines.push(`  ${C.dim}token     ${C.reset}scopes ${formatGrantList(identity.permissions)} (not the cause)`);
-    lines.push(`  ${C.dim}workspace ${C.reset}repository access denied: this session runs without the project repository`);
-    lines.push(`  ${C.dim}fix       ${C.reset}start a session with repository access, or ask a person with project access to do this`);
+    lines.push(`  ${C.dim}workspace ${C.reset}repository access denied: this session runs without the workspace repository`);
+    lines.push(`  ${C.dim}fix       ${C.reset}start a session with repository access, or ask a person with workspace access to do this`);
   } else if (identity.agent) {
     lines.push(`  ${C.dim}granted   ${C.reset}${formatGrantList(identity.permissions)}`);
-    lines.push(`  ${C.dim}fix       ${C.reset}${agentFixLine(identity.agent, pending)}`);
-  } else if (identity.userEmail) {
-    lines.push(`  ${C.dim}user      ${C.reset}${identity.userEmail}`);
+    lines.push(`  ${C.dim}fix       ${C.reset}${agentFixLine(identity.agent, pending, identity.permissions)}`);
+  } else {
+    if (identity.userEmail) lines.push(`  ${C.dim}user      ${C.reset}${identity.userEmail}`);
+    if (pending.code === CREDENTIAL_FENCE_REFUSED) lines.push(`  ${C.dim}fix       ${C.reset}${FENCE_FIX_LINE}`);
   }
   process.stderr.write(`${lines.join('\n')}\n`);
 }

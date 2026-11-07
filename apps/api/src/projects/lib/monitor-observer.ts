@@ -12,7 +12,7 @@
  * compare-and-swap on `attempts`, so two schedulers racing the same row leave
  * exactly one winner.
  */
-import { projectMonitorEvents, projectTriggerRuntime, projects } from '@kortix/db';
+import { projectMonitorEvents, projectTriggerRuntime } from '@kortix/db';
 import { and, asc, eq, lt, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { GitTriggerSpec } from '../triggers';
@@ -23,6 +23,7 @@ import { takeThrottledRunSlot } from './trigger-run-caps';
 import { raiseTriggerAlert } from './trigger-alerts';
 import { recordTriggerRun, triggerRunFromFire } from '../trigger-execution-store';
 import { automaticFirePauseReason } from './trigger-scheduler-state';
+import { projectsView } from '../../workspaces/rows';
 
 /** Attempts after which an event dead-letters as `failed`. Mirrors the
  *  execution queue's ceiling so both queues fail the same way. */
@@ -112,8 +113,8 @@ export async function processMonitorEvent(
 
   const [project] = await db
     .select()
-    .from(projects)
-    .where(eq(projects.projectId, row.projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, row.projectId))
     .limit(1);
   if (!project || project.status !== 'active') {
     return skip(project ? 'project is not active' : 'project not found');

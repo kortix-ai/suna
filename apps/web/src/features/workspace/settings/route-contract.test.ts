@@ -37,7 +37,7 @@ describe('settings route segments', () => {
  */
 describe('the project settings [tab] route resolves legacy segments', () => {
   const source = readFileSync(
-    resolve(import.meta.dir, '../../../app/[locale]/(app)/projects/[id]/settings/[tab]/page.tsx'),
+    resolve(import.meta.dir, '../../../app/[locale]/(app)/workspaces/[id]/settings/[tab]/page.tsx'),
     'utf8',
   );
   const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
@@ -47,7 +47,7 @@ describe('the project settings [tab] route resolves legacy segments', () => {
     // directly: eight of the legacy ids resolve to `/accounts/[id]` and need
     // an account id this route does not have in hand. The hook resolves one.
     expect(code).toContain('useLegacySectionRedirect(projectId,');
-    expect(code).toContain('?? `/projects/${projectId}/settings`');
+    expect(code).toContain('?? `/workspaces/${projectId}/settings`');
   });
 
   /**
@@ -61,18 +61,16 @@ describe('the project settings [tab] route resolves legacy segments', () => {
     expect(code).toContain('if (legacy.pending) return;');
     // And the resolution it waits on really does classify those ids.
     expect(isAccountGraduatedSection('billing')).toBe(true);
-    // `api-keys` is NOT account-graduated any more — the personal keys came
-    // back into the overlay as `tokens` (see `settings-tabs.ts`), so the id
-    // resolves synchronously and the route never waits on an account id for
-    // it. `groups` stands in as a second still-graduated id.
+    // `api-keys` is account-graduated again: personal keys live in
+    // Workspace settings › API keys (Workspaces, PR 1).
     expect(isAccountGraduatedSection('groups')).toBe(true);
-    expect(isAccountGraduatedSection('api-keys')).toBe(false);
+    expect(isAccountGraduatedSection('api-keys')).toBe(true);
     expect(isAccountGraduatedSection('computers')).toBe(false);
   });
 
   test('and the resolution it delegates to sends computers to Connectors', () => {
     expect(parseSettingsTab('computers')).toBeNull();
-    expect(legacySectionRedirect('p1', 'computers')).toBe('/projects/p1/admin/connectors');
+    expect(legacySectionRedirect('p1', 'computers')).toBe('/workspaces/p1/admin/connectors');
   });
 
   test('a genuinely unknown segment still has nowhere to go but the default tab', () => {
@@ -105,19 +103,19 @@ describe('every account redirect names a tab the account hub accepts', () => {
   // person on their project rather than on a page they never chose.
   test('and the redirect builds exactly that URL', () => {
     expect(legacySectionRedirect('p1', 'audit', 'acc1')).toBe(
-      '/projects/p1?accountId=acc1&accountTab=audit',
+      '/workspaces/p1?accountId=acc1&accountTab=audit',
     );
     expect(legacySectionRedirect('p1', 'organization', 'acc1')).toBe(
-      '/projects/p1?accountId=acc1&accountTab=settings',
+      '/workspaces/p1?accountId=acc1&accountTab=settings',
     );
     // `api-keys` used to build the hub's Tokens pane here. It now resolves
     // into the settings overlay, so `groups` is the third hub id this asserts.
     expect(legacySectionRedirect('p1', 'groups', 'acc1')).toBe(
-      '/projects/p1?accountId=acc1&accountTab=groups',
+      '/workspaces/p1?accountId=acc1&accountTab=groups',
     );
-    expect(legacySectionRedirect('p1', 'api-keys', 'acc1')).toBe('/projects/p1/settings/tokens');
+    expect(legacySectionRedirect('p1', 'api-keys', 'acc1')).toBe('/workspaces/p1?accountId=acc1&accountTab=tokens');
     expect(legacySectionRedirect('p1', 'usage', 'acc1')).toBe(
-      '/projects/p1?accountId=acc1&accountTab=transactions',
+      '/workspaces/p1?accountId=acc1&accountTab=transactions',
     );
   });
 });

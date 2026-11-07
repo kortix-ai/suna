@@ -1,9 +1,10 @@
 // The SQL of the search index (`kortix.drive_index_entries`).
 
-import { driveIndexEntries, drives, projects } from '@kortix/db';
+import { driveIndexEntries, drives } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { escapeLike, type ParsedQuery } from './query';
+import { projectsView } from '../../workspaces/rows';
 
 export interface IndexedEntry {
   path: string;
@@ -94,11 +95,11 @@ export async function dueDrives(limit: number, minIntervalMs: number, priority: 
   const rows = await db
     .select({ drive: drives })
     .from(drives)
-    .innerJoin(projects, eq(projects.projectId, drives.projectId))
+    .innerJoin(projectsView, eq(projectsView.projectId, drives.projectId))
     .where(
       and(
         eq(drives.kind, 'project'),
-        sql`${projects.status} <> 'archived'`,
+        sql`${projectsView.status} <> 'archived'`,
         sql`${drives.platinumVolumeId} IS NOT NULL`,
         sql`(${drives.indexCheckedAt} IS NULL OR ${drives.indexCheckedAt} < ${cutoff}::timestamptz)`,
       ),

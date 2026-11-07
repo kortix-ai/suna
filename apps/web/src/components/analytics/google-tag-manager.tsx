@@ -28,7 +28,7 @@ import { isDesktop } from '@kortix/ui/internal/lib/desktop';
  * place in the authenticated native client.
  *
  * Never loads when the document opens on a signed-in or capability-token page
- * (`isAnalyticsExcludedPath`: /projects, /admin, /secret-intake, …). Scripts
+ * (`isAnalyticsExcludedPath`: /workspaces, /admin, /secret-intake, …). Scripts
  * GTM injects run with the page's privileges, and the Supabase session cookie
  * is readable from script. The decision is made once per document: a script
  * cannot be unloaded, so a visitor who opens a marketing page and then

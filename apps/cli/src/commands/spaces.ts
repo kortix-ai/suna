@@ -16,20 +16,20 @@ import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix spaces <subcommand> [<space>] [args] [options]
 
-Read and change a space of the project: a channel, your personal space or a
+Read and change a space of the workspace: a channel, your personal space or a
 private space with an agent. Inside
 a session <space> defaults to the space the session is filed in. A change goes
 through with the rights of the person the session works for: the channel's
-creator or a project manager may rename it, describe it and set its agents; a
+creator or a workspace manager may rename it, describe it and set its agents; a
 member may add people; the owner of a private space and an agent working in the space may set
 its tabs. Anyone else gets 403. Making a channel private is a person's step
-(the web app). Needs Spaces (the \`chat\` feature flag) on the project.
+(the web app). Needs Spaces (the \`chat\` feature flag) on the workspace.
 
 <space> is a space id, a channel slug (#launch or launch), or dm:<agent> for
 your private space with that agent (dm:mykortix is your personal space).
 
 Subcommands:
-  ls                                 The project's channels and your private spaces.
+  ls                                 The workspace's channels and your private spaces.
   get [<space>]                      Name, description, agents, tabs.
   rename [<space>] <name>            Rename a channel (its slug follows).
   describe [<space>] <text>          Set a channel's description ("" clears it).
@@ -58,7 +58,7 @@ Options:
   --space <space>   The space (instead of the positional one).
   --thread <id>     post: the thread to post into.
   --ask             post: the thread's agent answers the post.
-  --project <id>    Project id (default: the linked or session project).
+  --workspace <id>  Workspace id (default: the linked or session workspace).
   --host <name>     Operate against a non-default Kortix host.
   --json            Machine-readable output.
   -h, --help        Show this help.
@@ -205,7 +205,7 @@ function writeSpace(space: Space): void {
   process.stdout.write(`\n  ${C.bold}${name}${C.reset}  ${C.dim}${space.space_id}${C.reset}\n`);
   if (space.kind === 'channel') process.stdout.write(`  Name         ${space.name}\n`);
   process.stdout.write(`  Description  ${space.description ?? C.dim + '(none)' + C.reset}\n`);
-  if (space.kind === 'channel') process.stdout.write(`  Agents       ${space.agents.length ? space.agents.join(', ') : C.dim + '(project default)' + C.reset}\n`);
+  if (space.kind === 'channel') process.stdout.write(`  Agents       ${space.agents.length ? space.agents.join(', ') : C.dim + '(workspace default)' + C.reset}\n`);
   process.stdout.write(`  You may edit ${space.can_edit ? 'yes' : 'no'}\n`);
   writeTabs(space.tabs);
 }
@@ -217,16 +217,16 @@ function writeTabs(tabs: readonly SpaceTab[]): void {
 }
 
 async function listSpaces(client: ApiClient, projectId: string): Promise<Space[]> {
-  return (await client.get<{ spaces: Space[] }>(`/projects/${encodeURIComponent(projectId)}/spaces`)).spaces;
+  return (await client.get<{ spaces: Space[] }>(`/workspaces/${encodeURIComponent(projectId)}/spaces`)).spaces;
 }
 
 /** The space this command acts on: the named one, else the session's. */
 async function resolveSpace(client: ApiClient, projectId: string, ref: string | undefined): Promise<Space | string> {
   const spaces = await listSpaces(client, projectId);
-  if (ref) return findSpace(spaces, ref) ?? `No space "${ref}" in this project (or you may not see it). Run \`kortix spaces ls\`.`;
+  if (ref) return findSpace(spaces, ref) ?? `No space "${ref}" in this workspace (or you may not see it). Run \`kortix spaces ls\`.`;
   const sessionId = process.env.KORTIX_SESSION_ID;
   if (!sessionId) return 'Name the space: kortix spaces <subcommand> <space>, or --space <space>.';
-  const session = await client.get<{ space_id?: string | null }>(`/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`);
+  const session = await client.get<{ space_id?: string | null }>(`/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`);
   if (!session.space_id) return 'This session is filed in no space. Name one: --space <space>.';
   return spaces.find((s) => s.space_id === session.space_id) ?? 'The space of this session is not visible to you.';
 }
@@ -234,7 +234,7 @@ async function resolveSpace(client: ApiClient, projectId: string, ref: string | 
 /** User ids for emails or ids, through the project's member list. */
 async function userIdsFor(client: ApiClient, projectId: string, refs: readonly string[]): Promise<string[] | string> {
   if (refs.every((r) => UUID.test(r))) return [...refs];
-  const { members } = await client.get<{ members: Array<{ user_id: string; email: string | null }> }>(`/projects/${encodeURIComponent(projectId)}/access`);
+  const { members } = await client.get<{ members: Array<{ user_id: string; email: string | null }> }>(`/workspaces/${encodeURIComponent(projectId)}/access`);
   const out: string[] = [];
   for (const ref of refs) {
     if (UUID.test(ref)) {
@@ -242,7 +242,7 @@ async function userIdsFor(client: ApiClient, projectId: string, refs: readonly s
       continue;
     }
     const hit = members.find((m) => m.email?.toLowerCase() === ref.toLowerCase());
-    if (!hit) return `No project member with the email ${ref}.`;
+    if (!hit) return `No workspace member with the email ${ref}.`;
     out.push(hit.user_id);
   }
   return out;
@@ -258,7 +258,7 @@ export async function runSpaces(argv: string[]): Promise<number> {
   try {
     flags = {
       space: takeFlagValue(rest, ['--space']),
-      project: takeFlagValue(rest, ['--project']),
+      project: takeFlagValue(rest, ['--project', '--workspace']),
       host: takeFlagValue(rest, ['--host']),
       thread: takeFlagValue(rest, ['--thread']),
     };
@@ -276,7 +276,7 @@ export async function runSpaces(argv: string[]): Promise<number> {
   const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
   const { client, projectId } = ctx;
-  const base = `/projects/${encodeURIComponent(projectId)}/spaces`;
+  const base = `/workspaces/${encodeURIComponent(projectId)}/spaces`;
   try {
     if (sub === 'ls' || sub === 'list') {
       const spaces = await listSpaces(client, projectId);
@@ -325,12 +325,12 @@ export async function runSpaces(argv: string[]): Promise<number> {
     if (sub === 'agents') {
       if (args[0] !== 'set') {
         if (json) return (emitJson({ agents: space.agents }), 0);
-        process.stdout.write(`  ${space.agents.length ? space.agents.join(', ') : `${C.dim}(project default)${C.reset}`}\n`);
+        process.stdout.write(`  ${space.agents.length ? space.agents.join(', ') : `${C.dim}(workspace default)${C.reset}`}\n`);
         return 0;
       }
       const updated = await client.patch<Space>(at, { agents: args.slice(1) });
       if (json) return (emitJson(updated), 0);
-      process.stdout.write(`${status.ok(`Agents: ${updated.agents.length ? updated.agents.join(', ') : '(project default)'}`)}\n`);
+      process.stdout.write(`${status.ok(`Agents: ${updated.agents.length ? updated.agents.join(', ') : '(workspace default)'}`)}\n`);
       return 0;
     }
     if (sub === 'tabs') {

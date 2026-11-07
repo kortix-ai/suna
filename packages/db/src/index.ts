@@ -32,6 +32,12 @@ export {
   accountRoleEnum,
   accountsRelations,
   accountGithubInstallationsRelations,
+  // Workspaces (one account + its one active project)
+  workspaces,
+  workspaceNameBackups,
+  personDeletionRequests,
+  workspaceSplitRuns,
+  workspaceSplitEmails,
   auditEvents,
   auditEventsAll,
   auditArchiveChunks,
@@ -149,6 +155,7 @@ export {
   creditLedger,
   creditUsage,
   accountDeletionRequests,
+  freeCreditClaims,
   retentionErasures,
   creditPurchases,
   // Mobile push notification device tokens
@@ -328,7 +335,7 @@ export {
   captureDevices,
   captureEnrollmentTokens,
   captureEnrollments,
-  captureWorkspaces,
+  captureTenants,
   timelineChunks,
   timelineFrames,
   timelineActions,
@@ -344,7 +351,7 @@ export {
   creditCodes,
   creditCodeRedemptions,
 } from './schema/kortix';
-export type { AgentGrant, StoredAgentGrant, ArtifactCommentMention } from './schema/kortix';
+export type { AgentGrant, StoredAgentGrant, StoredKeyScopes, ArtifactCommentMention } from './schema/kortix';
 export { readStoredAgentGrant } from './schema/kortix';
 export type { AccountBrandingRecord, DriveVolumeMoveRecord } from './schema/kortix';
 export type { MemoryThreadLoadLayer } from './schema/kortix';

@@ -1,9 +1,9 @@
 import { eq } from 'drizzle-orm';
-import { projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { filterAccessibleObjects, unscopedResourceIds } from '../iam';
 import { actorForUser } from '../iam/actor';
 import { listProjectAgents, type ProjectAgent } from './slack/selection';
+import { projectsView } from '../workspaces/rows';
 
 /**
  * The agents a chat user may actually pick, not merely the ones the project
@@ -41,9 +41,9 @@ export async function scopedProjectAgents(
     let allowed: string[];
     if (userId) {
       const [proj] = await db
-        .select({ accountId: projects.accountId })
-        .from(projects)
-        .where(eq(projects.projectId, projectId))
+        .select({ accountId: projectsView.accountId })
+        .from(projectsView)
+        .where(eq(projectsView.projectId, projectId))
         .limit(1);
       allowed = proj
         ? await filterAccessibleObjects(actorForUser(userId, proj.accountId), projectId, 'agent', names)

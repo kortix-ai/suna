@@ -78,7 +78,7 @@ describe('auto top-up turned off by a declined card', () => {
     expect(sent.map((m) => m.to[0]).sort()).toEqual([ownerEmail, adminEmail].sort());
     expect(sent[0]!.subject).toBe('Auto top-up is off for auto-topup-declined-account');
     expect(sent[0]!.text).toContain('The card has insufficient funds. (insufficient_funds)');
-    expect(sent[0]!.text).toContain(`/projects?accountId=${declined.account_id}&accountTab=billing`);
+    expect(sent[0]!.text).toContain(`/workspaces?accountId=${declined.account_id}&accountTab=billing`);
     expect(sent[0]!.category).toBe('billing-auto-topup-disabled');
   });
 

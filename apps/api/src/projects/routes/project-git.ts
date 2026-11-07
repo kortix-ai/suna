@@ -18,6 +18,7 @@ import {
 import { normalizeString, serializeProject } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerProjectGitRoutes(): void {
   // POST /v1/projects/:projectId/git-token
@@ -28,12 +29,12 @@ export function registerProjectGitRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/git-token',
+      path: '/{workspaceId}/git-token',
       tags: ['github'],
       summary: 'Mint a short-lived Git token for the project repository',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -41,7 +42,7 @@ export function registerProjectGitRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // This endpoint hands back a RAW git push credential. project.write is
@@ -92,7 +93,7 @@ export function registerProjectGitRoutes(): void {
     const upstream = await resolveProjectUpstream(loaded.row, 'write');
     const credential = parseBasicAuthHeader(upstream?.headers.Authorization);
     if (!credential) {
-      return c.json({ error: 'Managed git is not configured / unavailable for this project' }, 503);
+      return c.json({ error: 'Managed git is not configured / unavailable for this workspace' }, 503);
     }
 
     return c.json({
@@ -120,11 +121,11 @@ export function registerProjectGitRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/git/connection',
+      path: '/{workspaceId}/git/connection',
       tags: ['github'],
       summary: 'Get the project Git connection',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: json(
           z.object({
@@ -140,7 +141,7 @@ export function registerProjectGitRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -162,12 +163,12 @@ export function registerProjectGitRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/git/collaborators',
+      path: '/{workspaceId}/git/collaborators',
       tags: ['github'],
       summary: 'Add a Git repository collaborator',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               github_username: z.string().openapi({ description: 'GitHub login to invite.' }),
               permission: z.enum(['read', 'write']).optional().openapi({ description: 'read or write. Default write.' }),
@@ -179,7 +180,7 @@ export function registerProjectGitRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Inviting a git collaborator grants a human standing access to the repo —

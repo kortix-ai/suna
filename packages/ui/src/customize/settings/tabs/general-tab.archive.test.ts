@@ -52,12 +52,12 @@ describe('runProjectArchive', () => {
   });
 
   /**
-   * Deleting from the settings panel left the user on `/projects/<deleted-id>`
-   * with no redirect (#7447). The exit is the id-free door `/projects/start`:
+   * Deleting from the settings panel left the user on `/workspaces/<deleted-id>`
+   * with no redirect (#7447). The exit is the id-free door `/workspaces/start`:
    * it opens the next project (the deleted id is already forgotten) or, after
    * the account's last one, the create form.
    */
-  test('leaves for /projects/start after the archive lands and the cookie is forgotten', async () => {
+  test('leaves for /workspaces/start after the archive lands and the cookie is forgotten', async () => {
     const events: string[] = [];
     await runProjectArchive(
       'p1',
@@ -69,7 +69,7 @@ describe('runProjectArchive', () => {
       () => events.push('forgotten'),
       (path: string) => events.push(`left:${path}`),
     );
-    expect(events).toEqual(['archived', 'forgotten', 'left:/projects/start']);
+    expect(events).toEqual(['archived', 'forgotten', 'left:/workspaces/start']);
   });
 
   /**
@@ -90,7 +90,7 @@ describe('runProjectArchive', () => {
       (path: string) => events.push(`left:${path}`),
       () => events.push('dropped'),
     );
-    expect(events).toEqual(['archived', 'forgotten', 'dropped', 'left:/projects/start']);
+    expect(events).toEqual(['archived', 'forgotten', 'dropped', 'left:/workspaces/start']);
   });
 
   test('withoutProject removes the project from a list and leaves any other cached value alone', () => {

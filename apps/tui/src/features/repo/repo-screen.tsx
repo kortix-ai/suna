@@ -82,7 +82,7 @@ export function RepoScreen({
   if (!projectId || !loaders) {
     return (
       <box flexDirection="column" width={width}>
-        <text fg={theme.faint}>No project selected. Pick a project to read its repository.</text>
+        <text fg={theme.faint}>No workspace open. Type /workspaces to pick one and read its repository.</text>
       </box>
     );
   }

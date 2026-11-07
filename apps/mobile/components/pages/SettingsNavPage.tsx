@@ -1,5 +1,5 @@
 /**
- * SettingsNavPage — the project Settings page (`page:settings`; web parity:
+ * SettingsNavPage — the Workspace settings page (`page:settings`; web parity:
  * customize/sections/settings-view). One entry point: the Account page's
  * project row (`app/projects/[id]/account.tsx`, COR-120 Task 2), which pushes
  * it as a sub-page (`openSubPage('page:settings')`, the `page` route) over
@@ -30,12 +30,10 @@
  *   • Details — Name (was "Project name"), Repository (open on GitHub, edit
  *     the default branch + manifest path), and (managed repos) invite a
  *     GitHub collaborator.
- *   • Delete project (alone, untitled) — a two-step confirm:
- *     type the exact project name to enable Continue, then a native "are you
- *     sure" (Jay, 2026-09-22, GitHub's repo-delete shape). The SDK call is
- *     `archiveProject` (there is no hard delete); "Delete project" is the
- *     live label web itself shows over that same call (verified 2026-09-21,
- *     `suna-project-delete-redirect` memory).
+ *   • Delete workspace (alone, untitled) — a two-step confirm:
+ *     type the exact workspace name to enable Continue, then a native "are
+ *     you sure" (Jay, 2026-09-22, GitHub's repo-delete shape). The SDK call
+ *     is `archiveProject` (there is no hard delete).
  *
  * Who may do what (KRTX-1720): one `useCans` probe asks for the leaves the
  * routes assert, never for the 'manager' label. Name, Default branch and
@@ -110,6 +108,7 @@ import { DOCK_ICONS } from '@/components/session/dock-icons';
 import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 import { openLink } from '@/lib/utils/open-link';
+import { useLanguage } from '@/contexts';
 
 interface PageTabLike {
   id: string;
@@ -316,16 +315,20 @@ function DeleteProjectSheet({
   onConfirmed: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const [typed, setTyped] = useState('');
   const matches = typed === project.name;
 
   return (
-    <KortixBottomSheetModal ref={modalRef} title="Delete project" onDismiss={() => setTyped('')}>
+    <KortixBottomSheetModal ref={modalRef} title={t('workspace.delete', 'Delete workspace')} onDismiss={() => setTyped('')}>
       <BottomSheetView>
         <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: Math.max(insets.bottom, 16) + 8, gap: 16 }}>
           <Text variant="muted">
-            This permanently deletes "{project.name}". Current sessions remain recoverable elsewhere, but the
-            project itself cannot be undone. Type the project name to confirm.
+            {t('workspace.deleteBody', {
+              defaultValue:
+                'Removes “{{workspace}}” and everything inside it, for every member. This cannot be undone. Type the workspace name to confirm.',
+              workspace: project.name,
+            })}
           </Text>
           <SheetTextInput
             value={typed}
@@ -335,7 +338,7 @@ function DeleteProjectSheet({
             autoCorrect={false}
             spellCheck={false}
             returnKeyType="done"
-            accessibilityLabel="Type the project name to confirm"
+            accessibilityLabel={t('workspace.deleteTypeName', 'Type the workspace name to confirm')}
           />
           <Button
             variant="destructive"
@@ -347,7 +350,7 @@ function DeleteProjectSheet({
               modalRef.current?.dismiss();
               onConfirmed();
             }}>
-            <Text>Continue</Text>
+            <Text>{t('common.continue', 'Continue')}</Text>
           </Button>
         </View>
       </BottomSheetView>
@@ -374,6 +377,7 @@ export function SettingsNavPage({
   const isDark = colorScheme === 'dark';
   const router = useRouter();
   const toast = useToast();
+  const { t } = useLanguage();
 
   const { data: project, isLoading, isError, error, refetch } = useProject(projectId);
   const cans = useCans({ projectId, accountId: project?.account_id }, SETTINGS_ACTIONS);
@@ -395,7 +399,7 @@ export function SettingsNavPage({
 
   const openNameEditor = (current: KortixProject) =>
     editFieldRef.current?.open({
-      title: 'Project name',
+      title: t('workspace.name', 'Workspace name'),
       value: current.name,
       maxLength: 120,
       onSave: async (name) => {
@@ -434,7 +438,10 @@ export function SettingsNavPage({
         haptics.success();
         router.replace('/projects');
       },
-      onError: (e: any) => toast.error('Unable to delete the project', { description: e?.message || 'Try again.' }),
+      onError: (e: any) =>
+        toast.error(t('workspace.deleteFailed', 'Unable to delete the workspace'), {
+          description: e?.message || t('common.retry', 'Try again'),
+        }),
     });
   };
 
@@ -482,7 +489,7 @@ export function SettingsNavPage({
       <PageContent>
         <PageList
           isLoading={isLoading}
-          errorMessage={isError ? ((error as Error)?.message ?? 'Unable to load project') : null}
+          errorMessage={isError ? ((error as Error)?.message ?? t('workspace.loadOneFailed', "Couldn't load this workspace")) : null}
           onRetry={() => void refetch()}>
           {project ? (
             <View className="gap-6 px-4 pt-1">
@@ -540,7 +547,7 @@ export function SettingsNavPage({
                 <SettingsGroup>
                   <SettingsRow
                     icon={Trash2}
-                    label="Delete project"
+                    label={t('workspace.delete', 'Delete workspace')}
                     destructive
                     onPress={() => { haptics.tap(); deleteModalRef.current?.present(); }}
                   />
@@ -570,19 +577,22 @@ export function SettingsNavPage({
       <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogTitle>{t('workspace.deleteConfirmTitle', 'Delete this workspace?')}</AlertDialogTitle>
             <AlertDialogDescription>
-              This deletes "{project?.name}" permanently. This cannot be undone.
+              {t('workspace.deleteConfirmBody', {
+                defaultValue: 'Removes “{{workspace}}” for every member. This cannot be undone.',
+                workspace: project?.name ?? '',
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>
-              <Text>Cancel</Text>
+              <Text>{t('common.cancel', 'Cancel')}</Text>
             </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive active:bg-destructive/90 dark:bg-destructive/60 text-white"
               onPress={handleDeleteConfirmed}>
-              <Text>Delete</Text>
+              <Text>{t('workspace.delete', 'Delete workspace')}</Text>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

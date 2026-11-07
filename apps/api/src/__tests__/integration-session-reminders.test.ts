@@ -79,6 +79,7 @@ async function projectRow() {
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'session-reminders-test' });
   await db.insert(projects).values({
+    splitPending: true,
     projectId: PROJECT,
     accountId: ACCOUNT,
     name: 'reminders',
@@ -264,7 +265,7 @@ describe('session reminders on the trigger tables', () => {
     const failed = await seedSession();
     await db.update(projectSessions).set({ status: 'failed' }).where(eq(projectSessions.sessionId, failed));
     const { spec } = await seedReminder(failed, { prompt: 'Advance the goal', every: '1d' }, now);
-    const thread = { platform: 'slack', workspaceId: 'T-test', threadId: `D-test:${failed.slice(0, 8)}` };
+    const thread = { platform: 'slack', platformTeamId: 'T-test', threadId: `D-test:${failed.slice(0, 8)}` };
     await db.insert(chatThreads).values({ projectId: PROJECT, sessionId: failed, ...thread });
 
     const result = await fireGitTrigger({ spec, project: await projectRow(), payload: {}, renderedPrompt: '', source: 'cron' });
@@ -373,7 +374,7 @@ describe('session reminders on the trigger tables', () => {
 
   test('a project holds at most REMINDER_MAX_ACTIVE_PER_PROJECT active reminders', async () => {
     const project = crypto.randomUUID();
-    await db.insert(projects).values({ projectId: project, accountId: ACCOUNT, name: 'cap', repoUrl: 'https://example.com/cap.git' });
+    await db.insert(projects).values({ splitPending: true, projectId: project, accountId: ACCOUNT, name: 'cap', repoUrl: 'https://example.com/cap.git' });
     const now = new Date();
     const draft = parseReminderDraft({ prompt: 'cap', in: '5h' }, now);
     if ('error' in draft) throw new Error(draft.error);

@@ -68,7 +68,7 @@ describe('NotificationInboxView', () => {
     // Inside a project: the project page header (the desktop title-bar row) holds the title.
     expect([...out.matchAll(/<h1[^>]*>Inbox<\/h1>/g)]).toHaveLength(1);
     expect(out).toContain('kx-titlebar-row');
-    expect(out).toContain('that concern you, from every project.');
+    expect(out).toContain('that concern you, from every workspace.');
   });
 
   test('outside a project the host header leads and the column carries the title', () => {

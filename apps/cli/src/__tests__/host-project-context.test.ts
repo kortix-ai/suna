@@ -84,8 +84,8 @@ describe('resolveProjectContext with an explicit --host', () => {
     const ctx = await resolveProjectContext({ hostArg: 'other' });
     expect(ctx).toBeNull();
     const out = stderrChunks.join('');
-    expect(out).toContain('No project context on host "other"');
-    expect(out).toContain('--project');
+    expect(out).toContain('No workspace context on host "other"');
+    expect(out).toContain('--workspace');
     expect(out).not.toContain(AMBIENT_PROJECT);
   });
 

@@ -1,16 +1,12 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readWorkflow } from '../src/fixtures/repo';
 
 // Vercel builds bake the runtime config into prerendered pages
 // (apps/web/src/lib/runtime-config-mode.ts). `vercel deploy -e` reaches only the
 // runtime, so every staging value must also reach the build through `-b`, or
 // staging bakes the project's generic Preview values.
 describe('staging Vercel deploy', () => {
-  const workflow = readFileSync(
-    resolve(import.meta.dirname, '../../.github/workflows/deploy-staging.yml'),
-    'utf8',
-  );
+  const workflow = readWorkflow('deploy-staging.yml');
   const start = workflow.indexOf('          staging_env=(');
   const end = workflow.indexOf('| tail -n1)"', start);
   const block = workflow.slice(start, end);

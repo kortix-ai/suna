@@ -1467,7 +1467,7 @@ function AuthContent() {
 
   // A session is already established — the effect above is redirecting (or
   // handing off to mobile). This is a hand-off, not a screen, so it shows the
-  // SAME frame the destination shows: `/projects/start` and the project access
+  // SAME frame the destination shows: `/workspaces/start` and the project access
   // boundary both render `ProjectPendingScreen`, so the redirect produces no
   // visual change at all.
   //

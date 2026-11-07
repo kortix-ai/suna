@@ -1,6 +1,7 @@
-import { readFileSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { statSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT, readRepoFile } from '../src/fixtures/repo';
 
 // The README renders on the git page with local media referenced by relative
 // path. Nothing links the markup to the files, so a rename or a deletion breaks
@@ -8,8 +9,7 @@ import { describe, expect, it } from 'vitest';
 // two re-records with no check behind it. These read the paths straight out of
 // README.md; the source text is the contract.
 
-const REPO_ROOT = resolve(import.meta.dirname, '..', '..');
-const README = readFileSync(join(REPO_ROOT, 'README.md'), 'utf8');
+const README = readRepoFile('README.md');
 
 /** Every local `src="..."` the README references, in source order. */
 function localImagePaths(): string[] {

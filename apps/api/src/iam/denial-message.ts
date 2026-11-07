@@ -5,9 +5,10 @@
 // stubs must also declare. The wording policy has no reason to live behind that.
 
 import { HTTPException } from 'hono/http-exception';
+import { toWorkspaceAction } from '@kortix/shared/workspace-actions';
 
 const MFA_DENIAL_MESSAGE =
-  'This account requires multi-factor authentication. Verify your second factor and retry.';
+  'This workspace requires multi-factor authentication. Verify your second factor and retry.';
 
 /**
  * The message for a denial whose REASON — not the action — names what the
@@ -27,7 +28,10 @@ const MFA_DENIAL_MESSAGE =
  * it just requested — neither discloses anything about the account's wider
  * permission model, who else holds what, or which other actions would succeed.
  */
-export function denialReasonMessage(action: string, reason?: string): string | null {
+export function denialReasonMessage(rawAction: string, reason?: string): string | null {
+  // Outputs lead with the workspace name of the action (design.md §3.2 C8);
+  // an agent copies what it reads into kortix.yaml.
+  const action = toWorkspaceAction(rawAction);
   switch (reason) {
     case 'account_mfa_required':
       return MFA_DENIAL_MESSAGE;
@@ -39,19 +43,25 @@ export function denialReasonMessage(action: string, reason?: string): string | n
       // Agent-principal model: the manifest lists the action, the role an admin
       // bound to the agent's service account does not. Editing kortix.yaml
       // cannot fix this.
-      return `This agent's role does not allow "${action}". Ask an account admin to raise the role bound to this agent.`;
+      return `This agent's role does not allow "${action}". Ask a workspace admin to raise the role bound to this agent.`;
     case 'agent_human_only_action':
-      return `"${action}" is reserved for a human. No agent can perform it, whatever its kortix_permissions or role.`;
+      return `"${action}" is reserved for people (minting credentials or moving money). No agent can perform it, whatever its kortix_permissions or role.`;
     case 'service_account_scope_insufficient':
       // The session authorizes AS the agent's service account (an admin gave it
       // a standing role), so the launching user's role is irrelevant here.
-      return `This agent runs as its own service account, and the role assigned to it does not allow "${action}". Ask an account admin to update that role.`;
+      return `This agent runs as its own service account, and the role assigned to it does not allow "${action}". Ask a workspace admin to update that role.`;
     case 'sso_required':
       // The account enforces single sign-on for this email domain. The remedy
       // is a new sign-in through the IdP, not a role change.
       return 'Your organization requires single sign-on. Sign in with your company SSO to continue.';
+    case 'key_scope_insufficient':
+      // The key's own scope (read, or a custom list) denied it. The creator's
+      // role is not the limit, so a role change cannot fix it.
+      return `This key's scope does not include "${action}". Mint a key with that permission, or use a full key.`;
     case 'token_out_of_scope':
-      return 'This token is scoped to a single project and cannot be used for this request.';
+      return 'This key is bound to one workspace and cannot be used for this request.';
+    case 'workspace_closed':
+      return 'This workspace is being deleted. Only its owners can open it, to restore it.';
     case 'resource_scope_insufficient':
       return 'You are not granted access to this resource.';
     default:
@@ -69,14 +79,23 @@ export function denialReasonMessage(action: string, reason?: string): string | n
  * its step-up dialog on it (the SDK's ApiError already lifts `code` from error
  * bodies).
  */
-export function buildDenialError(action: string, reason?: string, messageOverride?: string): HTTPException {
+export function buildDenialError(
+  action: string,
+  reason?: string,
+  messageOverride?: string,
+  opts: { workspaceName?: string | null } = {},
+): HTTPException {
+  const workspaceAction = toWorkspaceAction(action);
   if (reason === 'account_mfa_required') {
     return new HTTPException(403, {
       message: MFA_DENIAL_MESSAGE,
-      res: jsonResponse({ error: MFA_DENIAL_MESSAGE, code: 'account_mfa_required', action }),
+      res: jsonResponse({ error: MFA_DENIAL_MESSAGE, code: 'account_mfa_required', action, workspace_action: workspaceAction }),
     });
   }
-  const message = messageOverride ?? denialReasonMessage(action, reason) ?? humanizePermissionDenial(action);
+  const base = messageOverride ?? denialReasonMessage(action, reason) ?? humanizePermissionDenial(action);
+  // A caller who belongs to the workspace already knows its name; the route
+  // passes it only then, never on a no-access denial (no existence probe).
+  const message = opts.workspaceName ? `${base.replace(/\.$/, '')} in "${opts.workspaceName}".` : base;
   // Every 403 from
   // `authorize` names its verdict reason (`code`) and the `action`. The body
   // keeps the global error handler's `{error, message, status}` shape and adds
@@ -84,7 +103,15 @@ export function buildDenialError(action: string, reason?: string, messageOverrid
   // picks its remedy hint from `code` (apps/cli/src/token-denial.ts).
   return new HTTPException(403, {
     message,
-    res: jsonResponse({ error: true, message, status: 403, code: reason ?? 'forbidden', action }),
+    res: jsonResponse({
+      error: true,
+      message,
+      status: 403,
+      code: reason ?? 'forbidden',
+      // `action` stays the legacy name for old clients; `workspace_action` is the name to show.
+      action,
+      workspace_action: workspaceAction,
+    }),
   });
 }
 
@@ -103,19 +130,19 @@ function humanizePermissionDenial(action: string): string {
   if (verb) return `You don't have permission to ${verb}.`;
   // Generic fallback. Suffix the code so support can still identify
   // which gate fired without needing server logs.
-  return `You don't have permission to perform this action (${action}).`;
+  return `You don't have permission to perform this action (${toWorkspaceAction(action)}).`;
 }
 
 const ACTION_VERBS: Record<string, string> = {
   // Projects
-  'project.create': 'create projects',
-  'project.write': 'change this project',
-  'project.delete': 'delete projects',
-  // Project members
-  'project.members.manage': 'manage project members',
+  'project.create': 'create workspaces',
+  'project.write': 'change this workspace',
+  'project.delete': 'delete this workspace',
+  // Workspace members
+  'project.members.manage': 'manage workspace members',
   // Account
-  'account.write': 'change account settings',
-  'account.delete': 'delete this account',
+  'account.write': 'change workspace settings',
+  'account.delete': 'delete this workspace',
   // Members
   'member.invite': 'invite members',
   'member.remove': 'remove members',
@@ -133,13 +160,13 @@ const ACTION_VERBS: Record<string, string> = {
   'audit.read': 'view the audit log',
   'audit.export': 'export audit events',
   // Tokens
-  'token.read': 'view personal access tokens',
-  'token.create': 'create account tokens',
-  'token.revoke': 'revoke account tokens',
-  'token.personal.create': 'create your own personal access token',
-  'token.personal.revoke': 'revoke your own personal access token',
+  'token.read': 'view API keys',
+  'token.create': 'create workspace keys',
+  'token.revoke': 'revoke workspace keys',
+  'token.personal.create': 'create your own personal key',
+  'token.personal.revoke': 'revoke your own personal key',
   'capture.read_all': 'read other members’ Kortix Capture recordings',
-  'capture.manage': 'manage Kortix Capture for this account',
+  'capture.manage': 'manage Kortix Capture for this workspace',
   // Billing
   'billing.read': 'view billing',
   'billing.write': 'change billing',

@@ -76,8 +76,8 @@ describe('bootStatus with an image step', () => {
     const cases: Array<[string, string]> = [
       ['resolving', 'Choosing the image (0:42)'],
       ['serving_last_ready', 'Starting from the last ready image while the new one builds (0:42)'],
-      ['waiting_for_build', 'Waiting for the first image for this project to finish building (0:42)'],
-      ['building', 'Building the first image for this project (0:42)'],
+      ['waiting_for_build', 'Waiting for the first image for this workspace to finish building (0:42)'],
+      ['building', 'Building the first image for this workspace (0:42)'],
       ['copying_to_region', "Copying the image to the session's region (0:42)"],
       ['waiting_for_provider', 'Waiting for the provider to finish the image (retrying, 0:42)'],
     ];
@@ -112,7 +112,7 @@ describe('bootStatus with an image step', () => {
         failure: { evidence: { attempts: 1, next_retry_at: null } },
       }),
     ).toEqual({
-      label: 'Building the first image for this project (0:42)',
+      label: 'Building the first image for this workspace (0:42)',
       note: 'Computer did not start. Retrying automatically (attempt 2).',
       timed: true,
     });
@@ -128,7 +128,7 @@ describe('imageStepLabel', () => {
 
   test('an unparseable since drops the clock; a since ahead of the local clock reads 0:00', () => {
     expect(imageStepLabel({ state: 'building', image: null, since: 'nope' }, 0)).toBe(
-      'Building the first image for this project',
+      'Building the first image for this workspace',
     );
     expect(
       imageStepLabel({ state: 'resolving', image: null, since: new Date(5_000).toISOString() }, 0),

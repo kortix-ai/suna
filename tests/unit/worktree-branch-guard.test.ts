@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT } from '../src/fixtures/repo';
 
 // A `pnpm worktree` checkout belongs to one canonical branch (AGENTS.md). On
 // 2026-09-28 one session switched another session's worktree to its own branch
@@ -10,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 // request. The pre-commit hook runs scripts/check-worktree-branch.sh and refuses
 // a commit on any other branch in a marked worktree.
 
-const SCRIPT = join(import.meta.dirname, '..', '..', 'scripts', 'check-worktree-branch.sh');
+const SCRIPT = join(REPO_ROOT, 'scripts', 'check-worktree-branch.sh');
 
 function repo(marker?: { branch: string }, branch = 'feature'): string {
   const dir = mkdtempSync(join(tmpdir(), 'wt-guard-'));

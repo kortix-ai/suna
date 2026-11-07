@@ -15,7 +15,7 @@ mock.module('../../accounts/email', () => ({
   isInviteEmailConfigured: () => true,
 }));
 mock.module('../../lib/logger', () => ({ logger: { warn } }));
-mock.module('../../shared/db', () => ({ db: {} }));
+mock.module('../../shared/db', () => ({ withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(), db: {} }));
 mock.module('../../iam/account-identity', () => ({
   resolveAccountIdentityByEmail: async () => ({ userId: 'synthetic-user', ambiguous: false }),
 }));

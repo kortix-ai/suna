@@ -2,8 +2,7 @@
  *  CAS + lease fence + atomic pin writes, split out of
  *  provider-transition-store.ts (CAS contract on activateWithCas). */
 import { and, eq, inArray, lt, ne, sql } from 'drizzle-orm';
-import { providerTransitions, projects, type Database } from '@kortix/db';
-import { metadataMerge } from '../lib/metadata-merge';
+import { providerTransitions, type Database } from '@kortix/db';
 import { auditProviderTransition, type ProviderTransitionAuditRow } from './provider-transition-audit';
 import { LIVE_TRANSITION_STATUSES } from './provider-transition-core';
 import {
@@ -11,6 +10,7 @@ import {
   PIN_META_KEY, TRANSITION_META_KEY,
 } from './provider-transition-routing';
 import { TRANSITION_AUDIT_COLUMNS, type Queryable } from './provider-transition-store';
+import { metadataMerge, projectsView, updateProjectRows } from '../../workspaces/rows';
 
 type ActivationArgs = {
   projectId: string;
@@ -68,10 +68,7 @@ async function writeActivationPin(tx: Queryable, args: ActivationArgs): Promise<
       activated_at: args.now.toISOString(),
     },
   };
-  await tx
-    .update(projects)
-    .set({ metadata: metadataMerge(activationPatch), updatedAt: args.now })
-    .where(eq(projects.projectId, args.projectId));
+  await updateProjectRows(eq(projectsView.projectId, args.projectId), { metadata: metadataMerge(activationPatch), updatedAt: args.now }, tx);
 }
 
 /**
@@ -84,12 +81,12 @@ async function activateInTransaction(
 ): Promise<ActivationResult & { row?: ProviderTransitionAuditRow }> {
   const [project] = await tx
     .select({
-      metadata: projects.metadata,
-      generation: projects.sandboxProviderGeneration,
-      status: projects.status,
+      metadata: projectsView.metadata,
+      generation: projectsView.sandboxProviderGeneration,
+      status: projectsView.status,
     })
-    .from(projects)
-    .where(eq(projects.projectId, args.projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, args.projectId))
     .for('update')
     .limit(1);
   if (!project) return { activated: false, reason: 'project_missing' as const };
@@ -184,9 +181,9 @@ export async function setPinWithGenerationBump(
 ): Promise<{ generation: number }> {
   return db.transaction(async (tx) => {
     const [project] = await tx
-      .select({ metadata: projects.metadata, generation: projects.sandboxProviderGeneration })
-      .from(projects)
-      .where(eq(projects.projectId, args.projectId))
+      .select({ metadata: projectsView.metadata, generation: projectsView.sandboxProviderGeneration })
+      .from(projectsView)
+      .where(eq(projectsView.projectId, args.projectId))
       .for('update')
       .limit(1);
     if (!project) return { generation: 0 };
@@ -207,10 +204,7 @@ export async function setPinWithGenerationBump(
     const deleteKeys = [ACTIVE_EXTERNAL_ID_META_KEY, ACTIVE_SNAPSHOT_NAME_META_KEY];
     if (args.pin === null) deleteKeys.push(PIN_META_KEY);
     else patch[PIN_META_KEY] = args.pin;
-    await tx
-      .update(projects)
-      .set({ metadata: metadataMerge(patch, deleteKeys), sandboxProviderGeneration: newGen, updatedAt: args.now })
-      .where(eq(projects.projectId, args.projectId));
+    await updateProjectRows(eq(projectsView.projectId, args.projectId), { metadata: metadataMerge(patch, deleteKeys), sandboxProviderGeneration: newGen, updatedAt: args.now }, tx);
     // The epoch bump fences any runner still driving a cancelled row (see
     // reserveSwitchTransition's supersede).
     await tx
@@ -234,9 +228,6 @@ export async function writeTransitionMarker(
 ): Promise<void> {
   // FIX-J: one atomic SQL merge of ONLY the marker key — no read-modify-write, so
   // no FOR UPDATE round-trip and no chance of reverting a concurrent pin write.
-  await db
-    .update(projects)
-    .set({ metadata: metadataMerge({ [TRANSITION_META_KEY]: marker }), updatedAt: new Date() })
-    .where(eq(projects.projectId, projectId));
+  await updateProjectRows(eq(projectsView.projectId, projectId), { metadata: metadataMerge({ [TRANSITION_META_KEY]: marker }), updatedAt: new Date() });
 }
 

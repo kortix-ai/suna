@@ -1,10 +1,10 @@
 import { db } from '../../shared/db';
-import { projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import type { ProjectRole } from '../access';
 import { readManagedRepoSeedState } from '../managed-repo-seed';
 import { normalizeString, serializeProject } from './serializers';
 import type { ProjectRow } from './serializers';
+import { projectsView } from '../../workspaces/rows';
 
 /**
  * Request-level dedupe for POST /v1/projects/provision.
@@ -130,8 +130,8 @@ export const lookupProvisionByIdempotencyKey: ProvisionIdempotencyLookup = async
 ) => {
   const [row] = await db
     .select()
-    .from(projects)
-    .where(and(eq(projects.accountId, accountId), eq(projects.idempotencyKey, idempotencyKey)))
+    .from(projectsView)
+    .where(and(eq(projectsView.accountId, accountId), eq(projectsView.idempotencyKey, idempotencyKey)))
     .limit(1);
   return row ?? null;
 };

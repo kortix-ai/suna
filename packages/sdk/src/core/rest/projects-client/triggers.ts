@@ -18,8 +18,13 @@ import { unwrap } from './shared';
  *
  * `'change_request'` fires when a change request of the project merges; its
  * `filter.base` names the branch (any branch when absent).
+ *
+ * @deprecated Use `WorkspaceTriggerType`. Kept permanently.
  */
 export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor' | 'event' | 'app' | 'change_request';
+
+/** The workspace name of {@link ProjectTriggerType}: the same type. */
+export type WorkspaceTriggerType = ProjectTriggerType;
 
 /**
  * @deprecated The monitor box was removed; the API sends `null`. Removed in the next major.
@@ -40,8 +45,13 @@ export type ProjectMonitorMode = 'poll' | 'stream';
  * - `pinned` — always re-prompt one specific `session_id`.
  * - `keyed` — one session PER rendered `session_key` value, so a single
  *   trigger fans out into a session per chat / customer / repo.
+ *
+ * @deprecated Use `WorkspaceTriggerSessionMode`. Kept permanently.
  */
 export type ProjectTriggerSessionMode = 'fresh' | 'reuse' | 'pinned' | 'keyed';
+
+/** The workspace name of {@link ProjectTriggerSessionMode}: the same type. */
+export type WorkspaceTriggerSessionMode = ProjectTriggerSessionMode;
 
 /**
  * Who may open sessions created by this trigger. The trigger agent remains the
@@ -53,7 +63,11 @@ export interface TriggerSessionAccess {
   groupIds: string[];
 }
 
-/** What a fire calls when a trigger targets an App: `method path` on the App, with the fire's payload. */
+/**
+ * What a fire calls when a trigger targets an App: `method path` on the App, with the fire's payload.
+ *
+ * @deprecated Use `WorkspaceTriggerTarget`. Kept permanently.
+ */
 export interface ProjectTriggerTarget {
   app: string;
   path: string;
@@ -62,7 +76,14 @@ export interface ProjectTriggerTarget {
   payload?: Record<string, unknown>;
 }
 
-/** Subscription state of a `type: event` trigger. */
+/** The workspace name of {@link ProjectTriggerTarget}: the same type. */
+export type WorkspaceTriggerTarget = ProjectTriggerTarget;
+
+/**
+ * Subscription state of a `type: event` trigger.
+ *
+ * @deprecated Use `WorkspaceTriggerEvent`. Kept permanently.
+ */
 export interface ProjectTriggerEvent {
   /** The connector (profile) the event happens on. */
   connector: string;
@@ -89,6 +110,9 @@ export interface ProjectTriggerEvent {
   next_check_at?: string | null;
 }
 
+/** The workspace name of {@link ProjectTriggerEvent}: the same type. */
+export type WorkspaceTriggerEvent = ProjectTriggerEvent;
+
 /** Parsed trigger spec — what the listing endpoint returns. */
 /**
  * One trigger filter condition (KRTX-1721): exactly one operator. `not` and
@@ -106,6 +130,7 @@ export type TriggerFilterCondition =
 /** A filter path's condition: a string means "equals". */
 export type TriggerFilterValue = string | TriggerFilterCondition;
 
+/** @deprecated Use `WorkspaceTrigger`. Kept permanently. */
 export interface ProjectTrigger {
   /** URL-safe slug (the filename minus `.md`). */
   slug: string;
@@ -236,14 +261,24 @@ export interface ProjectTrigger {
   webhook_url: string | null;
 }
 
+/** The workspace name of {@link ProjectTrigger}: the same type. */
+export type WorkspaceTrigger = ProjectTrigger;
+
 /** Parse error surfaced by the listing endpoint so the UI can render
- * broken triggers next to green ones. */
+ * broken triggers next to green ones.
+ *
+ * @deprecated Use `WorkspaceTriggerParseError`. Kept permanently.
+ */
 export interface ProjectTriggerParseError {
   slug: string;
   path: string;
   error: string;
 }
 
+/** The workspace name of {@link ProjectTriggerParseError}: the same type. */
+export type WorkspaceTriggerParseError = ProjectTriggerParseError;
+
+/** @deprecated Use `WorkspaceTriggerListing`. Kept permanently. */
 export interface ProjectTriggerListing {
   triggers: ProjectTrigger[];
   errors: ProjectTriggerParseError[];
@@ -263,6 +298,10 @@ export interface ProjectTriggerListing {
   account_automations_paused?: boolean;
 }
 
+/** The workspace name of {@link ProjectTriggerListing}: the same type. */
+export type WorkspaceTriggerListing = ProjectTriggerListing;
+
+/** @deprecated Use `CreateWorkspaceTriggerInput`. Kept permanently. */
 export interface CreateProjectTriggerInput {
   /** Required — used as the title and shown in the UI. */
   name: string;
@@ -307,7 +346,7 @@ export interface CreateProjectTriggerInput {
   event_account?: string | null;
   /** For type='event'. Event source adapter id such as `composio`; omit for the connector's provider. */
   event_source?: string | null;
-  /** Required for type='event'. The adapter's event type id from {@link listProjectTriggerEventTypes}. */
+  /** Required for type='event'. The adapter's event type id from {@link listWorkspaceTriggerEventTypes}. */
   event?: string;
   /** For type='event'. Provider event config, shaped by the event type's `config_schema`. */
   event_config?: Record<string, unknown>;
@@ -347,6 +386,10 @@ export interface CreateProjectTriggerInput {
   space_id?: string | null;
 }
 
+/** The workspace name of {@link CreateProjectTriggerInput}: the same type. */
+export type CreateWorkspaceTriggerInput = CreateProjectTriggerInput;
+
+/** @deprecated Use `UpdateWorkspaceTriggerInput`. Kept permanently. */
 export interface UpdateProjectTriggerInput {
   name?: string;
   prompt_template?: string;
@@ -401,46 +444,61 @@ export interface UpdateProjectTriggerInput {
   space_id?: string | null;
 }
 
-export async function listProjectTriggers(projectId: string) {
+/** The workspace name of {@link UpdateProjectTriggerInput}: the same type. */
+export type UpdateWorkspaceTriggerInput = UpdateProjectTriggerInput;
+
+export async function listWorkspaceTriggers(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers`,
+      `/workspaces/${projectId}/triggers`,
     ),
   );
 }
 
-export async function createProjectTrigger(
+/** @deprecated Use `listWorkspaceTriggers`. Kept permanently. */
+export const listProjectTriggers = listWorkspaceTriggers;
+
+export async function createWorkspaceTrigger(
   projectId: string,
   input: CreateProjectTriggerInput,
 ) {
   return unwrap(
     await backendApi.post<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers`,
+      `/workspaces/${projectId}/triggers`,
       input,
     ),
   );
 }
 
-export async function updateProjectTrigger(
+/** @deprecated Use `createWorkspaceTrigger`. Kept permanently. */
+export const createProjectTrigger = createWorkspaceTrigger;
+
+export async function updateWorkspaceTrigger(
   projectId: string,
   slug: string,
   input: UpdateProjectTriggerInput,
 ) {
   return unwrap(
     await backendApi.patch<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers/${slug}`,
+      `/workspaces/${projectId}/triggers/${slug}`,
       input,
     ),
   );
 }
 
-export async function deleteProjectTrigger(projectId: string, slug: string) {
+/** @deprecated Use `updateWorkspaceTrigger`. Kept permanently. */
+export const updateProjectTrigger = updateWorkspaceTrigger;
+
+export async function deleteWorkspaceTrigger(projectId: string, slug: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/triggers/${slug}`,
+      `/workspaces/${projectId}/triggers/${slug}`,
     ),
   );
 }
+
+/** @deprecated Use `deleteWorkspaceTrigger`. Kept permanently. */
+export const deleteProjectTrigger = deleteWorkspaceTrigger;
 
 /**
  * The account's Pause all triggers: `paused` stops every automatic fire in
@@ -472,18 +530,22 @@ export async function setAccountAutomationsPaused(accountId: string, paused: boo
  * kill-switch — see {@link ProjectTriggerListing.triggers_paused}). Returns the
  * updated trigger listing, including the new `triggers_paused` value.
  */
-export async function setProjectTriggersActivation(
+export async function setWorkspaceTriggersActivation(
   projectId: string,
   paused: boolean,
 ) {
   return unwrap(
     await backendApi.patch<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers/activation`,
+      `/workspaces/${projectId}/triggers/activation`,
       { paused },
     ),
   );
 }
 
+/** @deprecated Use `setWorkspaceTriggersActivation`. Kept permanently. */
+export const setProjectTriggersActivation = setWorkspaceTriggersActivation;
+
+/** @deprecated Use `FireWorkspaceTriggerResponse`. Kept permanently. */
 export interface FireProjectTriggerResponse {
   /** `deduped`: an identical fire is already in flight; nothing new was started. */
   status: 'fired' | 'queued' | 'deduped' | 'failed';
@@ -498,7 +560,14 @@ export interface FireProjectTriggerResponse {
   error?: string;
 }
 
-/** Options of {@link fireProjectTrigger}. Omit them for a plain manual fire. */
+/** The workspace name of {@link FireProjectTriggerResponse}: the same type. */
+export type FireWorkspaceTriggerResponse = FireProjectTriggerResponse;
+
+/**
+ * Options of {@link fireWorkspaceTrigger}. Omit them for a plain manual fire.
+ *
+ * @deprecated Use `FireWorkspaceTriggerOptions`. Kept permanently.
+ */
 export interface FireProjectTriggerOptions {
   /** Deep-merged over the manual base payload at the root, e.g. `{ body: {…} }` for a webhook template. */
   payload?: Record<string, unknown>;
@@ -506,7 +575,14 @@ export interface FireProjectTriggerOptions {
   dryRun?: boolean;
 }
 
-/** What a real fire would send. `fireProjectTrigger(…, { dryRun: true })` writes nothing. */
+/** The workspace name of {@link FireProjectTriggerOptions}: the same type. */
+export type FireWorkspaceTriggerOptions = FireProjectTriggerOptions;
+
+/**
+ * What a real fire would send. `fireProjectTrigger(…, { dryRun: true })` writes nothing.
+ *
+ * @deprecated Use `WorkspaceTriggerDryRunResult`. Kept permanently.
+ */
 export interface ProjectTriggerDryRunResult {
   dry_run: true;
   rendered_prompt: string;
@@ -518,16 +594,35 @@ export interface ProjectTriggerDryRunResult {
   payload: Record<string, unknown>;
 }
 
-/** What fired a run. */
+/** The workspace name of {@link ProjectTriggerDryRunResult}: the same type. */
+export type WorkspaceTriggerDryRunResult = ProjectTriggerDryRunResult;
+
+/**
+ * What fired a run.
+ *
+ * @deprecated Use `WorkspaceTriggerRunSource`. Kept permanently.
+ */
 export type ProjectTriggerRunSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event' | 'app' | 'change_request';
+
+/** The workspace name of {@link ProjectTriggerRunSource}: the same type. */
+export type WorkspaceTriggerRunSource = ProjectTriggerRunSource;
 
 /**
  * A run's fire outcome. `fired` = a session was started or prompted;
  * `rejected` = a webhook delivery refused before its signature verified.
+ *
+ * @deprecated Use `WorkspaceTriggerRunStatus`. Kept permanently.
  */
 export type ProjectTriggerRunStatus = 'queued' | 'running' | 'fired' | 'failed' | 'skipped' | 'rejected';
 
-/** One fire of a trigger, from any source, as the run history lists it. */
+/** The workspace name of {@link ProjectTriggerRunStatus}: the same type. */
+export type WorkspaceTriggerRunStatus = ProjectTriggerRunStatus;
+
+/**
+ * One fire of a trigger, from any source, as the run history lists it.
+ *
+ * @deprecated Use `WorkspaceTriggerRun`. Kept permanently.
+ */
 export interface ProjectTriggerRun {
   run_id: string;
   slug: string;
@@ -560,7 +655,14 @@ export interface ProjectTriggerRun {
   cost_usd: number | null;
 }
 
-/** One page of runs, newest first. */
+/** The workspace name of {@link ProjectTriggerRun}: the same type. */
+export type WorkspaceTriggerRun = ProjectTriggerRun;
+
+/**
+ * One page of runs, newest first.
+ *
+ * @deprecated Use `WorkspaceTriggerRunList`. Kept permanently.
+ */
 export interface ProjectTriggerRunList {
   runs: ProjectTriggerRun[];
   /**
@@ -570,16 +672,26 @@ export interface ProjectTriggerRunList {
   next_cursor: string | null;
 }
 
+/** The workspace name of {@link ProjectTriggerRunList}: the same type. */
+export type WorkspaceTriggerRunList = ProjectTriggerRunList;
+
 /** Paging of {@link listTriggerRuns}. `limit` is 1–100, default 25. */
 export interface ListTriggerRunsOptions {
   cursor?: string;
   limit?: number;
 }
 
-/** Paging and filter of {@link listProjectTriggerRuns}. */
+/**
+ * Paging and filter of {@link listWorkspaceTriggerRuns}.
+ *
+ * @deprecated Use `ListWorkspaceTriggerRunsOptions`. Kept permanently.
+ */
 export interface ListProjectTriggerRunsOptions extends ListTriggerRunsOptions {
   status?: ProjectTriggerRunStatus;
 }
+
+/** The workspace name of {@link ListProjectTriggerRunsOptions}: the same type. */
+export type ListWorkspaceTriggerRunsOptions = ListProjectTriggerRunsOptions;
 
 function runsQuery(options: ListProjectTriggerRunsOptions | undefined) {
   const q = new URLSearchParams();
@@ -595,48 +707,54 @@ function runsQuery(options: ListProjectTriggerRunsOptions | undefined) {
  * prompt renders against that payload; with `dryRun: true` nothing is
  * written and the rendered prompt comes back instead.
  */
-export async function fireProjectTrigger(
+export async function fireWorkspaceTrigger(
   projectId: string,
   slug: string,
   options: FireProjectTriggerOptions & { dryRun: true },
 ): Promise<ProjectTriggerDryRunResult>;
-export async function fireProjectTrigger(
+export async function fireWorkspaceTrigger(
   projectId: string,
   slug: string,
   options?: FireProjectTriggerOptions & { dryRun?: false },
 ): Promise<FireProjectTriggerResponse>;
-export async function fireProjectTrigger(
+export async function fireWorkspaceTrigger(
   projectId: string,
   slug: string,
   options?: FireProjectTriggerOptions,
 ): Promise<FireProjectTriggerResponse | ProjectTriggerDryRunResult>;
-export async function fireProjectTrigger(projectId: string, slug: string, options?: FireProjectTriggerOptions) {
+export async function fireWorkspaceTrigger(projectId: string, slug: string, options?: FireProjectTriggerOptions) {
   const body: { payload?: Record<string, unknown>; dry_run?: boolean } = {};
   if (options?.payload !== undefined) body.payload = options.payload;
   if (options?.dryRun !== undefined) body.dry_run = options.dryRun;
   return unwrap(
     await backendApi.post<FireProjectTriggerResponse | ProjectTriggerDryRunResult>(
-      `/projects/${projectId}/triggers/${slug}/fire`,
+      `/workspaces/${projectId}/triggers/${slug}/fire`,
       body,
     ),
   );
 }
 
+/** @deprecated Use `fireWorkspaceTrigger`. Kept permanently. */
+export const fireProjectTrigger = fireWorkspaceTrigger;
+
 /** One trigger's runs, newest first. Follow `next_cursor` to page. */
 export async function listTriggerRuns(projectId: string, slug: string, options?: ListTriggerRunsOptions) {
   return unwrap(
     await backendApi.get<ProjectTriggerRunList>(
-      `/projects/${projectId}/triggers/${slug}/runs${runsQuery(options)}`,
+      `/workspaces/${projectId}/triggers/${slug}/runs${runsQuery(options)}`,
     ),
   );
 }
 
 /** Every trigger run of the project the caller may see, newest first. `failed` includes dead-lettered runs. */
-export async function listProjectTriggerRuns(projectId: string, options?: ListProjectTriggerRunsOptions) {
+export async function listWorkspaceTriggerRuns(projectId: string, options?: ListProjectTriggerRunsOptions) {
   return unwrap(
-    await backendApi.get<ProjectTriggerRunList>(`/projects/${projectId}/trigger-runs${runsQuery(options)}`),
+    await backendApi.get<ProjectTriggerRunList>(`/workspaces/${projectId}/trigger-runs${runsQuery(options)}`),
   );
 }
+
+/** @deprecated Use `listWorkspaceTriggerRuns`. Kept permanently. */
+export const listProjectTriggerRuns = listWorkspaceTriggerRuns;
 
 /** Options of {@link replayTriggerRun}. */
 export interface ReplayTriggerRunOptions {
@@ -658,13 +776,17 @@ export async function replayTriggerRun(
 ) {
   return unwrap(
     await backendApi.post<FireProjectTriggerResponse>(
-      `/projects/${projectId}/triggers/${slug}/runs/${runId}/replay`,
+      `/workspaces/${projectId}/triggers/${slug}/runs/${runId}/replay`,
       options?.confirmUnverified ? { confirm_unverified: true } : {},
     ),
   );
 }
 
-/** One app event a connector can trigger on. */
+/**
+ * One app event a connector can trigger on.
+ *
+ * @deprecated Use `WorkspaceTriggerEventType`. Kept permanently.
+ */
 export interface ProjectTriggerEventType {
   type: string;
   name: string;
@@ -678,6 +800,10 @@ export interface ProjectTriggerEventType {
   payload_schema: Record<string, unknown> | null;
 }
 
+/** The workspace name of {@link ProjectTriggerEventType}: the same type. */
+export type WorkspaceTriggerEventType = ProjectTriggerEventType;
+
+/** @deprecated Use `WorkspaceTriggerEventTypes`. Kept permanently. */
 export interface ProjectTriggerEventTypes {
   /** Event source adapter id: `composio` or `mcp`. */
   source?: string;
@@ -687,6 +813,9 @@ export interface ProjectTriggerEventTypes {
   event_types: ProjectTriggerEventType[];
 }
 
+/** The workspace name of {@link ProjectTriggerEventTypes}: the same type. */
+export type WorkspaceTriggerEventTypes = ProjectTriggerEventTypes;
+
 /**
  * The app events a connector, or an app with no connector, can trigger on.
  * Throws 404 for an unknown connector (`app_not_found` for an app with no
@@ -694,7 +823,7 @@ export interface ProjectTriggerEventTypes {
  * when no event source serves it. With source `mcp`, a catalogue app or a
  * project MCP server that has no events yet returns an empty `event_types`.
  */
-export async function listProjectTriggerEventTypes(
+export async function listWorkspaceTriggerEventTypes(
   projectId: string,
   params: { connector: string } | { app: string; source?: string },
 ) {
@@ -703,11 +832,18 @@ export async function listProjectTriggerEventTypes(
       ? `connector=${encodeURIComponent(params.connector)}`
       : `app=${encodeURIComponent(params.app)}${params.source ? `&source=${encodeURIComponent(params.source)}` : ''}`;
   return unwrap(
-    await backendApi.get<ProjectTriggerEventTypes>(`/projects/${projectId}/triggers/event-types?${query}`),
+    await backendApi.get<ProjectTriggerEventTypes>(`/workspaces/${projectId}/triggers/event-types?${query}`),
   );
 }
 
-/** One shared account of a connector: the only kind that can feed an event trigger. */
+/** @deprecated Use `listWorkspaceTriggerEventTypes`. Kept permanently. */
+export const listProjectTriggerEventTypes = listWorkspaceTriggerEventTypes;
+
+/**
+ * One shared account of a connector: the only kind that can feed an event trigger.
+ *
+ * @deprecated Use `WorkspaceTriggerEventAccount`. Kept permanently.
+ */
 export interface ProjectTriggerEventAccount {
   /** The account's label; unique per connector. This is the trigger's `account`. */
   label: string;
@@ -719,14 +855,28 @@ export interface ProjectTriggerEventAccount {
   connected: boolean;
 }
 
-/** A connector (profile) of an app, with its shared accounts. */
+/** The workspace name of {@link ProjectTriggerEventAccount}: the same type. */
+export type WorkspaceTriggerEventAccount = ProjectTriggerEventAccount;
+
+/**
+ * A connector (profile) of an app, with its shared accounts.
+ *
+ * @deprecated Use `WorkspaceTriggerEventConnector`. Kept permanently.
+ */
 export interface ProjectTriggerEventConnector {
   slug: string;
   name: string;
   accounts: ProjectTriggerEventAccount[];
 }
 
-/** An app that can trigger events, with the project's state for it. */
+/** The workspace name of {@link ProjectTriggerEventConnector}: the same type. */
+export type WorkspaceTriggerEventConnector = ProjectTriggerEventConnector;
+
+/**
+ * An app that can trigger events, with the project's state for it.
+ *
+ * @deprecated Use `WorkspaceTriggerEventApp`. Kept permanently.
+ */
 export interface ProjectTriggerEventApp {
   /** Event source adapter id: `composio` or `mcp`. The trigger's `event_source`. */
   source?: string;
@@ -749,11 +899,21 @@ export interface ProjectTriggerEventApp {
   mcp_url?: string | null;
 }
 
+/** The workspace name of {@link ProjectTriggerEventApp}: the same type. */
+export type WorkspaceTriggerEventApp = ProjectTriggerEventApp;
+
+/** @deprecated Use `WorkspaceTriggerEventApps`. Kept permanently. */
 export interface ProjectTriggerEventApps {
   apps: ProjectTriggerEventApp[];
 }
 
+/** The workspace name of {@link ProjectTriggerEventApps}: the same type. */
+export type WorkspaceTriggerEventApps = ProjectTriggerEventApps;
+
 /** Apps with at least one event type, with connector and connection state for this project. */
-export async function listProjectTriggerEventApps(projectId: string) {
-  return unwrap(await backendApi.get<ProjectTriggerEventApps>(`/projects/${projectId}/triggers/event-apps`));
+export async function listWorkspaceTriggerEventApps(projectId: string) {
+  return unwrap(await backendApi.get<ProjectTriggerEventApps>(`/workspaces/${projectId}/triggers/event-apps`));
 }
+
+/** @deprecated Use `listWorkspaceTriggerEventApps`. Kept permanently. */
+export const listProjectTriggerEventApps = listWorkspaceTriggerEventApps;

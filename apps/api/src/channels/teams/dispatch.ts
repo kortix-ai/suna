@@ -89,7 +89,7 @@ export async function handleTeamsConversationUpdate(
       : null);
   if (!projectId) return;
 
-  const projectUrl = `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${projectId}`;
+  const projectUrl = `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/workspaces/${projectId}`;
   await sendCard(
     {
       serviceUrl: activity.serviceUrl,

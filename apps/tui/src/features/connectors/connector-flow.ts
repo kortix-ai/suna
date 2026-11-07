@@ -274,7 +274,7 @@ export function useConnectorKeys({
       return;
     }
     if (is(key, 'connectors.remove')) {
-      if (!data.canWrite) return onToast('Removing a connector needs permission to manage the project’s connectors.', 'error');
+      if (!data.canWrite) return onToast('Removing a connector needs permission to manage the workspace’s connectors.', 'error');
       return setFlow({ kind: 'confirm', action: 'remove' });
     }
     if (!current) return;
@@ -296,7 +296,7 @@ export function useConnectorKeys({
     if (is(key, 'connectors.rename')) return setFlow({ kind: 'rename', connection: current, value: current.label });
     if (is(key, 'connectors.access')) {
       if (current.owner_type === 'member' && !data.canManageConnections) {
-        return onToast("Sharing an account needs permission to manage the project's connections.", 'error');
+        return onToast("Sharing an account needs permission to manage the workspace's connections.", 'error');
       }
       return setFlow({
         kind: 'access',

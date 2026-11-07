@@ -49,7 +49,7 @@ import {
 } from '../core/session/control-stream';
 import type { SessionWorkingVerdict } from '../core/session/working-server';
 import { isParkedRuntimeDownReason, type SessionControlFrameType } from '../core/wire-values';
-import { invalidateProjectProviderQueries } from './provider-refresh';
+import { invalidateWorkspaceProviderQueries } from './provider-refresh';
 import { qk } from './query-keys';
 import type { SessionTurnObservation } from './use-session-working';
 
@@ -170,7 +170,7 @@ export function applySessionControlFrame(
     if (typeof payload.secrets_rev === 'string') {
       // The first frame only records the version: the caches were read just now.
       if (memory.secretsRev !== undefined && memory.secretsRev !== payload.secrets_rev) {
-        invalidateProjectProviderQueries(queryClient, projectId);
+        invalidateWorkspaceProviderQueries(queryClient, projectId);
       }
       memory.secretsRev = payload.secrets_rev;
     }

@@ -5,7 +5,7 @@ import { clearSessionRuntime, getSessionRuntime,
 } from "../../session/session-runtime-registry";
 import { isSessionStartError,
   projectSessionStartSeed,
-  sessionStartKey, startProjectSession, startProjectSessionOrThrow,
+  sessionStartKey, startWorkspaceSession, startWorkspaceSessionOrThrow,
 } from "./session-sandbox";
 import type { SessionStartImageState, SessionStartImageStep } from "./session-sandbox";
 import type { ProjectSession } from "./sessions";
@@ -152,8 +152,8 @@ test("startProjectSession POSTs to /start with no query string when waitMs is om
     body: { stage: "provisioning", agent_name: "default", retriable: true, sandbox: null, runtime_session_id: null,
     },
   };
-  await startProjectSession(PROJECT, SESSION);
-  expect(last().url).toBe(`http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/start`,
+  await startWorkspaceSession(PROJECT, SESSION);
+  expect(last().url).toBe(`http://test.local/v1/workspaces/${PROJECT}/sessions/${SESSION}/start`,
   );
   expect(last().method).toBe("POST");
   expect(last().body).toEqual({});
@@ -165,7 +165,7 @@ test("startProjectSession appends ?wait_ms=<floored ms> when waitMs is given", a
     body: { stage: "provisioning", agent_name: "default", retriable: true, sandbox: null, runtime_session_id: null,
     },
   };
-  await startProjectSession(PROJECT, SESSION, 5_500.9);
+  await startWorkspaceSession(PROJECT, SESSION, 5_500.9);
   expect(last().url).toContain("/start?wait_ms=5500");
 });
 
@@ -174,12 +174,12 @@ test("startProjectSession explicitly requests the preserved previous-repository 
     status: 200,
     body: { stage: "starting", agent_name: "default", retriable: true, sandbox: null, runtime_session_id: null },
   };
-  await startProjectSession(PROJECT, SESSION, {
+  await startWorkspaceSession(PROJECT, SESSION, {
     waitMs: 5_500.9,
     repositoryMode: "previous",
   });
   expect(last().url).toBe(
-    `http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/start?wait_ms=5500&repository_mode=previous`,
+    `http://test.local/v1/workspaces/${PROJECT}/sessions/${SESSION}/start?wait_ms=5500&repository_mode=previous`,
   );
 });
 
@@ -188,11 +188,11 @@ test("startProjectSession keepStopped asks the API to report a stopped box, neve
     status: 200,
     body: { stage: "stopped", agent_name: "default", retriable: false, sandbox: null, runtime_session_id: null },
   };
-  await startProjectSession(PROJECT, SESSION, { waitMs: 15_000, keepStopped: true });
+  await startWorkspaceSession(PROJECT, SESSION, { waitMs: 15_000, keepStopped: true });
   expect(last().url).toBe(
-    `http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/start?wait_ms=15000&keep_stopped=1`,
+    `http://test.local/v1/workspaces/${PROJECT}/sessions/${SESSION}/start?wait_ms=15000&keep_stopped=1`,
   );
-  await startProjectSession(PROJECT, SESSION, { waitMs: 15_000 });
+  await startWorkspaceSession(PROJECT, SESSION, { waitMs: 15_000 });
   expect(last().url).not.toContain("keep_stopped");
 });
 
@@ -202,10 +202,10 @@ test("startProjectSession omits the query string for a zero or negative waitMs",
     body: { stage: "provisioning", agent_name: "default", retriable: true, sandbox: null, runtime_session_id: null,
     },
   };
-  await startProjectSession(PROJECT, SESSION, 0);
+  await startWorkspaceSession(PROJECT, SESSION, 0);
   expect(last().url).not.toContain("wait_ms");
 
-  await startProjectSession(PROJECT, SESSION, -100);
+  await startWorkspaceSession(PROJECT, SESSION, -100);
   expect(last().url).not.toContain("wait_ms");
 });
 
@@ -214,7 +214,7 @@ test("startProjectSession throws a terminal SessionStartError for non-retryable 
 
   let caught: unknown;
   try {
-    await startProjectSession(PROJECT, SESSION);
+    await startWorkspaceSession(PROJECT, SESSION);
   } catch (error) {
     caught = error;
   }
@@ -230,7 +230,7 @@ test("startProjectSession returns null on 404 for a fresh session (create-vs-sta
   markSessionFresh(SESSION);
   nextResponse = { status: 404, body: { error: "Not found" } };
 
-  const result = await startProjectSession(PROJECT, SESSION);
+  const result = await startWorkspaceSession(PROJECT, SESSION);
   expect(result).toBeNull();
 });
 
@@ -240,7 +240,7 @@ test("startProjectSession still throws terminally on non-404 client errors for a
 
   let caught: unknown;
   try {
-    await startProjectSession(PROJECT, SESSION);
+    await startWorkspaceSession(PROJECT, SESSION);
   } catch (error) {
     caught = error;
   }
@@ -251,13 +251,13 @@ test("startProjectSession still throws terminally on non-404 client errors for a
 
 test("startProjectSession returns null for server failures so callers can retry", async () => {
   nextResponse = { status: 500, body: { message: "boom" } };
-  const result = await startProjectSession(PROJECT, SESSION);
+  const result = await startWorkspaceSession(PROJECT, SESSION);
   expect(result).toBeNull();
 });
 
 test("startProjectSession returns null when the response has no data", async () => {
   nextResponse = { status: 200, body: null };
-  const result = await startProjectSession(PROJECT, SESSION);
+  const result = await startWorkspaceSession(PROJECT, SESSION);
   expect(result).toBeNull();
 });
 
@@ -267,7 +267,7 @@ test("startProjectSession returns the parsed result even when stage is not ready
     body: { stage: "starting", agent_name: "default", retriable: true, sandbox: readySandbox(), runtime_session_id: null,
     },
   };
-  const result = await startProjectSession(PROJECT, SESSION);
+  const result = await startWorkspaceSession(PROJECT, SESSION);
   expect(result?.stage).toBe("starting");
   expect(getSessionRuntime(PROJECT, SESSION)).toBeUndefined();
 });
@@ -289,7 +289,7 @@ test("startProjectSession returns the provisioning boot's image step as the serv
       boot: { phase: "provisioning", since: "2026-11-02T09:59:58.000Z", actively_starting: true, image },
     },
   };
-  const result = await startProjectSession(PROJECT, SESSION);
+  const result = await startWorkspaceSession(PROJECT, SESSION);
   const state: SessionStartImageState | undefined = result?.boot?.image?.state;
   expect(state).toBe("building");
   expect(result?.boot?.image).toEqual(image);
@@ -306,7 +306,7 @@ test("startProjectSession populates the shared session-runtime registry once sta
       runtime_session_id: "ocs-ready-1",
     },
   };
-  const result = await startProjectSession(PROJECT, SESSION);
+  const result = await startWorkspaceSession(PROJECT, SESSION);
   expect(result?.stage).toBe("ready");
 
   const entry = getSessionRuntime(PROJECT, SESSION);
@@ -328,7 +328,7 @@ test("startProjectSession does NOT populate the registry when ready but sandbox 
       runtime_session_id: "ocs-2",
     },
   };
-  await startProjectSession(PROJECT, SESSION);
+  await startWorkspaceSession(PROJECT, SESSION);
   expect(getSessionRuntime(PROJECT, SESSION)).toBeUndefined();
 });
 
@@ -343,7 +343,7 @@ test("startProjectSession does NOT populate the registry when ready but runtime_
       runtime_session_id: null,
     },
   };
-  await startProjectSession(PROJECT, SESSION);
+  await startWorkspaceSession(PROJECT, SESSION);
   expect(getSessionRuntime(PROJECT, SESSION)).toBeUndefined();
 });
 
@@ -353,7 +353,7 @@ test("startProjectSession does NOT populate the registry when ready but sandbox 
     body: { stage: "ready", agent_name: "default", retriable: false, sandbox: null, runtime_session_id: "ocs-4",
     },
   };
-  await startProjectSession(PROJECT, SESSION);
+  await startWorkspaceSession(PROJECT, SESSION);
   expect(getSessionRuntime(PROJECT, SESSION)).toBeUndefined();
 });
 
@@ -368,16 +368,16 @@ test("startProjectSessionOrThrow resolves the start answer and records a ready r
     status: 200,
     body: { stage: "ready", agent_name: "default", retriable: false, sandbox: readySandbox(), runtime_session_id: "rt-1" },
   };
-  const result = await startProjectSessionOrThrow(PROJECT, SESSION, { waitMs: 5000 });
-  expect(last()).toMatchObject({ method: "POST", url: "http://test.local/v1/projects/P1/sessions/S1/start?wait_ms=5000" });
+  const result = await startWorkspaceSessionOrThrow(PROJECT, SESSION, { waitMs: 5000 });
+  expect(last()).toMatchObject({ method: "POST", url: "http://test.local/v1/workspaces/P1/sessions/S1/start?wait_ms=5000" });
   expect(result.stage).toBe("ready");
   expect(getSessionRuntime(PROJECT, SESSION)?.runtimeSessionId).toBe("rt-1");
 });
 
 test("startProjectSessionOrThrow rejects on a transient 503 where startProjectSession yields null", async () => {
   nextResponse = { status: 503, body: { error: "provider unavailable" } };
-  expect(await startProjectSession(PROJECT, SESSION)).toBeNull();
-  const error = await startProjectSessionOrThrow(PROJECT, SESSION).catch((e: unknown) => e);
+  expect(await startWorkspaceSession(PROJECT, SESSION)).toBeNull();
+  const error = await startWorkspaceSessionOrThrow(PROJECT, SESSION).catch((e: unknown) => e);
   expect((error as { status?: number }).status).toBe(503);
 });
 
@@ -386,7 +386,7 @@ test("startProjectSessionOrThrow keeps the billing detail of a 402 for the upgra
     status: 402,
     body: { message: "Out of credits", code: "insufficient_credits", account_id: "acct-1", balance: 0 },
   };
-  const error = (await startProjectSessionOrThrow(PROJECT, SESSION).catch((e: unknown) => e)) as {
+  const error = (await startWorkspaceSessionOrThrow(PROJECT, SESSION).catch((e: unknown) => e)) as {
     status?: number;
     detail?: { code?: string; account_id?: string };
   };

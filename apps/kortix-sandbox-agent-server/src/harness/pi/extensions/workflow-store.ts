@@ -24,6 +24,7 @@ import { createHash } from 'node:crypto'
 import type { WorkflowRunMetadata } from '@kortix/api-contract/kortix-tool-card'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { kortixApiFetch } from '@/lib/kortix-api/workspace-routes'
 
 /** The repository folder of saved workflows. */
 export const SAVED_WORKFLOWS_DIR = '.kortix/workflows'
@@ -245,13 +246,13 @@ export interface ProjectApi {
 /** Saved workflows on the project's default branch, read through the Kortix API. */
 export function apiWorkflows(api: ProjectApi): SavedWorkflows {
   const origin = api.apiUrl.trim().replace(/\/+$/, '').replace(/\/v1$/, '')
-  const base = `${origin}/v1/projects/${encodeURIComponent(api.projectId)}/files`
+  const base = `${origin}/v1/workspaces/${encodeURIComponent(api.projectId)}/files`
   const headers = { authorization: `Bearer ${api.token}` }
   return {
     where: `${SAVED_WORKFLOWS_DIR}/ on the project's default branch`,
     read: async (name) => {
       const path = `${SAVED_WORKFLOWS_DIR}/${checkSavedName(name)}.js`
-      const res = await fetch(`${base}/content?path=${encodeURIComponent(path)}`, { headers })
+      const res = await kortixApiFetch(`${base}/content?path=${encodeURIComponent(path)}`, { headers })
       if (res.status === 404) return null
       if (res.status !== 200) throw new Error(`${path} could not be read: the API answered ${res.status}`)
       const body = (await res.json().catch(() => null)) as { content?: unknown } | null

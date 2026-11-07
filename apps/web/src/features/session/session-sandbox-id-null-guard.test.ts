@@ -7,7 +7,7 @@ import { projectSessionStartSeed } from '@kortix/sdk';
 
 // Regression for Better Stack pattern e6d0e044 —
 // `TypeError: Cannot read properties of null (reading 'slice')` thrown on the
-// co-worker session page (`/projects/:id/sessions/:sessionId`). A render-path
+// co-worker session page (`/workspaces/:id/sessions/:sessionId`). A render-path
 // `.slice()` on `sandbox.sandbox_id` crashed when `sandbox` was truthy but
 // `sandbox_id` resolved to `null`. The null reached the page through a
 // `projectSessionStartSeed` cache seed: the
@@ -17,7 +17,7 @@ import { projectSessionStartSeed } from '@kortix/sdk';
 // `useSession` then handed straight to the page.
 
 const pageSource = readFileSync(
-  join(import.meta.dir, '../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
+  join(import.meta.dir, '../../app/[locale]/(app)/workspaces/[id]/sessions/[sessionId]/page.tsx'),
   'utf8',
 );
 

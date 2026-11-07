@@ -7,10 +7,11 @@
  * (repository-replacement.integration.test.ts).
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { projects, projectSecrets } from '@kortix/db';
+import { projectSecrets } from '@kortix/db';
 import * as iamAuthorize from '../../iam/authorize';
 import { db } from '../../shared/db';
 import { decryptProjectSecret, encryptProjectSecret } from '../secrets';
+import { projectsView } from '../../workspaces/rows';
 
 /** The transaction handle the replacement's `db.transaction` callback passes in. */
 type ReplacementTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -35,8 +36,8 @@ export async function copySharedSecretsIntoProject(
   if (sourceProjectId === copy.targetProjectId || unique.length !== identifiers.length || unique.length === 0) {
     throw new RepositorySecretCopyError('Select distinct shared secret identifiers from another project');
   }
-  const [source] = await tx.select({ accountId: projects.accountId, status: projects.status })
-    .from(projects).where(eq(projects.projectId, sourceProjectId)).limit(1);
+  const [source] = await tx.select({ accountId: projectsView.accountId, status: projectsView.status })
+    .from(projectsView).where(eq(projectsView.projectId, sourceProjectId)).limit(1);
   if (!source || source.accountId !== copy.accountId || source.status !== 'active') {
     throw new RepositorySecretCopyError('Secret source project is not available in this account');
   }

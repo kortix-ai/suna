@@ -196,7 +196,7 @@ describe('/kortix models — what this person may run here', () => {
 
   test('no project connected: says how to connect one', async () => {
     gate = null;
-    expect(text(await buildSlackModelsResponse(dm))).toContain('No project is connected to this channel yet');
+    expect(text(await buildSlackModelsResponse(dm))).toContain('No Kortix workspace is connected to this channel yet');
   });
 });
 
@@ -232,7 +232,7 @@ describe('/kortix model — a choice is checked as the person who made it', () =
     const reply = await applySlackModelChoice({ ...dm, channelId: 'C1' }, 'kortix/glm-5.3-flash');
     expect(checks).toHaveLength(0);
     expect(stored).toHaveLength(0);
-    expect(reply).toContain('Only a project manager');
+    expect(reply).toContain('Only a workspace manager');
   });
 
   test('an id with whitespace is refused on shape, before any check', async () => {
@@ -241,15 +241,15 @@ describe('/kortix model — a choice is checked as the person who made it', () =
   });
 
   test('`default` resets the channel to the project default', async () => {
-    expect(await applySlackModelChoice(dm, 'default')).toBe('Model reset to the project default.');
+    expect(await applySlackModelChoice(dm, 'default')).toBe('Model reset to the workspace default.');
     expect(stored).toEqual([null]);
   });
 
   test('no project connected, or the binding is gone: says to connect one, nothing kept', async () => {
     gate = null;
-    expect(await applySlackModelChoice(dm, 'glm-5.3-flash')).toContain('Connect a project first');
+    expect(await applySlackModelChoice(dm, 'glm-5.3-flash')).toContain('Connect a Kortix workspace first');
     gate = { projectId: 'proj', accountId: 'acct', ownerUserId: 'owner', freeManagedOnly: false };
     bound = false;
-    expect(await applySlackModelChoice(dm, 'glm-5.3-flash')).toContain('Connect a project first');
+    expect(await applySlackModelChoice(dm, 'glm-5.3-flash')).toContain('Connect a Kortix workspace first');
   });
 });

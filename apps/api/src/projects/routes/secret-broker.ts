@@ -21,17 +21,18 @@ import {
 } from '../../platform/services/sandbox-egress-pin';
 import { projectsApp } from '../lib/app';
 import { readJsonObject } from '../../shared/http-body';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerSecretBrokerRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/secrets/{identifier}/broker',
+      path: '/{workspaceId}/secrets/{identifier}/broker',
       tags: ['secrets'],
       summary: 'Send one policy-bound HTTPS request without exposing the secret',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), identifier: z.string() }),
+        params: z.object({ workspaceId: z.string(), identifier: z.string() }),
         body: { content: { 'application/json': { schema: SecretBrokerRequestSchema } } },
       },
       responses: {
@@ -40,7 +41,7 @@ export function registerSecretBrokerRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const identifier = c.req.param('identifier')?.trim();
       const parsed = SecretBrokerRequestSchema.safeParse(await readJsonObject(c));
       if (!identifier || !parsed.success) {

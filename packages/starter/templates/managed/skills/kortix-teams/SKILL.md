@@ -8,7 +8,7 @@ description: How to CONNECT Microsoft Teams (`kortix channels connect --platform
 <connecting>
 **Everything below assumes Teams is already connected.** If the user is ASKING to
 connect it — or a `teams` command fails with no installation — that is one
-command, not a project:
+command, not a workspace:
 
 ```sh
 kortix channels status --platform teams     # is this project connected?
@@ -314,10 +314,10 @@ thread, and team come from the env — pass `--team`, `--channel`, or
 - **A `403` from Microsoft Graph** means the Kortix app is not installed in
   that team, or the tenant has not granted it permission to read messages.
   Say so in `teams send`; do not retry.
-- **`conversation_not_in_project`**: every Kortix project in a tenant shares
-  one app, so reads reach only this project's conversations. The channel or
-  thread belongs to another project, or this project has no conversation in
-  that channel while the tenant has several projects. Do not retry with
+- **`conversation_not_in_project`**: every Kortix workspace in a tenant shares
+  one app, so reads reach only this workspace's conversations. The channel or
+  thread belongs to another workspace, or this workspace has no conversation in
+  that channel while the tenant has several workspaces. Do not retry with
   another id. Say so in `teams send`, using the error's message.
 - **`teams history` prints the help instead of JSON**: this sandbox was built
   before the command existed. Say you cannot read the channel from here.
@@ -349,7 +349,7 @@ Only a message the bot posted can be edited or deleted. Teams gives a bot no
 way to add a reaction.
 
 You can only post into a chat or channel the bot is **already in for this
-project**. Anything else returns 404 — list the targets first rather than
+workspace**. Anything else returns 404 — list the targets first rather than
 guessing an id.
 </posting-somewhere-else>
 

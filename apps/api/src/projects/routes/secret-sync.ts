@@ -15,6 +15,7 @@ import {
 import { reconcileStoredSessionAgentGrant } from '../lib/session-token-grant';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerSecretSyncRoutes(): void {
   // POST /v1/projects/:projectId/secrets/sync
@@ -24,11 +25,11 @@ export function registerSecretSyncRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/secrets/sync',
+      path: '/{workspaceId}/secrets/sync',
       tags: ['secrets'],
       summary: 'Re-push project secrets to active sandboxes',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: json(
           z.object({
@@ -57,7 +58,7 @@ export function registerSecretSyncRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // An agent session pulls ITS OWN session: re-push this sandbox's env from

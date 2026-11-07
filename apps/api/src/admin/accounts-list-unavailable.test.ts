@@ -52,6 +52,7 @@ function createQueryBuilder(rows: unknown[]) {
 }
 
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: {
     select: (_fields: Record<string, unknown>) => createQueryBuilder(results.shift() ?? []),
   },

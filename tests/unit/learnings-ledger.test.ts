@@ -3,12 +3,12 @@ import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT } from '../src/fixtures/repo';
 
 // The learnings skill is an append-only episodic ledger: one timestamped file
 // per entry under entries/, indexed by a generated MEMORY.md. These checks keep
 // the index honest and every entry well-formed, so recall by grep stays complete.
 
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const LEDGER = join(REPO_ROOT, '.agents', 'skills', 'learnings');
 const ENTRIES = join(LEDGER, 'entries');
 const FILENAME = /^(\d{4}-\d{2}-\d{2})T(\d{2})(\d{2})(\d{2})Z-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/;

@@ -67,7 +67,7 @@ export const DEPLOYMENT_BYPASS_STATE_PATH = join(
  * cookies belong to the same protection layer. None of them is application
  * state, so clearing "the session" must leave all of them alone.
  */
-export function isDeploymentInfrastructureCookie(name: string): boolean {
+function isDeploymentInfrastructureCookie(name: string): boolean {
   return name.startsWith('_vercel_') || name.startsWith('__vercel_');
 }
 
@@ -79,7 +79,7 @@ export function deploymentBypassSecret(env: NodeJS.ProcessEnv = process.env): st
  * Headers that ask Vercel to let this ONE request through and hand back the
  * bypass cookie. Only ever sent to the deployment origin.
  */
-export function deploymentBypassHeaders(secret: string): Record<string, string> {
+function deploymentBypassHeaders(secret: string): Record<string, string> {
   return {
     'x-vercel-protection-bypass': secret,
     'x-vercel-set-bypass-cookie': 'samesitenone',
@@ -109,7 +109,7 @@ export function deploymentBypassRequestHeaders(secret: string): Record<string, s
   return { 'x-vercel-protection-bypass': secret };
 }
 
-export interface StorageState {
+interface StorageState {
   cookies: Cookie[];
   origins: never[];
 }
@@ -147,7 +147,7 @@ function parseSetCookie(header: string, host: string): Cookie | null {
  * Vercel answers the bypass request with a 307 back to the same path plus
  * `Set-Cookie: _vercel_jwt=…`, so the redirect is deliberately not followed.
  */
-export async function mintDeploymentBypassState(
+async function mintDeploymentBypassState(
   baseURL: string,
   secret: string,
 ): Promise<StorageState> {

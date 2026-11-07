@@ -1,7 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import { auditFilterQuery } from './audit-filter';
-import { exportAccountAudit, getAccountAuditActivity, listAccountAudit, listProjectAudit } from './audit';
+import { exportAccountAudit, getAccountAuditActivity, listAccountAudit, listWorkspaceAudit } from './audit';
 import { listAuditEvents } from './iam';
 
 let calls: Array<{ url: string; method: string }> = [];
@@ -112,14 +112,14 @@ test('listAuditEvents sends project and session reconstruction filters', async (
 });
 
 test('listProjectAudit uses the canonical project route and forwards phase/cursor filters', async () => {
-  await listProjectAudit('project-1', {
+  await listWorkspaceAudit('project-1', {
     action: 'opencode.tool',
     phase: 'completed',
     cursor: 'cursor-1',
     limit: 100,
   });
   const url = new URL(calls[0]!.url);
-  expect(url.pathname).toBe('/projects/project-1/audit');
+  expect(url.pathname).toBe('/workspaces/project-1/audit/events');
   expect(Object.fromEntries(url.searchParams)).toEqual({
     action: 'opencode.tool',
     phase: 'completed',
@@ -159,7 +159,7 @@ test('AuditEvent carries on_behalf_of_user_id (agents as principals, spec 2026-0
     event_id: 'e1', occurred_at: '2026-09-22T00:00:00.000Z', project_id: null, session_id: 's1',
     actor_user_id: 'u1', actor_type: 'agent', agent_name: 'reader', on_behalf_of_user_id: 'u1',
     initiator_actor_type: 'human', initiator_actor_id: 'u1', source: 'agent', outcome: 'success',
-    action: 'GET /v1/projects/:projectId/files', resource_type: 'project', resource_id: null,
+    action: 'GET /v1/workspaces/:projectId/files', resource_type: 'project', resource_id: null,
     http_status: 200, duration_ms: 1, request_id: null, trace_id: null, correlation_id: null,
     before: null, after: null, ip: null, user_agent: null, metadata: {},
   };
@@ -173,7 +173,7 @@ test('an anonymous audit row is typed and filterable on every audit surface', as
     event_id: 'e2', occurred_at: '2026-09-23T00:00:00.000Z', project_id: 'project-1',
     session_id: null, actor_user_id: null, actor_type: 'anonymous', agent_name: null,
     initiator_actor_type: null, initiator_actor_id: null, source: 'api', outcome: 'denied',
-    action: 'GET /v1/projects/:projectId', resource_type: 'project', resource_id: 'project-1',
+    action: 'GET /v1/workspaces/:projectId', resource_type: 'project', resource_id: 'project-1',
     http_status: 401, duration_ms: 1, request_id: null, trace_id: null, correlation_id: null,
     before: null, after: null, ip: null, user_agent: null, metadata: {},
   };

@@ -31,18 +31,25 @@ mock.module('../../projects/secrets', () => ({
   resolveProjectSecretForConsumer,
 }));
 
+// The row a rotated-login write reads back under its lock (rotating-login-write.ts).
+let lockedRows: Array<{ accountId: string; valueEnc: string }> = [];
+const update = (table: unknown) => ({
+  set: (value: Record<string, unknown>) => {
+    updates.push({ table, value });
+    return {
+      where: async (condition: unknown) => {
+        wheres.push(condition);
+        return [];
+      },
+    };
+  },
+});
 mock.module('../../shared/db', () => ({
   db: {
-    update: (table: unknown) => ({
-      set: (value: Record<string, unknown>) => {
-        updates.push({ table, value });
-        return {
-          where: async (condition: unknown) => {
-            wheres.push(condition);
-            return [];
-          },
-        };
-      },
+    update,
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({
+      select: () => ({ from: () => ({ where: () => ({ for: async () => lockedRows }) }) }),
+      update,
     }),
   },
 }));
@@ -54,6 +61,8 @@ mock.module('../../shared/audit', () => ({
 }));
 
 const { accountSecretResources, projectSecrets } = await import('@kortix/db');
+const { encryptAccountSecret } = await import('../../secrets/account-resource');
+const lockRow = (value: string) => { lockedRows = [{ accountId: ACCOUNT_ID, valueEnc: encryptAccountSecret(ACCOUNT_ID, value) }]; };
 const { CodexRefreshError, resolveCodexCredential, resolveCodexAccountCredential, refreshRefusedCodexAccountLogin } = await import('./codex');
 
 describe('resolveCodexCredential consumer boundary', () => {
@@ -132,6 +141,7 @@ describe('resolveCodexCredential consumer boundary', () => {
       type: 'oauth', access: 'old-account-access', refresh: 'account-refresh', expires: 0,
     } });
     const fetchImpl = mock(async () => Response.json({ access_token: 'new-account-access', expires_in: 3600 }));
+    lockRow(authJson);
     expect(await resolveCodexAccountCredential({
       projectId: PROJECT_ID, accountId: ACCOUNT_ID, sessionId: SESSION_ID,
       userId: USER_ID, secretId: SECRET_ID, value: authJson, updatedAt: LOADED_AT,
@@ -279,6 +289,7 @@ describe('refreshRefusedCodexAccountLogin', () => {
 
   test('forces a refresh of an unexpired login and stores the new token', async () => {
     const fetchImpl = mock(async () => Response.json({ access_token: 'fresh-access', refresh_token: 'rotated', expires_in: 864000 }));
+    lockRow(login('refused-access').value);
     const result = await refreshRefusedCodexAccountLogin(input('refused-access'), {
       load: async () => login('refused-access'), fetchImpl,
     });
@@ -286,6 +297,17 @@ describe('refreshRefusedCodexAccountLogin', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(updates.map((update) => update.table)).toEqual([accountSecretResources]);
     expect(updates[0]?.value).toHaveProperty('needsReauthAt', null);
+  });
+
+  test('a refresh never overwrites a row that no longer carries its refresh token (a reconnect, a split placeholder)', async () => {
+    const fetchImpl = mock(async () => Response.json({ access_token: 'fresh-access', refresh_token: 'rotated', expires_in: 864000 }));
+    lockRow(JSON.stringify({ openai: { type: 'oauth', access: 'reconnected', refresh: 'reconnected-refresh', expires: Date.now() + 86_400_000 } }));
+    const result = await refreshRefusedCodexAccountLogin(input('refused-access'), {
+      load: async () => login('refused-access'), fetchImpl,
+    });
+    // This request still gets the token it paid for; the stored login stays the newer one.
+    expect(result).toEqual({ access: 'fresh-access', accountId: 'chatgpt-acct' });
+    expect(updates.filter((update) => update.table === accountSecretResources && 'valueEnc' in update.value)).toEqual([]);
   });
 
   test('a login another request already refreshed is returned without a second refresh', async () => {

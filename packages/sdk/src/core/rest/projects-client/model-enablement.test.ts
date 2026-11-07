@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { setProjectModelEnablement } from './model-enablement';
+import { setWorkspaceModelEnablement } from './model-enablement';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -26,14 +26,14 @@ const last = () => calls[calls.length - 1];
 
 test('PUTs the override map to the project model-enablement endpoint', async () => {
   nextResponse = { status: 200, body: { ok: true, modelOverrides: { 'glm-5.3-flash': false } } };
-  const res = await setProjectModelEnablement('proj-1', { 'glm-5.3-flash': false });
+  const res = await setWorkspaceModelEnablement('proj-1', { 'glm-5.3-flash': false });
   expect(last().method).toBe('PUT');
-  expect(last().url).toContain('/projects/proj-1/model-enablement');
+  expect(last().url).toContain('/workspaces/proj-1/model-enablement');
   expect(last().body).toEqual({ modelOverrides: { 'glm-5.3-flash': false } });
   expect(res).toEqual({ ok: true, modelOverrides: { 'glm-5.3-flash': false } });
 });
 
 test('sends an empty map to drop every exception and restore the default', async () => {
-  await setProjectModelEnablement('proj-1', {});
+  await setWorkspaceModelEnablement('proj-1', {});
   expect(last().body).toEqual({ modelOverrides: {} });
 });

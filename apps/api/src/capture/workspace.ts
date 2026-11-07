@@ -9,12 +9,13 @@
  * and `capture.manage` (the switch, the policy, revoking any device). Owner
  * and admin hold both by default; a custom role can grant either.
  */
-import { accounts, captureWorkspaces } from '@kortix/db';
+import { captureTenants } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { accountMemberRow } from '../iam/membership-read';
 import { accountRolesForUser } from '../iam/read-models';
 import { db } from '../shared/db';
 import { DEFAULT_POLICY, PolicySchema, type CapturePolicy } from './format';
+import { accountsView } from '../workspaces/rows';
 
 export interface Workspace {
   accountId: string;
@@ -25,7 +26,7 @@ export interface Workspace {
 }
 
 export async function readWorkspace(accountId: string): Promise<Workspace> {
-  const [row] = await db.select().from(captureWorkspaces).where(eq(captureWorkspaces.accountId, accountId)).limit(1);
+  const [row] = await db.select().from(captureTenants).where(eq(captureTenants.accountId, accountId)).limit(1);
   if (!row) return { accountId, enabled: false, policy: DEFAULT_POLICY, updatedAt: null, updatedBy: null };
   return {
     accountId,
@@ -38,9 +39,9 @@ export async function readWorkspace(accountId: string): Promise<Workspace> {
 
 export async function captureEnabled(accountId: string): Promise<boolean> {
   const [row] = await db
-    .select({ enabled: captureWorkspaces.enabled })
-    .from(captureWorkspaces)
-    .where(eq(captureWorkspaces.accountId, accountId))
+    .select({ enabled: captureTenants.enabled })
+    .from(captureTenants)
+    .where(eq(captureTenants.accountId, accountId))
     .limit(1);
   return row?.enabled ?? false;
 }
@@ -48,9 +49,9 @@ export async function captureEnabled(accountId: string): Promise<boolean> {
 /** Turn Capture on or off for an account. */
 export async function setCaptureEnabled(accountId: string, enabled: boolean, userId: string): Promise<Workspace> {
   await db
-    .insert(captureWorkspaces)
+    .insert(captureTenants)
     .values({ accountId, enabled, updatedBy: userId })
-    .onConflictDoUpdate({ target: captureWorkspaces.accountId, set: { enabled, updatedBy: userId, updatedAt: sql`now()` } });
+    .onConflictDoUpdate({ target: captureTenants.accountId, set: { enabled, updatedBy: userId, updatedAt: sql`now()` } });
   return readWorkspace(accountId);
 }
 
@@ -59,11 +60,11 @@ export async function captureAccountsFor(userId: string): Promise<Array<{ accoun
   const memberOf = [...(await accountRolesForUser(userId)).keys()];
   if (memberOf.length === 0) return [];
   return db
-    .select({ account_id: accounts.accountId, name: accounts.name })
-    .from(captureWorkspaces)
-    .innerJoin(accounts, eq(accounts.accountId, captureWorkspaces.accountId))
-    .where(and(inArray(captureWorkspaces.accountId, memberOf), eq(captureWorkspaces.enabled, true)))
-    .orderBy(accounts.name);
+    .select({ account_id: accountsView.accountId, name: accountsView.name })
+    .from(captureTenants)
+    .innerJoin(accountsView, eq(accountsView.accountId, captureTenants.accountId))
+    .where(and(inArray(captureTenants.accountId, memberOf), eq(captureTenants.enabled, true)))
+    .orderBy(accountsView.name);
 }
 
 /** True when the person is still a member of the account (devices of former members stop). */

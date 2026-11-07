@@ -8,7 +8,7 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
   return {
     // ── lifecycle (Kortix REST) ──────────────────────────────────────────
     get: (opts?: { showErrors?: boolean }) =>
-      P.getProjectSession(ctx.projectId, ctx.sessionId, opts),
+      P.getWorkspaceSession(ctx.projectId, ctx.sessionId, opts),
     /**
      * This tab's presence lease. `alerts: true` says the tab shows its own
      * notifications, so the server skips the phone and Web Push while the
@@ -28,60 +28,60 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
       options?: { keepalive?: boolean },
     ) =>
       backendApi.put<{ ok: boolean; awake_until?: string | null; awake_cap_at?: string | null }>(
-        `/projects/${ctx.projectId}/sessions/${ctx.sessionId}/presence`,
+        `/workspaces/${ctx.projectId}/sessions/${ctx.sessionId}/presence`,
         input,
         { showErrors: false, keepalive: options?.keepalive ?? !input.active },
       ),
     /** Unified finalized LLM and compute cost for this session. */
     cost: () => P.getSessionCostRecord(ctx.sessionId, { projectId: ctx.projectId }),
-    update: (input: Parameters<typeof P.updateProjectSession>[2]) =>
-      P.updateProjectSession(ctx.projectId, ctx.sessionId, input),
+    update: (input: Parameters<typeof P.updateWorkspaceSession>[2]) =>
+      P.updateWorkspaceSession(ctx.projectId, ctx.sessionId, input),
     delete: () => {
       // A deleted session's sandbox is gone — never let a later handle for
       // this (ctx.projectId, ctx.sessionId) resolve a runtime that no longer exists.
       ctx.forgetReady();
-      return P.deleteProjectSession(ctx.projectId, ctx.sessionId);
+      return P.deleteWorkspaceSession(ctx.projectId, ctx.sessionId);
     },
     /** Take the deleted session out of the trash before its `restore_until`. */
-    restore: () => P.restoreProjectSession(ctx.projectId, ctx.sessionId),
+    restore: () => P.restoreWorkspaceSession(ctx.projectId, ctx.sessionId),
     /** A lost session (its computer gone at the provider) continues on a new computer. */
-    recover: () => P.recoverProjectSession(ctx.projectId, ctx.sessionId),
-    start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
-      P.startProjectSession(ctx.projectId, ctx.sessionId, ...a),
+    recover: () => P.recoverWorkspaceSession(ctx.projectId, ctx.sessionId),
+    start: (...a: DropFirst2<Parameters<typeof P.startWorkspaceSession>>) =>
+      P.startWorkspaceSession(ctx.projectId, ctx.sessionId, ...a),
     /** `start`, but a failed request rejects with the API error instead of yielding `null`. */
-    startOrThrow: (...a: DropFirst2<Parameters<typeof P.startProjectSessionOrThrow>>) =>
-      P.startProjectSessionOrThrow(ctx.projectId, ctx.sessionId, ...a),
+    startOrThrow: (...a: DropFirst2<Parameters<typeof P.startWorkspaceSessionOrThrow>>) =>
+      P.startWorkspaceSessionOrThrow(ctx.projectId, ctx.sessionId, ...a),
     restart: () => {
       // Restart preserves the established sandbox identity, but readiness
       // and the proxy connection must still be resolved again after reboot.
       ctx.forgetReady();
-      return P.restartProjectSession(ctx.projectId, ctx.sessionId);
+      return P.restartWorkspaceSession(ctx.projectId, ctx.sessionId);
     },
     stop: () => {
       ctx.forgetReady();
-      return P.stopProjectSession(ctx.projectId, ctx.sessionId);
+      return P.stopWorkspaceSession(ctx.projectId, ctx.sessionId);
     },
     /** Is this session still running the config the manifest compiles to? */
-    configState: () => P.getProjectSessionConfigState(ctx.projectId, ctx.sessionId),
+    configState: () => P.getWorkspaceSessionConfigState(ctx.projectId, ctx.sessionId),
     /**
      * Recompile the agent config from git into this running session.
      *
      * Restarts opencode to rebuild its config, so readiness has to be
      * resolved again — same reason `restart` forgets it.
      */
-    reloadConfig: (input?: Parameters<typeof P.reloadProjectSessionConfig>[2]) => {
+    reloadConfig: (input?: Parameters<typeof P.reloadWorkspaceSessionConfig>[2]) => {
       ctx.forgetReady();
-      return P.reloadProjectSessionConfig(ctx.projectId, ctx.sessionId, input);
+      return P.reloadWorkspaceSessionConfig(ctx.projectId, ctx.sessionId, input);
     },
     /** Reload config with server-observed progress events. */
     reloadConfigStream: (
-      ...args: DropFirst2<Parameters<typeof P.reloadProjectSessionConfigStream>>
+      ...args: DropFirst2<Parameters<typeof P.reloadWorkspaceSessionConfigStream>>
     ) => {
       ctx.forgetReady();
-      return P.reloadProjectSessionConfigStream(ctx.projectId, ctx.sessionId, ...args);
+      return P.reloadWorkspaceSessionConfigStream(ctx.projectId, ctx.sessionId, ...args);
     },
-    setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
-      P.setProjectSessionSharing(ctx.projectId, ctx.sessionId, intent),
+    setSharing: (intent: Parameters<typeof P.setWorkspaceSessionSharing>[2]) =>
+      P.setWorkspaceSessionSharing(ctx.projectId, ctx.sessionId, intent),
     previews: () => P.getSessionPreviewCandidates(ctx.projectId, ctx.sessionId),
     participants: () => P.getSessionParticipants(ctx.projectId, ctx.sessionId),
     /** Is the caller notified about this session? */

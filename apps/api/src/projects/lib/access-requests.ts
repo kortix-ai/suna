@@ -1,15 +1,16 @@
 import { and, eq } from 'drizzle-orm';
-import { projectAccessRequests, projects } from '@kortix/db';
+import { projectAccessRequests } from '@kortix/db';
 import { projectManagerUserIds } from '../../iam/project-managers';
 import { sendProjectAccessRequestEmail } from '../../accounts/email';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { type TransitionResult, transitionStatus } from '../../shared/status-transition';
 import { lookupEmailsByUserIds } from './access';
+import { projectsView } from '../../workspaces/rows';
 
 function projectMembersUrl(projectId: string): string {
   const base = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
-  return `${base}/projects/${projectId}/customize/members`;
+  return `${base}/workspaces/${projectId}/customize/members`;
 }
 export async function notifyProjectAccessRequestManagers(input: {
   accountId: string;
@@ -19,9 +20,9 @@ export async function notifyProjectAccessRequestManagers(input: {
   message?: string | null;
 }): Promise<void> {
   const [project] = await db
-    .select({ name: projects.name })
-    .from(projects)
-    .where(eq(projects.projectId, input.projectId))
+    .select({ name: projectsView.name })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, input.projectId))
     .limit(1);
 
   // Who can approve this: the project's managers, exactly the people the

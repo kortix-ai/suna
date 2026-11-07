@@ -102,7 +102,11 @@ function sessionBelongsInList(projectId: string, query: Query, session: ProjectS
   return isMember && (filters.startedBy === 'me') === (session.is_owner !== false);
 }
 
+/** @deprecated Use `WorkspaceSessionsUpdater`. Kept permanently. */
 export type ProjectSessionsUpdater = (sessions: ProjectSession[]) => ProjectSession[];
+
+/** The workspace name of {@link ProjectSessionsUpdater}: the same type. */
+export type WorkspaceSessionsUpdater = ProjectSessionsUpdater;
 
 interface PagedSessionCache {
   pages: Array<{ items: ProjectSession[]; next_cursor: string | null }>;
@@ -173,7 +177,7 @@ export function applyToCachedSessionShape(cached: unknown, update: ProjectSessio
  * shapes by `isSessionCacheKey`: the prefix also holds each session's prompts,
  * messages and turn, which are not sessions.
  */
-export function updateCachedProjectSessions(
+export function updateCachedWorkspaceSessions(
   queryClient: QueryClient,
   projectId: string,
   update: ProjectSessionsUpdater,
@@ -187,8 +191,11 @@ export function updateCachedProjectSessions(
   );
 }
 
+/** @deprecated Use `updateCachedWorkspaceSessions`. Kept permanently. */
+export const updateCachedProjectSessions = updateCachedWorkspaceSessions;
+
 /** The first cached session row of this project, in any list shape, that `match` accepts. */
-export function findCachedProjectSession(
+export function findCachedWorkspaceSession(
   queryClient: QueryClient,
   projectId: string,
   match: (session: ProjectSession) => boolean,
@@ -207,6 +214,9 @@ export function findCachedProjectSession(
   }
   return undefined;
 }
+
+/** @deprecated Use `findCachedWorkspaceSession`. Kept permanently. */
+export const findCachedProjectSession = findCachedWorkspaceSession;
 
 /**
  * Insert a session at the top of the cached lists, or replace it where it is
@@ -260,7 +270,7 @@ export function upsertIntoCachedSessionShape(cached: unknown, session: ProjectSe
  * Returns a function that puts every entry back exactly as it was, for the
  * delete that the server refuses.
  */
-export function removeCachedProjectSession(
+export function removeCachedWorkspaceSession(
   queryClient: QueryClient,
   projectId: string,
   sessionId: string,
@@ -270,7 +280,7 @@ export function removeCachedProjectSession(
     predicate: (query: Query) => isSessionCacheKey(projectId, query),
   };
   const previous = queryClient.getQueriesData(filter);
-  updateCachedProjectSessions(queryClient, projectId, (rows) => {
+  updateCachedWorkspaceSessions(queryClient, projectId, (rows) => {
     const kept = rows.filter((row) => row.session_id !== sessionId);
     return kept.length === rows.length ? rows : kept;
   });
@@ -280,6 +290,9 @@ export function removeCachedProjectSession(
   };
 }
 
+/** @deprecated Use `removeCachedWorkspaceSession`. Kept permanently. */
+export const removeCachedProjectSession = removeCachedWorkspaceSession;
+
 /**
  * Move a cached session to the lists its new state belongs in: replace it, or
  * add it to page one, in every list it belongs in, and take it out of every
@@ -287,7 +300,7 @@ export function removeCachedProjectSession(
  * counterpart of filing a session into a group. Lists without a group filter
  * keep the row where it is: their membership did not change.
  */
-export function refileCachedProjectSession(
+export function refileCachedWorkspaceSession(
   queryClient: QueryClient,
   projectId: string,
   session: ProjectSession,
@@ -313,11 +326,14 @@ export function refileCachedProjectSession(
   }
 }
 
+/** @deprecated Use `refileCachedWorkspaceSession`. Kept permanently. */
+export const refileCachedProjectSession = refileCachedWorkspaceSession;
+
 /**
  * Insert a session into every cached list for this project, or replace it
  * wherever it is already cached. The optimistic counterpart of a create.
  */
-export function upsertCachedProjectSession(
+export function upsertCachedWorkspaceSession(
   queryClient: QueryClient,
   projectId: string,
   session: ProjectSession,
@@ -331,3 +347,6 @@ export function upsertCachedProjectSession(
     (cached: unknown) => upsertIntoCachedSessionShape(cached, session),
   );
 }
+
+/** @deprecated Use `upsertCachedWorkspaceSession`. Kept permanently. */
+export const upsertCachedProjectSession = upsertCachedWorkspaceSession;

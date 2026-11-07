@@ -45,3 +45,6 @@ Change the code and the spec together.
 | Storage billing (volumes, stopped and archived box disks), Kortix's own unbilled cost | `apps/api/src/billing/services/storage-charges.ts`, `box-disk-charges.ts`, `orphan-box-costs.ts`, `worker/jobs/storage-billing.ts` |
 | Admin console | `apps/web/src/app/[locale]/admin/accounts/` |
 | Customer UI | `apps/web/src/features/billing/` |
+| Free credits once per person, the claimed workspace | `apps/api/src/billing/services/free-credit-claims.ts`, `free-grant.ts` |
+| Split-off billing (free, comped, comp end, reverse) | `apps/api/src/billing/services/split-off-billing.ts` |
+| Legacy Stripe recovery (no cross-workspace adoption) | `apps/api/src/billing/services/legacy-stripe-sync.ts` |

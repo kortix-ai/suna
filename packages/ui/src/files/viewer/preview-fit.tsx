@@ -87,7 +87,7 @@ export function PreviewFitProvider({
  * Returns `null` outside a provider, unlike `useFileSource`'s throw. A file
  * source missing is a wiring bug on every surface that mounts the renderer.
  * A fit context missing is the *normal* state everywhere except the Easy
- * panel — the Advanced-mode viewer, `/projects` previews, the file-preview
+ * panel — the Advanced-mode viewer, `/workspaces` previews, the file-preview
  * modal, and share pages have no ratio-fit split to feed, so they never
  * mount a <PreviewFitProvider>. Renderers call `report` unconditionally and
  * this returning `null` is how they no-op there without a surface check.

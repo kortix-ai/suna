@@ -393,7 +393,7 @@ describe('featureDisabledBody', () => {
       expect(body.feature).toBe(key);
       expect(typeof body.error).toBe('string');
       // A hidden flag has no toggle in Settings to point at. No message names an organization.
-      expect(body.error).toContain(HIDDEN_KEYS.includes(key) ? 'Contact Kortix' : 'Settings');
+      expect(body.error).toContain(HIDDEN_KEYS.includes(key) ? 'Contact Kortix' : 'Workspace settings');
       expect(body.error).not.toContain('organization');
     }
   });

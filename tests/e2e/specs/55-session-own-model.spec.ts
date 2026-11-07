@@ -40,7 +40,7 @@ function promptModel(request: Request): unknown {
 }
 
 async function openSession(page: Page, projectId: string, sessionId: string): Promise<void> {
-  await page.goto(`/projects/${projectId}/sessions/${sessionId}`);
+  await page.goto(`/workspaces/${projectId}/sessions/${sessionId}`);
   await dismissOnboarding(page);
   await expect(page.getByRole("textbox", { name: "Message input" })).toBeVisible({ timeout: 60_000 });
   await dismissWelcomeCard(page);
@@ -159,7 +159,7 @@ test("55 — a session opens on its own model and its first web message keeps it
       }
       await route.continue();
     });
-    await installBrowserSessionDirect(page, auth, `/projects/${projectId}`, authOptions);
+    await installBrowserSessionDirect(page, auth, `/workspaces/${projectId}`, authOptions);
 
     await test.step("the pinned session shows its model and its first web message sends it", async () => {
       await openSession(page, projectId, pinned);

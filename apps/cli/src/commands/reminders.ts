@@ -23,14 +23,15 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { C, formatUtcInstant, help, pad, status } from '../style.ts';
+import { settingsWhere } from '../settings-path.ts';
 
 const HELP = help`Usage: kortix loops <subcommand> [options]
        kortix loop "<prompt>" [schedule]          (= loops add)
        aliases: kortix reminders, kortix remind
 
-Loops are a per-project feature flag, on by default. A project that turned them
-off turns them back on with \`kortix projects features enable reminders\` (the
-flag key stays \`reminders\`; or Settings → Feature flags).
+Loops are a per-workspace feature flag, on by default. A workspace that turned them
+off turns them back on with \`kortix workspaces features enable reminders\` (the
+flag key stays \`reminders\`; or ${settingsWhere('feature-flags')}).
 
 A Loop re-prompts ONE session on a schedule — "in 24h, check whether the email
 arrived", "every hour until the deploy is green". It is a trigger scoped to that
@@ -60,7 +61,7 @@ Options:
   --name <text>       Label shown in \`ls\`.
   --session <id>      Target session (default: $KORTIX_SESSION_ID inside a
                       session). A unique id prefix works.
-  --project <id>      Project (default: linked or $KORTIX_PROJECT_ID).
+  --workspace <id>    Workspace (default: linked or $KORTIX_PROJECT_ID).
   --host <name>       Operate against a non-default Kortix host.
   --json              Machine-readable output.
   -h, --help          Show this help.
@@ -111,7 +112,7 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
       timezone: takeFlagValue(rest, ['--timezone', '--tz']),
       name: takeFlagValue(rest, ['--name']),
       session: takeFlagValue(rest, ['--session']),
-      project: takeFlagValue(rest, ['--project']),
+      project: takeFlagValue(rest, ['--project', '--workspace']),
       host: takeFlagValue(rest, ['--host']),
     };
     json = takeFlagBool(rest, ['--json']);
@@ -141,7 +142,7 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
     if (hit) sessionRef = hit.session_id;
   }
   // Every segment taken from input is encoded: an id with `/` or `?` stays one segment of this route.
-  const base = `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionRef)}/reminders`;
+  const base = `/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionRef)}/reminders`;
 
   try {
     if (sub === 'add' || sub === 'create') {
@@ -208,13 +209,13 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
     const body = (err as { body?: { error?: unknown } })?.body;
     if (implicitSession && (err as { status?: unknown })?.status === 404 && body?.error === 'Not found') {
       process.stderr.write(
-        `${status.err(`Session ${shortId(sessionRef)} (from $KORTIX_SESSION_ID) not found in this project (${ctx.auth.api_base}). Pass --session <id> to target a session on this host.`)}\n`,
+        `${status.err(`Session ${shortId(sessionRef)} (from $KORTIX_SESSION_ID) not found in this workspace (${ctx.auth.api_base}). Pass --session <id> to target a session on this host.`)}\n`,
       );
       return 1;
     }
     const code = surfaceApiError(err);
     if ((err as { body?: { code?: unknown } })?.body?.code === 'feature_disabled') {
-      process.stderr.write(`  ${C.dim}Turn it on: kortix projects features enable reminders${C.reset}\n`);
+      process.stderr.write(`  ${C.dim}Turn it on: kortix workspaces features enable reminders${C.reset}\n`);
     }
     return code;
   }

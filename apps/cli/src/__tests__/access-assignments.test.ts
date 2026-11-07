@@ -178,7 +178,7 @@ function mockApi() {
     if (has('/members')) return json([{ user_id: USER, email: 'alice@corp.com' }]);
     if (has('/access/') && method === 'DELETE') return json({ ok: true });
     if (has('/access/') && method === 'PUT') return json({ ok: true });
-    if (has(`/projects/${PROJECT}`)) {
+    if (has(`/workspaces/${PROJECT}`)) {
       return json({ project_id: PROJECT, account_id: 'account_1', name: 'demo' });
     }
     return new Response(JSON.stringify({ error: `unexpected ${method} ${url}` }), { status: 500 });
@@ -222,7 +222,7 @@ describe('kortix access assignments', () => {
     const code = await runAccess(['assignments']);
     expect(code).toBe(0);
     const get = assignmentGet()!;
-    expect(get.url).toContain('/v1/accounts/account_1/iam/assignments');
+    expect(get.url).toContain('/v1/workspaces/account_1/iam/assignments');
     expect(get.url).toContain('scope_type=project');
     expect(get.url).toContain(`scope_id=${PROJECT}`);
     const out = stripAnsi(stdout);
@@ -240,11 +240,12 @@ describe('kortix access assignments', () => {
     expect(out).toContain(ASSIGNMENT);
   });
 
-  test('--account filters to account-scope assignments and never resolves a project', async () => {
+  test('--account filters to account-scope assignments and never reads the project', async () => {
     const code = await runAccess(['assignments', '--account']);
     expect(code).toBe(0);
     expect(assignmentGet()!.url).toContain('scope_type=account');
-    expect(requests.some((r) => r.url.includes(`/projects/${PROJECT}`))).toBe(false);
+    // The workspace is the context (its id goes to the IAM route); its record is never read.
+    expect(requests.some((r) => new URL(r.url).pathname === `/v1/workspaces/${PROJECT}`)).toBe(false);
   });
 
   test('--all drops the scope filter entirely', async () => {
@@ -333,7 +334,7 @@ describe('kortix access grant (assignment form)', () => {
   test('--agent with --account is refused client-side: an object grant is project-scoped', async () => {
     const code = await runAccess(['grant', '--user', USER, '--agent', 'support-bot', '--account']);
     expect(code).toBe(2);
-    expect(stripAnsi(stderr)).toContain('project-scoped');
+    expect(stripAnsi(stderr)).toContain('workspace-scoped');
     expect(post()).toBeUndefined();
   });
 
@@ -399,7 +400,7 @@ describe('kortix access grant — everyone in the project, and connector account
       object_type: 'agent',
       object_id: 'support-bot',
     });
-    expect(stripAnsi(stdout)).toContain('to everyone in project');
+    expect(stripAnsi(stdout)).toContain('to everyone in workspace');
   });
 
   test.each([
@@ -448,7 +449,7 @@ describe('kortix access grant — everyone in the project, and connector account
   test('--everyone at account scope is refused: an object grant is project-scoped', async () => {
     const code = await runAccess(['grant', '--everyone', '--agent', 'support-bot', '--account']);
     expect(code).toBe(2);
-    expect(stripAnsi(stderr)).toContain('project-scoped');
+    expect(stripAnsi(stderr)).toContain('workspace-scoped');
     expect(post()).toBeUndefined();
   });
 
@@ -480,7 +481,7 @@ describe('kortix access — the project-member form is unchanged', () => {
     const code = await runAccess(['grant', USER, '--role', 'manager']);
     expect(code).toBe(0);
     const put = requests.find((r) => r.method === 'PUT');
-    expect(put!.url).toContain(`/projects/${PROJECT}/access/${USER}`);
+    expect(put!.url).toContain(`/workspaces/${PROJECT}/access/${USER}`);
     expect(put!.body).toMatchObject({ role: 'manager' });
     // No assignment was written.
     expect(requests.some((r) => r.method === 'POST')).toBe(false);
@@ -508,7 +509,7 @@ describe('kortix access revoke', () => {
     const code = await runAccess(['revoke', USER]);
     expect(code).toBe(0);
     const del = requests.find((r) => r.method === 'DELETE')!;
-    expect(del.url).toContain(`/projects/${PROJECT}/access/${USER}`);
+    expect(del.url).toContain(`/workspaces/${PROJECT}/access/${USER}`);
     expect(stripAnsi(stdout)).toContain(`Revoked access for ${USER}`);
   });
 });

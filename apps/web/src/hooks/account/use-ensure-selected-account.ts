@@ -47,7 +47,14 @@ export function useEnsureSelectedAccount(): void {
 
   useEffect(() => {
     const accounts = accountsQuery.data;
-    if (!accounts?.length) return;
+    if (!accounts) return;
+    // No workspace yet (Workspaces D3: nothing is created at sign-up). A
+    // persisted id from an account the user left, or from the previous user
+    // on this browser, must not keep answering for account-scoped surfaces.
+    if (accounts.length === 0) {
+      if (selectedAccountId) setSelectedAccountId(null);
+      return;
+    }
     if (!selectedAccountId || !accounts.find((a) => a.account_id === selectedAccountId)) {
       setSelectedAccountId(accounts[0].account_id);
     }

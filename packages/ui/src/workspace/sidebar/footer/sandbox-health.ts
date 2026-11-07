@@ -81,7 +81,7 @@ export const MEMBER_LABEL: Partial<Record<SandboxAlertSeverity, string>> = {
 };
 
 export const MEMBER_TEXT: Partial<Record<SandboxAlertSeverity, string>> = {
-  critical: 'New sessions can’t start right now. An owner or admin of this project can fix it.',
+  critical: 'New sessions can’t start right now. An owner or admin of this workspace can fix it.',
   building: 'Sessions can start once it’s ready.',
 };
 

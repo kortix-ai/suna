@@ -102,3 +102,58 @@ export function expiresAtIso(
   if (!Number.isFinite(days) || days <= 0) return undefined;
   return new Date(now + days * MS_PER_DAY).toISOString();
 }
+
+/**
+ * The longest expiry a new API key may have when the workspace policy sets no
+ * maximum, and the expiry a key gets when the person picks none (design.md
+ * §3.2 C4a, `resolveMintExpiry` in apps/api). The API reports both on the
+ * policy (`effective_max_lifetime_days`, `default_lifetime_days`); these are
+ * the values of an API that does not.
+ */
+const KEY_MAX_DAYS = 365;
+const KEY_DEFAULT_DAYS = 90;
+
+/**
+ * What a person may pick for a new API key (a workspace key or a personal
+ * key). Unlike a service account, a key always expires unless the workspace
+ * policy allows no expiry (`allow_no_expiry`, and not `require_expiry`):
+ *
+ * - every preset up to the policy maximum (365 days when none is set);
+ * - a maximum shorter than every preset becomes the only offer;
+ * - "Never" only when the policy allows it.
+ */
+export function keyExpiryOptions(
+  policy: PatPolicy | null | undefined,
+  tI18nComplete: UiTranslator,
+): ExpiryOption[] {
+  const cap = policy?.effective_max_lifetime_days ?? policy?.max_lifetime_days ?? KEY_MAX_DAYS;
+  const withinCap = OFFERED_DAYS.filter((d) => d <= cap);
+  const days = cap < 30 && cap !== 1 ? [...withinCap, cap] : withinCap;
+  const options: ExpiryOption[] = days.map((d) => ({ value: String(d), label: dayLabel(d) }));
+  if (policy?.allow_no_expiry === true && policy.require_expiry !== true) {
+    options.push({ value: NEVER_EXPIRES, label: tI18nComplete.raw('text6300ef800bb8') });
+  }
+  return options;
+}
+
+/** The pre-selected expiry of a new key: 90 days, or the longest the policy allows. */
+export function defaultKeyExpiryOption(
+  policy: PatPolicy | null | undefined,
+  tI18nComplete: UiTranslator,
+): ExpiryOptionValue {
+  const options = keyExpiryOptions(policy, tI18nComplete);
+  const preferred = options.find((o) => o.value === String(policy?.default_lifetime_days ?? KEY_DEFAULT_DAYS));
+  if (preferred) return preferred.value;
+  const dated = options.filter((o) => o.value !== NEVER_EXPIRES);
+  return dated[dated.length - 1]?.value ?? options[0]?.value ?? String(KEY_DEFAULT_DAYS);
+}
+
+/**
+ * The `expiresAt` a key mint sends: an ISO instant, or `null` for "Never".
+ * `null` is explicit because the API gives a key without `expires_at` the
+ * default lifetime (90 days), not "no expiry".
+ */
+export function keyExpiresAt(value: ExpiryOptionValue, now: number = Date.now()): string | null {
+  if (value === NEVER_EXPIRES) return null;
+  return expiresAtIso(value, now) ?? new Date(now + KEY_DEFAULT_DAYS * MS_PER_DAY).toISOString();
+}

@@ -7,9 +7,12 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { workspaceFenceVerdict } from '../middleware/workspace-binding';
+
+const WS = '11111111-1111-4111-8111-111111111111';
+const deps = { sandboxWorkspace: async () => null, accountWorkspace: async () => null };
 
 const appSource = readFileSync(new URL('../app.ts', import.meta.url), 'utf8');
-const authScope = readFileSync(new URL('../middleware/auth-scope.ts', import.meta.url), 'utf8');
 const deadline = readFileSync(new URL('../middleware/request-deadline.ts', import.meta.url), 'utf8');
 const dispatch = readFileSync(new URL('../inbound-dispatch.ts', import.meta.url), 'utf8');
 const server = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
@@ -28,15 +31,20 @@ describe('kortix chrome is reachable', () => {
     expect(appSource.indexOf("app.route('/v1/chrome', chromeApp)")).toBeGreaterThan(-1);
   });
 
-  test('the session-scoped credential passes the token-project-scope gate on attach and release', () => {
-    const start = authScope.indexOf('const SESSION_BOUND_PLATFORM_SINKS');
-    const set = authScope.slice(start, start + 800);
-    expect(set).toContain("'/v1/chrome/attach'");
-    expect(set).toContain("'/v1/chrome/release'");
+  test('the session-scoped credential passes the workspace fence on attach and release', async () => {
+    const session = { workspaceId: WS, sessionBound: true };
+    for (const path of ['/v1/chrome/attach', '/v1/chrome/release']) {
+      expect(await workspaceFenceVerdict('POST', path, session, deps)).toEqual({ allowed: true });
+    }
   });
 
-  test('a session-scoped credential may list browsers, and only with GET', () => {
-    expect(authScope).toContain("opts.sessionBound && c.req.method === 'GET' && path === '/v1/chrome/connections'");
+  test('a session-scoped credential may list browsers, and only with GET', async () => {
+    const session = { workspaceId: WS, sessionBound: true };
+    expect(await workspaceFenceVerdict('GET', '/v1/chrome/connections', session, deps)).toEqual({ allowed: true });
+    expect((await workspaceFenceVerdict('DELETE', '/v1/chrome/connections', session, deps)).allowed).toBe(false);
+    expect(
+      (await workspaceFenceVerdict('GET', '/v1/chrome/connections', { workspaceId: WS, sessionBound: false }, deps)).allowed,
+    ).toBe(false);
   });
 
   test('attach is exempt from the 25 s request deadline: it waits for the person', () => {

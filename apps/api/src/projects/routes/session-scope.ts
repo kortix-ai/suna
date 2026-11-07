@@ -45,17 +45,18 @@ import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { rethrowDatabaseError } from '../../shared/database-errors';
 import { capturePersonEvent } from './product-events';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerSessionScopeRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/scope',
+      path: '/{workspaceId}/sessions/{sessionId}/scope',
       tags: ['sessions'],
       summary: "Read a session's secret and connection scope",
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
       },
       responses: {
         200: json(SessionScopeSchema, 'Current session scope'),
@@ -63,7 +64,7 @@ export function registerSessionScopeRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -141,12 +142,12 @@ export function registerSessionScopeRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/sessions/{sessionId}/scope',
+      path: '/{workspaceId}/sessions/{sessionId}/scope',
       tags: ['sessions'],
       summary: "Re-scope a running session's secrets and connector bindings",
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         body: {
           content: {
             'application/json': {
@@ -161,7 +162,7 @@ export function registerSessionScopeRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -330,12 +331,12 @@ export function registerSessionScopeRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/sessions/{sessionId}/model',
+      path: '/{workspaceId}/sessions/{sessionId}/model',
       tags: ['sessions'],
       summary: "Change a running session's model",
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         body: {
           content: {
             'application/json': {
@@ -372,7 +373,7 @@ export function registerSessionScopeRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -390,7 +391,7 @@ export function registerSessionScopeRoutes(): void {
       // sharing and stop routes above.
       if (!mayChangeSessionModel(visible)) {
         return c.json(
-          { error: 'Only the session owner or a project manager can change this session model' },
+          { error: 'Only the session owner or a workspace manager can change this session model' },
           403,
         );
       }

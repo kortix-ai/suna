@@ -44,7 +44,7 @@ function buildSessionAccess(
   if (!mode && !named) return undefined;
   const resolved = mode ?? 'members';
   if (resolved !== 'private' && resolved !== 'project' && resolved !== 'members') {
-    return { error: '--session-access must be private, project, or members.' };
+    return { error: '--session-access must be private, workspace, or members.' };
   }
   if (resolved !== 'members' && named) {
     return {
@@ -149,7 +149,7 @@ export async function triggersAddLive(
   let resp: ProjectTriggersResponse;
   try {
     resp = await ctx.client.post<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers`,
+      `/workspaces/${ctx.projectId}/triggers`,
       body,
     );
   } catch (err) {
@@ -164,7 +164,7 @@ export async function triggersAddLive(
   const where =
     created?.type === 'event' && created.event?.status !== 'active' ? 'added to' : 'live on';
   process.stdout.write(
-    `${status.ok(`${C.bold}${slug}${C.reset} (${type}) ${where} the project`)} ${C.dim}(committed to kortix.yaml on main + reconciled)${C.reset}\n`,
+    `${status.ok(`${C.bold}${slug}${C.reset} (${type}) ${where} the workspace`)} ${C.dim}(committed to kortix.yaml on main + reconciled)${C.reset}\n`,
   );
   reportWebhookUrl(resp, slug);
   if (created?.type === 'event') {
@@ -279,7 +279,7 @@ export async function triggersSetLive(
   let resp: ProjectTriggersResponse;
   try {
     resp = await ctx.client.patch<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
+      `/workspaces/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
       body,
     );
   } catch (err) {
@@ -309,7 +309,7 @@ async function currentEvent(
 ): Promise<{ event: ProjectTriggerEvent } | { problem: string }> {
   try {
     const resp = await ctx.client.get<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers`,
+      `/workspaces/${ctx.projectId}/triggers`,
     );
     const t = resp.triggers.find((x) => x.slug === slug);
     if (!t) return { problem: `No trigger "${slug}".` };
@@ -335,7 +335,7 @@ export async function triggersRmLive(
   let resp: ProjectTriggersResponse;
   try {
     resp = await ctx.client.delete<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
+      `/workspaces/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -362,7 +362,7 @@ export async function triggersToggleLive(
   let resp: ProjectTriggersResponse;
   try {
     resp = await ctx.client.patch<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
+      `/workspaces/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
       { enabled },
     );
   } catch (err) {

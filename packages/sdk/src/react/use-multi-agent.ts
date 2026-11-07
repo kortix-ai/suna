@@ -8,7 +8,7 @@ import {
   denyPeerMessage,
   getSessionReachableAgents,
   listPeerMessages,
-  listProjectSessionsPage,
+  listWorkspaceSessionsPage,
   listSessionTasks,
   updateSessionTask,
   type ProjectSession,
@@ -117,7 +117,7 @@ export function useTeammates(
   return useQuery({
     queryKey: qk.project.teammates(projectId ?? '', leadSessionId ?? ''),
     queryFn: async (): Promise<ProjectSession[]> =>
-      (await listProjectSessionsPage(projectId as string, { teamLead: leadSessionId as string, limit: TEAMMATES_LIMIT }))
+      (await listWorkspaceSessionsPage(projectId as string, { teamLead: leadSessionId as string, limit: TEAMMATES_LIMIT }))
         .items,
     enabled: !!projectId && !!leadSessionId && (options.enabled ?? true),
     ...contract('inventory'),

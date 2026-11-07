@@ -13,12 +13,12 @@
  * the user-connector shadowing bug). See KORTIX-206.
  */
 import { eq } from 'drizzle-orm';
-import { projects } from '@kortix/db';
 import { db } from '../shared/db';
 import type { ChannelPlatform } from '../projects/connectors';
 import { channelDefaultSlug, channelLabel } from './channels';
 import { withChannelDeclaration, withoutChannelDeclaration } from './channel-rules';
 import { mutateManifestWithRetry } from './manifest-mutation';
+import { projectsView } from '../workspaces/rows';
 
 type Entry = Record<string, unknown>;
 
@@ -38,7 +38,7 @@ export async function ensureChannelConnectorDeclared(
   name = channelLabel(platform),
 ): Promise<boolean> {
   try {
-    const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
     if (!row) return false;
     let changed = false;
     const result = await mutateManifestWithRetry(
@@ -71,7 +71,7 @@ export async function removeChannelConnectorDeclared(
   slug = channelDefaultSlug(platform),
 ): Promise<boolean> {
   try {
-    const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
     if (!row) return false;
     let changed = false;
     const result = await mutateManifestWithRetry(

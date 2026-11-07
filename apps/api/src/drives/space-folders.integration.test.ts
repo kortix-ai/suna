@@ -32,8 +32,8 @@ let unfiled = '';
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'space-folders-notes-test' });
   await db.insert(projects).values([
-    { projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.test/p.git' },
-    { projectId: OTHER_PROJECT, accountId: ACCOUNT, name: 'q', repoUrl: 'https://example.test/q.git' },
+    { splitPending: true, projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.test/p.git' },
+    { splitPending: true, projectId: OTHER_PROJECT, accountId: ACCOUNT, name: 'q', repoUrl: 'https://example.test/q.git' },
   ]);
   await db.insert(projectSpaces).values([
     { spaceId: GENERAL, accountId: ACCOUNT, projectId: PROJECT, kind: 'channel', slug: 'general', name: 'general', isDefault: true },

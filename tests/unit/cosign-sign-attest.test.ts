@@ -7,12 +7,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { REPO_ROOT as repoRoot, readWorkflow } from "../src/fixtures/repo";
 
-const repoRoot = resolve(import.meta.dirname, "../..");
 const signer = join(repoRoot, "scripts/ci/cosign-sign-attest.sh");
-const workflow = join(repoRoot, ".github/workflows/deploy-dev.yml");
 const tempDirs: string[] = [];
 
 function runSigner(mode: string) {
@@ -98,7 +97,7 @@ describe("keyless image signing", () => {
   });
 
   it("routes the Dev supply-chain gate through the retry-safe signer", () => {
-    const yaml = readFileSync(workflow, "utf8");
+    const yaml = readWorkflow("deploy-dev.yml");
     const supplyChain = yaml.slice(
       yaml.indexOf("  supply-chain:"),
       yaml.indexOf("  migrate-db:"),
@@ -119,7 +118,7 @@ describe("keyless image signing", () => {
     // image `--format '{{.Manifest.Digest}}'` returned the human listing
     // (runs 32905182332, 32907212034), the digest step failed, and SBOM +
     // signing were skipped for that dev image.
-    const yaml = readFileSync(workflow, "utf8");
+    const yaml = readWorkflow("deploy-dev.yml");
     const supplyChain = yaml.slice(
       yaml.indexOf("  supply-chain:"),
       yaml.indexOf("  migrate-db:"),

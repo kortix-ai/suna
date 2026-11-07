@@ -54,14 +54,14 @@ suggested next step. It writes nothing back to customer systems.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the churn-signals skill and the daily
 trigger, and opens a change request for you to review. Prefer clicks? Choose
 **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a daily churn-risk agent in this project.
+  code={`Set up a daily churn-risk agent in this workspace.
 
 1. Create the agent agents/churn-risk.md. Its job is to score every account for churn risk and post a ranked list. It may use the Postgres, Stripe and Slack connectors and the Plain API key. It only reads Postgres, Plain and Stripe.
 
@@ -82,7 +82,7 @@ trigger, and opens a change request for you to review. Prefer clicks? Choose
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect your product database, Stripe
+Open **Connectors** in your workspace and connect your product database, Stripe
 and Slack, and add your Plain API key as a secret. Credentials are brokered server-side and never enter the
 agent's machine.
 
@@ -124,7 +124,7 @@ you let the schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every day at 06:00 UTC, each run in a new session on its own cloud computer. To change the time, edit the cron line, or open
-**Triggers** in the project.
+**Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

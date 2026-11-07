@@ -22,6 +22,9 @@ function inferAccountId(c: AuditContext): string | null {
     getRequestContext()?.accountId ||
     c.req.query('account_id') ||
     c.req.query('accountId') ||
+    // An account-key route resolved its path id (a workspace id or an account
+    // key) to the account key; on `/v1/accounts/<account>` it equals the path.
+    c.get('workspaceAccountId') ||
     accountPathId ||
     null
   );

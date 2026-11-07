@@ -3,14 +3,14 @@
  *
  * The product is a project, not a list of projects. Every default entry point
  * (post-auth redirect, `/`, the desktop shell) resolves to a project page. The
- * `/projects` list stays reachable, but only when the user asks for it.
+ * `/workspaces` list stays reachable, but only when the user asks for it.
  *
  * `PROJECT_LANDING_PATH` is the id-free door used when we do not yet know which
  * project to open. It paints instantly and resolves the real project behind the
  * UI, so no caller ever has to block on a backend round-trip to build a
- * redirect. See `app/(app)/projects/start/page.tsx`.
+ * redirect. See `app/(app)/workspaces/start/page.tsx`.
  */
-export const PROJECT_LANDING_PATH = '/projects/start';
+export const PROJECT_LANDING_PATH = '/workspaces/start';
 
 /** Non-httpOnly so middleware can read it and the project page can set it. */
 export const LAST_PROJECT_COOKIE = 'kortix_last_project';
@@ -149,9 +149,9 @@ export function parseLastProjectOwner(cookieValue: string | null | undefined): s
   return ownerIdFromCookie(cookieValue);
 }
 
-/** `/projects/<id>` for a trusted-shaped id, else null. */
+/** `/workspaces/<id>` for a trusted-shaped id, else null. */
 export function projectPathFromId(projectId: string | null | undefined): string | null {
-  return isValidProjectId(projectId) ? `/projects/${projectId}` : null;
+  return isValidProjectId(projectId) ? `/workspaces/${projectId}` : null;
 }
 
 /**
@@ -168,4 +168,16 @@ export function resolveDefaultLandingPath(
   return (
     projectPathFromId(parseLastProjectForUser(cookieValue, currentUserId)) ?? PROJECT_LANDING_PATH
   );
+}
+
+/**
+ * An app path with the pre-2026-11-06 workspace prefix moved to the current
+ * one: `/projects/<id>/…` → `/workspaces/<id>/…`, `/new` → `/workspaces/new`.
+ * Stored notification rows, old push payloads and pasted links still carry the
+ * old prefix; next.config.ts redirects them, and this skips that hop for links
+ * the app renders itself. Any other path is returned unchanged.
+ */
+export function canonicalAppPath(path: string): string {
+  if (/^\/new(?=[?#]|$)/.test(path)) return `/workspaces${path}`;
+  return path.replace(/^\/projects(?=[/?#]|$)/, '/workspaces');
 }

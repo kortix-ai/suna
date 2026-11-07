@@ -34,7 +34,7 @@
 // Router-agnostic route scope: the host injects "the project the user is
 // looking at" here (Next hosts derive it from useParams once, near the root);
 // `useRuntimeProviders`/`useRuntimeLocal` resolve it via this context.
-export { KortixProjectProvider, useKortixRouteProjectId } from './route-project';
+export { KortixWorkspaceProvider, KortixProjectProvider, useKortixRouteWorkspaceId, useKortixRouteProjectId } from './route-project';
 export * from './use-runtime-sessions';
 export * from './use-runtime-events';
 export * from './use-runtime-local';
@@ -105,16 +105,16 @@ export {
   filterToGatewayProviders,
   applyEnablementToProviderList,
   filterToNativeProviders,
-  mergeProjectSecretConnectedProviders,
+  mergeWorkspaceSecretConnectedProviders, mergeProjectSecretConnectedProviders,
   mergeProviderLists,
   normalizeProviderList,
   projectLlmCatalogToProviderList,
   providerListHasGateway,
   providerListHasModels,
 } from './provider-selection';
-export { useProjectModelPickerCatalog, useProjectModels } from './use-project-models';
-export { useProjectConfig } from './use-project-config';
-export type { ProjectConfigSummary } from '../core/rest/projects-client';
+export { useWorkspaceModelPickerCatalog, useProjectModelPickerCatalog, useWorkspaceModels, useProjectModels } from './use-project-models';
+export { useWorkspaceConfig, useProjectConfig } from './use-project-config';
+export type { ProjectConfigSummary, WorkspaceConfigSummary } from '../core/rest/projects-client';
 
 // ── The one-hook session surface ─────────────────────────────────────────────
 // `useSession(projectId, sessionId)` collapses the entire runtime dance (start →

@@ -10,11 +10,11 @@ describe('redirectPreservingCookies', () => {
     staged.cookies.set('other-cookie', 'keep-me');
 
     const redirect = redirectPreservingCookies(
-      new URL('https://kortix.local/auth?redirect=%2Fprojects'),
+      new URL('https://kortix.local/auth?redirect=%2Fworkspaces'),
       staged.cookies,
     );
 
-    expect(redirect.headers.get('location')).toBe('https://kortix.local/auth?redirect=%2Fprojects');
+    expect(redirect.headers.get('location')).toBe('https://kortix.local/auth?redirect=%2Fworkspaces');
     expect(redirect.cookies.get('sb-kortix-auth-token')?.value).toBe('');
     expect(redirect.cookies.get('other-cookie')?.value).toBe('keep-me');
   });

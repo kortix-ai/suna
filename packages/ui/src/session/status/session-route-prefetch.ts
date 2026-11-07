@@ -6,7 +6,7 @@
  * `prefetchSessionOpen` already uses for the snapshot (see
  * `project-access-boundary.tsx`).
  *
- * THE PROBLEM. A cold `/projects/<id>/sessions/<id>` open showed the snapshot
+ * THE PROBLEM. A cold `/workspaces/<id>/sessions/<id>` open showed the snapshot
  * (`GET .../snapshot?transcript=40`) running alone for ~1.6s, then FOUR more
  * reads starting together only once it resolved: `POST .../start`,
  * `GET .../config`, `GET .../scope`, `GET .../audit`. None of the four needs
@@ -16,7 +16,7 @@
  * `useSessionScope`, which only mount once `ProjectSessionView`'s own route
  * segment finishes loading and hydrating — a chunk-load delay the snapshot
  * already escapes by firing from `ProjectAccessBoundary`, which mounts far
- * earlier (it wraps the whole `/projects/<id>` subtree).
+ * earlier (it wraps the whole `/workspaces/<id>` subtree).
  *
  * THE FIX. Fire the two READS (`/config`, `/scope`) from that same early
  * point, using the EXACT query keys and options their consuming hooks use

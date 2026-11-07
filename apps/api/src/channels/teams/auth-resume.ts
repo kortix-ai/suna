@@ -19,7 +19,7 @@ export async function createPendingTeamsAuthMessage(input: {
       .values({
         projectId: input.projectId,
         platform: 'teams',
-        workspaceId: input.tenantId,
+        platformTeamId: input.tenantId,
         platformUserId: input.teamsUserId,
         envelope: {},
         event: input.activity as unknown as Record<string, unknown>,
@@ -50,7 +50,7 @@ export async function peekPendingTeamsAuthSenderName(input: {
       .where(
         and(
           eq(chatPendingAuthMessages.pendingId, input.pendingId),
-          eq(chatPendingAuthMessages.workspaceId, input.tenantId),
+          eq(chatPendingAuthMessages.platformTeamId, input.tenantId),
           eq(chatPendingAuthMessages.platformUserId, input.teamsUserId),
           gt(chatPendingAuthMessages.expiresAt, new Date()),
           isNotNull(chatPendingAuthMessages.projectId),
@@ -83,7 +83,7 @@ export async function latestPendingTeamsAuthMessageId(input: {
       .where(
         and(
           eq(chatPendingAuthMessages.platform, 'teams'),
-          eq(chatPendingAuthMessages.workspaceId, input.tenantId),
+          eq(chatPendingAuthMessages.platformTeamId, input.tenantId),
           eq(chatPendingAuthMessages.platformUserId, input.teamsUserId),
           gt(chatPendingAuthMessages.expiresAt, new Date()),
           isNotNull(chatPendingAuthMessages.projectId),
@@ -114,7 +114,7 @@ export async function consumePendingTeamsAuthMessage(input: {
       .where(
         and(
           eq(chatPendingAuthMessages.pendingId, input.pendingId),
-          eq(chatPendingAuthMessages.workspaceId, input.tenantId),
+          eq(chatPendingAuthMessages.platformTeamId, input.tenantId),
           eq(chatPendingAuthMessages.platformUserId, input.teamsUserId),
           gt(chatPendingAuthMessages.expiresAt, new Date()),
           isNotNull(chatPendingAuthMessages.projectId),
@@ -148,7 +148,7 @@ export async function createPendingTeamsPickerMessage(input: {
       .values({
         projectId: null,
         platform: 'teams',
-        workspaceId: input.tenantId,
+        platformTeamId: input.tenantId,
         platformUserId: input.teamsUserId || '',
         envelope: { picker: true },
         event: input.activity as unknown as Record<string, unknown>,
@@ -180,7 +180,7 @@ export async function consumePendingTeamsPickerMessage(input: {
       .where(
         and(
           eq(chatPendingAuthMessages.pendingId, input.pendingId),
-          eq(chatPendingAuthMessages.workspaceId, input.tenantId),
+          eq(chatPendingAuthMessages.platformTeamId, input.tenantId),
           isNull(chatPendingAuthMessages.projectId),
           gt(chatPendingAuthMessages.expiresAt, new Date()),
           sql`${chatPendingAuthMessages.event}->'conversation'->>'id' = ${input.conversationId}`,

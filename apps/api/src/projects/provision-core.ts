@@ -46,10 +46,9 @@ import { remoteBranchExists } from './git';
 import { config } from '../config';
 import { logger as appLogger } from '../lib/logger';
 import { db } from '../shared/db';
-import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { getProjectMemberRole, grantProjectRole, projectQuotaDenial } from './lib/access';
+import { getProjectMemberRole, grantProjectRole, projectCreationDenial } from './lib/access';
 import {
   buildConnectionRef,
   getProjectGitConnection,
@@ -57,7 +56,12 @@ import {
   resolveProjectGitAuth,
   upsertProjectGitConnection,
 } from './lib/git';
-import { metadataMerge } from './lib/metadata-merge';
+import { renameAccountOfSoleProject } from './lib/workspace-name';
+import {
+  isWorkspaceOnePerAccountConflict,
+  workspaceHasProjectBody,
+  workspaceHasProjectDenial,
+} from '../workspaces/one-project';
 import {
   buildCachedFastBootGitHint,
   resolveFastBootGitHintWithCache,
@@ -82,6 +86,13 @@ import { setContextField } from '../lib/request-context';
 import { kickProjectTemplatePrebuilds } from '../snapshots/builder';
 import type { AccountRole, ProjectRole } from './access';
 import { captureProductEvent } from '../shared/product-analytics';
+import {
+  type NewWorkspaceCaller,
+  newWorkspaceCallerDenial,
+  newWorkspaceConflict,
+  resolveNewWorkspaceAccount,
+} from './new-workspace';
+import { deleteProjectRows, insertProjectRow, metadataMerge, type ProjectRowInsert, projectsView, updateProjectRows } from '../workspaces/rows';
 
 export const PROVISION_PHASES = [
   'validating',
@@ -100,10 +111,8 @@ const FAST_BOOT_SEED_HINT_TIMEOUT_MS = 8_000;
  * declared OpenAPI responses (`201` + `errors(400, 403, 409, 502, 503)`).
  * Kept as a literal union, not `number`, so `c.json(result.body,
  * result.status)` is checked against the route's declared responses instead
- * of a route silently casting the mismatch away with `as never`. 403 is
- * produced here too — `projectQuotaDenial` (`lib/project-quota.ts`) returns the
- * 403 body when the account is at its project limit, not only from each
- * route's own pre-`runProvision` `authorize()` gate.
+ * of a route silently casting the mismatch away with `as never`. 403 comes
+ * from the new-workspace caller rule and each route's own `authorize()` gate.
  */
 export type ProvisionResultStatus = 201 | 400 | 403 | 409 | 502 | 503;
 
@@ -145,6 +154,44 @@ export function createRepoFailureResult(error: unknown): ProvisionResult {
 export interface ProvisionContext {
   body: Record<string, unknown>;
   scope: { userId: string; accountId: string; accountRole: AccountRole };
+  /** The request checks, when the route already ran them (a new workspace validates before it picks an account). */
+  validated?: ProvisionRequest;
+  /** `new_workspace: true`: the account is this project's workspace, and takes its name. */
+  newWorkspace?: boolean;
+  /**
+   * The project row's id, instead of a fresh random one. Only Set up of a
+   * project-less workspace passes it (`POST /v1/workspaces/:id/setup`):
+   * project_id = workspace_id, so the workspace keeps its id (design.md §3.2 C1).
+   */
+  projectId?: string;
+}
+
+/**
+ * The context for `new_workspace: true`. The request checks run FIRST, so an
+ * invalid name never creates an account; then the account is picked or
+ * created (`./new-workspace.ts`). The caller is that account's owner.
+ */
+export async function buildNewWorkspaceProvisionContext(
+  body: Record<string, unknown>,
+  caller: NewWorkspaceCaller,
+): Promise<{ result: ProvisionResult } | { ctx: ProvisionContext }> {
+  const denial = newWorkspaceCallerDenial(caller);
+  if (denial) return { result: denial };
+  const conflict = newWorkspaceConflict(body);
+  if (conflict) return { result: conflict };
+  const validated = await validateProvisionRequest(body);
+  if ('result' in validated) return validated;
+  const account = await resolveNewWorkspaceAccount(caller, validated.request.name, validated.request.idempotencyKey);
+  if (!account.ok) return { result: account.result };
+  setContextField('accountId', account.accountId);
+  return {
+    ctx: {
+      body,
+      scope: { userId: caller.userId, accountId: account.accountId, accountRole: 'owner' },
+      validated: validated.request,
+      newWorkspace: true,
+    },
+  };
 }
 
 /**
@@ -180,7 +227,7 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   emit('validating');
   const { body, scope } = ctx;
 
-  const validated = await validateProvisionRequest(body);
+  const validated = ctx.validated ? { request: ctx.validated } : await validateProvisionRequest(body);
   if ('result' in validated) return validated.result;
   const { request } = validated;
   const { provider, backend, name, sourceItemId, starterTemplate } = request;
@@ -189,7 +236,7 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   // UUID, so managed repos under the shared org NEVER collide (two projects can
   // share a name). We generate the project id up front to bake it into the repo
   // name and reuse it as the project row id.
-  const projectId = randomUUID();
+  const projectId = ctx.projectId ?? randomUUID();
   const baseSlug = (
     name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') ||
     'kortix-project'
@@ -329,6 +376,11 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
       { accountId: scope.accountId, source: 'project-create' },
     );
   }
+
+  // Workspace name = account name = project name. A reused empty account
+  // still carries its old name ("Ada's workspace"); the new workspace's
+  // account takes the project's.
+  if (ctx.newWorkspace) await renameAccountOfSoleProject(row, row.name);
 
   captureProductEvent({
     userId: scope.userId,
@@ -536,11 +588,11 @@ async function replayOrEnforceProjectQuota(
     };
   }
 
-  const provisionQuota = await projectQuotaDenial(scope.accountId);
-  if (provisionQuota) {
-    // The body `enforceProjectQuota` sends as its 403 (see `lib/project-quota.ts`).
-    return { status: 403, body: provisionQuota };
-  }
+  // 409 `workspace_has_project` (the account already holds its one active
+  // project) — the body `enforceProjectQuota` sends (`lib/project-quota.ts`).
+  // Above `createRepo`, so a refused create mints no repo.
+  const denial = await projectCreationDenial(scope.accountId);
+  if (denial) return denial;
   return null;
 }
 
@@ -587,6 +639,50 @@ async function createManagedRepo(
   }
 }
 
+/**
+ * Delete the managed repo a refused INSERT minted. The DELETE MUST LEAVE A
+ * RECORD EITHER WAY: this path exists to prevent an orphaned managed repo, so a
+ * failure that logs nothing turns "no orphan is left behind" into a claim
+ * nobody can check. `stage` names the race that lost.
+ */
+async function deleteMintedRepo(
+  backend: ProvisionRequest['backend'],
+  provider: ProvisionRequest['provider'],
+  provisioned: ProvisionedRepo,
+  orphanContext: string,
+  stage: 'idempotency_race' | 'workspace_has_project',
+): Promise<void> {
+  if (!provisioned.repoOwner || !provisioned.repoName) {
+    // git-backends/github.ts `deleteRepo` returns silently without an owner
+    // and name — the repo would survive with no trace of why.
+    console.error(
+      `[projects] ORPHANED MANAGED REPO — provision cannot delete the repo it minted, the ` +
+        `backend ref has no owner/name ${orphanContext} stage=${stage}`,
+    );
+    return;
+  }
+  try {
+    await backend.deleteRepo({
+      provider,
+      upstreamUrl: provisioned.upstreamUrl,
+      externalRepoId: provisioned.externalRepoId,
+      repoOwner: provisioned.repoOwner,
+      repoName: provisioned.repoName,
+      installationId: provisioned.installationId,
+      credentialRef: provisioned.credentialRef,
+      defaultBranch: provisioned.defaultBranch,
+      managed: true,
+      metadata: {},
+    } satisfies GitConnectionRef);
+  } catch (deleteError) {
+    console.error(
+      `[projects] ORPHANED MANAGED REPO — provision failed to delete the repo it minted ` +
+        `${orphanContext} stage=${stage}:`,
+      deleteError instanceof Error ? deleteError.message : deleteError,
+    );
+  }
+}
+
 /** Insert the project row. The loser of an idempotency-key race deletes the repo it minted. */
 async function insertProvisionedProject(
   emit: ProvisionEmit,
@@ -606,74 +702,89 @@ async function insertProvisionedProject(
     now: Date;
   },
 ): Promise<{ result: ProvisionResult } | { row: ProjectRow }> {
-  const insertProjectRow = () => db
-    .insert(projects)
-    .values({
-      projectId,
-      accountId: scope.accountId,
-      name,
-      // Recorded so a LATER retry short-circuits above, and so the partial
-      // unique index makes "one key, one project" true even when two calls
-      // race past the pre-check. Null when the caller sent no key.
-      idempotencyKey,
-      repoUrl: provisioned.upstreamUrl,
-      defaultBranch: provisioned.defaultBranch,
-      // The starter this route seeds (buildProjectSeedFiles, below) ships
-      // kortix.yaml — record that as the canonical path. A CLI `kortix ship`
-      // that pushes its own files instead of seeding still scaffolded via
-      // `kortix init` (same @kortix/starter, same kortix.yaml), so this holds
-      // for both the web and CLI creation paths.
-      manifestPath: 'kortix.yaml',
-      status: 'active',
-      metadata: {
-        git: {
-          url: provisioned.upstreamUrl,
-          upstream_url: provisioned.upstreamUrl,
-          default_branch: provisioned.defaultBranch,
-          provider,
-          managed: true,
-          auth: {
-            method: authMethod,
-            ref: provisioned.credentialRef,
-            installation_id: provisioned.installationId,
-          },
-          repo_id: provisioned.externalRepoId,
-          owner: provisioned.repoOwner,
-          name: provisioned.repoName,
-          // Scaffold-seed intent + outcome. Without this, an empty managed repo
-          // is indistinguishable from a seeded one and nothing can repair it —
-          // the defect behind "brand-new project has no files, no agents, no
-          // skills, and session start 500s on refs/heads/main".
-          seed: initialSeedState,
+  const values: ProjectRowInsert = {
+    projectId,
+    accountId: scope.accountId,
+    name,
+    // Recorded so a LATER retry short-circuits above, and so the partial
+    // unique index makes "one key, one project" true even when two calls
+    // race past the pre-check. Null when the caller sent no key.
+    idempotencyKey,
+    repoUrl: provisioned.upstreamUrl,
+    defaultBranch: provisioned.defaultBranch,
+    // The starter this route seeds (buildProjectSeedFiles, below) ships
+    // kortix.yaml — record that as the canonical path. A CLI `kortix ship`
+    // that pushes its own files instead of seeding still scaffolded via
+    // `kortix init` (same @kortix/starter, same kortix.yaml), so this holds
+    // for both the web and CLI creation paths.
+    manifestPath: 'kortix.yaml',
+    status: 'active',
+    metadata: {
+      git: {
+        url: provisioned.upstreamUrl,
+        upstream_url: provisioned.upstreamUrl,
+        default_branch: provisioned.defaultBranch,
+        provider,
+        managed: true,
+        auth: {
+          method: authMethod,
+          ref: provisioned.credentialRef,
+          installation_id: provisioned.installationId,
         },
-        // MANDATORY DECLARED AGENTS (Phase 2): every project created through this
-        // route is "new" in the spec's sense — subject to declared-agent
-        // enforcement from birth, regardless of the platform-wide
-        // KORTIX_REQUIRE_DECLARED_AGENTS flag (see projectRequiresDeclaredAgents /
-        // createProjectSession). Pre-existing projects (this flag absent/false)
-        // keep the v1 adopt-to-govern behavior untouched.
-        require_declared_agents: true,
-        ...(iconGlyph ? { icon_glyph: iconGlyph } : icon ? { icon } : {}),
+        repo_id: provisioned.externalRepoId,
+        owner: provisioned.repoOwner,
+        name: provisioned.repoName,
+        // Scaffold-seed intent + outcome. Without this, an empty managed repo
+        // is indistinguishable from a seeded one and nothing can repair it —
+        // the defect behind "brand-new project has no files, no agents, no
+        // skills, and session start 500s on refs/heads/main".
+        seed: initialSeedState,
       },
-      updatedAt: now,
-    })
-    .returning();
+      // MANDATORY DECLARED AGENTS (Phase 2): every project created through this
+      // route is "new" in the spec's sense — subject to declared-agent
+      // enforcement from birth, regardless of the platform-wide
+      // KORTIX_REQUIRE_DECLARED_AGENTS flag (see projectRequiresDeclaredAgents /
+      // createProjectSession). Pre-existing projects (this flag absent/false)
+      // keep the v1 adopt-to-govern behavior untouched.
+      require_declared_agents: true,
+      ...(iconGlyph ? { icon_glyph: iconGlyph } : icon ? { icon } : {}),
+    },
+    updatedAt: now,
+  };
 
-  let row: Awaited<ReturnType<typeof insertProjectRow>>[number];
+  let row: ProjectRow;
   emit('registering');
   try {
-    [row] = await insertProjectRow();
+    row = await insertProjectRow(values);
   } catch (error) {
-    // Two provisions carrying one key raced past the pre-check above and this
-    // one lost the partial unique index. The winner's project exists; this
-    // request's upstream repo does not belong to anything and must not be left
-    // behind — that orphan is the exact outcome the key exists to prevent.
-    if (!isProvisionIdempotencyConflict(error)) throw error;
+    // Two unique indexes can refuse this INSERT:
+    //   - `uq_projects_workspace_account`: the account gained its one active
+    //     project between the pre-check and here (Workspaces 1:1);
+    //   - `idx_projects_account_idempotency_key`: two provisions carrying one
+    //     key raced past the pre-check, and this one lost.
+    // Either way this request's upstream repo belongs to nothing and must not
+    // be left behind. When both apply, Postgres names whichever index it
+    // checked first, so a workspace conflict whose key has a winner is the key
+    // race: the caller retried one create, and gets the winner's project.
+    const workspaceConflict = isWorkspaceOnePerAccountConflict(error);
+    if (!workspaceConflict && !isProvisionIdempotencyConflict(error)) throw error;
     const winner = await findIdempotentProvision(
       lookupProvisionByIdempotencyKey,
       scope.accountId,
       idempotencyKey,
     );
+    if (workspaceConflict && !winner) {
+      await deleteMintedRepo(
+        backend,
+        provider,
+        provisioned,
+        `account=${scope.accountId} repo=${provisioned.repoName ?? provisioned.upstreamUrl} ` +
+          `owner=${provisioned.repoOwner ?? 'unknown'} repo_id=${provisioned.externalRepoId ?? 'unknown'}`,
+        'workspace_has_project',
+      );
+      const occupied = await workspaceHasProjectDenial(scope.accountId);
+      return { result: { status: 409, body: occupied ?? workspaceHasProjectBody(scope.accountId, null) } };
+    }
     const mintedRepo = provisioned.repoName ?? provisioned.upstreamUrl;
     const orphanContext =
       `account=${scope.accountId} key=${idempotencyKey} ` +
@@ -683,40 +794,7 @@ async function insertProvisionedProject(
       `[projects] provision lost an idempotency-key race ${orphanContext} — deleting the repo ` +
         `this request minted`,
     );
-    // The DELETE MUST LEAVE A RECORD EITHER WAY. This is the one path whose
-    // entire purpose is preventing an orphaned managed repo, so a failure here
-    // that logs nothing turns "no orphan is left behind" into a claim nobody
-    // can check. The warn above states intent; these state outcome. Same shape
-    // as the seed rollback below (console.error, repo identity, stage).
-    if (!provisioned.repoOwner || !provisioned.repoName) {
-      // git-backends/github.ts `deleteRepo` returns silently without an owner
-      // and name — the repo would survive with no trace of why.
-      console.error(
-        `[projects] ORPHANED MANAGED REPO — provision cannot delete the repo it minted, the ` +
-          `backend ref has no owner/name ${orphanContext} stage=idempotency_race`,
-      );
-    } else {
-      try {
-        await backend.deleteRepo({
-          provider,
-          upstreamUrl: provisioned.upstreamUrl,
-          externalRepoId: provisioned.externalRepoId,
-          repoOwner: provisioned.repoOwner,
-          repoName: provisioned.repoName,
-          installationId: provisioned.installationId,
-          credentialRef: provisioned.credentialRef,
-          defaultBranch: provisioned.defaultBranch,
-          managed: true,
-          metadata: {},
-        } satisfies GitConnectionRef);
-      } catch (deleteError) {
-        console.error(
-          `[projects] ORPHANED MANAGED REPO — provision failed to delete the repo it minted ` +
-            `${orphanContext} stage=idempotency_race:`,
-          deleteError instanceof Error ? deleteError.message : deleteError,
-        );
-      }
-    }
+    await deleteMintedRepo(backend, provider, provisioned, orphanContext, 'idempotency_race');
     // ONE RULE, BOTH CALL SITES — the winner goes through the SAME classifier
     // the pre-check uses. This path is MORE exposed to the in-flight problem,
     // not less: we re-read the winner milliseconds after its own INSERT, while
@@ -868,17 +946,13 @@ async function seedProvisionedRepo(
       // the whole object) so this creation-seed write can't revert a pin the
       // prebuild kick may have activated concurrently. `row.metadata` above is
       // the in-memory copy the creation response serializes.
-      await db
-        .update(projects)
-        .set({
-          metadata: metadataMerge({
-            ...(seededDefaultAgent ? { default_agent: seededDefaultAgent } : {}),
-            git: { seed: verifiedSeedState },
-          }),
-          updatedAt: new Date(),
-        })
-        .where(eq(projects.projectId, row.projectId))
-        .catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
+      await updateProjectRows(eq(projectsView.projectId, row.projectId), {
+        metadata: metadataMerge({
+          ...(seededDefaultAgent ? { default_agent: seededDefaultAgent } : {}),
+          git: { seed: verifiedSeedState },
+        }),
+        updatedAt: new Date(),
+      }).catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
 
       // Same switch as the create-time hint (#6973): a seeded project's FIRST
       // session must already find its base tip + scaffold delta cached.
@@ -946,7 +1020,7 @@ async function seedProvisionedRepo(
       }
       // A surviving row points at a deleted repo, and a retry with the same
       // idempotency key would replay it as a success.
-      await db.delete(projects).where(eq(projects.projectId, row.projectId)).catch((deleteError) => {
+      await deleteProjectRows(eq(projectsView.projectId, row.projectId)).catch((deleteError) => {
         appLogger.error(
           `[projects] provision rollback left the project row ${rollbackContext}:`,
           { error: deleteError instanceof Error ? deleteError.message : String(deleteError) },

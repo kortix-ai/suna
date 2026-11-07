@@ -145,6 +145,8 @@ export function targetOf(
   return { kind: 'web', url: webUrlOf(row.url, webBaseUrl) };
 }
 
+/** A row keeps the pre-2026-11-06 `/projects/…` path; the web page is `/workspaces/…`. */
 export function webUrlOf(url: string, webBaseUrl: string): string {
-  return `${webBaseUrl.replace(/\/+$/, '')}${withoutNotificationParam(url)}`;
+  const path = withoutNotificationParam(url).replace(/^\/projects(?=[/?#]|$)/, '/workspaces');
+  return `${webBaseUrl.replace(/\/+$/, '')}${path}`;
 }

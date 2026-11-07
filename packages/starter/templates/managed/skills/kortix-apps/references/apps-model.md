@@ -38,7 +38,7 @@ processes:
   <app> <machine>` acts on one. Destroying a machine keeps its volume, and its
   group runs one machine fewer.
 - `kortix apps exec <app> [--machine <id>] -- <command…>` runs one command in a
-  running machine (project admins; audited) and returns its output and exit code.
+  running machine (workspace admins; audited) and returns its output and exit code.
 
 Every machine gets this environment, besides the release's `env` and `secrets`:
 
@@ -76,7 +76,7 @@ services:
   `<env>-<slug>-<route key>--<name>` (local: `<route key>--<name>.apps.localhost`).
   `app.services[].url` has each URL.
 - `access` gates the service's host. `public`: no gate. `app`: the App's access
-  policy. `admins`: the App's policy, then project admins (`project.app.admin`)
+  policy. `admins`: the App's policy, then workspace admins (`workspace.app.admin`)
   only.
 - The proxy spreads requests over the group's running machines. With
   `auto_stop_machines: stop`, an idle machine stops and the next request, a
@@ -160,11 +160,11 @@ App's blocks into `kortix.yaml`, writes the files its Apps build from, and
 deploys them. Templates are data: pinned images, config and files, nothing the
 platform runs specially.
 
-- **Files:** paths from the project root (for example
+- **Files:** paths from the repository root (for example
   `apps/<name>/dashboard/Dockerfile`). A file that already exists is yours:
   `launch` keeps it.
 - **Secrets:** right after the named App deploys, `launch` runs a command on
-  its machine and writes the last line it prints to a project secret. Every
+  its machine and writes the last line it prints to a workspace secret. Every
   launch rewrites it: the value belongs to the App just launched, and one left
   by an earlier App of the same name is stale. The value is never printed.
 

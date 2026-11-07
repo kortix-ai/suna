@@ -41,8 +41,8 @@ beforeAll(async () => {
   await db.execute(sql`INSERT INTO auth.users (id, email, instance_id, aud, role) VALUES (${PRIYA}::uuid, ${`thread-files-${PRIYA.slice(0, 8)}@example.test`}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')`);
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'thread-files' });
   await db.insert(projects).values([
-    { projectId: PROJECT, accountId: ACCOUNT, name: 'thread-files', repoUrl: 'https://example.test/t.git', metadata: { experimental: { chat: true } } },
-    { projectId: OFF_PROJECT, accountId: ACCOUNT, name: 'thread-files-off', repoUrl: 'https://example.test/o.git', metadata: {} },
+    { splitPending: true, projectId: PROJECT, accountId: ACCOUNT, name: 'thread-files', repoUrl: 'https://example.test/t.git', metadata: { experimental: { chat: true } } },
+    { splitPending: true, projectId: OFF_PROJECT, accountId: ACCOUNT, name: 'thread-files-off', repoUrl: 'https://example.test/o.git', metadata: {} },
   ]);
   await db.insert(projectSpaces).values([
     { spaceId: GENERAL, accountId: ACCOUNT, projectId: PROJECT, kind: 'channel', slug: 'general', name: 'general', isDefault: true },

@@ -63,6 +63,7 @@ describe('qk.project', () => {
     const scope = qk.project.scope(id);
     const scoped = [
       qk.project.summary(id),
+      qk.project.workspace(id),
       qk.project.detail(id),
       qk.project.sessionsScope(id),
       qk.project.sessions(id),

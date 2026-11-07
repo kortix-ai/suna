@@ -41,7 +41,7 @@ Point it at a different backend without a rebuild:
 pnpm --filter @kortix/desktop-electron dev:dev-env    # https://dev.kortix.com
 pnpm --filter @kortix/desktop-electron dev:prod-env   # https://kortix.com
 # or:
-KORTIX_DESKTOP_URL=https://kortix.com/projects pnpm --filter @kortix/desktop-electron dev
+KORTIX_DESKTOP_URL=https://kortix.com/workspaces pnpm --filter @kortix/desktop-electron dev
 ```
 
 At runtime you can also switch via the native menu (the **Kortix** menu: the
@@ -56,10 +56,10 @@ remembered across launches (stored in `userData/frontend_url`).
 the real one.
 
 Launch and **Go ▸ Home** load the instance's site root (`homeUrl()` in
-`src/instance-store.js`), not the saved `/projects` URL. The web middleware
+`src/instance-store.js`), not the saved `/workspaces` URL. The web middleware
 sends a signed-in `/` into the project this profile had open last, from the
 owner-scoped `kortix_last_project` cookie — the same as `kortix.com` in a
-browser. With no remembered project it lands on the `/projects/start` door. A
+browser. With no remembered project it lands on the `/workspaces/start` door. A
 saved URL with any other path loads as saved.
 
 **Go ▸ Copy Current URL** (⌘/Ctrl+L) copies the address the window is on — the
@@ -112,7 +112,7 @@ first-launch marker, and URL precedence are `src/instance-store.js`.
   `dev.kortix.com` for dev builds). Nothing is written to `frontend_url`, so the
   app keeps following the baked default.
 - **Self-hosted** — the URL the user types. A bare host gets `https://` (a bare
-  `localhost` gets `http://`), a `/` path becomes `/projects`, and query and
+  `localhost` gets `http://`), a `/` path becomes `/workspaces`, and query and
   fragment are dropped. URLs with a username or password are rejected. The app
   sends `HEAD` with no credentials and an 8 s timeout; any HTTP status counts as
   reachable. A network error shows inline, with **Continue Anyway** for hosts
@@ -192,7 +192,7 @@ Enter starts a new session with that prompt. The same bar opens from
 - **Where the session starts.** The project the app window shows, else the
   project this profile opened last (the `kortix_last_project` cookie). The bar
   reads "New session"; its tooltip names the project. With no project known, the prompt
-  opens `/projects/start?q=…`: it fills the composer there and does not send.
+  opens `/workspaces/start?q=…`: it fills the composer there and does not send.
 - **Send to a recent session.** The picker on the right of the bar is a native
   menu: "New session", then the person's 5 most recent root sessions there
   (the sidebar's list, title and status dot, plus last activity). A pick stays

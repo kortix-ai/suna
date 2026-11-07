@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 const last = () => calls[calls.length - 1]!;
-const BASE = 'http://test.local/projects/p1/artifacts';
+const BASE = 'http://test.local/workspaces/p1/artifacts';
 
 test('listArtifacts filters by space, by each agent of that space (repeated), or by unbound', async () => {
   await listArtifacts('p1', { space: 'ops', agents: ['builder', 'writer'] });

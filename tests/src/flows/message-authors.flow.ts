@@ -13,8 +13,8 @@ flow(
     domain: 'sessions',
     requires: ['database'],
     routes: [
-      'GET /v1/projects/:projectId/sessions/:sessionId/message-authors',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/message-authors',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
     ],
   },
   async (ctx) => {
@@ -36,7 +36,7 @@ flow(
     const parent = await seed({ visibility: 'project', metadata: { name: 'Coordinator' } });
     const child = await seed({ visibility: 'project', parentSessionId: parent, metadata: { name: 'Worker', initial_prompt: 'go' } });
     const priv = await seed({ visibility: 'private' });
-    const route = '/v1/projects/:projectId/sessions/:sessionId/message-authors';
+    const route = '/v1/workspaces/:projectId/sessions/:sessionId/message-authors';
     type Authors = { authors: Record<string, any>; initial_author: any };
 
     await ctx.step('a spawned session reports its parent as initial_author and an empty authors map → 200', async () => {
@@ -52,7 +52,7 @@ flow(
     await ctx.step('a prompt the owner sends is attributed to the owner under its wire message id', async () => {
       const messageId = mintWireMessageId();
       const sp = { projectId: project.id, sessionId: parent };
-      (await owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts', promptBody('hello', messageId), { params: sp })).status([200, 202]);
+      (await owner.post('/v1/workspaces/:projectId/sessions/:sessionId/prompts', promptBody('hello', messageId), { params: sp })).status([200, 202]);
       const r = await owner.get(route, { params: sp });
       r.status(200)
         .body()

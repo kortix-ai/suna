@@ -5,9 +5,18 @@
  * import the other (a `index.ts` ⇄ `json-schema.ts` cycle broke bun's
  * bundler: circular top-level `const` access threw "Cannot access before
  * initialization"). `index.ts` re-exports everything here for backward
- * compatibility with existing consumers of `@kortix/manifest-schema`. Its one
- * import, the channel descriptor, has no imports of its own.
+ * compatibility with existing consumers of `@kortix/manifest-schema`. Its two
+ * imports, the channel descriptor and the workspace action alias map, have no
+ * imports of their own.
  */
+import {
+  HUMAN_ONLY,
+  WORKSPACE_ACTION_BY_LEGACY,
+  isHumanOnlyAction,
+  toLegacyAction,
+  toWorkspaceAction,
+  type LegacyIamAction,
+} from '@kortix/shared/workspace-actions';
 import { CHANNEL_PLATFORM_IDS, channelConnectorSlug } from '@kortix/shared/channel-descriptors';
 
 /** The canonical spelling of "every name" in kortix.yaml. `all` is its accepted alias. */
@@ -233,98 +242,52 @@ export const SANDBOX_MEMORY_BOUNDS = { min: 1, max: 128 } as const;
 export const SANDBOX_DISK_BOUNDS = { min: 1, max: 500 } as const;
 
 /**
- * The permissions an agent's `kortix_permissions` grant may list — the
- * project-scoped surface (`kortix_cli` is the deprecated manifest alias).
- * MUST stay in sync with apps/api/src/iam/actions.ts PROJECT_ACTIONS —
- * every project-scoped action, including the manager-tier leaves
- * (`project.delete`, `project.members.manage`, `project.gateway.keys.manage`):
- * these are still reachable via a project's `manager` role, so an agent can be
- * granted them too.
+ * The permissions an agent's `kortix_permissions` grant may list: EVERY
+ * workspace action except HUMAN_ONLY (design.md §3.2 C8). One workspace scope,
+ * and the agent either can or cannot: members, roles, groups, policies, billing
+ * reads and the workspace settings are ordinary grantable actions. `"*"` means
+ * all of them.
  *
- * Account-scoped admin actions (member.*, billing.*, token.*, project.create, …)
- * are excluded here — but omission from this list is NOT the mechanism
- * that keeps an agent off them. The actual enforcement is that every
- * agent-session token is project-scoped (`account_tokens.project_id`):
- * apps/api's IAM v2 engine (`iam/engine-v2.ts`'s `computeTokenScope`) refuses
- * ANY account-scope action outright for a project-bound token — BEFORE the
- * agent's `kortix_permissions` grant is even loaded or consulted. This list is a
- * curation/UX surface (what the CLI/dashboard editor OFFER as grantable, and
- * what `validateGrantList` flags as a bad `kortix_permissions` entry), not the
- * security boundary itself — grant-omission alone would not stop a
- * hypothetical non-project-scoped token from calling an account action.
+ * HUMAN_ONLY (`@kortix/shared/workspace-actions`) is the one wall: minting
+ * credentials (`token.create`, `token.personal.create`,
+ * `project.credentials.issue`, `project.gateway.keys.manage`) and moving money
+ * (`billing.write`, `account.delete`, `project.delete`). apps/api refuses them
+ * for every agent session whatever the grant says; a manifest that lists one
+ * still validates, with a warning, because the entry grants nothing.
  *
- * The channel.* resource actions (channel.send, …) and the
- * project.gateway.routing.edit / project.session.exec / project.schedule.* /
- * project.webhook.* leaves were removed from the catalog (IAM enforcement
- * audit, 2026-07): none of them were ever asserted on any route, so granting
- * or omitting them was a silent no-op.
+ * Legacy spelling, as stored; `isGrantableKortixPermission` accepts both
+ * spellings, and `GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS` is the same list in
+ * workspace names. Order: the per-workspace actions first (`project.*`), then
+ * the workspace administration actions, in table order.
+ *
+ * MUST stay equal to apps/api `projects/agents/parse.ts`
+ * GRANTABLE_KORTIX_PERMISSIONS (the unit-agents-parse drift guard).
  */
-// MUST stay in sync with apps/api projects/agents.ts GRANTABLE_KORTIX_PERMISSIONS (=
-// Object.values(PROJECT_ACTIONS)). The unit-agents-parse drift-guard test
-// fails loudly if these diverge (this package can't import apps/api).
+const LEGACY_ACTIONS = Object.keys(WORKSPACE_ACTION_BY_LEGACY) as LegacyIamAction[];
 export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
-  'project.read',
-  'project.write',
-  'project.delete',
-  'project.session.read',
-  'project.session.start',
-  'project.session.stop',
-  'project.session.bindings.write',
-  'project.members.read',
-  'project.members.manage',
-  'project.trigger.read',
-  'project.trigger.create',
-  'project.trigger.update',
-  'project.trigger.delete',
-  'project.trigger.fire',
-  'project.gateway.logs.read',
-  'project.gateway.spend.read',
-  'project.usage.read',
-  'project.gateway.budget.set',
-  'project.gateway.keys.manage',
-  // IAM v1 per-capability leaves.
-  'project.agent.read',
-  'project.agent.write',
-  'project.skill.read',
-  'project.skill.write',
-  'project.command.read',
-  'project.command.write',
-  'project.file.read',
-  'project.file.write',
-  'project.settings.write',
-  'project.sandbox.write',
-  'project.model.read',
-  'project.model.write',
-  'project.gitops.read',
-  'project.gitops.push',
-  'project.gitops.merge',
-  'project.gitops.ref.any',
-  'project.gitops.ref.delete',
-  'project.secret.read',
-  'project.secret.write',
-  'project.connector.read',
-  'project.connector.connections.manage',
-  'project.connector.write',
-  'project.app.read',
-  'project.app.write',
-  'project.app.deploy',
-  'project.app.admin',
-  'project.review.read',
-  'project.review.submit',
-  'project.review.act',
-  // Artifacts: read = gallery and viewer; write = publish and edit; manage =
-  // anyone's sharing; public = public links.
-  'project.artifact.read',
-  'project.artifact.write',
-  'project.artifact.manage',
-  'project.artifact.public',
-  // Minting a project credential. Grantable so a manifest CAN hand it to an
-  // agent explicitly, but note the two credential routes refuse an
-  // agent-session token outright (projects/routes/secret-delivery.ts) — an agent that could
-  // mint a fresh, grant-less project token would escape its own ceiling. The
-  // leaf exists so a CUSTOM ROLE can withhold it from humans.
-  'project.credentials.issue',
-];
+  ...LEGACY_ACTIONS.filter((a) => a.startsWith('project.') && a !== 'project.create'),
+  ...LEGACY_ACTIONS.filter((a) => !a.startsWith('project.') || a === 'project.create'),
+].filter((a) => !HUMAN_ONLY.has(a));
+
+/** HUMAN_ONLY, both spellings: listed in a manifest it validates with a warning and grants nothing. */
+export function isHumanOnlyKortixPermission(action: string): boolean {
+  return isHumanOnlyAction(action);
+}
+
+/**
+ * The workspace names of `GRANTABLE_KORTIX_PERMISSIONS`, one per entry, in the
+ * same order (`workspace.session.start` for `project.session.start`). The one
+ * alias map is `@kortix/shared/workspace-actions`. A `kortix_permissions` list
+ * may use either name; the grant resolves to the legacy name the engine and
+ * the stored roles compare against.
+ */
+export const GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS: readonly string[] =
+  GRANTABLE_KORTIX_PERMISSIONS.map(toWorkspaceAction);
+
+/** True when `action` is grantable to an agent under either name. */
+export function isGrantableKortixPermission(action: string): boolean {
+  return GRANTABLE_KORTIX_PERMISSIONS.includes(toLegacyAction(action));
+}
 
 /**
  * Actions removed from the enforcement catalog (IAM dead-catalog cleanup,
@@ -367,7 +330,7 @@ export const DEPRECATED_KORTIX_PERMISSION_ALIASES: Readonly<Record<string, reado
  * fail the agent's parse and give it an EMPTY grant. `project.room.*`: Rooms,
  * removed 2026-11. `project.artifact.comment`: artifact comments, removed 2026-11-06.
  */
-export const RETIRED_KORTIX_PERMISSIONS: readonly string[] = ['project.room.read', 'project.room.write', 'project.artifact.comment'];
+export const RETIRED_KORTIX_PERMISSIONS: readonly string[] = ['project.room.read', 'project.room.write', 'project.artifact.comment', 'workspace.artifact.comment'];
 
 /** Kortix skills retired with their feature. An agent that still grants one validates with a warning. `kortix-rooms`: Rooms, removed 2026-11. */
 export const RETIRED_KORTIX_SKILL_NAMES: readonly string[] = ['kortix-rooms'];

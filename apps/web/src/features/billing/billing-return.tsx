@@ -21,7 +21,7 @@ import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
  * user is a refreshed wallet and an acknowledgement.
  *
  * This used to be two near-identical 25-line effects inlined in the projects
- * LIST page — which is why every checkout return had to land on `/projects`,
+ * LIST page — which is why every checkout return had to land on `/workspaces`,
  * the one place in the product that is deliberately never a destination. The
  * handling is route-independent now (mounted once in the `(app)` layout), so a
  * return can land wherever the user actually belongs.
@@ -82,7 +82,7 @@ export const BILLING_RETURN_PARAMS: readonly string[] = RETURNS.map((r) => r.par
  * Producer and consumer live in one file on purpose. When the handling lived in
  * the projects page, "where does a checkout return land" was an implicit
  * consequence of where the effect happened to be mounted, and every producer
- * hardcoded `/projects` to match it. Now the destination is a decision, made
+ * hardcoded `/workspaces` to match it. Now the destination is a decision, made
  * once, here: reopen Billing for the account that owns the purchase.
  */
 export function useBillingReturnUrl(): (param: BillingReturnParam) => string {

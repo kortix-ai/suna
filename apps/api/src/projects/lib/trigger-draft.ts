@@ -22,9 +22,14 @@ import { readAccountAutomationPause } from '../../accounts/automation-pause';
 
 // GET /v1/projects
 
+/**
+ * The URL Kortix shows for a webhook trigger: the canonical workspace path.
+ * `/v1/webhooks/projects/<id>/<slug>` answers the same, permanently, so a
+ * sender configured with the old URL needs no change.
+ */
 export function buildPublicWebhookUrl(projectId: string, slug: string): string {
   const root = deriveKortixApiRoot(config.KORTIX_URL);
-  return `${root}/v1/webhooks/projects/${projectId}/${slug}`;
+  return `${root}/v1/webhooks/workspaces/${projectId}/${slug}`;
 }
 
 // ── Git-backed trigger CRUD helpers ─────────────────────────────────────────

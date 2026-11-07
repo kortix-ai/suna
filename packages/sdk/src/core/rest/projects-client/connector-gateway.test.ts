@@ -81,7 +81,7 @@ test('catalog uses the project-scoped route and the shared token seam', async ()
 
   expect(result).toEqual(catalog.connectors);
   expect(calls[0]?.url).toBe(
-    'http://test.local/v1/connectors/projects/project%2Fone/catalog',
+    'http://test.local/v1/connectors/workspaces/project%2Fone/catalog',
   );
   expect(calls[0]?.method).toBe('GET');
   expect(calls[0]?.headers.get('authorization')).toBe('Bearer agent-token');
@@ -195,7 +195,7 @@ test('call accepts one tool identifier and sends the canonical gateway payload',
 
   expect(result).toEqual({ ok: true, data: { ts: '1.2' }, risk: 'write' });
   expect(calls[0]?.url).toBe(
-    'http://test.local/v1/connectors/projects/project-one/call',
+    'http://test.local/v1/connectors/workspaces/project-one/call',
   );
   expect(calls[0]?.method).toBe('POST');
   expect(JSON.parse(String(calls[0]?.body))).toEqual({
@@ -286,7 +286,7 @@ test('attachment upload sends raw bytes through the shared token seam', async ()
 
   expect(result.attachment_id).toBe('attachment-one');
   expect(calls[0]?.url).toBe(
-    'http://test.local/v1/connectors/projects/project%2Fone/attachments',
+    'http://test.local/v1/connectors/workspaces/project%2Fone/attachments',
   );
   expect(calls[0]?.method).toBe('POST');
   expect(calls[0]?.headers.get('authorization')).toBe('Bearer agent-token');

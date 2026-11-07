@@ -37,8 +37,7 @@ export interface ResolveAccountBillingOptions {
   /**
    * Bypass the cached value and re-read the row. The fresh result still
    * populates the cache. Use where a stale answer is not acceptable — e.g.
-   * `maxProjectsForAccount`, which must observe a just-funded account
-   * immediately, and every entitlement gate that an admin action can flip.
+   * every entitlement gate that an admin action can flip.
    */
   fresh?: boolean;
   /**

@@ -83,6 +83,7 @@ mock.module('../shared/resolve-account', () => ({
 }));
 
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: true,
   db: {
     // isWebhookEventProcessed: the event has not been processed yet.

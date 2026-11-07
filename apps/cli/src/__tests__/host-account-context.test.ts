@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveAccountContext } from '../command-helpers.ts';
 
-const keys = ['KORTIX_CONFIG_FILE', 'KORTIX_AUTH_FILE', 'KORTIX_TOKEN', 'KORTIX_API_URL', 'KORTIX_DISABLE_SANDBOX_ENV_FILE'] as const;
+const keys = ['KORTIX_CONFIG_FILE', 'KORTIX_AUTH_FILE', 'KORTIX_TOKEN', 'KORTIX_API_URL', 'KORTIX_DISABLE_SANDBOX_ENV_FILE', 'KORTIX_WORKSPACE_ID', 'KORTIX_PROJECT_ID'] as const;
 const saved: Record<string, string | undefined> = {};
 let dir: string;
 
@@ -79,7 +79,7 @@ test('real permissions and audit CLI processes send the named host account', asy
       expect(JSON.parse(stdout)).toEqual(command === 'audit' ? { events: [], next_cursor: null } : { permissions: [] });
     }
     expect(requests).toHaveLength(2);
-    expect(requests.every(path => path.includes('/accounts/other-account/'))).toBe(true);
+    expect(requests.every(path => path.includes('/workspaces/other-account/'))).toBe(true);
   } finally { server.stop(true); }
 });
 
@@ -91,20 +91,32 @@ function link(account_id: string, host?: string) {
   return () => process.chdir(cwd);
 }
 
-test('a host-bound project link beats the active account, like the host notice', () => {
+test('a host-bound link names the workspace: its id beats the active account', () => {
   const restore = link('linked-account', 'home');
   try {
-    expect(resolveAccountContext()?.accountId).toBe('linked-account');
+    expect(resolveAccountContext()?.accountId).toBe('synthetic-project');
+    expect(resolveAccountContext({ workspaceArg: 'pinned-workspace' })?.accountId).toBe('pinned-workspace');
     expect(resolveAccountContext({ accountArg: 'pinned-account' })?.accountId).toBe('pinned-account');
     expect(resolveAccountContext({ hostArg: 'other' })?.accountId).toBe('other-account');
   } finally { restore(); }
 });
-test('a link with no host does not override the active account', () => {
+test('a link with no host names the workspace too, as for every workspace command', () => {
   const restore = link('linked-account');
-  try { expect(resolveAccountContext()?.accountId).toBe('home-account'); } finally { restore(); }
+  try { expect(resolveAccountContext()?.accountId).toBe('synthetic-project'); } finally { restore(); }
 });
 
-test('real groups CLI process creates the group in the linked account', async () => {
+test('KORTIX_WORKSPACE_ID, then KORTIX_PROJECT_ID, beat the link and the active account', () => {
+  const restore = link('linked-account', 'home');
+  try {
+    process.env.KORTIX_PROJECT_ID = 'env-project';
+    expect(resolveAccountContext()?.accountId).toBe('env-project');
+    process.env.KORTIX_WORKSPACE_ID = 'env-workspace';
+    expect(resolveAccountContext()?.accountId).toBe('env-workspace');
+    expect(resolveAccountContext({ workspaceArg: 'flag-workspace' })?.accountId).toBe('flag-workspace');
+  } finally { restore(); }
+});
+
+test('real groups CLI process creates the group in the linked workspace', async () => {
   const requests: string[] = [];
   const server = Bun.serve({ port: 0, fetch(request) {
     requests.push(`${request.method} ${new URL(request.url).pathname}`);
@@ -125,8 +137,10 @@ test('real groups CLI process creates the group in the linked account', async ()
     };
     await run();
     await run('--account', 'pinned-account');
-    expect(requests.some(r => r.includes('/accounts/linked-account/'))).toBe(true);
-    expect(requests.some(r => r.includes('/accounts/pinned-account/'))).toBe(true);
-    expect(requests.some(r => r.includes('/accounts/home-account/'))).toBe(false);
+    await run('--workspace', 'pinned-workspace');
+    expect(requests.some(r => r.includes('/workspaces/synthetic-project/'))).toBe(true);
+    expect(requests.some(r => r.includes('/workspaces/pinned-account/'))).toBe(true);
+    expect(requests.some(r => r.includes('/workspaces/pinned-workspace/'))).toBe(true);
+    expect(requests.some(r => r.includes('/workspaces/home-account/'))).toBe(false);
   } finally { server.stop(true); }
 });

@@ -12,14 +12,14 @@ import { CliSandbox, type CliResult } from '../fixtures/cli';
 import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixtures/database-project';
 import { localApiUsesTestProfile } from '../core/local-stack';
 
-const LIST = '/v1/projects/:projectId/artifacts';
-const SHARE = '/v1/projects/:projectId/artifacts/share';
-const TYPES = '/v1/projects/:projectId/artifacts/types';
-const ONE = '/v1/projects/:projectId/artifacts/:artifactId';
-const PIN = '/v1/projects/:projectId/artifacts/:artifactId/pin';
-const VERSIONS = '/v1/projects/:projectId/artifacts/:artifactId/versions';
-const RESTORE = '/v1/projects/:projectId/artifacts/:artifactId/restore';
-const CONTENT = '/v1/projects/:projectId/artifacts/:artifactId/content';
+const LIST = '/v1/workspaces/:projectId/artifacts';
+const SHARE = '/v1/workspaces/:projectId/artifacts/share';
+const TYPES = '/v1/workspaces/:projectId/artifacts/types';
+const ONE = '/v1/workspaces/:projectId/artifacts/:artifactId';
+const PIN = '/v1/workspaces/:projectId/artifacts/:artifactId/pin';
+const VERSIONS = '/v1/workspaces/:projectId/artifacts/:artifactId/versions';
+const RESTORE = '/v1/workspaces/:projectId/artifacts/:artifactId/restore';
+const CONTENT = '/v1/workspaces/:projectId/artifacts/:artifactId/content';
 
 type Detail = {
   artifact_id: string; title: string; type: string; path: string; entry: string; visibility: string;
@@ -37,7 +37,7 @@ const DOC_V2 = DOC_V1.replace('2.1%', '1.9%');
 
 /** Whether this target stores Files: the project row's `experimental.artifacts`, which is not a flag any more. */
 async function artifactsAvailable(ctx: FlowContext, projectId: string): Promise<boolean> {
-  const r = (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId', { params: { projectId } })).status(200);
+  const r = (await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId', { params: { projectId } })).status(200);
   return r.json<{ experimental: Record<string, boolean> }>().experimental.artifacts === true;
 }
 
@@ -58,11 +58,11 @@ flow(
     requires: ['database'],
     timeoutMs: 300_000,
     routes: [
-      'GET /v1/projects/:projectId',
-      'PATCH /v1/projects/:projectId/features',
+      'GET /v1/workspaces/:projectId',
+      'PATCH /v1/workspaces/:projectId/features',
       'GET /v1/projects/:projectId/artifacts/:artifactId/comments',
       'GET /v1/drives',
-      'GET /v1/projects/:projectId/link-preview',
+      'GET /v1/workspaces/:projectId/link-preview',
       `GET ${TYPES}`, `GET ${LIST}`, `POST ${LIST}`, `POST ${SHARE}`, `GET ${ONE}`, `PUT ${ONE}`, `PATCH ${ONE}`, `DELETE ${ONE}`,
       `PUT ${PIN}`, `DELETE ${PIN}`, `GET ${VERSIONS}`, `POST ${RESTORE}`, `GET ${CONTENT}`,
       'GET /v1/artifacts/s/:token', 'GET /v1/artifacts/s/:token/*', 'GET /v1/artifacts/p/:artifactId', 'GET /v1/artifacts/p/:artifactId/*', 'GET /v1/artifacts/meta/:artifactId',
@@ -206,7 +206,7 @@ flow(
     });
 
     await ctx.step("link preview (a doc's link card): ANON → 401, a non-http URL → 400, a private address is refused and answers nulls", async () => {
-      const PREVIEW = '/v1/projects/:projectId/link-preview';
+      const PREVIEW = '/v1/workspaces/:projectId/link-preview';
       (await ctx.client.as(ctx.P.ANON).get(PREVIEW, { params: p, query: { url: 'https://example.com/' } })).status(401);
       (await owner.get(PREVIEW, { params: p, query: { url: 'javascript:alert(1)' } })).status(400);
       const r = (await owner.get(PREVIEW, { params: p, query: { url: 'http://127.0.0.1:1/' } })).status(200).json<Record<string, unknown>>();
@@ -328,7 +328,7 @@ flow(
     domain: 'artifacts',
     requires: ['database'],
     timeoutMs: 300_000,
-    routes: ['GET /v1/projects/:projectId', 'POST /v1/projects/:projectId/cli-token', `GET ${LIST}`, `POST ${LIST}`, `POST ${SHARE}`, `PUT ${ONE}`, `PATCH ${ONE}`, `GET ${ONE}`, `GET ${CONTENT}`, `GET ${VERSIONS}`, `DELETE ${ONE}`],
+    routes: ['GET /v1/workspaces/:projectId', 'POST /v1/workspaces/:projectId/cli-token', `GET ${LIST}`, `POST ${LIST}`, `POST ${SHARE}`, `PUT ${ONE}`, `PATCH ${ONE}`, `GET ${ONE}`, `GET ${CONTENT}`, `GET ${VERSIONS}`, `DELETE ${ONE}`],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -347,7 +347,7 @@ flow(
     probe.status(201);
     const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId!, visibility: 'project', metadata: { name: 'Writer' } });
     ctx.track('session', sessionId, { projectId: project.id });
-    const minted = (await ctx.client.as(ctx.P.OWNER).post('/v1/projects/:projectId/cli-token', { name: ctx.fixtures.name('art') }, { params: { projectId: project.id } })).status(201)
+    const minted = (await ctx.client.as(ctx.P.OWNER).post('/v1/workspaces/:projectId/cli-token', { name: ctx.fixtures.name('art') }, { params: { projectId: project.id } })).status(201)
       .json<{ token_id: string; secret_key: string }>();
     await bindDatabaseSessionCredential(ctx.env, { tokenId: minted.token_id, commandId: crypto.randomUUID(), sessionId, accountId: team.id, projectId: project.id });
     const sandbox = new CliSandbox('artifacts');
@@ -406,7 +406,7 @@ flow(
         ok(await run(['artifacts', 'rm', page]), 'rm page');
       });
     } finally {
-      await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/cli-token/:tokenId', { params: { projectId: project.id, tokenId: minted.token_id } }).catch(() => {});
+      await ctx.client.as(ctx.P.OWNER).del('/v1/workspaces/:projectId/cli-token/:tokenId', { params: { projectId: project.id, tokenId: minted.token_id } }).catch(() => {});
     }
   },
 );

@@ -297,7 +297,13 @@ test('staged web artifacts: regenerate the audit-actions doc from staged audit l
       write(`apps/web/scripts/${script}`, '');
       copyFileSync(join(root, 'apps/web/scripts', script), join(dir, 'apps/web/scripts', script));
     }
-    for (const shared of ['audit-labels.ts', 'audit-route-labels.ts', 'audit-event-labels.ts']) {
+    for (const shared of [
+      'audit-labels.ts',
+      'audit-route-labels.ts',
+      'audit-event-labels.ts',
+      // audit-labels.ts renames legacy route keys to their workspace name.
+      'workspace-routes.ts',
+    ]) {
       write(`packages/shared/src/${shared}`, '');
       copyFileSync(
         join(root, 'packages/shared/src', shared),
@@ -309,6 +315,9 @@ test('staged web artifacts: regenerate the audit-actions doc from staged audit l
       join(root, 'apps/api/src/feature-flags/registry.ts'),
       join(dir, 'apps/api/src/feature-flags/registry.ts'),
     );
+    // The doc names each action's canonical /v1/workspaces route from the manifest.
+    write('tests/spec/routes.generated.json', '');
+    copyFileSync(join(root, 'tests/spec/routes.generated.json'), join(dir, 'tests/spec/routes.generated.json'));
     mkdirSync(join(dir, 'apps/web/content/docs'), { recursive: true });
     execFileSync('bun', ['apps/web/scripts/generate-audit-actions-doc.mjs'], {
       cwd: dir,

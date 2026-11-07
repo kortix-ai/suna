@@ -82,7 +82,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 /**
- * /projects/[id]/goals/[goalId] — one goal's home, in two columns. The goal
+ * /workspaces/[id]/goals/[goalId] — one goal's home, in two columns. The goal
  * is the server record (`useProjectGoal`): it re-reads every 60 seconds, and
  * every control writes on the revision the page shows.
  *

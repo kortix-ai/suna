@@ -124,7 +124,7 @@ describe('providerSheetKind — the web ProviderSheet branch order', () => {
 
 describe('accessLine', () => {
   test('the web access words', () => {
-    expect(accessLine({ kind: 'project' })).toBe('Everyone in this project');
+    expect(accessLine({ kind: 'project' })).toBe('Everyone in this workspace');
     expect(accessLine({ kind: 'you' })).toBe('Only you');
     expect(accessLine({ kind: 'owner', ownerId: 'u' }, 'ada@example.test')).toBe('Only ada@example.test');
     expect(accessLine({ kind: 'members', count: 1 })).toBe('1 member');

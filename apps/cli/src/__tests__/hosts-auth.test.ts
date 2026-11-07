@@ -98,7 +98,7 @@ function mockApi(
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
     requests.push(url);
-    if (url.endsWith('/v1/accounts/me')) {
+    if (url.endsWith('/v1/me')) {
       return new Response(
         JSON.stringify({
           user_id: 'user_1',
@@ -146,7 +146,7 @@ describe('kortix hosts login', () => {
     mockApi();
     const code = await runHosts(['login', '--token', 'kortix_pat_new', '--no-project']);
     expect(code).toBe(0);
-    expect(requests).toEqual(['https://api.test/v1/accounts/me']);
+    expect(requests).toEqual(['https://api.test/v1/me']);
     const host = getHost('test');
     expect(host?.token).toBe('kortix_pat_new');
     expect(host?.user_email).toBe('user@example.test');
@@ -172,7 +172,7 @@ describe('kortix hosts login', () => {
       '--no-project',
     ]);
     expect(code).toBe(0);
-    expect(requests).toEqual(['https://fresh.test/v1/accounts/me']);
+    expect(requests).toEqual(['https://fresh.test/v1/me']);
     const host = getHost('fresh');
     expect(host?.url).toBe('https://fresh.test');
     expect(host?.token).toBe('kortix_pat_new');
@@ -225,7 +225,19 @@ describe('kortix login — the account step of the funnel', () => {
     const code = await runHosts(['login', '--token', 'kortix_pat_new', '--no-project']);
     expect(code).toBe(0);
     expect(getHost('test')?.account_id).toBe('account_1');
-    expect(stripAnsi(stdout)).toContain('Active account: Personal');
+    // The account is the workspace's record, not a step the person reads.
+    expect(stripAnsi(stdout)).not.toContain('Active account');
+  });
+
+  test('zero accounts: the login holds and names create-or-join', async () => {
+    writeConfig('');
+    mockApi([]);
+    const code = await runHosts(['login', '--token', 'kortix_pat_new']);
+    expect(code).toBe(0);
+    expect(getHost('test')?.token).toBe('kortix_pat_new');
+    expect(stripAnsi(stdout)).toContain(
+      'No workspace yet. Create one with kortix workspaces create <name>, or accept an invite.',
+    );
   });
 
   test('multiple accounts without a TTY keep the first (never blocks CI)', async () => {
@@ -235,7 +247,7 @@ describe('kortix login — the account step of the funnel', () => {
     expect(code).toBe(0);
     expect(getHost('test')?.account_id).toBe('account_1');
     // Non-TTY hint points the user at the switch verb.
-    expect(stripAnsi(stdout)).toContain('kortix accounts use');
+    expect(stripAnsi(stdout)).toContain('kortix workspaces use');
   });
 
   test('--account <slug> picks the active account non-interactively', async () => {
@@ -251,7 +263,6 @@ describe('kortix login — the account step of the funnel', () => {
     ]);
     expect(code).toBe(0);
     expect(getHost('test')?.account_id).toBe('account_2');
-    expect(stripAnsi(stdout)).toContain('Active account: Kortix');
   });
 
   test('an unknown --account warns and falls back to the first account', async () => {
@@ -322,7 +333,11 @@ describe('kortix hosts whoami', () => {
     mockApi();
     const code = await runHosts(['whoami']);
     expect(code).toBe(0);
-    expect(requests).toEqual(['https://api.test/v1/accounts/me']);
+    // One identity read. With no default workspace picked, whoami also lists
+    // each account's projects to tell "pick one" from "none yet".
+    expect(requests[0]).toBe('https://api.test/v1/me');
+    expect(requests.filter((r) => r.endsWith('/me'))).toHaveLength(1);
+    expect(requests.slice(1).every((r) => r.includes('/v1/workspaces'))).toBe(true);
     expect(stripAnsi(stdout)).toContain('user@example.test');
   });
 

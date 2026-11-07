@@ -232,10 +232,10 @@ function GitHubSetup() {
         : 'GitHub connected. Redirecting you back now.',
     );
     // The remembered return path first (the hub or /new, as the user left
-    // it). Without one, `/new` — but SCOPED to the account that was just
-    // linked: a bare `/new` resolves to the personal account and shows the
+    // it). Without one, `/workspaces/new` — but SCOPED to the account that was just
+    // linked: a bare `/workspaces/new` resolves to the personal account and shows the
     // connection as missing (dev, 2026-09-17).
-    const fallback = linkedAccountId ? newWorkspacePathForAccount(linkedAccountId) : '/new';
+    const fallback = linkedAccountId ? newWorkspacePathForAccount(linkedAccountId) : '/workspaces/new';
     redirectTimer.current = window.setTimeout(
       () => router.replace(consumeGitHubSetupReturn() ?? fallback),
       900,

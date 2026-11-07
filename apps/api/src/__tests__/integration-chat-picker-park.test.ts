@@ -24,7 +24,7 @@ import { db } from '../shared/db';
 const WORKSPACE = `picker-park-${crypto.randomUUID()}`;
 
 afterAll(async () => {
-  await db.delete(chatPendingAuthMessages).where(inArray(chatPendingAuthMessages.workspaceId, [WORKSPACE]));
+  await db.delete(chatPendingAuthMessages).where(inArray(chatPendingAuthMessages.platformTeamId, [WORKSPACE]));
 });
 
 const slackEnvelope = (channel: string): SlackEnvelope => ({

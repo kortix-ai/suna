@@ -22,7 +22,7 @@
  *    would let everyone in it spend one person's subscription.
  */
 import { eq } from 'drizzle-orm';
-import { projects, sessionProviderSecretPools } from '@kortix/db';
+import { sessionProviderSecretPools } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { servableProjectCatalog } from '../llm-gateway/models/servable-catalog';
@@ -34,6 +34,7 @@ import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources'
 import { type ProviderKeySelection, providerKeyOf, usableProviderKeys } from '../secrets/provider-key-selection';
 import { projectModelContext } from './slack/model-gate';
 import { channelTurnModel } from './vision-model';
+import { projectsView } from '../workspaces/rows';
 
 export interface ChannelModelScope {
   projectId: string;

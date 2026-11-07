@@ -23,7 +23,7 @@ export interface ChatThreadKey {
 function threadRow(key: ChatThreadKey, projectId?: string) {
   return and(
     eq(chatThreads.platform, key.platform),
-    eq(chatThreads.workspaceId, key.workspaceId),
+    eq(chatThreads.platformTeamId, key.workspaceId),
     eq(chatThreads.threadId, key.threadId),
     projectId ? eq(chatThreads.projectId, projectId) : undefined,
   );
@@ -88,11 +88,11 @@ export async function bindChatThread(
     .values({
       projectId: key.projectId,
       platform: key.platform,
-      workspaceId: key.workspaceId,
+      platformTeamId: key.workspaceId,
       threadId: key.threadId,
       sessionId: key.sessionId,
     })
-    .onConflictDoNothing({ target: [chatThreads.platform, chatThreads.workspaceId, chatThreads.threadId] })
+    .onConflictDoNothing({ target: [chatThreads.platform, chatThreads.platformTeamId, chatThreads.threadId] })
     .returning({ sessionId: chatThreads.sessionId, projectId: chatThreads.projectId });
   return inserted ?? (await findChatThread(key));
 }

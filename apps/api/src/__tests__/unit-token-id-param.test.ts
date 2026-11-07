@@ -27,6 +27,7 @@ const chain: Record<string, unknown> = {
 chain.then = (res: (v: unknown) => void, rej: (e: unknown) => void) =>
   Promise.resolve([{ accountId: ACCOUNT }]).then(res, rej);
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: true,
   db: {
     select: () => {

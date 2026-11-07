@@ -270,7 +270,7 @@ export function webGoalUrl(
   projectId: string,
   goal: { goalId?: string; scope: string; slug: string },
 ): string {
-  const base = `${webBaseUrl.replace(/\/+$/, '')}/projects/${projectId}/goals`;
+  const base = `${webBaseUrl.replace(/\/+$/, '')}/workspaces/${projectId}/goals`;
   return goal.goalId ? `${base}/${encodeURIComponent(goal.goalId)}` : `${base}/${goal.scope}/${encodeURIComponent(goal.slug)}`;
 }
 

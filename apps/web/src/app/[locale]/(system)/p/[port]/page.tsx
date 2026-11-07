@@ -17,7 +17,7 @@ import { use, useEffect } from 'react';
  * Behavior:
  *   - If the preview tab already exists in the persisted store, activate it.
  *     A surrounding shell that mounts <BrowserPanel /> will then render
- *     the iframe (project-shell does this on /projects/*).
+ *     the iframe (project-shell does this on /workspaces/*).
  *   - Otherwise we can't reconstruct the sandbox context, so we redirect to
  *     the projects index instead of leaving the user on a blank page.
  */

@@ -3,6 +3,7 @@ import {
   FlaskIcon as Flask,
   GitBranchIcon as GitBranch,
   GearSixIcon as Settings,
+  WarningIcon as Warning,
   type Icon,
 } from '@phosphor-icons/react';
 
@@ -14,7 +15,7 @@ import type { UiTranslator } from '../../i18n';
 import type { CustomizeSection } from '../../internal/lib/project-actions';
 
 /**
- * The project-configuration sections of `/projects/[id]/config` — the
+ * The project-configuration sections of `/workspaces/[id]/config` — the
  * "Settings" tab of the Customize bar.
  *
  * These six sections used to be part of the `Workspace` and `Agent` groups of
@@ -50,7 +51,7 @@ import type { CustomizeSection } from '../../internal/lib/project-actions';
  * at the key below that replaced it.
  */
 export type ProjectSettingsSectionKey =
-  'general' | 'git' | 'sandbox' | 'review' | 'feature-flags';
+  'general' | 'danger-zone' | 'git' | 'sandbox' | 'review' | 'feature-flags';
 
 /**
  * **One flat list, no headings.** The sub-nav used to carry the rail's three
@@ -84,6 +85,14 @@ const STATIC_SECTIONS: readonly ProjectSettingsSection[] = [
     key: 'general',
     label: 'General',
     icon: Settings,
+    gate: 'settings',
+  },
+  // Leave and Delete workspace, out of General (2026-11-07, Marko): its own
+  // rail row in Workspace settings, under the same gate as General.
+  {
+    key: 'danger-zone',
+    label: 'Danger zone',
+    icon: Warning,
     gate: 'settings',
   },
   // Its own section since 2026-09-03 (Marko): the repository, its status,
@@ -171,8 +180,3 @@ export function projectSettingsSectionHref(
 }
 
 /** The copy for one section, independent of any flag — used by pane headings. */
-export function projectSettingsSection(
-  key: ProjectSettingsSectionKey,
-): ProjectSettingsSection | undefined {
-  return ALL_PROJECT_SETTINGS_SECTIONS.find((s) => s.key === key);
-}

@@ -43,7 +43,10 @@
     "./subprocessors": "./src/subprocessors.ts",
     "./terms": "./src/terms.ts",
     "./ssrf-guard": "./src/ssrf-guard.ts",
-    "./well-known": "./src/well-known.ts"
+    "./well-known": "./src/well-known.ts",
+    "./workspace-actions": "./src/workspace-actions.ts",
+    "./workspace-routes": "./src/workspace-routes.ts",
+    "./workspace-settings": "./src/workspace-settings.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",

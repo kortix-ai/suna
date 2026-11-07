@@ -61,7 +61,7 @@ function startApi(): void {
       if (req.headers.get('authorization') !== `Bearer ${TOKEN}`) {
         return Response.json({ error: 'unauthenticated' }, { status: 401 });
       }
-      if (new URL(req.url).pathname.endsWith('/accounts/me')) {
+      if (new URL(req.url).pathname.endsWith('/me')) {
         return Response.json(ME);
       }
       return Response.json({ error: 'not found' }, { status: 404 });

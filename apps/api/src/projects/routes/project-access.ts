@@ -18,6 +18,7 @@ import {
 import { AccessMemberSchema, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/user-identity';
 import { readJsonObject } from '../../shared/http-body';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerProjectAccessRoutes(): void {
   // GET /v1/projects/:projectId/access
@@ -29,12 +30,12 @@ export function registerProjectAccessRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/access',
+      path: '/{workspaceId}/access',
       tags: ['access'],
       summary: 'List project members and their roles',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
         },
       responses: {
           200: json(z.array(AccessMemberSchema), 'Access members'),
@@ -42,7 +43,7 @@ export function registerProjectAccessRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_READ);
@@ -58,12 +59,12 @@ export function registerProjectAccessRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/access/{userId}',
+      path: '/{workspaceId}/access/{userId}',
       tags: ['access'],
       summary: 'Set a member\'s role on a project',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), userId: z.string() }),
+          params: z.object({ workspaceId: z.string(), userId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               role: z.enum(['manager', 'member']).openapi({ description: 'Project role.' }),
               expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry. null removes it.' }),
@@ -75,7 +76,7 @@ export function registerProjectAccessRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const targetUserId = c.req.param('userId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -137,12 +138,12 @@ export function registerProjectAccessRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/access/{userId}',
+      path: '/{workspaceId}/access/{userId}',
       tags: ['access'],
       summary: 'Remove a member from a project',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), userId: z.string() }),
+          params: z.object({ workspaceId: z.string(), userId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -150,7 +151,7 @@ export function registerProjectAccessRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const targetUserId = c.req.param('userId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);

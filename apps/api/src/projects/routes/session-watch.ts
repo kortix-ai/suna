@@ -29,7 +29,7 @@ export function personUserId(c: Context, loaded: LoadedProject): string | null {
   return null;
 }
 
-const Params = z.object({ projectId: z.string().uuid(), sessionId: z.string().min(1).max(128) });
+const Params = z.object({ workspaceId: z.string().uuid(), sessionId: z.string().min(1).max(128) });
 const WatchSchema = z
   .object({ watching: z.boolean().openapi({ description: 'True: this session notifies you. False: muted for you.' }) })
   .openapi('SessionWatch');
@@ -48,28 +48,28 @@ async function resolveWatcher(c: Context, projectId: string, sessionId: string) 
 
 export function registerSessionWatchRoutes(): void {
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/sessions/{sessionId}/watch', tags: ['sessions'],
+    method: 'get', path: '/{workspaceId}/sessions/{sessionId}/watch', tags: ['sessions'],
     summary: 'Check whether a session notifies you',
     description: 'True when you created the session or follow it, and have not muted it.',
     ...auth,
     request: { params: Params },
     responses: { 200: json(WatchSchema, 'Your notification setting for this session'), ...errors(400, 403, 404) },
   }), async (c) => {
-    const { projectId, sessionId } = c.req.valid('param');
+    const { workspaceId: projectId, sessionId } = c.req.valid('param');
     const watcher = await resolveWatcher(c, projectId, sessionId);
     if (!watcher.ok) return watcher.response;
     return c.json({ watching: await isWatchingSession(sessionId, watcher.userId, watcher.createdBy) }, 200);
   });
 
   projectsApp.openapi(createRoute({
-    method: 'put', path: '/{projectId}/sessions/{sessionId}/watch', tags: ['sessions'],
+    method: 'put', path: '/{workspaceId}/sessions/{sessionId}/watch', tags: ['sessions'],
     summary: "Follow or mute a session's notifications",
     description: 'watching=false mutes this session for you, the creator included; watching=true follows it.',
     ...auth,
     request: { params: Params, body: { required: true, content: { 'application/json': { schema: WatchSchema } } } },
     responses: { 200: json(WatchSchema, 'Your notification setting for this session'), ...errors(400, 403, 404) },
   }), async (c) => {
-    const { projectId, sessionId } = c.req.valid('param');
+    const { workspaceId: projectId, sessionId } = c.req.valid('param');
     const { watching } = c.req.valid('json');
     const watcher = await resolveWatcher(c, projectId, sessionId);
     if (!watcher.ok) return watcher.response;

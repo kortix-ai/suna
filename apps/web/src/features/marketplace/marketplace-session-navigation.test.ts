@@ -10,7 +10,7 @@ import {
 describe('marketplace install session navigation', () => {
   test('builds the project-scoped session href', () => {
     expect(marketplaceInstallSessionHref('proj_123', 'sess_456')).toBe(
-      '/projects/proj_123/sessions/sess_456',
+      '/workspaces/proj_123/sessions/sess_456',
     );
   });
 
@@ -38,12 +38,12 @@ describe('marketplace install session navigation', () => {
       sessionId,
     );
 
-    expect(href).toBe('/projects/project-123/sessions/session-123');
+    expect(href).toBe('/workspaces/project-123/sessions/session-123');
     // Marketplace install/setup sessions already carry a server-side
     // `initial_prompt`; marking them fresh would render the empty instant shell
     // instead of the actual install session.
     expect(isSessionFresh(sessionId)).toBe(false);
-    expect(prefetchedRoutes).toEqual(['/projects/project-123/sessions/session-123']);
+    expect(prefetchedRoutes).toEqual(['/workspaces/project-123/sessions/session-123']);
     expect(prefetchedQueries).toHaveLength(1);
     expect(invalidatedQueries).toEqual([{ queryKey: qk.project.sessionsScope('project-123') }]);
   });

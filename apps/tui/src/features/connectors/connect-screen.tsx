@@ -20,6 +20,7 @@ import { theme } from '../../theme.ts';
 import { Spinner, layoutRow } from '../../ui/index.ts';
 import { resolveConnectTarget } from './connectors-model.ts';
 import { matchesConnectBinding as is } from './keys.ts';
+import { PICK_WORKSPACE_TEXT } from '../../lib/workspaces.ts';
 
 export interface ConnectScreenProps {
   projectId: string | null;
@@ -85,7 +86,7 @@ export function ConnectScreen({
     if (is(key, 'connect.open')) onOpen(CONNECT_CHOICES[cursor]!.screen, null);
   });
 
-  if (!projectId) return <text fg={theme.faint}>No project selected. Type /projects to pick one.</text>;
+  if (!projectId) return <text fg={theme.faint}>{PICK_WORKSPACE_TEXT}</text>;
   if (q) return <Spinner label={`finding “${q}”`} />;
 
   const inner = Math.max(width - 1, 8);

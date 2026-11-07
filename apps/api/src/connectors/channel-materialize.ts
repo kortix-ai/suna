@@ -1,4 +1,3 @@
-import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import {
   hasEmailInboxes,
@@ -23,6 +22,7 @@ import type { ChannelPlatform, ConnectorSpec } from '../projects/connectors';
 import { MANIFEST_FILENAME } from '../projects/triggers';
 import { db } from '../shared/db';
 import { channelDefaultSlug, channelLabel } from './channels';
+import { projectsView } from '../workspaces/rows';
 
 function channelSpec(
   platform: ChannelPlatform,
@@ -98,9 +98,9 @@ export async function synthesizeChannelConnectors(
   }
 
   const [project] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ metadata: projectsView.metadata })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
 
   if (!project) return specs;

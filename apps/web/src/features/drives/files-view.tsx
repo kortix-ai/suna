@@ -65,7 +65,7 @@ import { FolderAccessPanel } from './folder-access-panel';
 import { folderAudience } from './folder-audience';
 
 /**
- * /projects/[id]/drive — the project's Drive: one folder tree, stored as one
+ * /workspaces/[id]/drive — the project's Drive: one folder tree, stored as one
  * volume, that everyone in the project works in. The top is the project
  * itself; under it the folders as they are stored (Company, Users, Channels,
  * team folders), each opening for whoever may open it. A folder tree beside
@@ -89,7 +89,7 @@ export function FilesView({ projectId }: { projectId: string }) {
   const settled = detail.isFetchedAfterMount || (detail.isSuccess && !detail.isStale);
   const off = settled && !detail.isFetching && !availability.enabled;
   useEffect(() => {
-    if (off) router.replace(`/projects/${projectId}/files`);
+    if (off) router.replace(`/workspaces/${projectId}/files`);
   }, [off, projectId, router]);
 
   let body: ReactNode;
@@ -296,7 +296,7 @@ function FilesExplorer({ drive, projectId, projectName }: { drive: Drive; projec
           onOpenFolder={(p) =>
             router.push(
               driveUrlWithPath(
-                `${window.location.origin}/projects/${projectId}/drive`,
+                `${window.location.origin}/workspaces/${projectId}/drive`,
                 drivePathToParam(p, drive.personalFolder),
               ),
             )

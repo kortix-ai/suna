@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT, readRepoFile } from '../src/fixtures/repo';
 
 // apps/web has one toast surface: @kortix/ui's toast
 // (packages/ui/src/primitives/toast.tsx; packages/ui/src/primitives/toast.tsx
@@ -11,7 +12,6 @@ import { describe, expect, it } from 'vitest';
 // itself and apps/web's root layout (which mounts `<Toaster />`) may import
 // sonner. Other hosts mount the `<Toaster />` that @kortix/ui/toast exports.
 
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const WEB = 'apps/web/src';
 const SCOPES = [WEB, 'packages/ui/src', 'apps/white-label/lumen/src', 'apps/white-label/reskin/src'];
 const SONNER_ALLOWED = new Set([
@@ -41,7 +41,7 @@ describe('toast single source in apps/web and @kortix/ui', () => {
       (file) =>
         !SONNER_ALLOWED.has(file) &&
         !/\.test\.tsx?$/.test(file) &&
-        BANNED_IMPORT.test(readFileSync(join(REPO_ROOT, file), 'utf8')),
+        BANNED_IMPORT.test(readRepoFile(file)),
     );
     expect(offenders).toEqual([]);
   });

@@ -46,7 +46,7 @@ beforeEach(() => {
 });
 
 const last = () => calls.at(-1)!;
-const base = 'http://backend.test/v1/projects/p1/apps/a1';
+const base = 'http://backend.test/v1/workspaces/p1/apps/a1';
 
 const machine: AppMachine = {
   machine_id: 'm1', instance_id: 'i1', process_group: 'app', state: 'started',

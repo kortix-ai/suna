@@ -40,10 +40,10 @@ flow(
   {
     domain: "change-requests",
     routes: [
-      "GET /v1/projects/:projectId/change-requests",
-      "GET /v1/projects/:projectId/change-requests/:crId",
-      "POST /v1/projects/:projectId/change-requests/:crId/merge",
-      "DELETE /v1/projects/:projectId",
+      "GET /v1/workspaces/:projectId/change-requests",
+      "GET /v1/workspaces/:projectId/change-requests/:crId",
+      "POST /v1/workspaces/:projectId/change-requests/:crId/merge",
+      "DELETE /v1/workspaces/:projectId",
     ],
   },
   async (ctx) => {
@@ -52,7 +52,7 @@ flow(
     await ctx.step("list envelope → 200 `{ change_requests: [...] }`", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/change-requests", { params: { projectId: shared.id } });
+        .get("/v1/workspaces/:projectId/change-requests", { params: { projectId: shared.id } });
       r.status(200).body().exists("$.change_requests");
       // The envelope key must be an array (list shape), not an object/scalar.
       const crs = r.json<{ change_requests: unknown }>().change_requests;
@@ -62,7 +62,7 @@ flow(
     await ctx.step("get envelope boundary → unknown crId 404 (`{ change_request }` route wired)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/change-requests/:crId", {
+        .get("/v1/workspaces/:projectId/change-requests/:crId", {
           params: { projectId: shared.id, crId: RANDOM_CR },
         });
       r.status(404);
@@ -72,7 +72,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/change-requests/:crId/merge",
+          "/v1/workspaces/:projectId/change-requests/:crId/merge",
           {},
           { params: { projectId: shared.id, crId: RANDOM_CR } },
         );
@@ -83,7 +83,7 @@ flow(
       const disposable = await ctx.fixtures.project();
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId", { params: { projectId: disposable.id } });
+        .del("/v1/workspaces/:projectId", { params: { projectId: disposable.id } });
       r.status(200).body().has("$.ok", true);
     });
   },

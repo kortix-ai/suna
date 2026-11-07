@@ -179,6 +179,8 @@ describe('OAuth authorization request persistence + consent', () => {
       remembered: false,
       self_registered: false,
       redirect_to: 'client.example',
+      // A client with a web redirect binds its grant to one workspace (design.md §3.2 C4a).
+      asks_workspace: true,
     });
   });
 

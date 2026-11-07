@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { pickerProviderList } from '@kortix/sdk';
+import { inviteWorkspaceMember, listWorkspaces, pickerProviderList, restoreWorkspace, setupWorkspace } from '@kortix/sdk';
 import { composerModelList, offeredModelCount } from '@/lib/session/model-picker';
 import {
   keepPreviousData,
@@ -110,6 +110,7 @@ import {
   type UpdateSandboxTemplateInput,
 } from './projects-client';
 import { filterTriggerAgents, flattenTriggerModelCatalog } from './trigger-picker-options';
+import { workspaceRowsFromServed } from './switcher';
 import { shouldScanPastEmptySessionPages } from '@kortix/sdk/react';
 
 export type { TriggerAgentOption, TriggerModelOption } from './trigger-picker-options';
@@ -288,6 +289,45 @@ export function useProjects(accountId: string | null) {
     queryFn: () => listProjectsForAccount(accountId || undefined),
     enabled: !!accountId,
     staleTime: 20_000,
+  });
+}
+
+/**
+ * Every workspace of the signed-in user, as one flat list (`workspaceRows`):
+ * each account's project list, the same queries and keys as `useProjects`.
+ * `isPending` is true while the accounts or any account's list is still in
+ * flight (or paused offline): a user with workspaces must never see the
+ * empty state flash. `isError` is true when every list failed (or the
+ * accounts failed), so one account that does not answer never hides the rest.
+ */
+export function useWorkspaces(enabled = true) {
+  const accounts = useAccounts(enabled);
+  const accountList = useMemo(() => accounts.data ?? [], [accounts.data]);
+  // Every workspace in every state from ONE request (`GET /v1/workspaces`,
+  // design.md C5): a deleting row offers Restore, a setup_required row Set up.
+  const list = useQuery({
+    queryKey: ['projects', 'workspaces', 'every-state'] as const,
+    queryFn: () => listWorkspaces({ includeInactive: true }),
+    enabled,
+    staleTime: 20_000,
+  });
+  const rows = useMemo(() => workspaceRowsFromServed(accountList, list.data ?? []), [accountList, list.data]);
+  const isPending = accounts.isPending || list.isPending;
+  const isError = list.isError;
+  const refetch = useCallback(async () => {
+    await accounts.refetch();
+    await list.refetch();
+  }, [accounts, list]);
+  return { accounts: accountList, rows, isPending, isError, refetch };
+}
+
+/** Restore a `deleting` workspace or set up a `setup_required` one, then refresh the list. */
+export function useWorkspaceStateAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workspaceId, state }: { workspaceId: string; state: 'deleting' | 'setup_required' }) =>
+      state === 'deleting' ? restoreWorkspace(workspaceId) : setupWorkspace(workspaceId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects'] }),
   });
 }
 
@@ -506,6 +546,23 @@ function useInvalidateMembership(projectId: string) {
     queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) });
     queryClient.invalidateQueries({ queryKey: ['projects'] });
   };
+}
+
+/** The roles an invite can carry (`POST /v1/workspaces/:id/members`). */
+export type InviteRole = 'member' | 'manager' | 'admin';
+
+/** Invite one person into the workspace with one ladder role. */
+export function useInviteWorkspaceMember(workspaceId: string) {
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateMembership(workspaceId);
+  return useMutation({
+    mutationFn: ({ email, role }: { email: string; role: InviteRole }) =>
+      inviteWorkspaceMember(workspaceId, { email, role }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.pendingInvites(workspaceId) });
+      invalidate();
+    },
+  });
 }
 
 export function useInviteProjectMember(projectId: string) {

@@ -47,7 +47,7 @@ export async function backfillSlackBindingLabel(
   if (!teamId || !channelId || !projectId) return unknown;
   const where = and(
     eq(chatChannelBindings.platform, 'slack'),
-    eq(chatChannelBindings.workspaceId, teamId),
+    eq(chatChannelBindings.platformTeamId, teamId),
     eq(chatChannelBindings.channelId, channelId),
   );
   try {

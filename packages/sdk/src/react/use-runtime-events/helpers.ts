@@ -2,7 +2,7 @@ import { type QueryClient } from '@tanstack/react-query';
 import { STREAM_OBSERVATION_MAX_MS } from '../../core/session/working';
 import { runtimeKeys, type Session } from '../use-runtime-sessions';
 import { qk } from '../query-keys';
-import { findCachedProjectSession, updateCachedProjectSessions } from '../session-cache-write';
+import { findCachedWorkspaceSession, updateCachedWorkspaceSessions } from '../session-cache-write';
 import type { RuntimeEvent } from './types';
 
 /**
@@ -257,7 +257,7 @@ export function patchKortixSessionTitleMirrors(
   // Through the shape-aware writer: the sidebar and the Sessions page hold the
   // PAGED list (`{ pages, pageParams }`), which a flat-array patch skipped, so
   // the title reached the header and the tab but not the list beside them.
-  updateCachedProjectSessions(queryClient, projectId, (rows) => {
+  updateCachedWorkspaceSessions(queryClient, projectId, (rows) => {
     let changed = false;
     const next = rows.map((row) => {
       if (row.runtime_session_id !== nativeSessionId) return row;
@@ -276,7 +276,7 @@ export function cachedSessionName(
   projectId: string,
   sessionId: string,
 ): string | undefined {
-  const row = findCachedProjectSession(queryClient, projectId, (session) => session.session_id === sessionId);
+  const row = findCachedWorkspaceSession(queryClient, projectId, (session) => session.session_id === sessionId);
   return row?.custom_name || row?.name || undefined;
 }
 
@@ -309,7 +309,7 @@ export function notificationSessionId(
 ): string | null {
   if (!streamSessionId) return runtimeId;
   const row = projectId
-    ? findCachedProjectSession(
+    ? findCachedWorkspaceSession(
         queryClient,
         projectId,
         (session) => session.runtime_session_id === runtimeId,

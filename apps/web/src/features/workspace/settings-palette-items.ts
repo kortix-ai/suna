@@ -49,10 +49,10 @@ export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'preferences',
   'connected',
   'chrome',
-  'tokens',
   'credits',
   'plan',
   'mcp',
+  'personal-keys',
 ];
 
 /**
@@ -111,7 +111,9 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   // called Projects.
   workspace:
     'workspace general settings name rename title icon emoji glyph avatar picture logo archive delete danger zone repo git repository github clone branch remote',
-  profile: 'profile name email avatar personal you account display organizations',
+  profile: 'profile name email avatar personal you account display',
+  // The caller's keys bound to no workspace: the CLI login and older keys.
+  'personal-keys': 'personal keys cli login revoke my keys personal access token',
   security: 'security two-factor 2fa mfa totp authenticator factor devices sign out sessions',
   appearance:
     'appearance theme color mode dark light wallpaper shader shaders background density conversation',
@@ -164,7 +166,7 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   // Every other bag is gone with the tab it named. Thirteen project-
   // configuration tabs (General, Members, Secrets, Channels, Repositories,
   // Models, Sandbox templates, Snapshots, Marketplace, Review, Voice, Feature
-  // flags, Upgrades) moved to `/projects/<id>/config`, and eight
+  // flags, Upgrades) moved to `/workspaces/<id>/config`, and eight
   // account-scoped ones to `/accounts/[id]`. Their words moved with them, onto
   // the `proj-settings` and `account-*` rows in `lib/menu-registry.ts` — the
   // same place every other out-of-overlay destination is searched from. A tab
@@ -197,7 +199,7 @@ export interface SettingsPaletteParams {
   /** The platform offers Kortix in Chrome (`useChromeOffered`); off, its Settings row is not offered. */
   chromeOffered?: boolean;
   // `flags: RailFlags` used to sit here. Marketplace, Review and Voice were
-  // the only flag-gated rows and all three moved to `/projects/<id>/config`,
+  // the only flag-gated rows and all three moved to `/workspaces/<id>/config`,
   // whose own sub-nav composes them
   // (`capabilities/project-settings/project-settings-sections.ts`). Nothing
   // left in this rail varies by flag, so `railGroups()` takes none either.

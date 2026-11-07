@@ -1203,7 +1203,7 @@ describe('session connector isolation', () => {
     await revokeEmailInboxAccount(again);
     await revokeEmailInboxAccount(b);
     const claims = await db
-      .select({ workspaceId: chatInstalls.workspaceId })
+      .select({ workspaceId: chatInstalls.platformTeamId })
       .from(chatInstalls)
       .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.projectId, PROJECT_A)));
     expect(claims.map((r) => r.workspaceId)).toEqual(['connection-test-default-inbox']);
@@ -1314,7 +1314,7 @@ describe('session connector isolation', () => {
         agentName: chatChannelBindings.agentName,
       })
       .from(chatChannelBindings)
-      .where(and(eq(chatChannelBindings.platform, 'email'), eq(chatChannelBindings.workspaceId, inboxId)));
+      .where(and(eq(chatChannelBindings.platform, 'email'), eq(chatChannelBindings.platformTeamId, inboxId)));
     expect(binding).toEqual({
       projectId: PROJECT_A,
       channelName: 'veyris-bound@example.test',
@@ -1327,7 +1327,7 @@ describe('session connector isolation', () => {
     const rows = await db
       .select({ bindingId: chatChannelBindings.bindingId })
       .from(chatChannelBindings)
-      .where(and(eq(chatChannelBindings.platform, 'email'), eq(chatChannelBindings.workspaceId, inboxId)));
+      .where(and(eq(chatChannelBindings.platform, 'email'), eq(chatChannelBindings.platformTeamId, inboxId)));
     expect(rows).toEqual([]);
   });
 
@@ -1342,7 +1342,7 @@ describe('session connector isolation', () => {
     const owners = await db
       .select({ projectId: chatInstalls.projectId })
       .from(chatInstalls)
-      .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.workspaceId, sharedInbox)));
+      .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.platformTeamId, sharedInbox)));
     expect(owners.map((r) => r.projectId).sort()).toEqual([PROJECT_A, PROJECT_B].sort());
     await releaseEmailInbox(PROJECT_A, sharedInbox);
     await releaseEmailInbox(PROJECT_B, sharedInbox);

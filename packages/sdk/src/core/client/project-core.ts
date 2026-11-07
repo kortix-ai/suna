@@ -12,34 +12,34 @@ export function bindProjectCore(projectId: string) {
         createPromptAttachmentController(projectId, options),
     },
     get: (opts?: Parameters<typeof P.getProject>[1]) => P.getProject(projectId, opts),
-    detail: () => P.getProjectDetail(projectId),
+    detail: () => P.getWorkspaceDetail(projectId),
     skills: {
-      remove: (...a: DropFirst<Parameters<typeof P.removeProjectSkill>>) =>
-        P.removeProjectSkill(projectId, ...a),
+      remove: (...a: DropFirst<Parameters<typeof P.removeWorkspaceSkill>>) =>
+        P.removeWorkspaceSkill(projectId, ...a),
       /** Create a skill file on the default branch — no model needed. */
-      create: (...a: DropFirst<Parameters<typeof P.createProjectSkill>>) =>
-        P.createProjectSkill(projectId, ...a),
+      create: (...a: DropFirst<Parameters<typeof P.createWorkspaceSkill>>) =>
+        P.createWorkspaceSkill(projectId, ...a),
     },
     /** Canonical project-scoped audit timeline. */
-    audit: (options?: Parameters<typeof P.listProjectAudit>[1]) =>
-      P.listProjectAudit(projectId, options),
+    audit: (options?: Parameters<typeof P.listWorkspaceAudit>[1]) =>
+      P.listWorkspaceAudit(projectId, options),
     update: (input: Parameters<typeof P.updateProject>[1]) => P.updateProject(projectId, input),
-    archive: () => P.archiveProject(projectId),
-    llmCatalog: () => P.getProjectLlmCatalog(projectId),
+    archive: () => P.archiveWorkspace(projectId),
+    llmCatalog: () => P.getWorkspaceLlmCatalog(projectId),
     /** The live provider catalogue (models.dev, refreshed hourly): what `buildLlmProviderCatalog` turns into rows. */
-    llmCatalogProviders: () => P.getProjectLlmCatalogProviders(projectId),
-    modelPicker: () => P.getProjectModelPicker(projectId),
-    modelAccess: () => P.getProjectModelAccess(projectId),
+    llmCatalogProviders: () => P.getWorkspaceLlmCatalogProviders(projectId),
+    modelPicker: () => P.getWorkspaceModelPicker(projectId),
+    modelAccess: () => P.getWorkspaceModelAccess(projectId),
     setModelAccess: (change: P.ProjectModelAccessChange) =>
-      P.setProjectModelAccess(projectId, change),
+      P.setWorkspaceModelAccess(projectId, change),
     /** The project's custom OpenAI-compatible providers. */
     customLlmProviders: () => P.listCustomLlmProviders(projectId),
     setCustomLlmProvider: (providerId: string, input: P.CustomLlmProviderInput) =>
       P.putCustomLlmProvider(projectId, providerId, input),
     /** Deletes the definition and its `CUSTOM_<ID>_API_KEY` secret. */
     deleteCustomLlmProvider: (providerId: string) => P.deleteCustomLlmProvider(projectId, providerId),
-    sandboxHealth: () => P.getProjectSandboxHealth(projectId),
-    onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
-      P.setProjectOnboardingComplete(projectId, ...a),
+    sandboxHealth: () => P.getWorkspaceSandboxHealth(projectId),
+    onboardingComplete: (...a: DropFirst<Parameters<typeof P.setWorkspaceOnboardingComplete>>) =>
+      P.setWorkspaceOnboardingComplete(projectId, ...a),
   };
 }

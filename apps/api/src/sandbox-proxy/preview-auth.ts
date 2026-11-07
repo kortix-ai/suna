@@ -126,6 +126,8 @@ export async function authenticatePreviewPrincipalDetailed(
       bindAuditPrincipal(
         previewActorFields({ kind: 'user', principalId: r.userId, sandboxAuthored: false, method: 'oauth' }),
       );
+      // A workspace-bound token reaches only sandboxes of its workspace, as a workspace key.
+      if (r.boundWorkspaceId && !(await sandboxBelongsToProject(sandboxId, r.boundWorkspaceId))) return null;
       return (await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: r.userId }))
         ? { userId: r.userId, sessionId: null, principalKind: 'user' }
         : null;

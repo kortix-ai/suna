@@ -92,17 +92,17 @@ function parseCostSort(raw: string): CostSort | undefined {
 export async function costsCommand(ctx: AccountContext, f: Flags): Promise<number> {
   const by = f.by;
   if (by !== undefined && by !== 'project' && by !== 'session') {
-    return fail('--by must be project or session');
+    return fail('--by must be workspace or session');
   }
   const sort = f.sort === undefined ? undefined : parseCostSort(f.sort);
   if (f.sort !== undefined && sort === undefined) {
     return fail(`--sort must be one of ${COST_SORTS.join(', ')}`);
   }
   if (sort === 'name_asc' && by !== 'project') {
-    return fail('--sort name_asc is only valid with --by project');
+    return fail('--sort name_asc is only valid with --by workspace');
   }
   if (f.csv && !by) {
-    return fail('--csv needs --by project or --by session; the account summary has no CSV export');
+    return fail('--csv needs --by workspace or --by session; the account summary has no CSV export');
   }
   const window = { from: f.since, to: f.until };
   const paging = { limit: integer(f.limit, '--limit'), offset: integer(f.offset, '--offset') };
@@ -236,9 +236,9 @@ async function costsByProject(
     process.stdout.write(`\n  ${C.dim}No spend in this window.${C.reset}\n\n`);
     return 0;
   }
-  const nameW = Math.max(7, ...page.projects.map((p) => p.project_name.length));
+  const nameW = Math.max(9, ...page.projects.map((p) => p.project_name.length));
   process.stdout.write(
-    `\n  ${C.bold}${pad('PROJECT', nameW)}  ${pad('SESSIONS', 8)}  ${pad('LLM', 10)}  ${pad('COMPUTE', 10)}  TOTAL${C.reset}\n`,
+    `\n  ${C.bold}${pad('WORKSPACE', nameW)}  ${pad('SESSIONS', 8)}  ${pad('LLM', 10)}  ${pad('COMPUTE', 10)}  TOTAL${C.reset}\n`,
   );
   for (const p of page.projects) {
     process.stdout.write(
@@ -281,9 +281,9 @@ async function costsBySession(
     process.stdout.write(`\n  ${C.dim}No sessions in this window.${C.reset}\n\n`);
     return 0;
   }
-  const projW = Math.max(7, ...page.sessions.map((s) => s.project_name.length));
+  const projW = Math.max(9, ...page.sessions.map((s) => s.project_name.length));
   process.stdout.write(
-    `\n  ${C.bold}${pad('SESSION', 10)}  ${pad('PROJECT', projW)}  ${pad('REQS', 6)}  ${pad('LLM', 10)}  ${pad('COMPUTE', 10)}  TOTAL${C.reset}\n`,
+    `\n  ${C.bold}${pad('SESSION', 10)}  ${pad('WORKSPACE', projW)}  ${pad('REQS', 6)}  ${pad('LLM', 10)}  ${pad('COMPUTE', 10)}  TOTAL${C.reset}\n`,
   );
   for (const s of page.sessions) {
     process.stdout.write(
@@ -327,7 +327,7 @@ async function costsSummary(
   process.stdout.write(row('compute', credits(t.compute_cost)));
   process.stdout.write(row('requests', String(t.request_count)));
   process.stdout.write(row('sessions', String(t.session_count)));
-  process.stdout.write(row('projects', String(t.project_count)));
+  process.stdout.write(row('workspaces', String(t.project_count)));
   if (summary.models?.length) {
     process.stdout.write(`\n  ${C.bold}By model${C.reset}\n`);
     for (const m of summary.models) {

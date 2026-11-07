@@ -92,8 +92,11 @@ describe('per-resource scoping (iam_resource_grants)', () => {
     const AGENT = 'everyone-bot';
     const dave = await seedMember('member');
     await insertIntoView(db, projectMembers, { accountId: ACCOUNT, projectId: PROJECT, userId: dave, projectRole: 'member' });
-    // An account member with no project role is not "in the project".
-    const outsider = await seedMember('member');
+    // Membership is access (design.md C3): every account member of this 1:1
+    // workspace is in it, so "everyone in the project" includes them; only a
+    // person outside the workspace stays outside.
+    const accountMember = await seedMember('member');
+    const outsider = crypto.randomUUID();
 
     // Agents are closed to the member tier until someone grants them.
     expect(await canUse(dave, AGENT)).toBe(false);
@@ -106,6 +109,7 @@ describe('per-resource scoping (iam_resource_grants)', () => {
     });
 
     expect(await canUse(dave, AGENT)).toBe(true);
+    expect(await canUse(accountMember, AGENT)).toBe(true);
     expect(await canUse(outsider, AGENT)).toBe(false);
 
     // The pickers' list form answers the same: the Slack and Teams agent lists
@@ -138,9 +142,8 @@ describe('per-resource scoping (iam_resource_grants)', () => {
     expect(await canUse(erin, OPEN_AGENT)).toBe(false);
     expect(await filterAccessibleObjects(actorForUser(erin, ACCOUNT), PROJECT, 'agent', ['mykortix', OPEN_AGENT])).toEqual(['mykortix']);
     expect((await authorize(actorForUser(erin, ACCOUNT), PROJECT_ACTIONS.PROJECT_AGENT_READ, onAgent('mykortix'))).allowed).toBe(true);
-    // An account member outside the project gets nothing, My Kortix included.
-    const outsider = await seedMember('member');
-    expect(await canUse(outsider, 'mykortix')).toBe(false);
+    // A person outside the workspace gets nothing, My Kortix included.
+    expect(await canUse(crypto.randomUUID(), 'mykortix')).toBe(false);
   });
 
   test('account owner bypasses per-resource scoping (implicit Manager)', async () => {

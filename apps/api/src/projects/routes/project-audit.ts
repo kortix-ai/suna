@@ -54,6 +54,7 @@ import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
 import { readSessionAuditActions } from '../lib/session-audit-read';
 import { sessionApprovalVerdict } from '../lib/http-approval-caller';
+import { workspaceIdParam } from '../../shared/route-params';
 
 /**
  * The human a session acts on behalf of, for runtime audit ingestion. A
@@ -462,12 +463,12 @@ export function registerProjectAuditRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/audit',
+      path: '/{workspaceId}/audit',
       tags: ['projects'],
       summary: 'List canonical project audit events',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid() }),
         query: z.object({
           action: z.string().optional(),
           actor: z.string().uuid().optional(),
@@ -494,7 +495,7 @@ export function registerProjectAuditRoutes(): void {
     }),
     // biome-ignore lint/suspicious/noExplicitAny: Current OpenAPI response unions require the established untyped route-handler boundary.
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -573,12 +574,12 @@ export function registerProjectAuditRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/audit/events',
+      path: '/{workspaceId}/sessions/{sessionId}/audit/events',
       tags: ['sessions'],
       summary: 'Ingest an idempotent runtime audit batch',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string().uuid(), sessionId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid(), sessionId: z.string().uuid() }),
         // Documents the batch; `parseRuntimeAuditBatch` owns validation and
         // names the failing event index in its 400.
         body: { content: { 'application/json': { schema: RuntimeAuditBatchSchema.or(AnyObject) } } },
@@ -592,7 +593,7 @@ export function registerProjectAuditRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isSessionSandboxCredential(c)) {
         return c.json({ error: 'audit ingestion requires a sandbox token' }, 403);
@@ -604,7 +605,7 @@ export function registerProjectAuditRoutes(): void {
       }
       const scope = await loadIngestSessionScope({ sandboxId, accountId, projectId });
       if (!scope || (scope.sessionId ?? sandboxId) !== sessionId) {
-        return c.json({ error: 'sandbox token is not scoped to this project and session' }, 403);
+        return c.json({ error: 'sandbox token is not scoped to this workspace and session' }, 403);
       }
 
       let body: unknown;
@@ -717,12 +718,12 @@ export function registerProjectAuditRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/audit',
+      path: '/{workspaceId}/sessions/{sessionId}/audit',
       tags: ['sessions'],
       summary: 'List audit events of a session',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         query: z.object({
           limit: z.string().optional(),
           cursor: z.string().optional(),
@@ -747,7 +748,7 @@ export function registerProjectAuditRoutes(): void {
     }),
     // biome-ignore lint/suspicious/noExplicitAny: Current OpenAPI response unions require the established untyped route-handler boundary.
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 

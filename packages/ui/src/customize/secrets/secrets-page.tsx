@@ -6,7 +6,7 @@ import { SettingsNavProvider } from '../../internal/layout/settings-nav-context'
 import type { AgentGrant, ResourceScope } from '../shared/agent-resource-scope';
 
 /**
- * The page body for /projects/[id]/secrets — Secrets graduated out of the
+ * The page body for /workspaces/[id]/secrets — Secrets graduated out of the
  * project Settings sub-nav into its own top-level Customize tab. It is the
  * one section editor-tier (`project.secret.read/write`, deliberately not
  * member baseline — see `packages/ui/src/internal/lib/project-actions.ts`'s header comment) rather
