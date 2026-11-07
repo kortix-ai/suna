@@ -1,7 +1,7 @@
 {
   "generatedAt": "static",
-  "count": 1746,
-  "aliases": 671,
+  "count": 1752,
+  "aliases": 674,
   "routes": [
     {
       "method": "GET",
@@ -886,6 +886,21 @@
       "method": "POST",
       "path": "/v1/accounts/:workspaceId/invites/:inviteId/resend",
       "aliasOf": "/v1/workspaces/:workspaceId/invites/:inviteId/resend"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:workspaceId/keys",
+      "aliasOf": "/v1/workspaces/:workspaceId/keys"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:workspaceId/keys",
+      "aliasOf": "/v1/workspaces/:workspaceId/keys"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:workspaceId/keys/:keyId",
+      "aliasOf": "/v1/workspaces/:workspaceId/keys/:keyId"
     },
     {
       "method": "POST",
@@ -6689,6 +6704,18 @@
     {
       "method": "GET",
       "path": "/v1/workspaces/:workspaceId/jwks.json"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/keys"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/keys"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/workspaces/:workspaceId/keys/:keyId"
     },
     {
       "method": "POST",

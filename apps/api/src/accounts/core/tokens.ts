@@ -43,7 +43,7 @@ import { keyScopeWire, keyScopeWithin, parseKeyScopesInput, type KeyScopes } fro
 import type { TokenBinding } from '../../iam/actor';
 
 /** The scope and expiry fields every key row carries on the wire. */
-function keyWire(t: { scopes?: KeyScopes | null; expiryRenewDays?: number | null }) {
+export function keyWire(t: { scopes?: KeyScopes | null; expiryRenewDays?: number | null }) {
   return { ...keyScopeWire(t.scopes ?? null), expiry_renews: t.expiryRenewDays != null };
 }
 
@@ -80,7 +80,7 @@ export function actsAsFullIdentity(authType: string | undefined, actor: Actor): 
 }
 
 /** A browser session, or a personal key bound to no workspace and no session. */
-function isPersonCaller(c: Context): boolean {
+export function isPersonCaller(c: Context): boolean {
   const authType = c.get('authType') as string | undefined;
   if (authType === 'supabase') return true;
   return authType === 'pat' && !c.get('tokenProjectId') && !c.get('sessionId') && !c.get('agentGrant');
@@ -90,7 +90,7 @@ function isPersonCaller(c: Context): boolean {
 const TOKEN_LIST_PATHS = ['/tokens', '/{workspaceId}/tokens'] as const;
 
 /** The account key of the workspace in the path, on the workspace-scoped token routes. */
-function pathAccountOf(c: Context): string | undefined {
+export function pathAccountOf(c: Context): string | undefined {
   return c.req.param('workspaceId') ? accountIdParam(c) : undefined;
 }
 
@@ -111,7 +111,7 @@ type PathTokenBinding =
   | { kind: 'workspace'; projectId: string }
   | { kind: 'ambiguous' };
 
-async function pathTokenBinding(c: Context): Promise<PathTokenBinding> {
+export async function pathTokenBinding(c: Context): Promise<PathTokenBinding> {
   const raw = c.req.param('workspaceId');
   if (!raw) return { kind: 'none' };
   try {
@@ -423,13 +423,95 @@ accountsRouter.openapi(
       ...errors(400, 401, 403, 409),
     },
   }),
+  (async (c: any) => mintTokenFromBody(c, await readJsonObject(c))) as any,
+);
+}
+
+// DELETE /v1/accounts/tokens/:tokenId — revoke a PAT
+// DELETE /v1/workspaces/:workspaceId/tokens/:tokenId — the same, in the workspace in the path
+for (const path of ['/tokens/{tokenId}', '/{workspaceId}/tokens/{tokenId}'] as const) {
+accountsRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path,
+    tags: ['accounts'],
+    summary: 'Revoke a PAT, or explicitly delete a revoked personal key',
+    ...auth,
+    request: {
+      params:
+        path === '/tokens/{tokenId}'
+          ? z.object({ tokenId: z.string() })
+          : z.object({ workspaceId: z.string().uuid(), tokenId: z.string() }),
+      query: z.object({ account_id: z.string(), delete_revoked: z.enum(['true', 'false']) }).partial(),
+    },
+    responses: {
+      200: json(z.object({ ok: z.literal(true), deleted: z.boolean().optional() }), 'Revocation or deletion result'),
+      ...errors(400, 401, 403, 404, 409),
+    },
+  }),
   async (c: any) => {
+  const userId = c.get('userId') as string;
+  const tokenId = c.req.param('tokenId');
+  // A non-UUID id would reach the uuid-typed `account_tokens.token_id` query
+  // and surface as a 500 `22P02` (shared/validate.ts). A client-input error is
+  // answered as one, before any account or token lookup runs.
+  if (!isUuid(tokenId)) {
+    return c.json({ error: `"${tokenId}" is not a valid token id (a token id is a UUID)` }, 400);
+  }
+  const queryAccount = pathAccountOf(c) ?? c.req.query('account_id') ?? undefined;
+
+  let accountId: string;
+  try {
+    accountId = await resolveAccountForUser(userId, queryAccount);
+  } catch (err) {
+    rethrowDatabaseError(err);
+    // 409 `no_workspace`: a person with no account has nowhere to mint into.
+    if (isNoWorkspaceError(err)) throw err;
+    return c.json({ error: (err as Error).message }, 403);
+  }
+
+  // Your own hand-minted token needs only `token.personal.revoke`. Anything
+  // else — another person's token, a session or service-account bearer, or an
+  // id that does not exist — needs the admin `token.revoke`, so a member learns
+  // nothing about tokens that are not theirs (403, not 404).
+  const actor = await actorOf(c, accountId);
+  const owner = await getAccountTokenOwner(tokenId, accountId);
+  const ownPersonalToken =
+    actsAsFullIdentity(c.get('authType') as string | undefined, actor) &&
+    owner?.personal === true &&
+    owner.userId === userId;
+  await assertAuthorized(
+    actor,
+    ownPersonalToken ? ACCOUNT_ACTIONS.TOKEN_PERSONAL_REVOKE : ACCOUNT_ACTIONS.TOKEN_REVOKE,
+  );
+
+  if (c.req.query('delete_revoked') === 'true') {
+    const deleted = await deleteRevokedPersonalAccountToken(tokenId, accountId);
+    if (deleted) return c.json({ ok: true, deleted: true });
+    return c.json({ error: 'revoked personal token not found' }, 404);
+  }
+
+  const ok = await revokeAccountToken(tokenId, accountId);
+  if (!ok) {
+    return c.json({ error: 'token not found or already revoked' }, 404);
+  }
+  return c.json({ ok: true });
+  },
+);
+}
+}
+
+/**
+ * Mint a key that acts as the caller, from a parsed body: the handler of
+ * `POST /v1/accounts/tokens` and `POST /v1/workspaces/:workspaceId/tokens`, and
+ * the `acts_as: "me"` branch of `POST /v1/workspaces/:workspaceId/keys`.
+ */
+export async function mintTokenFromBody(c: Context, body: Record<string, unknown>): Promise<Response> {
   const userId = c.get('userId') as string;
   // A connected app's revocable `kortix_oat_` token must not mint a durable one.
   if (c.get('authType') === 'oauth') {
     return c.json({ error: 'Connected apps cannot mint personal access tokens.' }, 403);
   }
-  const body = await readJsonObject(c);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) {
     return c.json({ error: 'name is required' }, 400);
@@ -581,80 +663,4 @@ accountsRouter.openapi(
     },
     201,
   );
-  },
-);
-}
-
-// DELETE /v1/accounts/tokens/:tokenId — revoke a PAT
-// DELETE /v1/workspaces/:workspaceId/tokens/:tokenId — the same, in the workspace in the path
-for (const path of ['/tokens/{tokenId}', '/{workspaceId}/tokens/{tokenId}'] as const) {
-accountsRouter.openapi(
-  createRoute({
-    method: 'delete',
-    path,
-    tags: ['accounts'],
-    summary: 'Revoke a PAT, or explicitly delete a revoked personal key',
-    ...auth,
-    request: {
-      params:
-        path === '/tokens/{tokenId}'
-          ? z.object({ tokenId: z.string() })
-          : z.object({ workspaceId: z.string().uuid(), tokenId: z.string() }),
-      query: z.object({ account_id: z.string(), delete_revoked: z.enum(['true', 'false']) }).partial(),
-    },
-    responses: {
-      200: json(z.object({ ok: z.literal(true), deleted: z.boolean().optional() }), 'Revocation or deletion result'),
-      ...errors(400, 401, 403, 404, 409),
-    },
-  }),
-  async (c: any) => {
-  const userId = c.get('userId') as string;
-  const tokenId = c.req.param('tokenId');
-  // A non-UUID id would reach the uuid-typed `account_tokens.token_id` query
-  // and surface as a 500 `22P02` (shared/validate.ts). A client-input error is
-  // answered as one, before any account or token lookup runs.
-  if (!isUuid(tokenId)) {
-    return c.json({ error: `"${tokenId}" is not a valid token id (a token id is a UUID)` }, 400);
-  }
-  const queryAccount = pathAccountOf(c) ?? c.req.query('account_id') ?? undefined;
-
-  let accountId: string;
-  try {
-    accountId = await resolveAccountForUser(userId, queryAccount);
-  } catch (err) {
-    rethrowDatabaseError(err);
-    // 409 `no_workspace`: a person with no account has nowhere to mint into.
-    if (isNoWorkspaceError(err)) throw err;
-    return c.json({ error: (err as Error).message }, 403);
-  }
-
-  // Your own hand-minted token needs only `token.personal.revoke`. Anything
-  // else — another person's token, a session or service-account bearer, or an
-  // id that does not exist — needs the admin `token.revoke`, so a member learns
-  // nothing about tokens that are not theirs (403, not 404).
-  const actor = await actorOf(c, accountId);
-  const owner = await getAccountTokenOwner(tokenId, accountId);
-  const ownPersonalToken =
-    actsAsFullIdentity(c.get('authType') as string | undefined, actor) &&
-    owner?.personal === true &&
-    owner.userId === userId;
-  await assertAuthorized(
-    actor,
-    ownPersonalToken ? ACCOUNT_ACTIONS.TOKEN_PERSONAL_REVOKE : ACCOUNT_ACTIONS.TOKEN_REVOKE,
-  );
-
-  if (c.req.query('delete_revoked') === 'true') {
-    const deleted = await deleteRevokedPersonalAccountToken(tokenId, accountId);
-    if (deleted) return c.json({ ok: true, deleted: true });
-    return c.json({ error: 'revoked personal token not found' }, 404);
-  }
-
-  const ok = await revokeAccountToken(tokenId, accountId);
-  if (!ok) {
-    return c.json({ error: 'token not found or already revoked' }, 404);
-  }
-  return c.json({ ok: true });
-  },
-);
-}
 }

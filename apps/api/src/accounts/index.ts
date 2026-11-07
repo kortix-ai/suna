@@ -10,6 +10,7 @@ import { accountRequestGates } from './request-gates';
 import { iamRouter, registerIamRoutes } from './iam';
 import { auditRouter } from './audit';
 import { registerTokenRoutes } from './core/tokens';
+import { registerWorkspaceKeyRoutes } from './core/workspace-keys';
 import { registerDeviceRoutes } from './core/devices';
 import { registerAccountRoutes } from './core/accounts';
 import { registerMemberRoutes } from './core/members';
@@ -42,6 +43,8 @@ accountsRouter.route('/', auditRouter);
 //   members + invites + leave         → registerMemberRoutes
 registerDeviceRoutes();
 registerTokenRoutes();
+// Workspace settings › API keys: one list, keys that act as you, an agent or a bot.
+registerWorkspaceKeyRoutes();
 registerAccountRoutes();
 registerMemberRoutes();
 // A member out of credits asks the owners: /:accountId/top-up-requests.

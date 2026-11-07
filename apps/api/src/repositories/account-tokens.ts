@@ -1,6 +1,6 @@
 import { eq, and, desc, gt, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { SESSION_LEASE_REFUSAL } from '../shared/session-lease-refusal';
-import { accountTokens, projectSessions, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
+import { accountTokens, projectSessions, readStoredAgentGrant, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
 import {
@@ -100,6 +100,9 @@ export interface CreateAccountTokenParams {
   /** A renewing expiry: each use moves `expires_at` to now + this many days
    *  (the CLI device login). Null/undefined = a fixed expiry. */
   expiryRenewDays?: number | null;
+  /** The person who minted a key whose `userId` is a service account (an
+   *  agent or bot key). Null/undefined = `userId` minted it. */
+  createdBy?: string | null;
 }
 
 export interface CreateAccountTokenResult {
@@ -280,6 +283,7 @@ async function insertAccountToken(
       onBehalfOfUserId: params.onBehalfOfUserId ?? null,
       scopes: params.scopes ?? null,
       expiryRenewDays: params.expiryRenewDays ?? null,
+      createdBy: params.createdBy ?? null,
     })
     .returning();
 
@@ -571,6 +575,70 @@ function personalOfUser(userId: string) {
     isNull(accountTokens.serviceAccountId),
     isNull(accountTokens.agentGrant),
   ];
+}
+
+/**
+ * The workspace keys that act as a service account: an agent key (the agent's
+ * identity, `agent_grant` set) or a bot key (a bot service account). Bound to
+ * the workspace, never a session token. Revoked keys stay as history, like a
+ * person's own keys (`listPersonalAccountTokens`).
+ */
+export async function listServiceAccountKeys(accountId: string, projectId: string) {
+  return db
+    .select({
+      tokenId: accountTokens.tokenId,
+      publicKey: accountTokens.publicKey,
+      name: accountTokens.name,
+      status: accountTokens.status,
+      projectId: accountTokens.projectId,
+      expiresAt: accountTokens.expiresAt,
+      lastUsedAt: accountTokens.lastUsedAt,
+      createdAt: accountTokens.createdAt,
+      revokedAt: accountTokens.revokedAt,
+      scopes: accountTokens.scopes,
+      expiryRenewDays: accountTokens.expiryRenewDays,
+      createdBy: accountTokens.createdBy,
+      serviceAccountId: serviceAccounts.serviceAccountId,
+      serviceAccountName: serviceAccounts.name,
+      agentName: serviceAccounts.agentName,
+    })
+    .from(accountTokens)
+    .innerJoin(serviceAccounts, eq(serviceAccounts.serviceAccountId, accountTokens.serviceAccountId))
+    .where(
+      and(
+        eq(accountTokens.accountId, accountId),
+        eq(accountTokens.projectId, projectId),
+        isNull(accountTokens.sessionId),
+      ),
+    )
+    .orderBy(desc(accountTokens.createdAt))
+    .then(withReadScopes);
+}
+
+/**
+ * One key of the workspace that acts as a service account (agent or bot), or
+ * null. The keys route revokes it with `token.revoke`.
+ */
+export async function getServiceAccountKey(tokenId: string, accountId: string, projectId: string) {
+  const [row] = await db
+    .select({ tokenId: accountTokens.tokenId, serviceAccountId: accountTokens.serviceAccountId })
+    .from(accountTokens)
+    .where(
+      and(
+        eq(accountTokens.tokenId, tokenId),
+        eq(accountTokens.accountId, accountId),
+        eq(accountTokens.projectId, projectId),
+        isNull(accountTokens.sessionId),
+        sql`${accountTokens.serviceAccountId} IS NOT NULL`,
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/** Remove a key that was minted and refused in the same request (its secret never left the server). */
+export async function deleteUnissuedAccountToken(tokenId: string, accountId: string): Promise<void> {
+  await db.delete(accountTokens).where(and(eq(accountTokens.tokenId, tokenId), eq(accountTokens.accountId, accountId)));
 }
 
 /** Revoke a token (soft-delete — sets status='revoked' + revoked_at). */
