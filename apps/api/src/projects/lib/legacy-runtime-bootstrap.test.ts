@@ -322,23 +322,30 @@ describe('decideDeadDaemonOnOpen', () => {
 describe('decideDeadDaemonOnEdgeRefusal', () => {
   const now = Date.parse('2026-11-07T06:42:54Z');
   const at = (ms: number) => new Date(ms).toISOString();
+  const proven = { runtimeProvenAt: at(now - 3_600_000) };
 
   test('a Platinum box never asked for a relaunch gets one', () => {
-    expect(decideDeadDaemonOnEdgeRefusal({ provider: 'platinum', metadata: null, nowMs: now })).toBe('request');
+    expect(decideDeadDaemonOnEdgeRefusal({ provider: 'platinum', metadata: proven, nowMs: now })).toBe('request');
+  });
+
+  test('a box whose daemon never answered this boot is booting, not dead', () => {
+    expect(decideDeadDaemonOnEdgeRefusal({ provider: 'platinum', metadata: null, nowMs: now })).toBe('skip');
+    const resumed = { ...proven, runtimeWakeStartedAt: at(now - 5_000) };
+    expect(decideDeadDaemonOnEdgeRefusal({ provider: 'platinum', metadata: resumed, nowMs: now })).toBe('skip');
   });
 
   test('a relaunch asked for within its budget is not asked for again', () => {
-    const metadata = { [DEAD_DAEMON_REPAIR_REQUESTED_KEY]: at(now - 30_000) };
+    const metadata = { ...proven, [DEAD_DAEMON_REPAIR_REQUESTED_KEY]: at(now - 30_000) };
     expect(decideDeadDaemonOnEdgeRefusal({ provider: 'platinum', metadata, nowMs: now })).toBe('skip');
   });
 
   test('a relaunch asked for longer ago than its budget is asked for again', () => {
-    const metadata = { [DEAD_DAEMON_REPAIR_REQUESTED_KEY]: at(now - DEAD_DAEMON_REPAIR_BUDGET_MS) };
+    const metadata = { ...proven, [DEAD_DAEMON_REPAIR_REQUESTED_KEY]: at(now - DEAD_DAEMON_REPAIR_BUDGET_MS) };
     expect(decideDeadDaemonOnEdgeRefusal({ provider: 'platinum', metadata, nowMs: now })).toBe('request');
   });
 
   test('providers that relaunch on their own start are left alone', () => {
-    expect(decideDeadDaemonOnEdgeRefusal({ provider: 'daytona', metadata: null, nowMs: now })).toBe('skip');
+    expect(decideDeadDaemonOnEdgeRefusal({ provider: 'daytona', metadata: proven, nowMs: now })).toBe('skip');
   });
 });
 
