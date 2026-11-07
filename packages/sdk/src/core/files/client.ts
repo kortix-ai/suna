@@ -316,6 +316,14 @@ const UPLOAD_RETRY_DELAYS_MS = [400, 1200];
 // that one answer a wake-length schedule instead (~15 s total).
 const UPLOAD_WAKE_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
 const isTransient = (s: number) => s === 408 || s === 429 || s === 502 || s === 503 || s === 504;
+const isWakeRetryable = (body: string) => {
+  if (!isSandboxNotReadyError(body)) return false;
+  try {
+    return (JSON.parse(body) as { retry?: unknown }).retry !== false;
+  } catch {
+    return true;
+  }
+};
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
@@ -413,9 +421,11 @@ async function uploadWithRetry<T = UploadResult[]>(
     const message = uploadErrorMessage(res, text);
     lastError = new ApiError(`Upload failed (${res.status}): ${message}`, { status: res.status, response: res });
     if (!isTransient(res.status)) throw lastError;
-    // A not-ready answer swaps in the longer schedule at most once; it keeps
-    // the attempts already spent, so a later plain 503 cannot extend the wait.
-    if (delays === UPLOAD_RETRY_DELAYS_MS && res.status === 503 && isSandboxNotReadyError(text)) {
+    // A not-ready answer the proxy marks retryable swaps in the longer schedule
+    // at most once, and restarts the count (earlier 502s do not shorten the
+    // wake wait). A `retry: false` answer (parked, no wake claimed) keeps the
+    // short schedule: waiting 15 s for a wake nobody started cannot help.
+    if (delays === UPLOAD_RETRY_DELAYS_MS && res.status === 503 && isWakeRetryable(text)) {
       delays = UPLOAD_WAKE_RETRY_DELAYS_MS;
       attempt = 0;
     }

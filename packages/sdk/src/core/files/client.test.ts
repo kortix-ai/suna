@@ -287,6 +287,19 @@ test('a sandbox_not_ready 503 is retried past the short schedule until the box w
   expect(waits.slice(0, 4)).toEqual([1000, 2000, 4000, 8000]);
 });
 
+test('a sandbox_not_ready 503 with retry:false keeps the short schedule (3 attempts)', async () => {
+  let attempts = 0;
+  globalThis.fetch = mock(async () => {
+    attempts += 1;
+    return new Response(JSON.stringify({ error: 'sandbox not ready (status: stopped)', code: 'sandbox_not_ready', retry: false }), {
+      status: 503,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+  await expect(F.uploadFile(new Blob(['x']), '/workspace/uploads', 'a.zip')).rejects.toMatchObject({ status: 503 });
+  expect(attempts).toBe(3);
+});
+
 test('a plain 503 keeps the short schedule (3 attempts)', async () => {
   let attempts = 0;
   globalThis.fetch = mock(async () => {
