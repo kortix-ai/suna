@@ -1,8 +1,7 @@
 name: Tests
 
-# The contract lanes: six lanes (core-flows, core-db,
-# packages-api|cli|kortixd|rest) on GitHub-hosted runners (free on this public
-# repo). Each lane is the unchanged root command `pnpm test -- <args>`. The two
+# The contract lanes: seven lanes (core-flows, core-db,
+# packages-api|cli|kortixd|publish|rest) on the `CI_RUNNER_L` runner pool. Each lane is the unchanged root command `pnpm test -- <args>`. The two
 # `core-*` lanes split the core run (`--core-group=flows|db`); the `packages-*`
 # lanes run package quality. No browser journey runs here: they run once, in
 # the release suite, against deployed staging (tests-release.yml).
@@ -73,11 +72,14 @@ jobs:
           - lane: core-db
             mode: core
             args: --core-group=db
-          # Package quality in four slices on four runners since 2026-10-16.
-          # In one 4 vCPU lane the API, CLI and kortixd suites plus three
-          # `tsc` shared the CPU: 18.5 min, the CLI suite 7.7 min of it
-          # against 1.4 min alone (run 38777589705). `rest` holds the
-          # repo-wide checks and every other package.
+          # Package quality in five slices on five runners. Four since
+          # 2026-10-16: in one 4 vCPU lane the API, CLI and kortixd suites plus
+          # three `tsc` shared the CPU: 18.5 min, the CLI suite 7.7 min of it
+          # against 1.4 min alone (run 38777589705). `publish` since
+          # 2026-11-03: the npm packages' typecheck, lint, build, pack and
+          # install smokes ran in `rest` before its tests, 9.4 of its 16.9 min,
+          # and `rest` was the slowest lane (run 41627896638). `rest` holds the
+          # repo-wide checks and the tests of every other package.
           - lane: packages-api
             mode: packages
             args: --packages-only --package-group=api
@@ -87,6 +89,9 @@ jobs:
           - lane: packages-kortixd
             mode: packages
             args: --packages-only --package-group=kortixd
+          - lane: packages-publish
+            mode: packages
+            args: --packages-only --package-group=publish
           - lane: packages-rest
             mode: packages
             args: --packages-only --package-group=rest

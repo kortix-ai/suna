@@ -140,7 +140,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const noPackages = args.includes('--no-packages');
   const browserShardArgs = args.filter((arg) => arg.startsWith('--browser-shard='));
   const apiShardArgs = args.filter((arg) => arg.startsWith('--api-shard='));
-  // `--package-group=api|cli|kortixd|rest`: one slice of package quality
+  // `--package-group=api|cli|kortixd|publish|rest`: one slice of package quality
   // (tests/bin/package-quality.ts), so CI runs the slices on parallel runners.
   const packageGroupArgs = args.filter((arg) => arg.startsWith('--package-group='));
   // `--core-group=flows|db`: one half of the core run without package quality,
@@ -187,8 +187,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   }
   const packageGroup = packageGroupArgs[0]?.slice('--package-group='.length);
   if (packageGroupArgs.length === 1) {
-    if (!['api', 'cli', 'kortixd', 'rest'].includes(packageGroup ?? '')) {
-      throw new Error('--package-group must be api, cli, kortixd or rest');
+    if (!['api', 'cli', 'kortixd', 'publish', 'rest'].includes(packageGroup ?? '')) {
+      throw new Error('--package-group must be api, cli, kortixd, publish or rest');
     }
     if (!packagesOnly) throw new Error('--package-group requires --packages-only');
   }

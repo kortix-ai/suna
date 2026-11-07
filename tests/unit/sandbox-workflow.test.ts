@@ -18,7 +18,7 @@ const laneStep = (name: string): string => {
 };
 
 describe('native test-lane workflow', () => {
-  test('runs six contract lanes natively on GitHub-hosted runners at the pull request head SHA', () => {
+  test('runs seven contract lanes natively on the runner at the pull request head SHA', () => {
     // Since 2026-08-26 the lanes run on the runner itself. The old
     // sandbox-worker path failed on ~every third lane the day before.
     expect(testWorkflow).toContain(
@@ -30,9 +30,10 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).toMatch(/- lane: core-flows\n\s+mode: core\n\s+args: --core-group=flows\n/);
     expect(testWorkflow).toMatch(/- lane: core-db\n\s+mode: core\n\s+args: --core-group=db\n/);
     expect(testWorkflow).not.toContain('- lane: core\n');
-    // Package quality in four slices on four runners since 2026-10-16: on one
-    // runner the API, CLI and kortixd suites shared 4 vCPU (run 38777589705).
-    for (const group of ['api', 'cli', 'kortixd', 'rest']) {
+    // Package quality in five slices on five runners: the API, CLI and kortixd
+    // suites shared 4 vCPU on one runner (run 38777589705), and the npm package
+    // checks queued in front of the `rest` tests (run 41627896638).
+    for (const group of ['api', 'cli', 'kortixd', 'publish', 'rest']) {
       expect(testWorkflow).toContain(`- lane: packages-${group}`);
       expect(testWorkflow).toContain(`args: --packages-only --package-group=${group}`);
     }
@@ -58,7 +59,7 @@ describe('native test-lane workflow', () => {
 
   test('the matrix lanes together run exactly the lanes of `pnpm test -- --full`', () => {
     const matrixArgs = [...testWorkflow.matchAll(/^ {12}args: (.+)$/gm)].map((m) => m[1]!.split(' '));
-    expect(matrixArgs).toHaveLength(6);
+    expect(matrixArgs).toHaveLength(7);
     const ran = matrixArgs.flatMap((args) => buildLocalTestPlan(args).lanes.map((lane) => lane.name));
     // Everything `--full` runs except the browser journeys, which run against
     // deployed staging in the release suite.

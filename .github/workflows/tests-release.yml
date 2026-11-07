@@ -142,10 +142,13 @@ jobs:
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
+      # No `cache: pnpm`: the runner keeps a warm pnpm store, and restoring
+      # the 1.65 GB cache archive took 68 s (12 s download, 56 s unpack) in
+      # front of a 15 s install (deployed api smoke, run 41627896638). The
+      # contract lanes in tests.yml install without the cache as well.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-          cache: pnpm
       - name: Install runner dependencies
         run: pnpm install --frozen-lockfile --filter @kortix/tests...
         # Every other workflow that installs from this lockfile (tests.yml,
@@ -271,10 +274,10 @@ jobs:
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
+      # No `cache: pnpm`: see the sweep-before job.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-          cache: pnpm
       - name: Install deployed-target dependencies
         run: pnpm install --frozen-lockfile --filter @kortix/tests...
         # Every other workflow that installs from this lockfile (tests.yml,
@@ -412,10 +415,10 @@ jobs:
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
+      # No `cache: pnpm`: see the sweep-before job.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-          cache: pnpm
       - name: Install deployed-target dependencies
         run: |
           pnpm install --frozen-lockfile --filter @kortix/tests...
@@ -508,10 +511,10 @@ jobs:
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 8.11.0
+      # No `cache: pnpm`: see the sweep-before job.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-          cache: pnpm
       - name: Install runner dependencies
         run: pnpm install --frozen-lockfile --filter @kortix/tests...
         # Every other workflow that installs from this lockfile (tests.yml,

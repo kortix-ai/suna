@@ -185,7 +185,7 @@ describe('local test runner', () => {
       },
     ]);
     expect(() => buildLocalTestPlan(['--package-group=api'])).toThrow('requires --packages-only');
-    expect(() => buildLocalTestPlan(['--packages-only', '--package-group=web'])).toThrow('api, cli, kortixd or rest');
+    expect(() => buildLocalTestPlan(['--packages-only', '--package-group=web'])).toThrow('api, cli, kortixd, publish or rest');
   });
 
   it('runs deployed API and browser smoke through the same root command', () => {
