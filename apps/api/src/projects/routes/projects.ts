@@ -18,8 +18,8 @@ import {
   type ProvisionContext,
   type ProvisionResult,
 } from '../provision-core';
-import { newWorkspaceCallerDenial, wantsNewWorkspace, type NewWorkspaceCaller } from '../new-workspace';
-import { isProjectSessionPrincipal } from '../../middleware/agent-scope';
+import { newWorkspaceCallerDenial, wantsNewWorkspace } from '../new-workspace';
+import { newWorkspaceCallerOf } from '../lib/new-workspace-caller';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { and, desc, eq, inArray } from 'drizzle-orm';
@@ -44,18 +44,6 @@ import { rethrowDatabaseError } from '../../shared/database-errors';
 import { isNoWorkspaceError } from '../../shared/no-workspace';
 import { accountTakenForNewProject, workspaceHasProjectDenial } from '../../workspaces/one-project';
 import { projectsView } from '../../workspaces/rows';
-
-/** Who is asking, for the new-workspace caller rule (`new-workspace.ts`). */
-export function newWorkspaceCallerOf(c: Context): NewWorkspaceCaller {
-  return {
-    userId: c.get('userId') as string,
-    email: (c.get('userEmail') as string | undefined) || null,
-    authType: c.get('authType') as string | undefined,
-    // A browser JWT's `sessionId` is its Supabase login session, not a
-    // Kortix session (middleware/caller-session.ts): never a scoped credential.
-    scopedCredential: Boolean(c.get('tokenProjectId')) || isProjectSessionPrincipal(c),
-  };
-}
 
 /**
  * Reads the request body and resolves the caller's account scope — the part

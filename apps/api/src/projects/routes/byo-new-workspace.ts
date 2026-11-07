@@ -46,10 +46,10 @@ import { accountTakenForNewProject } from '../../workspaces/one-project';
 import { enforceProjectQuota, resolveProjectAccount } from '../lib/access';
 import { normalizeString } from '../lib/serializers';
 import { newWorkspaceCallerDenial, resolveNewWorkspaceAccount } from '../new-workspace';
-import { newWorkspaceCallerOf } from './projects';
+import { newWorkspaceCallerOf } from '../lib/new-workspace-caller';
 
 /** Where a BYO create lands. */
-export type ByoCreateTarget =
+type ByoCreateTarget =
   | {
       kind: 'account';
       /** The account the project is created in, and the one its installation is read from. */
@@ -66,7 +66,7 @@ export type ByoCreateTarget =
     };
 
 /** The caller and the account the request names, resolved and authorized. */
-export interface ByoCreateScope {
+interface ByoCreateScope {
   userId: string;
   /** The named (or default) account; `null` when the person has no workspace. */
   accountId: string | null;
