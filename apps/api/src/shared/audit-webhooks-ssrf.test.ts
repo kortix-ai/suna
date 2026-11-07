@@ -17,7 +17,7 @@ mock.module('./db', () => ({
   },
 }));
 
-let resolvedAddress = '10.0.0.5';
+const resolvedAddress = '10.0.0.5';
 mock.module('node:dns/promises', () => ({
   lookup: async () => [{ address: resolvedAddress, family: 4 }],
 }));
@@ -80,7 +80,6 @@ describe('audit webhook delivery SSRF guard', () => {
 
   test('never sends when a public-looking hostname resolves to a private address', async () => {
     fetchSpy.mockImplementation(okFetch);
-    resolvedAddress = '10.0.0.5';
 
     const result = await deliverTestEvent(hookFor('https://hooks.example.com/hook'));
 
