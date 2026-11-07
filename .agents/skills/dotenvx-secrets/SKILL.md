@@ -55,10 +55,18 @@ There are **four environments**, each a separate encrypted file with its **own k
   production clearance (trial hires, contractors before a background check).
   Its DB is local Docker. It must not contain a credential that reaches
   customer data. `scripts/secrets-envs-separation.py` fails `pnpm test:envs`
-  when any secret-classed key in `.env`, `.env.dev`, or `.env.staging` equals
-  its `.env.prod` value; `scripts/secrets-shared-with-prod.allowlist` lists the
+  when any key in `.env`, `.env.dev`, or `.env.staging` equals a `.env.prod`
+  value or a credential DSN (`scheme://user:pass@host`) names a prod host — the
+  VALUE decides, never the key name, because `DATABASE_URL`, `SUPABASE_URL` and
+  `KORTIX_URL` carry production reach with no KEY/SECRET/TOKEN in the name. A
+  bare host (`CLOUDFLARE_ZONE_NAME=kortix.com`) or a sender address does not
+  reach prod, and a prod host is any label under `kortix.com` (only dev,
+  staging and `*.kortix.internal` are their own stacks);
+  `scripts/secrets-shared-with-prod.allowlist` lists the
   remaining shared vendor keys with the reason and the rotation that removes
-  each line. Do not add to that file to make the test pass — split the
+  each line, plus the brand values (one public domain, sender address or zone
+  name that serves every environment and can never diverge). An entry waives
+  only the shared-value match, never a prod host or a LIVE key. Do not add to that file to make the test pass — split the
   credential.
 - **`.env.dev`**: the `Kortix DEV` Supabase project holds signups from
   dev.kortix.com (2,793 users on 2026-08-26). The owner classifies them as
@@ -132,7 +140,7 @@ This re-encrypts the file in place (value becomes `KEY=encrypted:…`). Then com
 | Task                                         | Command                                                                                                                                       |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | Run local / dev / staging / prod             | `pnpm dev` · `pnpm dev:dev-env` · `pnpm dev:staging-env` · `pnpm dev:prod-env`                                                                |
-| Verify all 4 envs decrypt + no non-prod secret equals prod | `pnpm test:envs` (allowlist: `scripts/secrets-shared-with-prod.allowlist`)                                                        |
+| Verify all 4 envs decrypt + no non-prod value equals or names prod | `pnpm test:envs` (allowlist: `scripts/secrets-shared-with-prod.allowlist`)                                                        |
 | Verify each env file equals its AWS SM blob   | `pnpm test:envs --sm` (needs `kortix-mfa` session); `python3 scripts/secrets-sm-parity.py pull <env>` copies SM → file                     |
 | Read a secret                                | `dotenvx get KEY -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`)                                                             |
 | Add / change a secret                        | `dotenvx set KEY value -f apps/api/.env` (or `.env.dev` / `.env.staging` / `.env.prod`), then commit                                          |
