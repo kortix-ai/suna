@@ -187,7 +187,7 @@ export function createApiJsonClient(apiBase: string) {
  * `500` stays a hard failure: that is an unhandled exception in a route, which
  * is exactly the class of defect these journeys exist to catch.
  */
-export const INFRASTRUCTURE_STATUSES = new Set([502, 503, 504]);
+const INFRASTRUCTURE_STATUSES = new Set([502, 503, 504]);
 
 export function isProductServerError(status: number): boolean {
   return status >= 500 && !INFRASTRUCTURE_STATUSES.has(status);

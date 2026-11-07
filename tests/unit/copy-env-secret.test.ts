@@ -3,8 +3,8 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT as root } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const script = resolve(root, 'infra/scripts/copy-env-secret.sh');
 
 // A fake `aws` that keeps each secret in <store>/<region>__<name>.json and

@@ -35,8 +35,8 @@ import { type Server, createServer as createHttpsServer } from 'node:https';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { REPO_ROOT as root } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const installer = resolve(root, 'scripts/install.sh');
 const REPO = 'kortix-ai/CompanyOS';
 const TAG = 'v9.9.9-test';

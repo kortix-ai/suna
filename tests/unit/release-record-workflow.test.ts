@@ -21,8 +21,8 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT as root } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const workflowPath = '.github/workflows/deploy-prod.yml';
 const workflow = readFileSync(resolve(root, workflowPath), 'utf8');
 

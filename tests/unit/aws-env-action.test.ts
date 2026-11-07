@@ -3,8 +3,8 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, readdirSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
+import { REPO_ROOT as root } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const actionDir = resolve(root, '.github/actions/aws-env');
 const script = resolve(actionDir, 'fetch.sh');
 const workflowsDir = resolve(root, '.github/workflows');

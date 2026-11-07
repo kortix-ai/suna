@@ -21,7 +21,7 @@ const FROM_KORTIX = /\b(?:export|import)\s+(?:type\s+)?(?:([\w$*{},\s]+?)\s+from
  * True when `source` only re-exports or imports `@kortix/*` (one of them @kortix/ui),
  * plus at most a re-export of names it imported (`import X from …; export default X`).
  */
-export function isUiShim(source: string): boolean {
+function isUiShim(source: string): boolean {
   let code = source
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '')

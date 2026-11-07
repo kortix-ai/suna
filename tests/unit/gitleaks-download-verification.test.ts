@@ -22,8 +22,8 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { REPO_ROOT as root } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const VERSION = '9.9.9';
 const ARCHIVE = `gitleaks_${VERSION}_linux_x64.tar.gz`;
 const SUMS = `gitleaks_${VERSION}_checksums.txt`;

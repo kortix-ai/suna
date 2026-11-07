@@ -1,12 +1,12 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { REPO_ROOT as root } from '../src/fixtures/repo';
 
 // The desktop installer bundles the computer agent, which
 // apps/desktop-electron/scripts/ensure-runtime.js builds with bun. A job that
 // builds the app without bun fails only after the merge (learnings ledger,
 // 2026-09-29: "When a build step gains a tool dependency…").
-const root = resolve(import.meta.dirname, '../..');
 const dir = resolve(root, '.github/workflows');
 
 /** Job bodies: from `  <id>:` under `jobs:` to the next job at the same indent. */

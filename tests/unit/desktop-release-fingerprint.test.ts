@@ -6,12 +6,12 @@ import {
   dependencyClosure,
   sourceFiles,
 } from '../../apps/desktop-electron/scripts/release-fingerprint.mjs';
+import { REPO_ROOT as root } from '../src/fixtures/repo';
 
 // A prod release reuses the previous desktop installers when this fingerprint
 // is unchanged, so installed apps get no update prompt (deploy-prod.yml
 // desktop-plan). A missed input ships a stale app; an extra input only costs
 // a rebuild.
-const root = resolve(import.meta.dirname, '../..');
 const workflow = readFileSync(resolve(root, '.github/workflows/deploy-prod.yml'), 'utf8');
 
 const lock = {

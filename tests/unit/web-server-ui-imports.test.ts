@@ -69,7 +69,7 @@ function isClientReference(file: string, name: string, seen = new Set<string>())
   return false;
 }
 
-export function serverCallsIntoClient(): string[] {
+function serverCallsIntoClient(): string[] {
   const routes = execFileSync('git', ['ls-files', '--', 'apps/web/src/app'], { cwd: REPO_ROOT, encoding: 'utf8' })
     .split('\n')
     .filter((f) => ROUTE_FILE.test(`/${f}`))

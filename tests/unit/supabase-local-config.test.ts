@@ -1,11 +1,10 @@
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { parse } from 'smol-toml';
 import { describe, expect, it } from 'vitest';
-
-const root = resolve(import.meta.dirname, '../..');
+import { REPO_ROOT as root } from '../src/fixtures/repo';
 
 /**
  * `supabase start` decodes supabase/config.toml before it touches Docker, and

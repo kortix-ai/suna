@@ -1,9 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-const root = resolve(import.meta.dirname, '../..');
+import { REPO_ROOT as root } from '../src/fixtures/repo';
 
 /**
  * `pnpm dev` warms the heavy /projects/* routes in the background. Its

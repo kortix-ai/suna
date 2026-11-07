@@ -1,9 +1,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT as repo, readRepoFile as read } from '../src/fixtures/repo';
 
-const repo = resolve(import.meta.dirname, '../..');
-const read = (p: string) => readFileSync(resolve(repo, p), 'utf8');
 const PROD_ROLE = 'role/kortix-gha-ecs-deploy-prod';
 
 /** Split a workflow into its top-level jobs: name -> raw text. */

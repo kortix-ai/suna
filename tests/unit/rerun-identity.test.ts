@@ -16,8 +16,8 @@ import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 
 import { runAttemptSuffix } from '../src/core/run-identity';
+import { REPO_ROOT as root } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const releaseWorkflow = readFileSync(
   resolve(root, '.github/workflows/tests-release.yml'),
   'utf8',

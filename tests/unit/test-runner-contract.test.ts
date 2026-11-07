@@ -3,8 +3,8 @@ import { resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT as root } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const rootPackage = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
 const testsPackage = JSON.parse(readFileSync(resolve(root, 'tests/package.json'), 'utf8'));
 // scripts/test-guard.mjs refuses a whole package suite on a Mac.

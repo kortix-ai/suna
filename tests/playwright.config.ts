@@ -46,7 +46,7 @@ export function resolveVideoMode(env: NodeJS.ProcessEnv): 'on' | 'retain-on-fail
   return env.CI ? 'on' : 'retain-on-failure';
 }
 
-export interface GrepFilters {
+interface GrepFilters {
   grep?: RegExp;
   grepInvert?: RegExp;
 }

@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   PROJECT_SNAPSHOT_SUITE,
@@ -16,8 +16,7 @@ import {
   templateWeekKey,
   withDatabase,
 } from '../src/core/db-suites';
-
-const root = resolve(import.meta.dirname, '../..');
+import { REPO_ROOT as root } from '../src/fixtures/repo';
 
 function testFiles(directory: string): string[] {
   const out: string[] = [];
