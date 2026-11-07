@@ -8,8 +8,10 @@
  * Composio finalize. Each transition is a compare-and-set
  * (`shared/status-transition.ts`):
  *
- *   - `connect`: a person (re)connects the account at request time. It is the
- *     only transition that leaves `revoked` unconditionally.
+ *   - `connect`: a reconnect. Only its `person` authority (a click, a pasted
+ *     credential, a paired machine) leaves `revoked` unconditionally; an
+ *     `agent` authority (an agent session starting its own authorization)
+ *     never does.
  *   - `complete`: an in-flight completion. It leaves `revoked` only when the
  *     revoke (`metadata.revokedAt`) is older than the flow (`startedAt`): a
  *     sign-in a person started on a revoked account still reconnects it.
@@ -36,11 +38,19 @@ export const CONNECTION_TRANSITIONS = {
   revoke: { from: ['active', 'error', 'revoked'], to: 'revoked' },
 } as const satisfies Record<string, { from: readonly ConnectionStatus[]; to: ConnectionStatus }>;
 
-/** `revoked` only when the revoke predates `startedAt` (ISO strings sort by time). */
+/**
+ * `revoked` only when a recorded revoke predates `startedAt` (ISO strings sort
+ * by time). A revoked row with no `revokedAt` (the 2026-09-17 migration stamped
+ * only `updated_at`) cannot prove it predates the flow, so it stays revoked: a
+ * missing stamp is not the epoch.
+ */
 function revokedBefore(startedAt: Date): SQL {
   return or(
     sql`${connectorConnections.status} <> 'revoked'`,
-    sql`coalesce(${connectorConnections.metadata}->>'revokedAt', '') < ${startedAt.toISOString()}`,
+    sql`(
+      ${connectorConnections.metadata}->>'revokedAt' IS NOT NULL
+      AND ${connectorConnections.metadata}->>'revokedAt' < ${startedAt.toISOString()}
+    )`,
   )!;
 }
 
@@ -69,11 +79,24 @@ export async function completeConnection(
   return moved.applied;
 }
 
-/** A person connects the account now: active from any status. */
+/**
+ * WHO starts the (re)connect: `person` is a request only a person can make (a
+ * click in Customize, a pasted credential, a paired machine); `agent` is
+ * anything an agent session can reach on its own behalf.
+ */
+export type ConnectAuthority = 'person' | 'agent';
+
+/**
+ * An account connects from any status. Only a `person` may leave `revoked`: a
+ * revoke is a person's decision, and an agent re-authorizing its own account
+ * must not undo it (`agentMayTouchConnection`, projects/lib/connection-mutation.ts).
+ * The guard makes that part of the UPDATE, so a concurrent revoke still wins.
+ */
 export async function connectConnection(
   connectionId: string,
   set: ConnectionSet = {},
   exec: StatusExecutor = db,
+  authority: ConnectAuthority = 'agent',
 ): Promise<ConnectionRow | null> {
   const moved = await transitionStatus(
     connectorConnections,
@@ -82,10 +105,28 @@ export async function connectConnection(
     {
       where: eq(connectorConnections.connectionId, connectionId),
       set: { ...set, metadata: set.metadata ?? sql`${connectorConnections.metadata} - 'revokedAt'`, updatedAt: new Date() },
+      ...(authority === 'person' ? {} : { guard: sql`${connectorConnections.status} <> 'revoked'` }),
     },
     exec,
   );
+  if (!moved.applied && authority === 'agent') await expirePendingOAuthSessions(connectionId, exec);
   return moved.applied ? moved.row : null;
+}
+
+/**
+ * An agent's start that found the account revoked expires the sessions waiting
+ * on it: a revoke expires the sessions of a row it moved, but a start on a row
+ * that is ALREADY revoked never moved it, so its poll would otherwise find a
+ * pending session and store a token on an account a person turned off.
+ */
+async function expirePendingOAuthSessions(
+  connectionId: string,
+  exec: Pick<typeof db, 'update'>,
+): Promise<void> {
+  await exec
+    .update(connectionOAuthSessions)
+    .set({ status: 'expired', updatedAt: new Date() })
+    .where(and(eq(connectionOAuthSessions.connectionId, connectionId), eq(connectionOAuthSessions.status, 'pending')));
 }
 
 /** An authorization failed: `error`, unless the account is revoked. */
