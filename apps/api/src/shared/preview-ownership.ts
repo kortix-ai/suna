@@ -59,6 +59,17 @@ onSpaceAccessBust(() => sessionVisibilityCache.clear());
 // replica re-reading is one redundant query, never a different verdict.
 const sessionVisibilityInFlight = new Map<string, Promise<boolean>>();
 
+/** One verdict per caller/target/read-ness: the cache and the refusal context share this key. */
+function sessionAccessKey(input: {
+  sessionId: string;
+  userId: string;
+  callerSessionId: string | null;
+  boundCredentialSessionId: string | null;
+  spawnAncestorRead?: unknown;
+}): string {
+  return `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}|${input.boundCredentialSessionId ?? '-'}|${input.spawnAncestorRead ? 'r' : '-'}`;
+}
+
 /**
  * Whether `userId` may reach the SESSION behind a sandbox (daemon-port traffic).
  * Returns true when there is no project_session row for the sandbox (pool /
@@ -76,6 +87,10 @@ export async function canAccessSandboxSession(input: {
   /** The caller's AGENT/SANDBOX token binding (`callerKortixSessionId(c)`).
    *  Only the trigger-session manager override reads it — see share.ts. */
   boundCredentialSessionId: string | null;
+  /** Set when the request only reads the session's log: a session token may then also read
+   *  the sessions that spawned it, as on the REST read path (`SessionReadOptions`). Answers
+   *  whether the target spawned the caller's session; injected, as `shared/` cannot reach `projects/`. */
+  spawnAncestorRead?: () => Promise<boolean>;
 }): Promise<boolean> {
   // callerSessionId MUST be in the key. In Kortix-as-a-Backend every end-user
   // shares one `userId` (the wrapper credential), so without it end-user A and
@@ -85,7 +100,7 @@ export async function canAccessSandboxSession(input: {
   // boundCredentialSessionId is in the key for the same reason callerSessionId
   // is: it changes the verdict (it gates the manager override), so two callers
   // that differ only in it must not share one entry.
-  const key = `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}|${input.boundCredentialSessionId ?? '-'}`;
+  const key = sessionAccessKey(input);
   const cached = sessionVisibilityCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.allowed;
 
@@ -183,6 +198,13 @@ async function readSandboxSessionAccess(
       canManageProject: managerVerdict.allowed,
       spaceVisible,
     });
+    // A subagent reads the conversation of the sessions that spawned it
+    // (`kortix sessions log <parent>`): the REST route allows it, so the box's
+    // own log read through this gate must too, for a read only and never
+    // across a hidden channel.
+    if (!allowed && input.spawnAncestorRead && spaceVisible) {
+      allowed = await input.spawnAncestorRead();
+    }
     // Account session oversight — the same rule `loadVisibleSession` applies,
     // so an admin who may open a session's transcript may also reach its
     // runtime. Human credentials only.
@@ -249,8 +271,9 @@ export function takeSessionAccessRefusal(input: {
   userId: string;
   callerSessionId: string | null;
   boundCredentialSessionId: string | null;
+  spawnAncestorRead?: unknown;
 }): SessionAccessRefusal | null {
-  const key = `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}|${input.boundCredentialSessionId ?? '-'}`;
+  const key = sessionAccessKey(input);
   const found = refusalContexts.get(key) ?? null;
   if (refusalContexts.size > REFUSAL_CONTEXT_MAX) refusalContexts.clear();
   return found;

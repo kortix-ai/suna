@@ -728,7 +728,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
       liveError = err instanceof SessionRuntimeError ? (err.cause ?? err) : err;
     }
   }
-  // A 403 is the box refusing this credential (a subagent reading its parent), not a box that is down.
+  // A 403 is the box refusing this credential (the caller is not allowed to read this box's live log), not a box that is down.
   const refused = (liveError as { status?: unknown } | null)?.status === 403;
   const why = liveError === null
     ? `session is ${session.status}`
