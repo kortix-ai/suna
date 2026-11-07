@@ -8,7 +8,7 @@ export function repoRoot(): string {
   return resolve(HERE, '../../..');
 }
 
-export function parseEnvFile(relativePath: string): Record<string, string> {
+function parseEnvFile(relativePath: string): Record<string, string> {
   const filePath = isAbsolute(relativePath)
     ? relativePath
     : join(repoRoot(), relativePath);
@@ -29,14 +29,14 @@ export function parseEnvFile(relativePath: string): Record<string, string> {
   return env;
 }
 
-export function explicitEnvFiles(): string[] {
+function explicitEnvFiles(): string[] {
   return (process.env.E2E_ENV_FILE || '')
     .split(delimiter)
     .map((item) => item.trim())
     .filter(Boolean);
 }
 
-export function candidateEnvFiles(files: string[]): string[] {
+function candidateEnvFiles(files: string[]): string[] {
   return [...explicitEnvFiles(), ...files];
 }
 

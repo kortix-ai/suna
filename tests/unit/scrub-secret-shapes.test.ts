@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { writeResults } from '../src/core/report';
 import type { RunResult } from '../src/core/result';
 import { GUARD_PATTERN_SOURCE, scrubSecretShapes, scrubValue } from '../src/core/scrub';
+import { readWorkflow } from '../src/fixtures/repo';
 
 // The CI guard ("Guard test artifacts against secrets") greps results.json and
 // report.html for these shapes before upload. It was a silent no-op from its
@@ -119,7 +120,7 @@ describe('the artifact guard step', () => {
   const workflows = ['tests.yml', 'tests-release.yml'];
 
   it.each(workflows)('%s greps with the runner-scrubbed pattern and never calls rg', (name) => {
-    const source = readFileSync(resolve(import.meta.dirname, `../../.github/workflows/${name}`), 'utf8');
+    const source = readWorkflow(name);
     const guards = source.split('Guard test artifacts against secrets').length - 1;
     expect(guards, 'guard step present').toBeGreaterThan(0);
     expect(source.split(`pattern='${GUARD_PATTERN_SOURCE}'`).length - 1).toBe(guards);

@@ -1,8 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { findConflictMarkers } from '../src/core/conflict-markers';
+import { REPO_ROOT, readRepoFile } from '../src/fixtures/repo';
 
 // Built, never written literally: a literal marker in this file would make the
 // repository scan below fail on the test that enforces it.
@@ -11,8 +10,6 @@ const CLOSE = `${'>'.repeat(7)} 6f52904b61`;
 const MIDDLE = '='.repeat(7);
 const BASE_LABELLED = `${'|'.repeat(7)} 88cb598b14`;
 const BASE_BARE = '|'.repeat(7);
-
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 
 describe('findConflictMarkers', () => {
   it('finds both ends of a committed conflict', () => {
@@ -82,7 +79,7 @@ describe('the repository', () => {
     for (const path of tracked) {
       let content: string;
       try {
-        content = readFileSync(join(REPO_ROOT, path), 'utf8');
+        content = readRepoFile(path);
       } catch {
         continue; // deleted in the worktree, or not readable as text
       }

@@ -11,17 +11,12 @@
  * the release gate, mid-release. Re-run is the cheapest recovery lever the gate
  * has; it has to be trustworthy.
  */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 
 import { runAttemptSuffix } from '../src/core/run-identity';
+import { readWorkflow } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
-const releaseWorkflow = readFileSync(
-  resolve(root, '.github/workflows/tests-release.yml'),
-  'utf8',
-);
+const releaseWorkflow = readWorkflow('tests-release.yml');
 
 describe('runAttemptSuffix', () => {
   test('is empty on the first attempt, so existing ids are unchanged', () => {

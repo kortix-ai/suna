@@ -3,8 +3,8 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, readdirSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
+import { REPO_ROOT as root, readWorkflow } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const actionDir = resolve(root, '.github/actions/aws-env');
 const script = resolve(actionDir, 'fetch.sh');
 const workflowsDir = resolve(root, '.github/workflows');
@@ -351,7 +351,7 @@ describe('workflows read credentials from AWS, not GitHub', () => {
   it('references no GitHub secret except GITHUB_TOKEN and temporary `|| secrets.X` fallbacks', () => {
     const offenders: string[] = [];
     for (const file of files) {
-      const lines = readFileSync(join(workflowsDir, file), 'utf8').split('\n');
+      const lines = readWorkflow(file).split('\n');
       lines.forEach((line, i) => {
         const stripped = line
           .replace(/secrets\.GITHUB_TOKEN/g, '')
@@ -389,7 +389,7 @@ describe('workflows read credentials from AWS, not GitHub', () => {
   }
 
   const users = files
-    .map((file) => ({ file, text: readFileSync(join(workflowsDir, file), 'utf8') }))
+    .map((file) => ({ file, text: readWorkflow(file) }))
     .filter(({ text }) => text.includes(USES));
 
   it('finds the workflows that use aws-env (guards the checks below from passing vacuously)', () => {
@@ -484,13 +484,13 @@ describe('workflows read credentials from AWS, not GitHub', () => {
       'deploy-staging.yml', // read-modify-write of kortix-staging-env in eu-west-2
     ]);
     const raw = files.filter(
-      (file) => !allowed.has(file) && readFileSync(join(workflowsDir, file), 'utf8').includes('get-secret-value'),
+      (file) => !allowed.has(file) && readWorkflow(file).includes('get-secret-value'),
     );
     expect(raw).toEqual([]);
   });
 
   it('never gives a deploy-preview job that checks out pull request code an OIDC token', () => {
-    const text = readFileSync(join(workflowsDir, 'deploy-preview.yml'), 'utf8');
+    const text = readWorkflow('deploy-preview.yml');
     const prJobs = jobsOf(text).filter((job) => job.text.includes('ref: ${{ needs.authorize.outputs.sha }}'));
     expect(prJobs.map((job) => job.name).sort()).toEqual(['build-api', 'build-gateway', 'build-web']);
     for (const job of prJobs) {

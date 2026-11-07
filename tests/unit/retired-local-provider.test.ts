@@ -2,8 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT as root } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const retiredProviderIds = [['local', 'docker'].join('-'), ['local', 'docker'].join('_')];
 const scannedExtensions = new Set([
   '.cjs',

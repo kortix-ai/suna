@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { dirname, join, posix } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT, readRepoFile } from '../src/fixtures/repo';
 
 // The web and mobile apps render sessions from the session log (`kortix.session/2`, P5): a
 // host file reads blocks (`SessionLogMessage`, `ToolCallBlock`, `SessionLogTurn`) through
@@ -15,7 +16,6 @@ import { describe, expect, it } from 'vitest';
 // an SDK module, such as `lib/iam-client.ts`): they are the SDK surface. An import from any of
 // them counts as an import from the SDK. Each host resolves `@/` to its own root.
 
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const WEB_SRC = 'apps/web/src';
 const MOBILE = 'apps/mobile';
 const UI_SRC = 'packages/ui/src';
@@ -78,7 +78,7 @@ const shims = new Map<string, boolean>();
 function isShim(file: string): boolean {
   let known = shims.get(file);
   if (known === undefined) {
-    const code = readFileSync(join(REPO_ROOT, file), 'utf8').replace(COMMENTS, '');
+    const code = readRepoFile(file).replace(COMMENTS, '');
     const statements = code.split(';').map((s) => s.trim()).filter(Boolean);
     known =
       statements.length > 0 &&
@@ -181,7 +181,7 @@ describe('host files import no v1 part or turn type', () => {
       'packages/sdk/src/public-surface.snapshot.json',
       'packages/sdk/src/public-type-surface.snapshot.json',
       `${UI_SRC}/internal/session-types/types.ts`,
-    ].map((file) => readFileSync(join(REPO_ROOT, file), 'utf8'));
+    ].map((file) => readRepoFile(file));
     const missing = [...V1_NAMES].filter((name) => !surfaces.some((s) => new RegExp(`\\b${name}\\b`).test(s)));
     expect(missing).toEqual([]);
   });
@@ -194,7 +194,7 @@ describe('host files import no v1 part or turn type', () => {
     const files = hostFiles(root);
     expect(files.length).toBeGreaterThan(atLeast);
     const violations = files.flatMap((file) =>
-      v1Imports(readFileSync(join(REPO_ROOT, file), 'utf8'), file)
+      v1Imports(readRepoFile(file), file)
         .map((hit) => `${file}: ${hit}`)
         .filter((line) => !(line.replace(/ \(.*\)$/, '') in ALLOWED)),
     );
