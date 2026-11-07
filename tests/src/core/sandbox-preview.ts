@@ -66,16 +66,6 @@ export function previewSuiteStatusPath(runId: string, runAttempt: string): strin
 }
 
 /**
- * `pnpm test -- --target-full` against a preview stack a deploy of THIS run
- * already proved healthy on `sha`. A separate script, launched after the
- * deploy returns, so the workflow publishes the preview origin ~40 min before
- * the suite finishes instead of after it.
- *
- * It holds the same `deploy.lock` as the bootstrap, so a redeploy cannot
- * replace the API while the suite runs, and it refuses to start when the local
- * edge no longer serves `sha` (a redeploy won the lock in between).
- */
-/**
  * The shared bash prelude of both remote preview scripts: fixed workspace and
  * log paths, the HOME/CI exports, the deploy.lock flock, and the finish trap
  * that writes the exit code. `mid` carries the script's own lines between the
@@ -118,6 +108,16 @@ trap 'code=$?; finish "$code"' EXIT
 `;
 }
 
+/**
+ * `pnpm test -- --target-full` against a preview stack a deploy of THIS run
+ * already proved healthy on `sha`. A separate script, launched after the
+ * deploy returns, so the workflow publishes the preview origin ~40 min before
+ * the suite finishes instead of after it.
+ *
+ * It holds the same `deploy.lock` as the bootstrap, so a redeploy cannot
+ * replace the API while the suite runs, and it refuses to start when the local
+ * edge no longer serves `sha` (a redeploy won the lock in between).
+ */
 export function buildPreviewSuiteScript(input: {
   prNumber: number;
   sha: string;

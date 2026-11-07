@@ -15,11 +15,6 @@ type SavedMessage = {
 };
 
 /**
- * A stopped session with saved history in its session log, written the way a box's daemon
- * writes it: `fromV1` of the rows under producer `opencode`, posted to `POST …/log/journal` with
- * a session sandbox credential minted for the call (`journalSessionLog`).
- */
-/**
  * The default prompt and reply a seeded transcript stores when the caller does
  * not bring its own: one user message and one assistant reply, ids fixed so a
  * test can address them.
@@ -74,6 +69,11 @@ function defaultSavedMessages(root: string, created: number): SavedMessage[] {
   ];
 }
 
+/**
+ * A stopped session with saved history in its session log, written the way a box's daemon
+ * writes it: `fromV1` of the rows under producer `opencode`, posted to `POST …/log/journal` with
+ * a session sandbox credential minted for the call (`journalSessionLog`).
+ */
 export async function seedSessionTranscript(
   env: Env,
   input: {
