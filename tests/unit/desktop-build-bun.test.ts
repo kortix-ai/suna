@@ -1,7 +1,7 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { REPO_ROOT as root } from '../src/fixtures/repo';
+import { REPO_ROOT as root, readWorkflow } from '../src/fixtures/repo';
 
 // The desktop installer bundles the computer agent, which
 // apps/desktop-electron/scripts/ensure-runtime.js builds with bun. A job that
@@ -25,7 +25,7 @@ describe('desktop builds set up bun', () => {
   const builders = readdirSync(dir)
     .filter((file) => /\.ya?ml$/.test(file))
     .flatMap((file) =>
-      jobs(readFileSync(resolve(dir, file), 'utf8'))
+      jobs(readWorkflow(file))
         .filter((job) => /ensure-runtime\.js|electron-builder/.test(job.body))
         .map((job) => ({ where: `${file} → ${job.id}`, body: job.body })),
     );

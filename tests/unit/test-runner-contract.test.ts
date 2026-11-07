@@ -231,10 +231,7 @@ describe('local test runner contract', () => {
 
   it('runs browser fixture SQL through the Node client without a host psql binary', () => {
     const databaseSource = readRepoFile('tests/e2e/helpers/database.ts');
-    const manifestSource = readFileSync(
-      resolve(root, 'tests/e2e/helpers/manifest-project.ts'),
-      'utf8',
-    );
+    const manifestSource = readRepoFile('tests/e2e/helpers/manifest-project.ts');
 
     expect(databaseSource).toContain('new Client');
     expect(`${databaseSource}\n${manifestSource}`).not.toMatch(/\bpsql\b/);

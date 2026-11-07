@@ -1,6 +1,4 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { REPO_ROOT as root, readRepoFile, readWorkflow } from '../src/fixtures/repo';
 
@@ -49,10 +47,7 @@ describe('ECS task environment overrides', () => {
   });
 
   it('keeps Composio in the prod secret map while retaining Pipedream for rollback', () => {
-    const variables = readFileSync(
-      resolve(root, 'infra/terraform/environments/prod/variables.tf'),
-      'utf8',
-    );
+    const variables = readRepoFile('infra/terraform/environments/prod/variables.tf');
 
     expect(variables).toContain('COMPOSIO_API_KEY');
     expect(variables).toContain('PIPEDREAM_CLIENT_ID');
@@ -125,10 +120,7 @@ describe('ECS task environment overrides', () => {
   it('carries no fast cold boot activation path', () => {
     const workflow = readWorkflow('deploy-dev.yml');
     const deployScript = readRepoFile('infra/scripts/ecs-deploy.sh');
-    const snapshotBuilder = readFileSync(
-      resolve(root, 'apps/api/src/snapshots/builder.ts'),
-      'utf8',
-    );
+    const snapshotBuilder = readRepoFile('apps/api/src/snapshots/builder.ts');
     const apiDeploy = workflow.slice(
       workflow.indexOf('  deploy-api-ecs:'),
       workflow.indexOf('  deploy-apps-router:'),
