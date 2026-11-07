@@ -1,6 +1,6 @@
-import { backendApi } from '../../http/api-client';
-import { iamUnwrap as unwrap } from './iam-shared';
-import type { ResourceType } from './iam-types';
+import { ApiError, backendApi } from '../../http/api-client';
+import { iamGet, iamUnwrap as unwrap } from './iam-shared';
+import type { EffectivePermissionProbe, ResourceType } from './iam-types';
 
 // ─── Effective permissions probe ───────────────────────────────────────────
 
@@ -63,11 +63,45 @@ function flushBucket(accountId: string, userId: string, context: string): void {
         });
       })
       .catch((error) => {
-        chunk.forEach(({ waiters }) => {
-          waiters.forEach((w) => w.reject(error));
+        // The batch route validates every probe first and 400s the WHOLE batch
+        // when one is invalid (members.ts) — the single GET answered each probe
+        // alone, and even answers an unknown resourceType. Ask each entry again
+        // alone so every waiter gets the verdict or error it got before
+        // coalescing (KRTX-4042). Any other failure (auth, 5xx, network) does
+        // not depend on the batch's content: fail every waiter closed, no fan-out.
+        if (!(error instanceof ApiError && error.status === 400)) {
+          chunk.forEach(({ waiters }) => waiters.forEach((w) => w.reject(error)));
+          return;
+        }
+        chunk.forEach(({ waiters, input }) => {
+          probeAlone(accountId, userId, input).then(
+            (answer) => waiters.forEach((w) => w.resolve(answer)),
+            (singleError) => waiters.forEach((w) => w.reject(singleError)),
+          );
         });
       });
   }
+}
+
+/** One probe on the single GET route — the fallback for a batch rejected for
+ *  its content. iamGet reads with showErrors:false, like the coalesced POST. */
+async function probeAlone(
+  accountId: string,
+  userId: string,
+  args: PermissionProbeInput,
+): Promise<PermissionProbeResult> {
+  const params = new URLSearchParams();
+  params.set('action', args.action);
+  if (args.resourceType) params.set('resourceType', args.resourceType);
+  if (args.resourceId) params.set('resourceId', args.resourceId);
+  const answer = unwrap(
+    await iamGet<EffectivePermissionProbe>(
+      `/accounts/${accountId}/iam/members/${userId}/effective?${params.toString()}`,
+    ),
+  );
+  // The single route omits resource_id. The batch route reports the target id
+  // of a project probe and null for every other target (probeObject, members.ts).
+  return { ...answer, resource_id: args.resourceType === 'project' ? args.resourceId : null };
 }
 
 /**
@@ -81,7 +115,9 @@ function flushBucket(accountId: string, userId: string, context: string): void {
  * The coalescing window is one macrotask: probes issued in the same
  * synchronous burst share a request; a later probe starts a fresh bucket, so
  * there is no unbounded wait, no idle polling and no stale-allow window —
- * every caller still gets its own verdict, errors reject every waiter of the
+ * every caller still gets its own verdict. A batch the server rejects for its
+ * content (400: one invalid probe) is asked again one probe at a time, so one
+ * bad probe fails alone; any other batch error rejects every waiter of the
  * failed batch (fail closed upstream).
  */
 export async function probeEffectivePermission(
