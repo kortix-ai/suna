@@ -203,8 +203,8 @@ export function PrincipalPicker({
   excludeUserIds,
   value,
   onChange,
-  emptyLabel = 'No members or groups here yet.',
-  allExcludedLabel = 'Everyone is already added.',
+  emptyLabel,
+  allExcludedLabel,
   autoFocus = true,
   disabled = false,
   searchPlaceholder,
@@ -212,6 +212,7 @@ export function PrincipalPicker({
 }: PrincipalPickerProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tAgents = useTranslations('agentPrincipals');
+  const tSharing = useTranslations('accessSharing');
   const [query, setQuery] = useState('');
   // Single mode collapses to a "selected + Change" row once something is
   // chosen; `editing` re-opens the list without clearing the value.
@@ -473,9 +474,9 @@ export function PrincipalPicker({
             ))}
           </div>
         ) : nothing ? (
-          <p className="text-muted-foreground px-3 py-6 text-center text-xs">{emptyLabel}</p>
+          <p className="text-muted-foreground px-3 py-6 text-center text-xs">{emptyLabel ?? tSharing('pickerEmpty')}</p>
         ) : allExcluded ? (
-          <p className="text-muted-foreground px-3 py-6 text-center text-xs">{allExcludedLabel}</p>
+          <p className="text-muted-foreground px-3 py-6 text-center text-xs">{allExcludedLabel ?? tSharing('pickerAllAdded')}</p>
         ) : filteredGroups.length === 0 &&
           filteredMembers.length === 0 &&
           filteredAgents.length === 0 &&

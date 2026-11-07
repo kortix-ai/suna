@@ -93,8 +93,8 @@ beforeAll(async () => {
     await insertIntoView(db, accountMembers, { userId, accountId: ACCOUNT, accountRole: 'member' });
   }
   await db.insert(projects).values([
-    { projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' },
-    { projectId: OTHER_PROJECT, accountId: ACCOUNT, name: 'q', repoUrl: 'https://example.com/q.git' },
+    { splitPending: true, projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' },
+    { splitPending: true, projectId: OTHER_PROJECT, accountId: ACCOUNT, name: 'q', repoUrl: 'https://example.com/q.git' },
   ]);
   for (const userId of [AVERY, BLAKE]) {
     await insertIntoView(db, projectMembers, {

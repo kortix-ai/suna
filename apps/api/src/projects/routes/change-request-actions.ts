@@ -35,6 +35,7 @@ import { enqueueProjectSnapshot } from '../../git-proxy/project-snapshot';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerChangeRequestActionsRoutes(): void {
   // POST /v1/projects/:projectId/change-requests/:crId/merge
@@ -43,12 +44,12 @@ export function registerChangeRequestActionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/change-requests/{crId}/merge',
+      path: '/{workspaceId}/change-requests/{crId}/merge',
       tags: ['change-requests'],
       summary: 'Merge a change request',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), crId: z.string() }),
+        params: z.object({ workspaceId: z.string(), crId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             message: z.string().optional().openapi({ description: 'Merge commit message. Optional; the body itself is optional.' }),
           }) } } },
@@ -59,7 +60,7 @@ export function registerChangeRequestActionsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const crId = c.req.param('crId');
       const body = await readJsonObject(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -366,12 +367,12 @@ export function registerChangeRequestActionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/change-requests/{crId}/close',
+      path: '/{workspaceId}/change-requests/{crId}/close',
       tags: ['change-requests'],
       summary: 'Close a change request',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), crId: z.string() }),
+        params: z.object({ workspaceId: z.string(), crId: z.string() }),
       },
       responses: {
         200: json(z.any(), 'OK'),
@@ -379,7 +380,7 @@ export function registerChangeRequestActionsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const crId = c.req.param('crId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -413,12 +414,12 @@ export function registerChangeRequestActionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/change-requests/{crId}/reopen',
+      path: '/{workspaceId}/change-requests/{crId}/reopen',
       tags: ['change-requests'],
       summary: 'Reopen a change request',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), crId: z.string() }),
+        params: z.object({ workspaceId: z.string(), crId: z.string() }),
       },
       responses: {
         200: json(z.any(), 'OK'),
@@ -426,7 +427,7 @@ export function registerChangeRequestActionsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const crId = c.req.param('crId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);

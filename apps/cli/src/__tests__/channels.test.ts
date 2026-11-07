@@ -407,7 +407,7 @@ describe('kortix channels manifest', () => {
         {
           display_information: {
             name: 'Kortix',
-            description: 'Run a Kortix project from Slack',
+            description: 'Run a Kortix workspace from Slack',
             background_color: '#0a0a0a',
           },
           features: { bot_user: { display_name: 'kortix', always_online: true } },
@@ -470,7 +470,7 @@ describe('kortix channels --platform teams', () => {
     const code = await runChannels(['manifest', '--platform', 'teams']);
     expect(code).toBe(0);
     expect(requests).toEqual([
-      { url: 'https://api.test/v1/projects/proj_1/channels/teams/manifest', method: 'GET', body: undefined },
+      { url: 'https://api.test/v1/workspaces/proj_1/channels/teams/manifest', method: 'GET', body: undefined },
     ]);
     expect(JSON.parse(stdout)).toEqual(TEAMS_MANIFEST);
   });
@@ -647,7 +647,7 @@ describe('kortix channels --platform teams', () => {
     // server's feature-flag gate so both sides read identically.
     const err = stripAnsi(stderr);
     expect(err).toContain(
-      'Microsoft Teams is not enabled for this project. Enable it in Settings → Feature flags.',
+      'Microsoft Teams is not enabled for this workspace. Enable it in Workspace settings → Feature flags.',
     );
     expect(stripAnsi(stdout)).toBe('');
     expect(err).not.toContain(TEAMS_CONSENT_URL);

@@ -16,7 +16,15 @@
  */
 
 import { useUiPathname, useUiSearchParams } from '../../providers/ui-provider';
-import { forwardRef, useMemo, type AnchorHTMLAttributes, type MouseEvent } from 'react';
+import {
+  createContext,
+  forwardRef,
+  useContext,
+  useMemo,
+  type AnchorHTMLAttributes,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
 
 import {
   ACCOUNT_PANEL_PARAM,
@@ -29,6 +37,34 @@ import {
 import { preloadAccountHub } from './account-hub-entry';
 
 /**
+ * The account panes mounted INSIDE Workspace settings
+ * (`/workspaces/<id>/admin/<section>`), not over a page.
+ *
+ * The hub's panes read their account and section through the two hooks
+ * below. Under this provider those come from the workspace page instead of
+ * `?accountId=` / `?accountTab=`: the account is the workspace's, the section
+ * is the page's. Drill-downs (`?accountMember=`, `?accountGroup=`, …) stay on
+ * the page URL under the same prefixed names, so a pane reads them unchanged.
+ */
+export interface EmbeddedAccountHub {
+  accountId: string;
+  /** The hub section this workspace section shows (`ACCOUNT_TAB_FOR_SECTION`). */
+  tab: string;
+}
+
+const EmbeddedAccountHubContext = createContext<EmbeddedAccountHub | null>(null);
+
+export function EmbeddedAccountHubProvider({
+  value,
+  children,
+}: {
+  value: EmbeddedAccountHub;
+  children: ReactNode;
+}) {
+  return <EmbeddedAccountHubContext.Provider value={value}>{children}</EmbeddedAccountHubContext.Provider>;
+}
+
+/**
  * The account the modal is showing, or `undefined` for the account list.
  *
  * Read straight off the URL, which is the only place it lives. `useParams()`
@@ -36,7 +72,9 @@ import { preloadAccountHub } from './account-hub-entry';
  * rendered route segments describe the page underneath, not the hub.
  */
 export function useAccountPanelId(): string | undefined {
-  return useUiSearchParams().get(ACCOUNT_PANEL_PARAM) || undefined;
+  const embedded = useContext(EmbeddedAccountHubContext);
+  const fromUrl = useUiSearchParams().get(ACCOUNT_PANEL_PARAM) || undefined;
+  return embedded ? embedded.accountId : fromUrl;
 }
 
 /**
@@ -53,8 +91,14 @@ export function useAccountPanelId(): string | undefined {
  * it into client-side rendering at build time.
  */
 export function useHubSearchParams(): URLSearchParams {
+  const embedded = useContext(EmbeddedAccountHubContext);
   const search = useUiSearchParams();
-  return useMemo(() => hubParamsFromUrl(search), [search]);
+  const tab = embedded?.tab ?? null;
+  return useMemo(() => {
+    const params = hubParamsFromUrl(search);
+    if (tab) params.set('tab', tab);
+    return params;
+  }, [search, tab]);
 }
 
 /**
@@ -131,8 +175,3 @@ export const HubLink = forwardRef<
     />
   );
 });
-
-/** Move the modal without a link — for a mutation's success handler, say. */
-export function useHubNavigate(): (target: HubTarget) => void {
-  return openAccountPanel;
-}

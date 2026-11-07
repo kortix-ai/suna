@@ -59,6 +59,7 @@ const users = [OWNER, A, B, C, W, OUTSIDER, PERSONAL];
 const STALE_OVERRIDE = { experimental: { notification_center: false } };
 
 let project: SeededProject;
+let sibling: SeededProject | undefined;
 let personal: SeededProject;
 
 interface Sent {
@@ -70,6 +71,10 @@ let deps: NotifierDeps;
 
 beforeAll(async () => {
   project = await seedProject('notify-recipients', { metadata: STALE_OVERRIDE });
+  // A legacy account (2 projects, split_pending): only there does an account
+  // member without a project role stay out of the project. In a 1:1
+  // workspace membership is access (design.md §3.2 C3).
+  sibling = await seedProject('notify-recipients-sibling', { accountId: project.account_id });
   const user = (id: string) =>
     sql`(${id}::uuid, ${`recipients-${id.slice(0, 8)}@example.test`}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')`;
   await db.execute(sql`
@@ -118,7 +123,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!project) return;
   await db.delete(pushDeviceTokens).where(inArray(pushDeviceTokens.userId, users));
-  const seeded = [project, personal].filter((where): where is SeededProject => !!where);
+  const seeded = [sibling, project, personal].filter((where): where is SeededProject => !!where);
   await db.delete(sessionSandboxes).where(inArray(sessionSandboxes.projectId, seeded.map((where) => where.project_id)));
   await removeSeeded(seeded);
   await db.execute(sql`DELETE FROM auth.users WHERE id IN (${sql.join(users.map((id) => sql`${id}::uuid`), sql`, `)})`);

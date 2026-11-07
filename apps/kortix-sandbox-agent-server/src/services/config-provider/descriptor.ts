@@ -108,8 +108,8 @@ const DescriptorSchema = z
       if (value.files === null) issue('an archive needs its files')
       if (value.config_tree_id === null) issue('an archive needs its config_tree_id')
       if (value.source_commit === null) issue('an archive needs its source_commit')
-      if (!/^\/v1\/projects\/[^/?#]+\/config-archives\/[0-9a-f]+(?:\?[^#]*)?$/.test(value.archive.url)) {
-        issue('archive.url must be an API path under /v1/projects/<id>/config-archives/')
+      if (!/^\/v1\/(?:projects|workspaces)\/[^/?#]+\/config-archives\/[0-9a-f]+(?:\?[^#]*)?$/.test(value.archive.url)) {
+        issue('archive.url must be an API path under /v1/workspaces/<id>/config-archives/ (or /v1/projects/…)')
       }
     }
     if (value.files !== null) {

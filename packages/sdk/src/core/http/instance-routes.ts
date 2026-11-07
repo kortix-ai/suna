@@ -86,7 +86,7 @@ export function setActiveInstanceCookie(instanceId?: string | null): void {
   // (/sessions/<id>, /files, /terminal/<id>, …) to /instances/<cookie>/...
   // which is the legacy dashboard the user explicitly does not want to
   // see. Always force-clear instead of writing the requested value.
-  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/projects')) {
+  if (typeof window !== 'undefined' && /^\/(?:workspaces|projects)(?:\/|$)/.test(window.location.pathname)) {
     writeCookie(`${ACTIVE_INSTANCE_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`);
     return;
   }

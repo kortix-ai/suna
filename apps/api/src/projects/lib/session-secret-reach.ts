@@ -14,11 +14,12 @@
  * it never widens what an agent can enumerate — the verdict comes from the
  * grant, not from which secrets exist.
  */
-import { projectSessions, projects } from '@kortix/db';
+import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionSecretGrant } from './secret-grant';
+import { projectsView } from '../../workspaces/rows';
 
 export type SecretWithheldReason = 'agent_grant' | 'session_allowlist';
 
@@ -82,12 +83,12 @@ export async function resolveSessionSecretReach(
   if (!session) return null;
   const [project] = await db
     .select({
-      repoUrl: projects.repoUrl,
-      defaultBranch: projects.defaultBranch,
-      manifestPath: projects.manifestPath,
+      repoUrl: projectsView.repoUrl,
+      defaultBranch: projectsView.defaultBranch,
+      manifestPath: projectsView.manifestPath,
     })
-    .from(projects)
-    .where(eq(projects.projectId, session.projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, session.projectId))
     .limit(1);
   if (!project) return null;
   const agent = session.agentName ?? DEFAULT_AGENT_SENTINEL;

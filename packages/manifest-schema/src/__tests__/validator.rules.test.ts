@@ -319,12 +319,12 @@ agents:
     expect(valid).toBe(true);
   });
 
-  test('kortix_permissions rejects a non-grantable action, same enum', () => {
+  test('kortix_permissions rejects an unknown action, same enum', () => {
     const { errorPaths } = summarize(`
 default_agent: w
 agents:
   w:
-    kortix_permissions: [billing.read]
+    kortix_permissions: [billing.not_an_action]
 `);
     expect(errorPaths).toContain('agents.w.kortix_permissions[0]');
   });

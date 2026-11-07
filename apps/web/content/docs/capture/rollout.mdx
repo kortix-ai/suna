@@ -9,12 +9,12 @@ each sign-in the service enrolls the computer and starts recording. Nobody signs
 in to Kortix by hand, and nobody needs a Kortix account. The service restarts the
 recorder within seconds when it stops.
 
-This page is for the IT team and the Kortix account admins. For one person on
+This page is for the IT team and the Kortix workspace admins. For one person on
 their own computer, see [Capture → Install Kortix Capture](/docs/capture#install-kortix-capture).
 
 ## How it works
 
-1. An account admin creates an **enrollment token** in Kortix.
+1. A workspace admin creates an **enrollment token** in Kortix.
 2. IT installs `KortixCapture-x64.msi` on each computer with the Kortix URL and the
    token. The installer writes both to the registry and starts the
    **Kortix Capture** Windows service.
@@ -22,7 +22,7 @@ their own computer, see [Capture → Install Kortix Capture](/docs/capture#insta
    name (the user principal name, for example `jane@corp.example`) and enrolls
    the computer with the token.
 4. The computer gets a device token and starts recording. It belongs to the
-   account. A personal token links it to its person. Any other computer
+   workspace. A personal token links it to its person. Any other computer
    records **linked to no one**, which is a normal state: an admin links it to
    a person when that is wanted.
 5. The Kortix Capture icon in the notification area shows that it records.
@@ -37,14 +37,14 @@ see it.
 
 ## Before you start
 
-- Turn on Capture for the account and set the policy: what is recorded, the
+- Turn on Capture for the workspace and set the policy: what is recorded, the
   frame rate, exclusions, retention and **the notice** the person sees. See
   [Capture → The policy](/docs/capture#the-policy).
-- People do not need Kortix accounts. A computer records for the account
+- People do not need Kortix accounts. A computer records for the workspace
   whether or not it is linked to a person. To link computers to members as
   they enroll, turn on **Approve each computer**: Kortix suggests the member
   with the computer's sign-in email, and you confirm it.
-- You need the `capture.manage` permission. Account owners and admins have it.
+- You need the `capture.manage` permission. Workspace owners and admins have it.
 
 ## 1. Create an enrollment token
 
@@ -53,7 +53,7 @@ In Kortix, open **Kortix Capture** → **Devices**, then **Company install**. Cr
 | Field | What it does |
 |---|---|
 | Name | A name for the token, for example the computer group. |
-| For | **Anyone at the company**: one token for many computers. They enroll linked to no one; you link them, or confirm the suggested member with **Approve each computer**. **A member**: a personal token. Every computer it installs links to that person, whoever signs in. It stops working when that person leaves the account. |
+| For | **Anyone at the company**: one token for many computers. They enroll linked to no one; you link them, or confirm the suggested member with **Approve each computer**. **A member**: a personal token. Every computer it installs links to that person, whoever signs in. It stops working when that person leaves the workspace. |
 | Email domains | Anyone tokens only. Only people who sign in to the computer with these domains enroll. Empty: anyone. |
 | Computer limit | A cap in case the token leaks. A personal token starts at 1. Empty: no limit. |
 | Valid for | 7, 30 or 90 days, or **Never**. Computers enrolled before it expires keep recording. |
@@ -61,12 +61,12 @@ In Kortix, open **Kortix Capture** → **Devices**, then **Company install**. Cr
 
 Kortix shows the token (`kortix_enr_…`) once. Copy it with the install
 command next to it. Anyone who has the token can enroll computers into the
-account until you revoke it, so handle it like a password.
+workspace until you revoke it, so handle it like a password.
 
 From the API: `POST /v1/accounts/<account_id>/capture/enrollment-tokens` with
 `{"name": "Pilot laptops", "email_domains": ["corp.example"], "max_devices": 20}`.
 For a personal token, add `"user_id": "<member>"`: the member must belong to the
-account, else the API answers `400` `capture_enrollment_invalid`.
+workspace, else the API answers `400` `capture_enrollment_invalid`.
 
 ## 2. Install on each Windows computer
 
@@ -146,10 +146,10 @@ signed-in session.
 
 ## What the enrollment token can and cannot do
 
-- It enrolls computers into one account, within its domains, limit and
+- It enrolls computers into one workspace, within its domains, limit and
   expiry. It cannot read anything.
 - A device token, which each enrolled computer gets, uploads that computer's
-  recordings and reads the account's policy. It cannot read recordings.
+  recordings and reads the workspace's policy. It cannot read recordings.
 - The sign-in name a computer reports is not proof of who uses it: an
   administrator of that computer can change it. So the name never links a
   computer on its own. It is a suggestion you confirm under **Approve each
@@ -157,7 +157,7 @@ signed-in session.
 - An enrolled computer proves itself with its current device token when it
   enrolls again. A copy of its machine key alone gets a new token only after
   an admin approves it, for example after a reinstall.
-- Every enrollment, token change and decision is in the account's audit log:
+- Every enrollment, token change and decision is in the workspace's audit log:
   `capture.device.enroll`, `capture.enrollment_token.create`,
   `capture.enrollment_token.revoke`, `capture.enrollment.approve`,
   `capture.enrollment.deny`, `capture.device.link`.
@@ -175,7 +175,7 @@ and asks again on its own.
 | `403` `enrollment_domain_not_allowed` | The sign-in domain is not one of the token's. | asks again every 6 hours |
 | `403` `enrollment_limit_reached` | The token reached its computer limit. | asks again every hour |
 | `403` `enrollment_denied` | An admin denied this computer. | asks again every 6 hours |
-| `403` `capture_disabled` | Capture is off for the account. | asks again every hour |
+| `403` `capture_disabled` | Capture is off for the workspace. | asks again every hour |
 
 ## macOS
 

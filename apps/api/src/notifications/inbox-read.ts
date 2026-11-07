@@ -6,13 +6,14 @@
 // deleted session or an MFA step-up the sign-in has not passed hides the row;
 // it is never deleted here.
 import { and, desc, eq, inArray, isNull, lt, type SQL, sql } from 'drizzle-orm';
-import { notifications, projects } from '@kortix/db';
+import { notifications } from '@kortix/db';
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { db } from '../shared/db';
 import { loadSessionAccessRows, mayReadProjectTriggers, maySeeSessions, type SessionAccessRow } from './access';
 import { mfaWithheldAccounts } from './mfa-gate';
 import { inboxStore } from './inbox-store';
 import { notificationUrl } from './push-payload';
+import { projectsView } from '../workspaces/rows';
 
 /** The unread count covers at most this many newest unread rows; clients show 99+. */
 export const INBOX_UNREAD_SCAN = 100;
@@ -102,9 +103,9 @@ async function mfaBlockedAccounts(userId: string, accountIds: string[], ctx: Inb
 async function notificationProjectGates(projectIds: string[]): Promise<Map<string, { name: string }>> {
   if (projectIds.length === 0) return new Map();
   const rows = await db
-    .select({ projectId: projects.projectId, name: projects.name, metadata: projects.metadata })
-    .from(projects)
-    .where(inArray(projects.projectId, projectIds));
+    .select({ projectId: projectsView.projectId, name: projectsView.name })
+    .from(projectsView)
+    .where(inArray(projectsView.projectId, projectIds));
   return new Map(rows.map((row) => [row.projectId, { name: row.name }]));
 }
 

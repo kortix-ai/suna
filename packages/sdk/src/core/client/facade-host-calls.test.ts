@@ -18,22 +18,22 @@ const kortix = createKortix({ backendUrl: 'http://test.local', getToken: async (
 
 test('project(id).connectors.deleteCredential disconnects the connector', async () => {
   await kortix.project('P1').connectors.deleteCredential('gmail');
-  expect(calls[0]).toMatchObject({ method: 'DELETE', url: 'http://test.local/connectors/projects/P1/connectors/gmail/credential' });
+  expect(calls[0]).toMatchObject({ method: 'DELETE', url: 'http://test.local/connectors/workspaces/P1/connectors/gmail/credential' });
 });
 
 test('project(id).changeRequests.update edits the title', async () => {
   await kortix.project('P1').changeRequests.update('cr-1', { title: 'T' });
-  expect(calls[0]).toEqual({ method: 'PATCH', url: 'http://test.local/projects/P1/change-requests/cr-1', body: { title: 'T' } });
+  expect(calls[0]).toEqual({ method: 'PATCH', url: 'http://test.local/workspaces/P1/change-requests/cr-1', body: { title: 'T' } });
 });
 
 test('project(id).files.archiveRequest names the archive download', async () => {
   const request = await kortix.project('P1').files.archiveRequest('main');
-  expect(request.url).toBe('http://test.local/projects/P1/files/archive?ref=main');
+  expect(request.url).toBe('http://test.local/workspaces/P1/files/archive?ref=main');
 });
 
 test('session(pid, sid).startOrThrow POSTs /start', async () => {
   await kortix.session('P1', 'S1').startOrThrow();
-  expect(calls[0]).toMatchObject({ method: 'POST', url: 'http://test.local/projects/P1/sessions/S1/start' });
+  expect(calls[0]).toMatchObject({ method: 'POST', url: 'http://test.local/workspaces/P1/sessions/S1/start' });
 });
 
 test('notifications register and unregister a push device token', async () => {
@@ -77,8 +77,8 @@ test('session(pid, sid).watch and setWatch read and write the caller watch', asy
   await kortix.session('P1', 'S1').watch();
   await kortix.session('P1', 'S1').setWatch(false);
   expect(calls).toEqual([
-    { method: 'GET', url: 'http://test.local/projects/P1/sessions/S1/watch', body: undefined },
-    { method: 'PUT', url: 'http://test.local/projects/P1/sessions/S1/watch', body: { watching: false } },
+    { method: 'GET', url: 'http://test.local/workspaces/P1/sessions/S1/watch', body: undefined },
+    { method: 'PUT', url: 'http://test.local/workspaces/P1/sessions/S1/watch', body: { watching: false } },
   ]);
 });
 
@@ -86,14 +86,14 @@ test('session(pid, sid).setPinned and setArchived write the caller`s own list st
   await kortix.session('P1', 'S1').setPinned(true);
   await kortix.session('P1', 'S1').setArchived(false);
   expect(calls).toEqual([
-    { method: 'PUT', url: 'http://test.local/projects/P1/sessions/S1/pin', body: { pinned: true } },
-    { method: 'PUT', url: 'http://test.local/projects/P1/sessions/S1/archive', body: { archived: false } },
+    { method: 'PUT', url: 'http://test.local/workspaces/P1/sessions/S1/pin', body: { pinned: true } },
+    { method: 'PUT', url: 'http://test.local/workspaces/P1/sessions/S1/archive', body: { archived: false } },
   ]);
 });
 
 test('session(pid, sid).recover continues a lost session on a new computer', async () => {
   await kortix.session('P1', 'S1').recover();
-  expect(calls).toEqual([{ method: 'POST', url: 'http://test.local/projects/P1/sessions/S1/recover', body: {} }]);
+  expect(calls).toEqual([{ method: 'POST', url: 'http://test.local/workspaces/P1/sessions/S1/recover', body: {} }]);
 });
 
 test('the root builds a sandbox proxy URL from an external id (mobile: no SandboxInfo in hand)', async () => {
@@ -109,10 +109,10 @@ test('project(id).triggers reaches run history, fire with a payload, and replay 
   await t.fire('nightly', { dryRun: true });
   await t.replay('nightly', 'run-1');
   expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
-    'GET http://test.local/projects/P1/triggers/nightly/runs?limit=5',
-    'GET http://test.local/projects/P1/trigger-runs?status=failed',
-    'POST http://test.local/projects/P1/triggers/nightly/fire',
-    'POST http://test.local/projects/P1/triggers/nightly/runs/run-1/replay',
+    'GET http://test.local/workspaces/P1/triggers/nightly/runs?limit=5',
+    'GET http://test.local/workspaces/P1/trigger-runs?status=failed',
+    'POST http://test.local/workspaces/P1/triggers/nightly/fire',
+    'POST http://test.local/workspaces/P1/triggers/nightly/runs/run-1/replay',
   ]);
   expect(calls[2]!.body).toEqual({ dry_run: true });
 });
@@ -124,10 +124,10 @@ test('project(id).spaces lists, creates, updates and opens a DM', async () => {
   await spaces.update('S1', { name: 'Design team' });
   await spaces.dm('kortix');
   expect(calls).toEqual([
-    { method: 'GET', url: 'http://test.local/projects/P1/spaces', body: undefined },
-    { method: 'POST', url: 'http://test.local/projects/P1/spaces', body: { name: 'Design' } },
-    { method: 'PATCH', url: 'http://test.local/projects/P1/spaces/S1', body: { name: 'Design team' } },
-    { method: 'POST', url: 'http://test.local/projects/P1/spaces/dm', body: { agent_name: 'kortix' } },
+    { method: 'GET', url: 'http://test.local/workspaces/P1/spaces', body: undefined },
+    { method: 'POST', url: 'http://test.local/workspaces/P1/spaces', body: { name: 'Design' } },
+    { method: 'PATCH', url: 'http://test.local/workspaces/P1/spaces/S1', body: { name: 'Design team' } },
+    { method: 'POST', url: 'http://test.local/workspaces/P1/spaces/dm', body: { agent_name: 'kortix' } },
   ]);
 });
 
@@ -141,13 +141,13 @@ test('project(id).sessionGroups lists, creates, renames, reorders, deletes and f
   await groups.file('S1', 'G1');
   await groups.file('S1', null);
   expect(calls).toEqual([
-    { method: 'GET', url: 'http://test.local/projects/P1/session-groups', body: undefined },
-    { method: 'POST', url: 'http://test.local/projects/P1/session-groups', body: { name: 'Store A' } },
-    { method: 'PATCH', url: 'http://test.local/projects/P1/session-groups/G1', body: { name: 'Store A (EU)' } },
-    { method: 'PUT', url: 'http://test.local/projects/P1/session-groups/order', body: { group_ids: ['G2', 'G1'] } },
-    { method: 'DELETE', url: 'http://test.local/projects/P1/session-groups/G2', body: undefined },
-    { method: 'PUT', url: 'http://test.local/projects/P1/sessions/S1/group', body: { group_id: 'G1' } },
-    { method: 'PUT', url: 'http://test.local/projects/P1/sessions/S1/group', body: { group_id: null } },
+    { method: 'GET', url: 'http://test.local/workspaces/P1/session-groups', body: undefined },
+    { method: 'POST', url: 'http://test.local/workspaces/P1/session-groups', body: { name: 'Store A' } },
+    { method: 'PATCH', url: 'http://test.local/workspaces/P1/session-groups/G1', body: { name: 'Store A (EU)' } },
+    { method: 'PUT', url: 'http://test.local/workspaces/P1/session-groups/order', body: { group_ids: ['G2', 'G1'] } },
+    { method: 'DELETE', url: 'http://test.local/workspaces/P1/session-groups/G2', body: undefined },
+    { method: 'PUT', url: 'http://test.local/workspaces/P1/sessions/S1/group', body: { group_id: 'G1' } },
+    { method: 'PUT', url: 'http://test.local/workspaces/P1/sessions/S1/group', body: { group_id: null } },
   ]);
 });
 
@@ -158,7 +158,7 @@ test('project(id).spaces.members lists, adds, removes, joins and leaves', async 
   await members.remove('S1', 'U2');
   await members.join('S1');
   await members.leave('S1');
-  const base = 'http://test.local/projects/P1/spaces/S1';
+  const base = 'http://test.local/workspaces/P1/spaces/S1';
   expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
     `GET ${base}/members`,
     `POST ${base}/members`,
@@ -178,7 +178,7 @@ test('project(id).memory reaches layers, pages and history', async () => {
   await memory.pages.update('PG1', { base_version: 3, body: 'Owns QA' });
   await memory.pages.delete('PG1');
   await memory.pages.history('PG1');
-  const base = 'http://test.local/projects/P1/memory';
+  const base = 'http://test.local/workspaces/P1/memory';
   expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
     `GET ${base}/layers/company`,
     `GET ${base}/layers/S1/pages`,
@@ -197,14 +197,14 @@ test('project(id).memory searches pages and reads a thread’s Used memory', asy
   await memory.search({ q: 'Priya', layer: 'company' });
   await memory.usage('T1');
   expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
-    'GET http://test.local/projects/P1/memory/search?q=Priya&layer=company',
-    'GET http://test.local/projects/P1/sessions/T1/memory-usage',
+    'GET http://test.local/workspaces/P1/memory/search?q=Priya&layer=company',
+    'GET http://test.local/workspaces/P1/sessions/T1/memory-usage',
   ]);
 });
 
 test('project(id).memory filters pages by type', async () => {
   await kortix.project('P1').memory.pages.list('S1', { type: 'other' });
-  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET http://test.local/projects/P1/memory/layers/S1/pages?type=other']);
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET http://test.local/workspaces/P1/memory/layers/S1/pages?type=other']);
 });
 
 test('project(id).spaces reads #general\'s notice and the caller\'s onboarding, and records a mark', async () => {
@@ -213,9 +213,9 @@ test('project(id).spaces reads #general\'s notice and the caller\'s onboarding, 
   await spaces.onboarding.get();
   await spaces.onboarding.mark('channels_intro');
   expect(calls).toEqual([
-    { method: 'GET', url: 'http://test.local/projects/P1/spaces', body: undefined },
-    { method: 'GET', url: 'http://test.local/projects/P1/onboarding/channels', body: undefined },
-    { method: 'POST', url: 'http://test.local/projects/P1/onboarding/channels/marks', body: { mark: 'channels_intro' } },
+    { method: 'GET', url: 'http://test.local/workspaces/P1/spaces', body: undefined },
+    { method: 'GET', url: 'http://test.local/workspaces/P1/onboarding/channels', body: undefined },
+    { method: 'POST', url: 'http://test.local/workspaces/P1/onboarding/channels/marks', body: { mark: 'channels_intro' } },
   ]);
 });
 
@@ -226,10 +226,10 @@ test('project(id).spaces reaches a channel’s apps and links', async () => {
   await spaces.links.add('S1', { url: 'https://example.test' });
   await spaces.links.remove('S1', 'L1');
   expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
-    'GET http://test.local/projects/P1/spaces/S1/apps',
-    'GET http://test.local/projects/P1/spaces/S1/links',
-    'POST http://test.local/projects/P1/spaces/S1/links',
-    'DELETE http://test.local/projects/P1/spaces/S1/links/L1',
+    'GET http://test.local/workspaces/P1/spaces/S1/apps',
+    'GET http://test.local/workspaces/P1/spaces/S1/links',
+    'POST http://test.local/workspaces/P1/spaces/S1/links',
+    'DELETE http://test.local/workspaces/P1/spaces/S1/links/L1',
   ]);
   expect(calls[2]!.body).toEqual({ url: 'https://example.test' });
 });

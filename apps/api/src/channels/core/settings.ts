@@ -108,7 +108,7 @@ export async function switchChannelProject(
     .where(
       and(
         eq(chatInstalls.platform, platform),
-        eq(chatInstalls.workspaceId, channel.teamId),
+        eq(chatInstalls.platformTeamId, channel.teamId),
         eq(chatInstalls.projectId, projectId),
       ),
     )
@@ -116,9 +116,9 @@ export async function switchChannelProject(
   if (!install) return { ok: false, reason: 'not_installed' };
   await db
     .insert(chatChannelBindings)
-    .values({ platform, workspaceId: channel.teamId, channelId: channel.channelId, projectId, pickerTs: null })
+    .values({ platform, platformTeamId: channel.teamId, channelId: channel.channelId, projectId, pickerTs: null })
     .onConflictDoUpdate({
-      target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
+      target: [chatChannelBindings.platform, chatChannelBindings.platformTeamId, chatChannelBindings.channelId],
       set: { projectId, pickerTs: null },
     });
   return { ok: true };
@@ -145,14 +145,14 @@ export async function ensureChatBinding(
   const [install] = await db
     .select({ id: chatInstalls.installId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, platform), eq(chatInstalls.workspaceId, settings.teamId), eq(chatInstalls.projectId, projectId)))
+    .where(and(eq(chatInstalls.platform, platform), eq(chatInstalls.platformTeamId, settings.teamId), eq(chatInstalls.projectId, projectId)))
     .limit(1);
   if (!install) return 'not_installed';
   const current = await currentChannelSelection(settings);
   if (opts.keepsOtherProjects && current && current.projectId !== projectId) return 'held';
   const name = label.name ?? (label.lookupName && current?.projectId !== projectId ? await label.lookupName() : null);
-  const values = { platform, workspaceId: settings.teamId, channelId: settings.channelId, projectId, channelName: name, channelType: label.type };
-  const target = [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId];
+  const values = { platform, platformTeamId: settings.teamId, channelId: settings.channelId, projectId, channelName: name, channelType: label.type };
+  const target = [chatChannelBindings.platform, chatChannelBindings.platformTeamId, chatChannelBindings.channelId];
   if (opts.keepsOtherProjects) {
     // A row another project wrote since the read stays; the read back says whose it is.
     await db.insert(chatChannelBindings).values(values).onConflictDoNothing({ target });
@@ -181,7 +181,7 @@ export async function unbindChannel(user: ChatUser, channel: SettingsChannel): P
     .where(
       and(
         eq(chatChannelBindings.platform, channel.platform ?? 'slack'),
-        eq(chatChannelBindings.workspaceId, channel.teamId),
+        eq(chatChannelBindings.platformTeamId, channel.teamId),
         eq(chatChannelBindings.channelId, channel.channelId),
       ),
     );

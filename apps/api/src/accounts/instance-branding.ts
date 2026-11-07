@@ -21,7 +21,7 @@
 //     personal account never counts: every member owns one, and a member must
 //     not rebrand the instance. (A personal account id is its user id.)
 
-import { type AccountBrandingRecord, accounts } from '@kortix/db';
+import { type AccountBrandingRecord } from '@kortix/db';
 import { asc, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { nonSsoIdentitySql } from '../shared/auth-identity';
@@ -29,6 +29,7 @@ import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { selfHostOperatorAllowlist } from '../shared/self-host-operator';
 import { type AccountBranding, isBrandingEmpty, normalizeBranding } from './branding';
+import { accountsView } from '../workspaces/rows';
 
 /**
  * The stored branding of the oldest account that set one and that the
@@ -42,7 +43,7 @@ export async function loadOldestOperatorBranding(
     operatorEmails.length > 0
       ? sql`OR EXISTS (
           SELECT 1 FROM auth.users u
-          WHERE u.id = ${qualifiedColumn(accounts.accountId)}
+          WHERE u.id = ${qualifiedColumn(accountsView.accountId)}
             AND lower(u.email) IN (${sql.join(
               operatorEmails.map((email) => sql`${email}`),
               sql`, `,
@@ -51,15 +52,15 @@ export async function loadOldestOperatorBranding(
         )`
       : sql``;
   const [row] = await db
-    .select({ branding: accounts.branding })
-    .from(accounts)
+    .select({ branding: accountsView.branding })
+    .from(accountsView)
     .where(
-      sql`${qualifiedColumn(accounts.branding)} <> '{}'::jsonb AND (
-        NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = ${qualifiedColumn(accounts.accountId)})
+      sql`${qualifiedColumn(accountsView.branding)} <> '{}'::jsonb AND (
+        NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = ${qualifiedColumn(accountsView.accountId)})
         ${operatorPersonal}
       )`,
     )
-    .orderBy(asc(accounts.createdAt))
+    .orderBy(asc(accountsView.createdAt))
     .limit(1);
   return row?.branding ?? null;
 }

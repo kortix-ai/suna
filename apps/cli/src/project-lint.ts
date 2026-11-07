@@ -140,7 +140,7 @@ export function lintRepoSize(dir: string): ManifestIssue[] {
     .map((f) => `${f.path} (${mib(f.bytes)})`);
   const headline =
     total > REPO_WARN_BYTES
-      ? `the files in Git total ${mib(total)}. A new session still runs the agent config, but above 512 MiB compressed Kortix builds no project snapshot, so a running session stops picking up agent config changes from the base branch until a new session starts.`
+      ? `the files in Git total ${mib(total)}. A new session still runs the agent config, but above 512 MiB compressed Kortix builds no workspace snapshot, so a running session stops picking up agent config changes from the base branch until a new session starts.`
       : `large static files are in Git. Every session downloads them, and so does every agent config change a running session picks up.`;
   return [
     {

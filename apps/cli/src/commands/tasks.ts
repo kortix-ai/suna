@@ -56,7 +56,7 @@ blocked until they are done, and nobody can claim it meanwhile.
 session it defaults to this session's lead ($KORTIX_SESSION_ID, or the lead
 named in its team_lead metadata).
 
-Needs the \`agent_teams\` feature flag (\`kortix projects features enable agent_teams\`).
+Needs the \`agent_teams\` feature flag (\`kortix workspaces features enable agent_teams\`).
 
 Subcommands:
   ls                  Every task: number, state, owner, what it waits for.
@@ -72,7 +72,7 @@ Subcommands:
   rm <n>              Delete task #n.
 
 Options:
-  --project <id>      Project of the team (default: linked).
+  --workspace <id>    Workspace of the team (default: linked).
   --host <name>       Operate against a non-default Kortix host.
   --json              Machine-readable output.
   -h, --help          Show this help.
@@ -102,7 +102,7 @@ interface Flags {
 function takeTaskFlags(rest: string[]): Flags {
   return {
     json: takeFlagBool(rest, ['--json']),
-    projectArg: takeFlagValue(rest, ['--project']),
+    projectArg: takeFlagValue(rest, ['--project', '--workspace']),
     hostArg: takeFlagValue(rest, ['--host']),
     description: takeFlagValue(rest, ['--description']),
     blockedBy: takeFlagValue(rest, ['--blocked-by']),
@@ -137,7 +137,7 @@ async function resolveLead(client: ApiClient, projectId: string, ref: string | u
     const found = await expandSessionIdPrefix(client, projectId, ref);
     if (found === 'ambiguous') return fail(`"${ref}" matches more than one session: pass more characters.`);
     if (!found) {
-      process.stderr.write(`${status.err(`No session ${ref} in project ${projectId}.`)}\n`);
+      process.stderr.write(`${status.err(`No session ${ref} in workspace ${projectId}.`)}\n`);
       return 1;
     }
     return found.session_id;
@@ -146,7 +146,7 @@ async function resolveLead(client: ApiClient, projectId: string, ref: string | u
   if (!self) return fail('Pass the lead session: kortix tasks <lead-session> <subcommand>. Outside a session there is no default team.');
   try {
     const session = await client.get<{ team_lead_session_id?: string | null; metadata?: Record<string, unknown> }>(
-      `/projects/${projectId}/sessions/${self}`,
+      `/workspaces/${projectId}/sessions/${self}`,
     );
     const lead = session.team_lead_session_id ?? session.metadata?.team_lead;
     return typeof lead === 'string' && lead ? lead : self;
@@ -219,7 +219,7 @@ export async function runTasks(argv: string[]): Promise<number> {
   if (!ctx) return 1;
   const lead = await resolveLead(ctx.client, ctx.projectId, leadRef);
   if (typeof lead === 'number') return lead;
-  const base = `/projects/${ctx.projectId}/sessions/${lead}/tasks`;
+  const base = `/workspaces/${ctx.projectId}/sessions/${lead}/tasks`;
 
   try {
     if (sub === 'ls') {

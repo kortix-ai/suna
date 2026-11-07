@@ -14,7 +14,7 @@ import { authorizedProject, capabilityRefusal, visibleApp } from './route-access
 import { TOKEN_TTL_SECONDS, mintAppToken } from './tokens';
 import { appEventToken, appEventsUrl } from './events';
 
-const AppParams = z.object({ projectId: z.string().uuid(), appId: z.string().uuid() });
+const AppParams = z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() });
 
 const MemberToken = z
   .object({
@@ -26,7 +26,7 @@ const MemberToken = z
 export function registerAppCapabilityRoutes(): void {
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/{appId}/token', tags: ['apps'], summary: 'Mint a sign-in token for an App', ...auth,
+      method: 'post', path: '/{workspaceId}/apps/{appId}/token', tags: ['apps'], summary: 'Mint a sign-in token for an App', ...auth,
       description:
         `Capability \`member_tokens\`. A ${TOKEN_TTL_SECONDS / 60}-minute ES256 JWT from the project issuer ` +
         '(`iss` = `<API origin>/v1/projects/{projectId}`, `aud` = the App id) naming the caller (`sub` = Kortix user id, ' +
@@ -36,7 +36,7 @@ export function registerAppCapabilityRoutes(): void {
       responses: { 200: json(MemberToken, 'Token'), ...errors(403, 404, 409) },
     }),
     async (c) => {
-      const { projectId, appId } = c.req.valid('param');
+      const { workspaceId: projectId, appId } = c.req.valid('param');
       const loaded = await authorizedProject(c, projectId, 'read');
       if (loaded instanceof Response) return loaded;
       const app = await visibleApp(projectId, appId, loaded.userId);
@@ -60,7 +60,7 @@ export function registerAppCapabilityRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'get', path: '/{projectId}/apps/{appId}/events/credentials', tags: ['apps'], summary: "Read an App's event credentials", ...auth,
+      method: 'get', path: '/{workspaceId}/apps/{appId}/events/credentials', tags: ['apps'], summary: "Read an App's event credentials", ...auth,
       description:
         'The URL and token an App uses to emit events (`KORTIX_APP_EVENTS_URL`, `KORTIX_APP_TOKEN`). Every App machine already ' +
         'has both. Read them to emit from code that runs elsewhere, such as your laptop while you develop the App. Needs project.app.admin.',
@@ -68,7 +68,7 @@ export function registerAppCapabilityRoutes(): void {
       responses: { 200: json(z.object({ url: z.string(), token: z.string() }).openapi('KortixAppEventCredentials'), 'Credentials'), ...errors(403, 404) },
     }),
     async (c) => {
-      const { projectId, appId } = c.req.valid('param');
+      const { workspaceId: projectId, appId } = c.req.valid('param');
       const loaded = await authorizedProject(c, projectId, 'admin');
       if (loaded instanceof Response) return loaded;
       const app = await visibleApp(projectId, appId, loaded.userId);

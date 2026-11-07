@@ -17,19 +17,11 @@
  * bypass the store, the cache contract, or the audit trail.
  */
 import { and, eq, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
-import {
-  accountGroups,
-  accountMembers,
-  accountMemberships,
-  iamRoleActions,
-  iamRoles,
-  projects,
-  roleAssignments,
-  serviceAccounts,
-} from '@kortix/db';
+import { accountGroups, accountMembers, accountMemberships, iamRoleActions, iamRoles, roleAssignments, serviceAccounts } from '@kortix/db';
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
+import { IMPERSONATION_INVALID_CODE, isImpersonatingAccount } from '../shared/impersonation';
 import { assertAuthorized, type Obj } from './authorize';
 import { loadSystemRoles, loadPermissionCatalog, type ObjectType, type ScopeType } from './catalog';
 import {
@@ -39,6 +31,7 @@ import {
 } from './cache-invalidation';
 import { pendingPrincipalId, type Actor, type PrincipalRef } from './actor';
 import { notAnAudienceGrant } from './audience-grants';
+import { projectsView } from '../workspaces/rows';
 
 export type AssignmentSource = 'manual' | 'scim' | 'sso' | 'invite' | 'system';
 
@@ -213,20 +206,36 @@ export async function listAssignments(filter: AssignmentFilter): Promise<Assignm
  * unique constraint at all, and `:bulk-import` happily creates duplicates).
  */
 export async function assignRole(writer: Writer, accountId: string, input: AssignRoleInput): Promise<AssignmentRow> {
+  // An operator acting as a customer never writes a grant: a role assignment
+  // outlives the one-hour act-as grant (finding 14). The route list in
+  // shared/impersonation.ts refuses the IAM subtree too; this is the floor any
+  // future route that reaches role_assignments stands on.
+  if (writer !== SYSTEM_ACTOR && isImpersonatingAccount(writer.userId, accountId)) {
+    throw new HTTPException(403, {
+      message: 'Impersonated requests cannot change role assignments',
+      res: new Response(
+        JSON.stringify({
+          error: 'Impersonated requests cannot change role assignments',
+          code: IMPERSONATION_INVALID_CODE,
+        }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      ),
+    });
+  }
   const role = await resolveRole(accountId, input);
   const scopeType = input.scope.type;
   const scopeId = scopeType === 'project' ? (input.scope.id ?? null) : null;
 
   if (scopeType === 'project' && !scopeId) {
-    throw new HTTPException(400, { message: 'a project-scoped assignment must name a project' });
+    throw new HTTPException(400, { message: 'an assignment with scope type `project` must name its workspace in scope_id' });
   }
   if (scopeType === 'account' && input.scope.id) {
     throw new HTTPException(400, {
-      message: 'an account-scoped assignment covers every project and must not name one',
+      message: 'an assignment with scope type `account` covers the whole workspace and must not set scope_id',
     });
   }
   if (input.object && scopeType !== 'project') {
-    throw new HTTPException(400, { message: 'an object assignment must be project-scoped' });
+    throw new HTTPException(400, { message: 'an object assignment must have scope type `project`' });
   }
   if (role.scopeType !== scopeType && !input.object) {
     throw new HTTPException(400, {
@@ -300,6 +309,16 @@ export async function assignRole(writer: Writer, accountId: string, input: Assig
 
   if (input.exclusive && role.isSystem) {
     await retractSiblingSystemRoles(writer, accountId, row);
+  }
+
+  // An account-scope role makes a person a member of the workspace. Write the
+  // membership too, so the holder shows in Members and can be removed there:
+  // a role holder the member list cannot see is an invisible owner.
+  if (scopeType === 'account' && !input.object && input.principal.type === 'user') {
+    await db
+      .insert(accountMemberships)
+      .values({ userId: input.principal.id, accountId })
+      .onConflictDoNothing({ target: [accountMemberships.userId, accountMemberships.accountId] });
   }
 
   await bustCachesFor(input.principal, scopeId);
@@ -400,7 +419,7 @@ export async function updateAssignment(
   const scopeType = input.scope.type;
   const scopeId = scopeType === 'project' ? (input.scope.id ?? null) : null;
   if (scopeType === 'project' && !scopeId) {
-    throw new HTTPException(400, { message: 'a project-scoped assignment must name a project' });
+    throw new HTTPException(400, { message: 'an assignment with scope type `project` must name its workspace in scope_id' });
   }
   if (scopeId) await assertProjectInAccount(accountId, scopeId);
   assertAccountRoleHolder(writer, role, scopeType, {
@@ -738,7 +757,7 @@ async function assertObjectAssignable(
       limit 1`);
     const rows = (result as unknown as { rows?: Array<{ found: number }> }).rows ?? result;
     if ((rows as Array<{ found: number }>).length === 0) {
-      throw new HTTPException(404, { message: 'object_id is not a shared secret in this project' });
+      throw new HTTPException(404, { message: 'object_id is not a shared secret in this workspace' });
     }
     return;
   }
@@ -758,7 +777,7 @@ async function assertObjectAssignable(
   const rows = (result as unknown as { rows?: Array<{ found: number }> }).rows ?? result;
   if ((rows as Array<{ found: number }>).length === 0) {
     throw new HTTPException(404, {
-      message: 'object_id is not a shared connection in this project',
+      message: 'object_id is not a shared connection in this workspace',
     });
   }
 }
@@ -842,7 +861,7 @@ function assertAccountRoleHolder(
   if (!role.isSystem || scopeType !== 'account') return;
   if (principal.type === 'user' || principal.type === 'pending') return;
   throw new HTTPException(400, {
-    message: `an account role ("${role.key}") is held by a person, not a ${principal.type}; give the group a project role or a custom role instead`,
+    message: `an account role ("${role.key}") is held by a person, not a ${principal.type}; give the group a role with scope type "project" or a custom role instead`,
   });
 }
 
@@ -885,11 +904,11 @@ async function assertDelegable(role: ResolvedRole): Promise<void> {
  */
 async function assertProjectInAccount(accountId: string, projectId: string): Promise<void> {
   const [row] = await db
-    .select({ projectId: projects.projectId })
-    .from(projects)
-    .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId)))
+    .select({ projectId: projectsView.projectId })
+    .from(projectsView)
+    .where(and(eq(projectsView.projectId, projectId), eq(projectsView.accountId, accountId)))
     .limit(1);
-  if (!row) throw new HTTPException(404, { message: 'project not found in this account' });
+  if (!row) throw new HTTPException(404, { message: 'Workspace not found' });
 }
 
 function isAccountOwnerRow(row: Pick<AssignmentRow, 'roleIsSystem' | 'roleKey' | 'scopeType' | 'principalType'>): boolean {

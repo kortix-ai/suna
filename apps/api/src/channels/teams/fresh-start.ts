@@ -71,7 +71,7 @@ export async function startFreshTeamsConversation(input: {
     .where(
       and(
         eq(chatThreads.platform, PLATFORM),
-        eq(chatThreads.workspaceId, input.tenantId),
+        eq(chatThreads.platformTeamId, input.tenantId),
         eq(chatThreads.threadId, input.conversationId),
         input.projectId ? eq(chatThreads.projectId, input.projectId) : undefined,
       ),
@@ -118,7 +118,7 @@ export async function startFreshTeamsConversation(input: {
     .where(
       and(
         eq(chatThreads.platform, PLATFORM),
-        eq(chatThreads.workspaceId, input.tenantId),
+        eq(chatThreads.platformTeamId, input.tenantId),
         eq(chatThreads.threadId, input.conversationId),
         // Only the mapping read above: a message that raced this command and
         // already bound a newer session keeps it.
@@ -130,7 +130,7 @@ export async function startFreshTeamsConversation(input: {
     .where(
       and(
         eq(chatThreadParticipants.platform, PLATFORM),
-        eq(chatThreadParticipants.workspaceId, input.tenantId),
+        eq(chatThreadParticipants.platformTeamId, input.tenantId),
         eq(chatThreadParticipants.threadId, input.conversationId),
       ),
     );
@@ -178,7 +178,7 @@ async function mayStartFresh(
       .where(
         and(
           eq(chatThreadParticipants.platform, PLATFORM),
-          eq(chatThreadParticipants.workspaceId, input.tenantId),
+          eq(chatThreadParticipants.platformTeamId, input.tenantId),
           eq(chatThreadParticipants.threadId, input.conversationId),
           eq(chatThreadParticipants.sessionId, current.sessionId),
           eq(chatThreadParticipants.platformUserId, input.teamsUserId),

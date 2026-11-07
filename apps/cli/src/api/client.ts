@@ -1,4 +1,5 @@
 import { ApiError as SdkApiError, backendApi } from '@kortix/sdk';
+import { WORKSPACE_ACCOUNT_FAMILIES } from '@kortix/shared/workspace-routes';
 
 import type { Auth } from './auth.ts';
 import { secureRemoteBase } from './config.ts';
@@ -157,9 +158,9 @@ export async function withCliErrors<T>(auth: Auth, fn: () => Promise<T>): Promis
   }
 }
 
-/** Is this the identity endpoint, with or without a query string? */
+/** Is this the identity endpoint (`/me`, or its legacy name `/accounts/me`), with or without a query string? */
 function isMeEndpoint(endpoint: string): boolean {
-  return endpoint === '/accounts/me' || endpoint.startsWith('/accounts/me?');
+  return /^\/(?:accounts\/)?me(?:\?|$)/.test(endpoint);
 }
 
 /**
@@ -199,6 +200,29 @@ function isManifestCasConflict(err: unknown): boolean {
   }
 }
 
+const ACCOUNT_FAMILY_PATH = new RegExp(
+  `^(/v1)?/workspaces/([^/?#]+)/(${WORKSPACE_ACCOUNT_FAMILIES.map((f) => f.replace(/[-]/g, '\\-')).join('|')})(?=[/?#]|$)`,
+);
+
+/**
+ * The legacy twin of a workspace-level path (`/workspaces/<id>/<family>…` →
+ * `/accounts/<id>/<family>…`), or null. The CLI builds those paths from the
+ * workspace context, whose id is an account id when it came from the older
+ * `--account` flag, the older active account or the stored credential. The
+ * canonical name takes a workspace id only (404 `workspace_not_found` for an
+ * account id); `/v1/accounts/:id/<family>` takes either id, permanently.
+ */
+export function accountFamilyTwin(path: string): string | null {
+  const m = ACCOUNT_FAMILY_PATH.exec(path);
+  return m ? `${m[1] ?? ''}/accounts/${path.slice(`${m[1] ?? ''}/workspaces/`.length)}` : null;
+}
+
+function isWorkspaceNotFound(err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.status !== 404) return false;
+  const body = err.body as { code?: unknown } | null;
+  return body?.code === 'workspace_not_found';
+}
+
 async function request<T>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
@@ -208,6 +232,8 @@ async function request<T>(
   try {
     return await requestOnce<T>(method, path, body, opts);
   } catch (err) {
+    const twin = isWorkspaceNotFound(err) ? accountFamilyTwin(path) : null;
+    if (twin) return requestOnce<T>(method, twin, body, opts);
     if (method === 'GET' || !isManifestCasConflict(err)) throw err;
     await new Promise((r) => setTimeout(r, MANIFEST_CAS_RETRY_DELAY_MS));
     return requestOnce<T>(method, path, body, opts);

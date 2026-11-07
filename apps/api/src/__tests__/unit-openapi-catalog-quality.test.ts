@@ -39,15 +39,15 @@ describe('OpenAPI catalog quality (MCP search_api / describe_api)', () => {
   });
 
   test.each([
-    ['post', '/v1/projects/{projectId}/secrets', ['name', 'value']],
-    ['post', '/v1/projects/{projectId}/triggers', ['name', 'type', 'prompt_template', 'cron']],
-    ['post', '/v1/projects/{projectId}/change-requests', ['title', 'head_ref']],
-    ['post', '/v1/projects/{projectId}/change-requests/{crId}/merge', ['message']],
-    ['patch', '/v1/projects/{projectId}/sessions/{sessionId}', ['name']],
-    ['post', '/v1/projects/{projectId}/sessions/{sessionId}/prompts', ['client_message_id', 'message_id', 'parts']],
+    ['post', '/v1/workspaces/{workspaceId}/secrets', ['name', 'value']],
+    ['post', '/v1/workspaces/{workspaceId}/triggers', ['name', 'type', 'prompt_template', 'cron']],
+    ['post', '/v1/workspaces/{workspaceId}/change-requests', ['title', 'head_ref']],
+    ['post', '/v1/workspaces/{workspaceId}/change-requests/{crId}/merge', ['message']],
+    ['patch', '/v1/workspaces/{workspaceId}/sessions/{sessionId}', ['name']],
+    ['post', '/v1/workspaces/{workspaceId}/sessions/{sessionId}/prompts', ['client_message_id', 'message_id', 'parts']],
     ['post', '/v1/projects/provision', ['name']],
-    ['post', '/v1/projects/{projectId}/access/invite', ['email', 'role']],
-    ['post', '/v1/projects/{projectId}/approvals/{executionId}', ['decision', 'note']],
+    ['post', '/v1/workspaces/{workspaceId}/access/invite', ['email', 'role']],
+    ['post', '/v1/workspaces/{workspaceId}/approvals/{executionId}', ['decision', 'note']],
   ] as const)('%s %s documents its body fields', (method, path, fields) => {
     const props = bodyProps(method, path);
     for (const f of fields) expect(props).toContain(f);
@@ -57,8 +57,8 @@ describe('OpenAPI catalog quality (MCP search_api / describe_api)', () => {
   // one-value enum: a generated SDK can only send it and every real value
   // fails client-side validation. Pin the real value sets.
   test.each([
-    ['post', '/v1/projects/{projectId}/access/invite', 'role', ['manager', 'member']],
-    ['post', '/v1/projects/{projectId}/git/collaborators', 'permission', ['read', 'write']],
+    ['post', '/v1/workspaces/{workspaceId}/access/invite', 'role', ['manager', 'member']],
+    ['post', '/v1/workspaces/{workspaceId}/git/collaborators', 'permission', ['read', 'write']],
   ] as const)('%s %s publishes %s with its real enum values', (method, path, field, values) => {
     expect(bodyProp(method, path, field)?.enum).toEqual(values);
   });

@@ -13,6 +13,7 @@ import type {
 } from '../../types';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { getAutoTopupSettings } from './auto-topup';
+import { accountHoldsComp } from './account-write-owner';
 import { resolveAccountBilling } from './billing-cache';
 import { ACCESS_GRACE_DAYS, type ResolvedBilling } from './resolve-billing';
 import { type ContractRow, getContractState } from './enterprise-contracts';
@@ -106,12 +107,19 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   const billingSnapshot = billingSnapshotFromAccount(sub);
   const billingState = resolveBillingState(billingSnapshot);
 
+  // Free credits once per person (design.md §3.2 C6): a further workspace on
+  // Free gets no recurring grant, so it reports none and no reset date.
+  const freeEligible = sub?.freeCreditsEligible !== false;
+  const onPaidPlan = monthlyUsd !== null;
+  const compUntil = planCompUntil(sub, billingSnapshot);
+
   const state = {
     credits: {
       total: credits.total,
       daily: credits.daily,
       monthly: credits.monthly,
-      expires_at: isoValue(account?.nextCreditGrant),
+      expires_at: compUntil ?? (freeEligible || onPaidPlan ? isoValue(account?.nextCreditGrant) : null),
+      free_grant: { eligible: freeEligible, claimed_workspace_id: null as string | null },
       extra: credits.extra,
       can_run: isAdmin ? true : billingStateAllowsRun(billingState),
       // Lifetime rollups, maintained from credit_ledger by the
@@ -176,7 +184,8 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       name: resolved.features.key,
       display_name: isAdmin && tierName === 'none' ? 'Admin' : resolved.features.displayName,
       // STORED: `monthly_credits` is the recurring GRANT, which Stripe owns.
-      monthly_credits: monthlyUsd ?? tier.monthlyCredits,
+      // 0 on a Free workspace that gets no free credits.
+      monthly_credits: monthlyUsd ?? (freeEligible ? tier.monthlyCredits : 0),
       can_purchase_credits: isAdmin ? true : resolved.entitlements.canPurchaseCredits,
       entitlements,
     },
@@ -191,9 +200,16 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     models: [],
     auto_topup: autoTopup,
     usage_this_period: usageThisPeriod,
+    plan_comp: compUntil ? { until: compUntil, source: 'workspace_split' as const } : null,
   };
 
   return state;
+}
+
+/** The end of an active split-off comp, or null. A subscription the account bought itself ends the comp's meaning. */
+function planCompUntil(sub: CreditAccountRow, snapshot: ReturnType<typeof billingSnapshotFromAccount>): string | null {
+  if (!sub || !accountHoldsComp(sub) || hasLiveSubscription(snapshot)) return null;
+  return isoValue(sub.compPlanUntil);
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -250,6 +266,7 @@ export function buildLocalAccountState(): AccountStateResponse {
       lifetime_purchased: 0,
       lifetime_used: 0,
       daily_refresh: null,
+      free_grant: { eligible: true, claimed_workspace_id: null },
     },
     model_access: { managed: true, requires_provider_key: false },
     billing_state: 'active',
@@ -313,6 +330,7 @@ export function buildLocalAccountState(): AccountStateResponse {
       last_failure_at: null,
     },
     usage_this_period: null,
+    plan_comp: null,
   };
 }
 

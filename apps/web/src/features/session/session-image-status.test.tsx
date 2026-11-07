@@ -22,8 +22,8 @@ const LINES: Record<SessionImageStep['state'], string> = {
   resolving: 'Choosing the image for this session.',
   serving_last_ready: 'Starting from the last ready image. The new one builds in the background.',
   waiting_for_build:
-    'The first image for this project is building. The session starts when it is ready.',
-  building: 'Building the first image for this project. This happens once and takes a few minutes.',
+    'The first image for this workspace is building. The session starts when it is ready.',
+  building: 'Building the first image for this workspace. This happens once and takes a few minutes.',
   copying_to_region: 'Copying the image to this session&#x27;s region.',
   waiting_for_provider: 'The image is finishing. The session starts when it is ready.',
 };

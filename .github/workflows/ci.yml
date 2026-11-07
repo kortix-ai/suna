@@ -403,7 +403,7 @@ jobs:
       - name: Build Linux desktop installer (Electron, unsigned)
         run: pnpm --filter @kortix/desktop-electron exec electron-builder --linux --publish never
         env:
-          KORTIX_DESKTOP_DEFAULT_URL: https://dev.kortix.com/projects
+          KORTIX_DESKTOP_DEFAULT_URL: https://dev.kortix.com/workspaces
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Verify installer exists

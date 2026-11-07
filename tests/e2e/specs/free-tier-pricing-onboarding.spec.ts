@@ -15,8 +15,8 @@ test.describe('free-tier pricing and onboarding surface', () => {
     await expect(plans.getByText('Credits', { exact: true }).first()).toBeVisible();
     await expect(plans.getByText('Enterprise', { exact: true }).first()).toBeVisible();
 
-    await expect(page.getByText('500 credits / month, no card needed').first()).toBeVisible();
-    await expect(page.getByText('1 project', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('500 credits / month on your first workspace').first()).toBeVisible();
+    await expect(page.getByText('No card needed', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Bring your own API key for any premium model')).toBeVisible();
     // The Credits card states the shared pool.
     await expect(page.getByText('Unlimited members, one shared credit pool')).toBeVisible();

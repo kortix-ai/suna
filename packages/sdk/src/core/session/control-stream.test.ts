@@ -87,7 +87,7 @@ test('opens the control-only stream with the platform auth and hands each queue 
   });
   await tick();
   expect(connections).toHaveLength(1);
-  expect(connections[0]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?channels=control');
+  expect(connections[0]!.url).toBe('http://backend.test/v1/workspaces/p1/sessions/s1/events?channels=control');
   expect(connections[0]!.auth).toBe('Bearer tok');
   expect(states).toEqual([]);
 
@@ -108,12 +108,12 @@ test('opens the control-only stream with the platform auth and hands each queue 
 test('a path-only backendUrl (a same-origin proxy such as /api/kortix) opens the stream against the page origin', async () => {
   const g = globalThis as { location?: unknown };
   const before = g.location;
-  g.location = { href: 'http://app.test/projects/p1/sessions/s1', origin: 'http://app.test' };
+  g.location = { href: 'http://app.test/workspaces/p1/sessions/s1', origin: 'http://app.test' };
   try {
     configureKortix({ backendUrl: '/api/kortix', getToken: async () => 'tok', eventStreamTransport: fakeTransport() });
     const stream = openSessionControlStream({ projectId: 'p1', sessionId: 's1', timing: TIMING });
     await tick();
-    expect(connections.map((c) => c.url)).toEqual(['http://app.test/api/kortix/projects/p1/sessions/s1/events?channels=control']);
+    expect(connections.map((c) => c.url)).toEqual(['http://app.test/api/kortix/workspaces/p1/sessions/s1/events?channels=control']);
     stream.close();
   } finally {
     g.location = before;
@@ -170,7 +170,7 @@ test('a dropped stream reports disconnected, then resumes at its control cursor'
   expect(states).toEqual([true, false]);
   expect(connections).toHaveLength(2);
   expect(connections[1]!.url).toBe(
-    'http://backend.test/v1/projects/p1/sessions/s1/events?channels=control&since_control=7&cepoch=capi+a%2Fb',
+    'http://backend.test/v1/workspaces/p1/sessions/s1/events?channels=control&since_control=7&cepoch=capi+a%2Fb',
   );
   connections[1]!.push(hello);
   await tick();
@@ -187,7 +187,7 @@ test('a resync drops the cursor: the next connection asks for a full snapshot', 
   await tick();
   connections[0]!.end();
   await tick(20);
-  expect(connections[1]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?channels=control');
+  expect(connections[1]!.url).toBe('http://backend.test/v1/workspaces/p1/sessions/s1/events?channels=control');
   stream.close();
 });
 
@@ -261,7 +261,7 @@ test('a runtime subscriber upgrades the shared connection to every channel, keep
   await tick(20);
   expect(connections[0]!.signal.aborted).toBe(true);
   expect(connections).toHaveLength(2);
-  expect(connections[1]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?since_control=3&cepoch=capi_a');
+  expect(connections[1]!.url).toBe('http://backend.test/v1/workspaces/p1/sessions/s1/events?since_control=3&cepoch=capi_a');
   runtime.close();
   control.close();
 });
@@ -290,7 +290,7 @@ test('a reconnect resumes at the runtime cursor too', async () => {
   await tick();
   connections[0]!.end();
   await tick(20);
-  expect(connections[1]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?since=41&epoch=ep1');
+  expect(connections[1]!.url).toBe('http://backend.test/v1/workspaces/p1/sessions/s1/events?since=41&epoch=ep1');
   stream.close();
 });
 
@@ -312,7 +312,7 @@ test('a runtime resync is reported and drops the runtime cursor', async () => {
   expect(resyncs).toBe(1);
   connections[0]!.end();
   await tick(20);
-  expect(connections[1]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events');
+  expect(connections[1]!.url).toBe('http://backend.test/v1/workspaces/p1/sessions/s1/events');
   stream.close();
 });
 
@@ -381,7 +381,7 @@ test('the event client yields runtime events from the shared connection until ab
   const first = iterator.next();
   await tick();
   expect(connections).toHaveLength(1);
-  expect(connections[0]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events');
+  expect(connections[0]!.url).toBe('http://backend.test/v1/workspaces/p1/sessions/s1/events');
   connections[0]!.push(runtimeFrame(3));
   expect((await first).value).toEqual({ id: 'ep1:3', type: 'message.part.delta', properties: { delta: 'x' } });
   connections[0]!.push({ channel: 'runtime', epoch: 'ep1', type: 'kortix.resync' });
@@ -398,11 +398,11 @@ test('the event client yields runtime events from the shared connection until ab
 test('a tab presence id joins the stream URL; a late one reconnects at once', async () => {
   const control = openSessionStream({ projectId: 'p1', sessionId: 's1', timing: TIMING });
   await tick();
-  expect(connections[0]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?channels=control');
+  expect(connections[0]!.url).toBe('http://backend.test/v1/workspaces/p1/sessions/s1/events?channels=control');
   const withTab = openSessionStream({ projectId: 'p1', sessionId: 's1', tabId: 'tab-1', timing: TIMING });
   await tick(20);
   expect(connections[0]!.signal.aborted).toBe(true);
-  expect(connections[1]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?channels=control&tab_id=tab-1');
+  expect(connections[1]!.url).toBe('http://backend.test/v1/workspaces/p1/sessions/s1/events?channels=control&tab_id=tab-1');
   withTab.close();
   control.close();
 });
@@ -520,14 +520,14 @@ test('schema v2 (the session log): a subscriber that asks for it reconnects the 
   expect(connections).toHaveLength(2);
   // The cursor carries over: an API that ignores `schema` (before P4.4) resumes the v1 log with
   // nothing lost; one that serves a v2 log under another epoch answers `kortix.resync`.
-  expect(connections[1]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?schema=v2&since=41&epoch=ep1&since_control=3&cepoch=capi_a');
+  expect(connections[1]!.url).toBe('http://backend.test/v1/workspaces/p1/sessions/s1/events?schema=v2&since=41&epoch=ep1&since_control=3&cepoch=capi_a');
   connections[1]!.push({ channel: 'runtime', epoch: 'lg1', seq: 1, type: 'log.block.delta', payload: { thread_id: 't', message_id: 'm', block_id: 'b', delta: 'x' } });
   await tick();
   expect(events.at(-1)).toEqual({ id: 'lg1:1', type: 'log.block.delta', properties: { thread_id: 't', message_id: 'm', block_id: 'b', delta: 'x' } });
   log.close();
   await tick(5);
   expect(connections).toHaveLength(3);
-  expect(connections[2]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?since=1&epoch=lg1&since_control=3&cepoch=capi_a');
+  expect(connections[2]!.url).toBe('http://backend.test/v1/workspaces/p1/sessions/s1/events?since=1&epoch=lg1&since_control=3&cepoch=capi_a');
   runtime.close();
 });
 
@@ -551,7 +551,7 @@ test('the dialect switch loses no v1 frame on an API that ignores schema: the st
 test('schema v2 needs the runtime channel: a control-only connection does not send it', async () => {
   const log = openSessionStream({ projectId: 'p1', sessionId: 's1', schema: 'v2', timing: TIMING });
   await tick();
-  expect(connections[0]!.url).toBe('http://backend.test/v1/projects/p1/sessions/s1/events?channels=control');
+  expect(connections[0]!.url).toBe('http://backend.test/v1/workspaces/p1/sessions/s1/events?channels=control');
   log.close();
 });
 

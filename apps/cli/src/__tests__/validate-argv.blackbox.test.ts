@@ -96,7 +96,7 @@ describe('validate project tools', () => {
     expect(result.exitCode).not.toBe(0);
     expect(result.report.issues.filter((issue) => issue.path.includes('tools'))).toEqual([
       expect.objectContaining({ path: 'agents.kortix.tools', message: expect.stringContaining('bassh'), severity: 'error', line: 5, column: 5 }),
-      expect.objectContaining({ path: 'tools.lookup_order', message: '"tools/lookup.ts" does not exist in the project files.', severity: 'error', line: 7, column: 3 }),
+      expect.objectContaining({ path: 'tools.lookup_order', message: '"tools/lookup.ts" does not exist in the workspace files.', severity: 'error', line: 7, column: 3 }),
     ]);
   });
 });

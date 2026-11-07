@@ -189,13 +189,13 @@ function mockApi(extra?: (url: string, method: string) => Response | undefined) 
     const custom = extra?.(url, method);
     if (custom) return custom;
 
-    if (url.endsWith('/accounts/me') && method === 'GET') {
+    if (url.endsWith('/me') && method === 'GET') {
       return json({ user_id: 'user_1', email: 'user@example.test' });
     }
-    if (url.endsWith('/projects/proj_1') && method === 'GET') {
+    if (url.endsWith('/workspaces/proj_1') && method === 'GET') {
       return json({ project_id: 'proj_1', account_id: 'account_1' });
     }
-    if (url.endsWith('/projects/proj_1/agent-identities') && method === 'GET') {
+    if (url.endsWith('/workspaces/proj_1/agent-identities') && method === 'GET') {
       return json({
         agents: [
           {
@@ -207,13 +207,13 @@ function mockApi(extra?: (url: string, method: string) => Response | undefined) 
         ],
       });
     }
-    if (url.endsWith('/accounts/account_1/members') && method === 'GET') {
+    if (url.endsWith('/workspaces/account_1/members') && method === 'GET') {
       return json([
         { user_id: 'user_1', email: 'user@example.test' },
         { user_id: 'user_2', email: 'finance@example.test' },
       ]);
     }
-    if (url.includes('/projects/proj_1/secrets') && method === 'GET') {
+    if (url.includes('/workspaces/proj_1/secrets') && method === 'GET') {
       return json({
         items: secretItems.map((s) => secret(s.identifier, s.name, s)),
         required: manifestRequired,
@@ -224,7 +224,7 @@ function mockApi(extra?: (url: string, method: string) => Response | undefined) 
         ...(agentScope === undefined ? {} : { agent_scope: agentScope }),
       });
     }
-    if (url.endsWith('/projects/proj_1/secret-requests') && method === 'POST') {
+    if (url.endsWith('/workspaces/proj_1/secret-requests') && method === 'POST') {
       const input = typeof body === 'object' && body !== null ? body : {};
       return json({
         kind: 'secret',
@@ -235,24 +235,24 @@ function mockApi(extra?: (url: string, method: string) => Response | undefined) 
         ...mintExtra,
       });
     }
-    if (url.includes('/projects/proj_1/secrets/') && url.endsWith('/broker') && method === 'POST') {
+    if (url.includes('/workspaces/proj_1/secrets/') && url.endsWith('/broker') && method === 'POST') {
       return json({
         status: 201,
         headers: { 'content-type': 'application/json' },
         body_base64: Buffer.from('{"created":true}').toString('base64'),
       });
     }
-    if (url.endsWith('/projects/proj_1/secrets/sync') && method === 'POST') {
+    if (url.endsWith('/workspaces/proj_1/secrets/sync') && method === 'POST') {
       return json(syncResponse);
     }
-    if (url.includes('/projects/proj_1/secrets') && method === 'POST') {
+    if (url.includes('/workspaces/proj_1/secrets') && method === 'POST') {
       const input = typeof body === 'object' && body !== null ? body : {};
       const name = String(input.name).toUpperCase();
       const identifier = String(input.identifier ?? name);
       return json(secret(identifier, name));
     }
     if (
-      url.includes('/projects/proj_1/secrets/') &&
+      url.includes('/workspaces/proj_1/secrets/') &&
       url.endsWith('/strategy') &&
       method === 'PUT'
     ) {
@@ -268,7 +268,7 @@ function mockApi(extra?: (url: string, method: string) => Response | undefined) 
         }),
       );
     }
-    if (url.includes('/projects/proj_1/secrets/') && method === 'DELETE') {
+    if (url.includes('/workspaces/proj_1/secrets/') && method === 'DELETE') {
       return json({ status: 'deleted' });
     }
     return new Response(JSON.stringify({ error: `unexpected ${method} ${url}` }), { status: 500 });
@@ -1420,7 +1420,7 @@ describe('kortix secrets — who can use a value', () => {
       identifier: 'DEEL_API_TOKEN',
       shared_with: [],
     });
-    expect(stripAnsi(stdout)).toContain('DEEL_API_TOKEN: everyone in the project');
+    expect(stripAnsi(stdout)).toContain('DEEL_API_TOKEN: everyone in the workspace');
   });
 
   test('share --user me --user <email> --group <id> resolves people and sends the exact audience', async () => {
@@ -1466,7 +1466,7 @@ describe('kortix secrets — who can use a value', () => {
     const code = await runSecrets(['share', 'NIGHTLY_REPORT_KEY', '--agent', 'nobody']);
     expect(code).toBe(1);
     expect(posts()).toHaveLength(0);
-    expect(stripAnsi(stderr)).toContain('No agent "nobody" in this project');
+    expect(stripAnsi(stderr)).toContain('No agent "nobody" in this workspace');
   });
 
   test('share refuses --everyone together with people, before any write', async () => {
@@ -1571,7 +1571,7 @@ describe('secrets set --host', () => {
    *  the ambient base) answers 500 and fails the test. */
   function serveOtherPost(): void {
     mockApi((url, method) => {
-      if (url === 'https://api.other/v1/projects/proj_on_other/secrets' && method === 'POST') {
+      if (url === 'https://api.other/v1/workspaces/proj_on_other/secrets' && method === 'POST') {
         return json({ identifier: 'STRIPE_API_KEY', name: 'STRIPE_API_KEY' });
       }
       return undefined;
@@ -1597,7 +1597,7 @@ describe('secrets set --host', () => {
     expect(code).toBe(0);
     expect(requests).toHaveLength(1);
     const [post] = posts();
-    expect(post?.url).toBe('https://api.other/v1/projects/proj_on_other/secrets');
+    expect(post?.url).toBe('https://api.other/v1/workspaces/proj_on_other/secrets');
     expect(post?.auth).toBe('tok_other');
     expect(stripAnsi(stdout)).toContain('1/1 set');
   });
@@ -1612,7 +1612,7 @@ describe('secrets set --host', () => {
     expect(code).toBe(0);
     expect(requests).toHaveLength(1);
     const [post] = posts();
-    expect(post?.url).toBe('https://api.other/v1/projects/proj_on_other/secrets');
+    expect(post?.url).toBe('https://api.other/v1/workspaces/proj_on_other/secrets');
     expect(post?.auth).toBe('tok_other');
     expect(stripAnsi(stdout)).toContain('1/1 set');
   });

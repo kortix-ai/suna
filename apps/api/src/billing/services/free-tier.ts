@@ -1,17 +1,32 @@
 import { config } from '../../config';
 import { getCreditAccount, upsertCreditAccount } from '../repositories/credit-accounts';
+import { isWorkspaceSplitTarget } from '../repositories/split-targets';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { wallet } from '../wallet';
 import { getTier, MINIMUM_CREDIT_FOR_RUN } from './tiers';
 
-export async function initializeFreeTierAccount(accountId: string): Promise<void> {
+/**
+ * Put an account on Free. With `freeCredits` (the default) it also grants the
+ * free signup credits. `freeCredits: false` is a person's second or later
+ * workspace (Workspaces, 2026-11-05: one free grant per person,
+ * `free-credit-claims.ts`): Free with 0 credits, marked
+ * `free_credits_eligible = false`, so neither the monthly rotation nor the
+ * repair below ever grants it.
+ */
+export async function initializeFreeTierAccount(
+  accountId: string,
+  options: { freeCredits?: boolean } = {},
+): Promise<void> {
+  const freeCredits = options.freeCredits !== false;
   const billingAnchor = new Date();
   const expiresAt = calculateNextCreditGrant(billingAnchor).toISOString();
+  // A workspace without free credits gets no grant date: no grant ever comes.
   await upsertCreditAccount(accountId, {
     tier: 'free',
     billingCycleAnchor: billingAnchor.toISOString(),
-    nextCreditGrant: expiresAt,
+    ...(freeCredits ? { nextCreditGrant: expiresAt } : { nextCreditGrant: null, freeCreditsEligible: false }),
   });
+  if (!freeCredits) return;
   await wallet.grant({
     accountId,
     amount: getTier('free').monthlyCredits,
@@ -44,7 +59,9 @@ export async function ensureFreeTierAccountReady(
 
   const account = await getCreditAccount(accountId);
   if (!account) {
-    await initializeFreeTierAccount(accountId);
+    // A split-off workspace whose row is missing gets Free with 0 credits:
+    // its person holds the free grant in their first workspace.
+    await initializeFreeTierAccount(accountId, { freeCredits: !(await isWorkspaceSplitTarget(accountId)) });
     return null;
   }
 
@@ -57,7 +74,8 @@ export async function ensureFreeTierAccountReady(
 
   if (hasActiveSub) return account;
 
-  if (tier === 'none' && balance < MINIMUM_CREDIT_FOR_RUN) {
+  // A workspace without the free grant stays at 0: it buys credits.
+  if (tier === 'none' && balance < MINIMUM_CREDIT_FOR_RUN && account.freeCreditsEligible !== false) {
     await initializeFreeTierAccount(accountId);
     return null;
   }

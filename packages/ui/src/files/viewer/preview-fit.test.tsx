@@ -141,7 +141,7 @@ describe('PreviewFitProvider / reportUnmeasurable', () => {
 
   test('is absent entirely outside a provider, so renderers no-op', () => {
     // The `?.` in every renderer is what makes this inert on the Advanced
-    // viewer, /projects previews, the modal and share pages.
+    // viewer, /workspaces previews, the modal and share pages.
     function Probe() {
       const fit = usePreviewFit();
       return <span data-fit={fit === null ? 'null' : 'present'} />;

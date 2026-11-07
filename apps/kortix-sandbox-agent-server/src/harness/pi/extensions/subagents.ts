@@ -405,7 +405,7 @@ function describe(types: Map<string, SubagentType>, anyProjectAgent = false, top
     ...(teams
       ? [
           '',
-          'Agent teams (on in this project):',
+          'Agent teams (on in this workspace):',
           '- Start a teammate with team: true and a name. Only then is it a TEAMMATE: its own session that keeps running, works through the team task list (task_create, task_list, task_update) and talks to you and the other teammates with send_message. A name without team is a plain subagent.',
           '- Use a team only when several agents must share one task list. Name each teammate by its role. Run each on the project agent whose description fits the role (subagent_type); use the default agent with the role in the prompt only when none fits.',
           '- A teammate\'s role is context for its own session only: no agent and no project setting changes, and nothing is saved. The team lives in this session.',
@@ -576,7 +576,7 @@ export function teamRefusal(host: KortixHost): string {
   const omit = 'Omit team to start a plain subagent (a name alone keeps it addressable).'
   if (host.subagentDepth() > 0) return `Only a top-level session leads a team, and this session is a subagent (level ${host.subagentDepth()}), so it cannot start teammates. ${omit}`
   if (!host.separateSessions()) return `A teammate runs in its own session, and this session cannot start one (it has no Kortix control plane). ${omit}`
-  return `Agent teams are off in this project: team: true needs the agent_teams feature. ${omit}`
+  return `Agent teams are off in this workspace: team: true needs the agent_teams feature. ${omit}`
 }
 
 /** The call's name, team, fork and background shape. */

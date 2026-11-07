@@ -36,13 +36,13 @@ None of that is a defect in a personal tool. The person at the keyboard is the r
 
 ## A session is a branch somebody else can open
 
-In Kortix, the agent does not work in a folder on your laptop. Each session gets a clone of the project repo on its own branch and its own cloud computer. The [starter agent file](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/agents/kortix.md) states the consequence in one line: "Only what you commit + push survives." The installs, the experiments and the half-finished scripts disappear with the session.
+In Kortix, the agent does not work in a folder on your laptop. Each session gets a clone of the workspace repo on its own branch and its own cloud computer. The [starter agent file](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/agents/kortix.md) states the consequence in one line: "Only what you commit + push survives." The installs, the experiments and the half-finished scripts disappear with the session.
 
 A branch has a parent, a diff and a name. A teammate can fetch it and run it without asking for your laptop or your GPU. When the work is ready, the agent commits and opens a change request. Session work reaches `main` through a change request, and merge is default-deny for agents. A team that wants an agent to merge its own change adds `project.gitops.merge` to that agent's grant ([Kortix docs](https://kortix.com/docs)). The change request carries the diff and the branch name, so review happens where the code lives. The branch is named after the session, so a run and its diff stay linked in the repo.
 
 ## Grants live in the repo
 
-The other file is the project manifest. Here is the starter agent's block:
+The other file is the workspace manifest. Here is the starter agent's block:
 
 ```yaml
 agents:
@@ -54,11 +54,11 @@ agents:
     skills: all
 ```
 
-The comment above it explains the default: the file is deny-by-default, and an omitted connectors, secrets, kortix_permissions or skills grant resolves to none, "so a scoped specialist starts locked down" ([starter manifest](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/kortix.yaml)). The starter agent is granted everything on purpose, so a new project is capable on day one. Every grant you remove is a line in a diff somebody reviews, so narrowing an agent is a code change with a reviewer.
+The comment above it explains the default: the file is deny-by-default, and an omitted connectors, secrets, kortix_permissions or skills grant resolves to none, "so a scoped specialist starts locked down" ([starter manifest](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/kortix.yaml)). The starter agent is granted everything on purpose, so a new workspace is capable on day one. Every grant you remove is a line in a diff somebody reviews, so narrowing an agent is a code change with a reviewer.
 
 ## What a team pays for
 
-Pricing follows the same shape: you pay for the computer the agent uses, and members are not seats. Free is $0 with 500 credits per month and 1 project, on your own provider keys or a connected ChatGPT subscription. The paid plan starts at $50 a month. Credits run at 1 credit = $0.01, and 11 credits = 1 hour of agent computer. A stopped agent computer costs nothing. Members are unlimited and free, and the account shares one credit pool. Unused monthly credits roll over one month ([Kortix pricing](https://kortix.com/pricing), checked October 2026). Managed models run on credits and need the paid plan. Run Kortix on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free when the repo has to stay inside your network.
+Pricing follows the same shape: you pay for the computer the agent uses, and members are not seats. Free is $0 with 500 credits per month on your first workspace, on your own provider keys or a connected ChatGPT subscription. The paid plan starts at $50 a month. Credits run at 1 credit = $0.01, and 11 credits = 1 hour of agent computer. A stopped agent computer costs nothing. Members are unlimited and free, and the account shares one credit pool. Unused monthly credits roll over one month ([Kortix pricing](https://kortix.com/pricing), checked October 2026). Managed models run on credits and need the paid plan. Run Kortix on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free when the repo has to stay inside your network.
 
 ## Where AgenticSeek wins
 

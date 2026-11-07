@@ -143,7 +143,7 @@ describe('token login target', () => {
         },
       );
       await proc.exited;
-      expect(seen).toEqual([{ path: '/v1/accounts/me', auth: 'Bearer kortix_pat_envtarget' }]);
+      expect(seen).toEqual([{ path: '/v1/me', auth: 'Bearer kortix_pat_envtarget' }]);
     } finally {
       server.stop(true);
       rmSync(dir, { recursive: true, force: true });
@@ -242,6 +242,8 @@ describe('callback-free device login', () => {
     const seen: string[] = [];
     const server = Bun.serve({ port: 0, fetch: async req => {
       const path = new URL(req.url).pathname;
+      // The dev box probes every new port with HEAD/GET / (ptxp-link-probe); the CLI never requests the bare root.
+      if (path === '/') return new Response(null, { status: 404 });
       seen.push(path);
       if (path.endsWith('/start')) return Response.json({ device_code: 'a'.repeat(64), user_code: '0123456789ABCDEF', expires_in: 60, interval: 5 });
       if (path.endsWith('/poll')) {
@@ -263,7 +265,31 @@ describe('callback-free device login', () => {
       expect(stdout).toContain('Confirm code: 0123456789ABCDEF');
       expect(stdout).not.toContain('callback=');
       expect(stdout).not.toContain('a'.repeat(64));
-      expect(seen).toEqual(['/v1/cli/device/start', '/v1/cli/device/poll', '/v1/accounts/me']);
+      expect(seen).toEqual(['/v1/cli/device/start', '/v1/cli/device/poll', '/v1/me']);
+    } finally { server.stop(true); rmSync(dir, { recursive: true, force: true }); }
+  }, 15000);
+  test('an approver with no workspace (409 no_workspace) is sent to the web, not to a command it cannot run', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'login-device-nows-'));
+    const server = Bun.serve({ port: 0, fetch: async req => {
+      const path = new URL(req.url).pathname;
+      // The dev box probes every new port with HEAD/GET / (ptxp-link-probe); the CLI never requests the bare root.
+      if (path === '/') return new Response(null, { status: 404 });
+      if (path.endsWith('/start')) return Response.json({ device_code: 'b'.repeat(64), user_code: '0123456789ABCDEF', expires_in: 60, interval: 5 });
+      if (path.endsWith('/poll')) {
+        return Response.json({ error: 'Create or join a workspace first.', code: 'no_workspace', status: 409 }, { status: 409 });
+      }
+      return Response.json({ error: `unexpected ${path}` }, { status: 404 });
+    } });
+    try {
+      const proc = Bun.spawn([process.execPath, entry, 'login', '--device', '--api', `http://127.0.0.1:${server.port}`], {
+        env: { PATH: process.env.PATH, HOME: tmpdir(), CI: '1', NO_COLOR: '1', KORTIX_DASHBOARD_URL: 'http://web.example.test', KORTIX_CONFIG_FILE: join(dir, 'config.json'), KORTIX_DISABLE_SANDBOX_ENV_FILE: '1', KORTIX_NO_UPDATE_CHECK: '1' },
+        stdout: 'pipe', stderr: 'pipe',
+      });
+      const [code, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+      expect(code).toBe(1);
+      expect(`${stdout}${stderr}`).toContain('No workspace yet. Create one at ');
+      expect(`${stdout}${stderr}`).toContain('/workspaces/new, or accept an invite, then run kortix login again.');
+      expect(`${stdout}${stderr}`).not.toContain('kortix workspaces create');
     } finally { server.stop(true); rmSync(dir, { recursive: true, force: true }); }
   }, 15000);
 });

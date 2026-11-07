@@ -141,8 +141,8 @@ export function applyInterfaceThemes(element: Element, choice: ThemeChoice): voi
 export const USER_PREFERENCES_STORAGE_KEY = 'kortix-user-preferences';
 
 /**
- * Themed routes. Interface themes are a product setting: only /new,
- * /projects/** and /settings render them. Every other page — auth, marketing,
+ * Themed routes. Interface themes are a product setting: only
+ * /workspaces/** and /settings render them. Every other page — auth, marketing,
  * pricing, SEO, checkout, connections, invites, system pages — leaves `<html>`
  * without the palette attributes, so no palette block in globals.css matches
  * and the generated kortix-brand palette applies. `.dark` still follows the
@@ -153,7 +153,7 @@ export const USER_PREFERENCES_STORAGE_KEY = 'kortix-user-preferences';
  * route layout mounts, and that first paint must already be themed.
  * Public URLs carry no locale prefix; the optional one is accepted anyway.
  */
-const THEMED_ROUTE_SOURCE = `^/(?:(?:${locales.join('|')})/)?(?:new|projects|settings)(?:/|$)`;
+const THEMED_ROUTE_SOURCE = `^/(?:(?:${locales.join('|')})/)?(?:workspaces|projects|new|settings)(?:/|$)`;
 const THEMED_ROUTE = new RegExp(THEMED_ROUTE_SOURCE);
 
 export function isThemedPath(pathname: string | null | undefined): boolean {

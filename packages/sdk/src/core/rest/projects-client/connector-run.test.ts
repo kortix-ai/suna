@@ -54,7 +54,7 @@ test('run posts connector, action, args, account and approval context to the pro
     account: ' me ',
     approvalContext: 'reads one issue',
   });
-  expect(requests[0]!.url).toBe('http://test.local/v1/connectors/projects/proj%2F1/call');
+  expect(requests[0]!.url).toBe('http://test.local/v1/connectors/workspaces/proj%2F1/call');
   expect(requests[0]!.body).toEqual({
     connector: 'github',
     action: 'get_issue',

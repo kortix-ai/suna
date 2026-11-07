@@ -177,20 +177,20 @@ function fakeApi(start: Goal): Fake {
         return Response.json({ goal: fake.goal });
       };
 
-      const sessionPath = /^\/v1\/projects\/p1\/sessions\/([^/]+)$/.exec(url.pathname);
+      const sessionPath = /^\/v1\/workspaces\/p1\/sessions\/([^/]+)$/.exec(url.pathname);
       if (sessionPath && req.method === 'GET') return Response.json({ session_id: sessionPath[1], metadata: fake.sessionMeta[sessionPath[1]!] ?? {}, agent_name: 'billing' });
       if (/\/sessions\/[^/]+\/prompts$/.test(url.pathname)) return Response.json({ prompt_id: 'p', state: 'queued', message_id: 'm', deduped: false });
 
-      if (url.pathname === '/v1/projects/p1/goals' && req.method === 'GET') {
+      if (url.pathname === '/v1/workspaces/p1/goals' && req.method === 'GET') {
         const owner = url.searchParams.get('owner_session_id');
         const verifier = url.searchParams.get('verifier_session_id');
         const match = (owner === null || g.owner_session_id === owner) && (verifier === null || g.verifier_session_id === verifier);
         return Response.json({ goals: match ? [g] : [] });
       }
-      if (url.pathname === '/v1/projects/p1/goals' && req.method === 'POST') {
+      if (url.pathname === '/v1/workspaces/p1/goals' && req.method === 'POST') {
         return session ? err(403, 'goal_forbidden', 'A session cannot create a goal.') : Response.json({ goal: g }, { status: 201 });
       }
-      const m = /^\/v1\/projects\/p1\/goals\/([^/]+)(?:\/([a-z-]+))?$/.exec(url.pathname);
+      const m = /^\/v1\/workspaces\/p1\/goals\/([^/]+)(?:\/([a-z-]+))?$/.exec(url.pathname);
       if (!m || m[1] !== g.goal_id) return err(404, 'goal_not_found', 'No such goal.');
       const action = m[2] ?? '';
       if (req.method === 'GET' && !action) return Response.json({ goal: g });
@@ -300,8 +300,8 @@ test('the real CLI runs a goal end to end through the API: activate, progress, v
     expect(active.out).toContain('draft → active');
     expect(active.code).toBe(0);
     const [put, activate] = fake.writes();
-    expect(put).toMatchObject({ method: 'PUT', path: `/v1/projects/p1/goals/${GOAL_ID}/criteria`, actor: 'session:owner', body: { revision: 1, criteria: ['Invoice shows EUR and 19% VAT', 'Checkout charges EUR'] } });
-    expect(activate).toMatchObject({ method: 'POST', path: `/v1/projects/p1/goals/${GOAL_ID}/activate`, body: { revision: 2, reason: 'criteria written' } });
+    expect(put).toMatchObject({ method: 'PUT', path: `/v1/workspaces/p1/goals/${GOAL_ID}/criteria`, actor: 'session:owner', body: { revision: 1, criteria: ['Invoice shows EUR and 19% VAT', 'Checkout charges EUR'] } });
+    expect(activate).toMatchObject({ method: 'POST', path: `/v1/workspaces/p1/goals/${GOAL_ID}/activate`, body: { revision: 2, reason: 'criteria written' } });
     // The mirror after the write: read-only orientation, the brief untouched.
     const md = readFileSync(join(folder, 'GOAL.md'), 'utf8');
     expect(md).toContain('lifecycle_state: active');
@@ -378,7 +378,7 @@ test('wait sends the question and chase_at; stopped is refused without any reque
     const waited = await cli(fake, root, 'owner', ['transition', 'waiting_on_user', '--reason', 'Which VAT id do we invoice from?', '--chase-at', at]);
     expect(waited.code).toBe(0);
     expect(waited.out).toContain('No turn runs until the assigned user answers');
-    expect(fake.writes().at(-1)).toMatchObject({ path: `/v1/projects/p1/goals/${GOAL_ID}/wait`, body: { revision: 5, question: 'Which VAT id do we invoice from?', chase_at: at } });
+    expect(fake.writes().at(-1)).toMatchObject({ path: `/v1/workspaces/p1/goals/${GOAL_ID}/wait`, body: { revision: 5, question: 'Which VAT id do we invoice from?', chase_at: at } });
     // Found by owner_session_id: this session has no goal_id metadata.
     expect(fake.requests.some((r) => r.search === '?owner_session_id=owner')).toBe(true);
     // The answer came on the channel: the owner moves the goal back to active itself.
@@ -445,7 +445,7 @@ test('handover sends the note; new in a session surfaces the API refusal with th
   try {
     const out = await cli(fake, root, 'owner', ['handover', '--note', 'Invoices done; checkout next.']);
     expect(out.code).toBe(0);
-    expect(fake.writes().at(-1)).toMatchObject({ path: `/v1/projects/p1/goals/${GOAL_ID}/handover`, body: { revision: 2, note: 'Invoices done; checkout next.' } });
+    expect(fake.writes().at(-1)).toMatchObject({ path: `/v1/workspaces/p1/goals/${GOAL_ID}/handover`, body: { revision: 2, note: 'Invoices done; checkout next.' } });
     expect(fake.goal.owner_session_id).not.toBe('owner');
     // The former owner is no longer the owner: the API refuses its writes.
     const old = await cli(fake, root, 'owner', ['progress', '--goal', GOAL_ID, '--summary', 'x']);
@@ -456,7 +456,7 @@ test('handover sends the note; new in a session surfaces the API refusal with th
     expect(created.code).toBe(1);
     expect(created.out).toContain('A session cannot create a goal.');
     expect(created.out).toContain('from the Goals page');
-    expect(fake.requests.at(-1)).toMatchObject({ method: 'POST', path: '/v1/projects/p1/goals', body: { brief: 'EU billing live' } });
+    expect(fake.requests.at(-1)).toMatchObject({ method: 'POST', path: '/v1/workspaces/p1/goals', body: { brief: 'EU billing live' } });
   } finally {
     fake.stop();
     rmSync(root, { recursive: true, force: true });
@@ -521,7 +521,7 @@ test('the goals flag gates the real CLI in a box: off hides and refuses kortix g
   expect(out(run(['--help'], 'volumes,reminders'))).not.toMatch(/^\s+goals\s/m);
   const off = run(['goals', 'ls'], 'volumes,reminders');
   expect(off.exitCode).not.toBe(0);
-  expect(out(off)).toContain('kortix projects features enable goals');
+  expect(out(off)).toContain('kortix workspaces features enable goals');
   const on = run(['goals', '--help'], 'volumes,reminders,goals');
   expect(on.exitCode).toBe(0);
   expect(out(on)).toContain('Usage: kortix goals');

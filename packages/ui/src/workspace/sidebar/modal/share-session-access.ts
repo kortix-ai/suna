@@ -62,7 +62,7 @@ function countPhrase(count: number, singular: string): string | null {
 /** One sentence naming exactly who can open the session right now. */
 export function sessionAccessSummary(session: SessionOwnership): string {
   const owner = sessionOwnerName(session);
-  if (session.visibility === 'project') return 'Every member of this project can open it.';
+  if (session.visibility === 'project') return 'Every member of this workspace can open it.';
   if (session.visibility === 'restricted') {
     const sharing = session.sharing;
     const memberIds = sharing && sharing.mode === 'members' ? (sharing.memberIds ?? []) : [];

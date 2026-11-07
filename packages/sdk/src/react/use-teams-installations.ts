@@ -72,7 +72,7 @@ export function useTeamsInstall(projectId: string | null) {
     queryFn: async () => {
       if (!projectId) return null;
       const res = await backendApi.get<TeamsInstallation | null>(
-        `/projects/${encodeURIComponent(projectId)}/channels/teams/installation`,
+        `/workspaces/${encodeURIComponent(projectId)}/channels/teams/installation`,
         { showErrors: false },
       );
       if (!res.success) return null;
@@ -100,7 +100,7 @@ export function useTeamsMode(projectId: string | null) {
       };
       if (!projectId) return fallback;
       const res = await backendApi.get<TeamsMode>(
-        `/projects/${encodeURIComponent(projectId)}/channels/teams/mode`,
+        `/workspaces/${encodeURIComponent(projectId)}/channels/teams/mode`,
         { showErrors: false },
       );
       if (!res.success || !res.data) return fallback;
@@ -117,7 +117,7 @@ export function useTeamsManifest(projectId: string | null) {
     queryFn: async () => {
       if (!projectId) return null;
       const res = await backendApi.get<Record<string, unknown>>(
-        `/projects/${encodeURIComponent(projectId)}/channels/teams/manifest`,
+        `/workspaces/${encodeURIComponent(projectId)}/channels/teams/manifest`,
         { showErrors: false },
       );
       if (!res.success || !res.data) {
@@ -141,7 +141,7 @@ export function useConnectTeams() {
   return useMutation({
     mutationFn: async ({ projectId, ...body }: ConnectInput) => {
       const res = await backendApi.post<TeamsInstallation>(
-        `/projects/${encodeURIComponent(projectId)}/channels/teams/connect`,
+        `/workspaces/${encodeURIComponent(projectId)}/channels/teams/connect`,
         body,
         { showErrors: false },
       );
@@ -163,7 +163,7 @@ export function useDisconnectTeams() {
   return useMutation({
     mutationFn: async (projectId: string) => {
       const res = await backendApi.delete(
-        `/projects/${encodeURIComponent(projectId)}/channels/teams/installation`,
+        `/workspaces/${encodeURIComponent(projectId)}/channels/teams/installation`,
         { showErrors: false },
       );
       if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect');

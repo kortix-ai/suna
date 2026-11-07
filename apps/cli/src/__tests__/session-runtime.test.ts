@@ -48,7 +48,7 @@ describe('waitForSessionReady', () => {
   test('polls /start and returns once the runtime reports ready', async () => {
     const { client, posts } = fakeClient([{ stage: 'provisioning' }, { stage: 'ready' }]);
     await waitForSessionReady(client, 'proj', 'sess', { sleep: noSleep });
-    expect(posts).toEqual(['/projects/proj/sessions/sess/start', '/projects/proj/sessions/sess/start']);
+    expect(posts).toEqual(['/workspaces/proj/sessions/sess/start', '/workspaces/proj/sessions/sess/start']);
   });
 
   test('hands every /start payload to onProgress, image step included', async () => {

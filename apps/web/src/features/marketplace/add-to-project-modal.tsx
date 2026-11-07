@@ -47,7 +47,8 @@ import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-c
 import { isManagedGitUnavailableError } from '@kortix/ui/internal/lib/onboarding/provision-errors';
 import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
-import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk';
+import { getManagedGitStatus } from '@kortix/sdk';
+import { provisionNewWorkspace } from '@kortix/ui/workspace/new/provision-new-workspace';
 import { qk } from '@kortix/sdk/react';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
 import { useProjectPicker } from './marketplace-project-picker';
@@ -98,14 +99,14 @@ export function AddToProjectModal({
   // with nothing configured should route to Git settings instead of letting
   // the "new project" target hit the provision 503 first.
   const accountsQuery = useAccountsList({ enabled: open && target === NEW_PROJECT });
-  // No `personal_account` flag on this API — the bootstrapped personal
-  // account is the one where the caller is the primary owner. Mirrors the
-  // resolution in `onConfirm` below.
-  const candidateAccount = useMemo(() => {
-    const accounts = accountsQuery.data ?? [];
-    return accounts.find((a) => a.is_primary_owner) ?? accounts[0] ?? null;
-  }, [accountsQuery.data]);
-  const isGitAdmin = isAccountGitAdmin(candidateAccount?.account_role);
+  // A new workspace is a new account the caller owns, or an empty one they
+  // already own. Its git settings live there; with none yet, the caller is
+  // the owner-to-be, so the setup panel speaks to an admin.
+  const candidateAccount = useMemo(
+    () => (accountsQuery.data ?? []).find((a) => a.account_role === 'owner') ?? null,
+    [accountsQuery.data],
+  );
+  const isGitAdmin = candidateAccount ? isAccountGitAdmin(candidateAccount.account_role) : true;
 
   const managedGitStatusQuery = useQuery({
     queryKey: ['managed-git-status'],
@@ -159,7 +160,7 @@ export function AddToProjectModal({
             label: tI18nComplete.raw(sessionHref ? 'textb205bb47f81a' : 'texted077f3d8125'),
             onClick: () => {
               closeCustomize();
-              router.push(sessionHref ?? `/projects/${projectId}`);
+              router.push(sessionHref ?? `/workspaces/${projectId}`);
             },
           },
         ],
@@ -170,21 +171,10 @@ export function AddToProjectModal({
   const onConfirm = async () => {
     if (busy) return;
     setBusy(true);
-    // Tracked outside the try so the managed-git-unavailable catch below can
-    // still point at the right account even though it's only resolved in the
-    // NEW_PROJECT branch.
-    let resolvedAccountId: string | null = null;
     try {
       if (target === NEW_PROJECT) {
-        const accounts = await listAccounts();
-        // No `personal_account` flag on this API — the bootstrapped personal
-        // account is the one where the caller is the primary owner.
-        const account = accounts.find((a) => a.is_primary_owner) ?? accounts[0];
-        if (!account) throw new Error('No account available to create a project in');
-        resolvedAccountId = account.account_id;
-
-        const project = await provisionProject({
-          account_id: account.account_id,
+        // A whole new workspace: the server picks (or makes) the account.
+        const project = await provisionNewWorkspace({
           name: newProjectName.trim() || humanizedTitle,
           starter_template: 'general-knowledge-worker',
           source_item_id: isProject ? item.id : undefined,
@@ -216,7 +206,7 @@ export function AddToProjectModal({
     } catch (e) {
       if (isManagedGitUnavailableError(e)) {
         const gitSettingsAccountId =
-          resolvedAccountId ?? useCurrentAccountStore.getState().selectedAccountId;
+          candidateAccount?.account_id ?? useCurrentAccountStore.getState().selectedAccountId;
         errorToast(tI18nComplete.raw('text8200ffd60b70'), {
           description: tI18nComplete.raw('text0471e152d0c9'),
           ...(gitSettingsAccountId

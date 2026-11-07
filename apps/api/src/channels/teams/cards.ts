@@ -357,7 +357,7 @@ export function buildConnectedCard(input: { email: string | null; resumed: boole
   const who = input.email ? `as **${input.email}**` : 'to your Kortix account';
   if (!input.hasAccess) {
     return card(
-      headerBlock('🔒', 'Connected', `Your Teams account is linked ${who}, but your account can't run this project yet.`),
+      headerBlock('🔒', 'Connected', `Your Teams account is linked ${who}, but your account can't run this Kortix workspace yet.`),
       [executeAction('Request access', 'teams_request_access', { projectId: input.projectId })],
     );
   }
@@ -367,14 +367,14 @@ export function buildConnectedCard(input: { email: string | null; resumed: boole
 /** What an account admin gets in their 1:1 chat when someone asks for project access. */
 export function buildAccessRequestNoticeCard(input: { requester: string; reviewUrl: string }): Record<string, unknown> {
   return card(
-    headerBlock('🔑', 'Access requested', `${input.requester} asked for access to a Kortix project from Teams. Approve it under Members in Kortix.`),
+    headerBlock('🔑', 'Access requested', `${input.requester} asked for access to a Kortix workspace from Teams. Approve it under Members in Kortix.`),
     [{ ...openUrlAction('Review in Kortix', input.reviewUrl), style: 'positive' }],
   );
 }
 
 export function buildRequestAccessCard(projectId: string): Record<string, unknown> {
   return card(
-    headerBlock('🔒', 'Request access', "You're connected, but your account can't run this project yet."),
+    headerBlock('🔒', 'Request access', "You're connected, but your account can't run this Kortix workspace yet."),
     [executeAction('Request access', 'teams_request_access', { projectId })],
   );
 }
@@ -486,11 +486,11 @@ export function buildModelPickerCard(opts: {
   scopeNote: string;
 }): Record<string, unknown> {
   const subtitle = [
-    opts.current ? `Currently ${opts.currentLabel ?? opts.current}` : `Currently the project default${opts.defaultLabel ? ` (${opts.defaultLabel})` : ''}`,
+    opts.current ? `Currently ${opts.currentLabel ?? opts.current}` : `Currently the workspace default${opts.defaultLabel ? ` (${opts.defaultLabel})` : ''}`,
     opts.keysNote ?? null,
   ].filter(Boolean).join(' · ');
   const body: CardElement[] = [...headerBlock('🧠', 'Model', subtitle)];
-  const defaultChoice = { label: 'Project default', hint: opts.defaultLabel ?? undefined, value: '' };
+  const defaultChoice = { label: 'Workspace default', hint: opts.defaultLabel ?? undefined, value: '' };
   // Grouped by how each model is paid for, in Slack's order. A dropdown has no
   // groups in Adaptive Cards, so there the order and the hint carry it.
   const groups = VIA_GROUPS.map((g) => ({ ...g, models: opts.models.filter((m) => m.via === g.via) })).filter((g) => g.models.length);
@@ -521,7 +521,7 @@ export function buildModelPickerCard(opts: {
     style: 'filtered',
     value: opts.current ?? '',
     choices: [
-      { title: `Project default${opts.defaultLabel ? ` — ${opts.defaultLabel}` : ''}`, value: '' },
+      { title: `Workspace default${opts.defaultLabel ? ` — ${opts.defaultLabel}` : ''}`, value: '' },
       ...ordered.map((m) => ({ title: `${m.label} · ${viaHint(m)}`, value: m.id })),
     ],
     spacing: 'medium',
@@ -658,7 +658,7 @@ function projectRow(p: ProjectRow, separator: boolean, pickVerb?: string): CardE
 /** `/projects`: every project this Teams tenant runs, as Slack's project carousel lists them. */
 export function buildProjectsCard(projects: ReadonlyArray<ProjectRow>): Record<string, unknown> {
   return card([
-    ...headerBlock('📁', 'Connected projects', 'Pick which project this conversation runs.'),
+    ...headerBlock('📁', 'Connected workspaces', 'Pick which Kortix workspace this conversation runs.'),
     emphasisContainer(projects.map((p, i) => projectRow(p, i > 0, 'teams_pick_project'))),
   ]);
 }
@@ -676,7 +676,7 @@ export function buildHomeCard(opts: { projects: ReadonlyArray<ProjectRow> }): Re
   );
   if (opts.projects.length) {
     body.push(
-      text('Projects in this organization', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+      text('Kortix workspaces here', { weight: 'bolder', size: 'small', spacing: 'medium' }),
       emphasisContainer(opts.projects.map((p, i) => projectRow(p, i > 0))),
     );
   }
@@ -969,8 +969,8 @@ export function buildProjectPickerCard(
   return card(
     headerBlock(
       '📁',
-      'Which project should this conversation use?',
-      "Several Kortix projects are connected to this team. Pick one — I'll remember it here and run your message.",
+      'Which Kortix workspace should this conversation use?',
+      "Several Kortix workspaces are connected to this team. Pick one — I'll remember it here and run your message.",
     ),
     projects.slice(0, 8).map((p) =>
       executeAction(p.name, 'teams_pick_project', { projectId: p.projectId, ...(pendingId ? { pendingId } : {}) }),

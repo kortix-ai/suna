@@ -15,7 +15,7 @@ export const APP_REGISTRY_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Any model': 'texte75d99a42dba',
   'Any runtime': 'text76020fe09cc6',
   Apps: 'text89dd748442c1',
-  'Attach a group to any project with a role': 'textb9e8c0ab350c',
+  'Attach a group to any workspace with a role': 'textb9e8c0ab350c',
   Audit: 'textbb6aea287396',
   'Audit logs are an Enterprise feature': 'text1c791e8c04de',
   'Auto Top-up': 'textb22c4907adbb',
@@ -56,7 +56,7 @@ export const APP_REGISTRY_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Groups are an Enterprise feature': 'text76afda83081b',
   Home: 'text3a78695388b3',
   'How this works': 'textbdbd7706de64',
-  'IdP groups map to roles on your projects': 'textb978cac03a79',
+  'IdP groups map to roles on your workspaces': 'textb978cac03a79',
   'Kortix prepares a machine the first time you start a session here. Nothing needs to be set up in advance.':
     'text5c48b158361a',
   'LLM Overage': 'text3f6365f81e08',
@@ -72,11 +72,11 @@ export const APP_REGISTRY_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Open source. Self-host the exact same stack, bring your own runtime and model keys. No black box, no lock-in.':
     'textc417a3753a0b',
   Operate: 'text58c3939c4ce9',
-  'Preparing this project’s environment': 'text69e4bd3a0f79',
+  'Preparing this workspace’s environment': 'text69e4bd3a0f79',
   'Profiles the warehouse, writes performant SQL and ships a dashboard from a plain question.':
     'text4ea9bc9c2acc',
-  Project: 'text985959785319',
-  Projects: 'text04e2a9728af7',
+  Workspace: 'text985959785319',
+  Workspaces: 'text04e2a9728af7',
   Promotional: 'texta9b8859fba62',
   Purchase: 'text5b5e9c65b400',
   'Reflects on recent activity and curates .kortix/memory, opening a memory CR each run.':
@@ -104,7 +104,7 @@ export const APP_REGISTRY_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Su: 'text2d88a3a2842e',
   'Sync membership automatically from your identity provider': 'texte164235035e6',
   Th: 'text3bff939c10f4',
-  'This project’s environment is ready': 'text108fd36702c5',
+  'This workspace’s environment is ready': 'text108fd36702c5',
   'Tier Grant': 'text16a2a5617354',
   Tokens: 'texta039dfb9628b',
   Triggers: 'texte62f2148a64d',
@@ -122,4 +122,10 @@ export const APP_REGISTRY_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   building: 'text5167e9677e1f',
   failed: 'text5d28a90f4498',
   ready: 'textb24d6d33736e',
+  "Define roles of your own: pick exactly what a member may view and change, then give them out from Members like the built-in ones.": 'text1a836dc94f41',
+  "Give a custom role to a person or a group": 'textb2c26ac6527b',
+  "Put your own logo, icon, favicon, and product name on the app for everyone in this workspace: Kortix becomes your tool.": 'textfab4077701b7',
+  "IdP groups map to roles in this workspace": 'textfd8fee75dbb5',
+  "Bundle members into groups and give the whole group a role: one grant instead of dozens, revoked just as easily.": 'textadca5dfd1e42',
+  "A complete, filterable trail of every admin and agent action in this workspace: who did what, where, and when.": 'text16ba47efb9f2',
 };

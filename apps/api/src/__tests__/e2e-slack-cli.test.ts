@@ -220,7 +220,8 @@ beforeEach(() => {
         return json({ ok: true });
       }
 
-      if (url.pathname === `/v1/connectors/projects/${PROJECT}/call`) {
+      // The CLI calls the canonical name; the legacy name stays served for old CLIs.
+      if (url.pathname === `/v1/connectors/workspaces/${PROJECT}/call` || url.pathname === `/v1/connectors/projects/${PROJECT}/call`) {
         const body = (await req.json()) as {
           connector: string;
           action: string;

@@ -77,7 +77,7 @@ describe('SessionApprovalNotice', () => {
 
     expect(html).toContain('Needs approval');
     expect(html).not.toContain('The agent needs your approval');
-    expect(html).toContain('Waiting for Ada or anyone who manages this project to approve or deny it.');
+    expect(html).toContain('Waiting for Ada or anyone who manages this workspace to approve or deny it.');
     expect(html).not.toContain('Approve this call');
     expect(html).not.toContain('>Deny<');
     // The call and its arguments still read.
@@ -100,7 +100,7 @@ describe('SessionApprovalNotice', () => {
         launcherName="Ada"
       />,
     );
-    expect(html).toContain('Waiting for anyone who manages this project to approve or deny it.');
+    expect(html).toContain('Waiting for anyone who manages this workspace to approve or deny it.');
     expect(html).not.toContain('Ada');
     expect(html).not.toContain('Approve this call');
   });

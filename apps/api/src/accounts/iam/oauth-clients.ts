@@ -30,6 +30,7 @@ import { iamRouter, AccountIdParam } from './app';
 import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
+import { accountIdParam } from '../../shared/route-params';
 
 export const OAuthClientSchema = z
   .object({
@@ -47,7 +48,7 @@ export const OAuthClientSchema = z
   })
   .openapi('IamOAuthClient');
 
-const ClientParams = z.object({ accountId: z.string(), clientId: z.string() });
+const ClientParams = z.object({ workspaceId: z.string(), clientId: z.string() });
 
 function serialize(client: OAuthClient, clientSecret?: string | null) {
   return {
@@ -73,7 +74,7 @@ export function registerIamOauthClientsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/oauth-clients',
+      path: '/{workspaceId}/iam/oauth-clients',
       tags: ['iam'],
       summary: 'List OAuth clients (Sign in with Kortix apps)',
       ...auth,
@@ -87,7 +88,7 @@ export function registerIamOauthClientsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
       const rows = await listOAuthClients(accountId);
       return c.json({ oauth_clients: rows.map((r) => serialize(r)), scopes_supported: [...OAUTH_SCOPES] });
@@ -97,7 +98,7 @@ export function registerIamOauthClientsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/oauth-clients',
+      path: '/{workspaceId}/iam/oauth-clients',
       tags: ['iam'],
       summary: 'Register an OAuth client',
       ...auth,
@@ -125,7 +126,7 @@ export function registerIamOauthClientsRoutes(): void {
     async (c: any) => {
       if (c.get('authType') === 'oauth') return c.json({ error: 'Connected apps cannot create OAuth clients.' }, 403);
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
 
       const body = await readJsonObject(c);
@@ -165,7 +166,7 @@ export function registerIamOauthClientsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/oauth-clients/{clientId}',
+      path: '/{workspaceId}/iam/oauth-clients/{clientId}',
       tags: ['iam'],
       summary: 'Get one OAuth client',
       ...auth,
@@ -173,7 +174,7 @@ export function registerIamOauthClientsRoutes(): void {
       responses: { 200: json(OAuthClientSchema, 'The client'), ...errors(401, 403, 404) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const clientId = c.req.param('clientId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
       const client = isUuid(clientId) ? await getOAuthClient(accountId, clientId) : null;
@@ -185,7 +186,7 @@ export function registerIamOauthClientsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/iam/oauth-clients/{clientId}',
+      path: '/{workspaceId}/iam/oauth-clients/{clientId}',
       tags: ['iam'],
       summary: 'Update an OAuth client (name, description, redirect URIs, scopes, active)',
       ...auth,
@@ -208,7 +209,7 @@ export function registerIamOauthClientsRoutes(): void {
       responses: { 200: json(OAuthClientSchema, 'The updated client'), ...errors(400, 401, 403, 404) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const clientId = c.req.param('clientId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
       const before = isUuid(clientId) ? await getOAuthClient(accountId, clientId) : null;
@@ -253,7 +254,7 @@ export function registerIamOauthClientsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/oauth-clients/{clientId}/rotate-secret',
+      path: '/{workspaceId}/iam/oauth-clients/{clientId}/rotate-secret',
       tags: ['iam'],
       summary: 'Rotate a confidential client secret (returned once)',
       ...auth,
@@ -261,7 +262,7 @@ export function registerIamOauthClientsRoutes(): void {
       responses: { 200: json(OAuthClientSchema, 'The client with its new secret'), ...errors(400, 401, 403, 404) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       if (c.get('authType') === 'oauth') return c.json({ error: 'Connected apps cannot rotate OAuth client secrets.' }, 403);
       const clientId = c.req.param('clientId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
@@ -285,7 +286,7 @@ export function registerIamOauthClientsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/iam/oauth-clients/{clientId}',
+      path: '/{workspaceId}/iam/oauth-clients/{clientId}',
       tags: ['iam'],
       summary: 'Delete an OAuth client (revokes every token it minted)',
       ...auth,
@@ -293,7 +294,7 @@ export function registerIamOauthClientsRoutes(): void {
       responses: { 200: json(z.object({ deleted: z.boolean() }), 'Deleted'), ...errors(401, 403, 404) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const clientId = c.req.param('clientId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_REVOKE);
       const before = isUuid(clientId) ? await getOAuthClient(accountId, clientId) : null;

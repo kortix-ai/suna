@@ -7,7 +7,7 @@
  * The recipients are the account owners and admins and the project managers:
  * the people who can change a budget.
  */
-import { chatEventDedup, projects } from '@kortix/db';
+import { chatEventDedup } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { lookupEmailsByUserIds } from '../accounts/core/owner-emails';
 import { sendAlertEmail } from '../billing/services/owner-alerts';
@@ -18,6 +18,7 @@ import { db } from '../shared/db';
 import { escapeHtml } from '../shared/html';
 import { type BudgetCrossing, type Period, startOfBudgetPeriod } from './budgets';
 import { formatUsdAsCredits } from '@kortix/shared';
+import { projectsView } from '../workspaces/rows';
 
 const PERIOD_DAYS: Record<Period, number> = { day: 1, week: 7, month: 31 };
 const PERIOD_WORD: Record<Period, string> = { day: 'daily', week: 'weekly', month: 'monthly' };
@@ -60,9 +61,9 @@ export async function alertBudgetCrossings(projectId: string, crossings: BudgetC
 
 async function emailBudgetManagers(projectId: string, crossing: BudgetCrossing): Promise<number> {
   const [project] = await db
-    .select({ name: projects.name, accountId: projects.accountId })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ name: projectsView.name, accountId: projectsView.accountId })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!project) return 0;
   const [accountRoles, grants] = await Promise.all([
@@ -94,7 +95,7 @@ async function emailBudgetManagers(projectId: string, crossing: BudgetCrossing):
   const subject = member
     ? `${member} reached ${crossing.threshold}% of a gateway budget in ${projectName}`
     : `${projectName} reached ${crossing.threshold}% of its gateway budget`;
-  const url = `${(config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')}/projects/${projectId}/admin/models`;
+  const url = `${(config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')}/workspaces/${projectId}/admin/models`;
   const title = `Gateway budget at ${crossing.threshold}%`;
   const html = renderEmail({
     title,

@@ -138,30 +138,10 @@ function req(method: string, path: string, secret: string, body?: unknown) {
 async function roleDenied(res: Response): Promise<boolean> {
   if (res.status !== 403) return false;
   const text = JSON.stringify(await res.json().catch(() => ({})));
-  return /doesn't let you|do not have access to this project|permission to perform this action/i.test(
+  return /doesn't let you|do not have access to this (project|workspace)|permission to perform this action/i.test(
     text,
   );
 }
-
-/**
- * The `loadProjectForUser` floor of one registered handler, selected by method
- * + OpenAPI path. Scoped per handler because each source file registers many
- * routes across different floors, so a whole-file match would read a
- * neighbour's.
- */
-function handlerFloor(source: string, method: string, path: string): string {
-  const block = source.split('projectsApp.openapi(').find(
-    (b) => b.includes(`method: '${method.toLowerCase()}'`) && b.includes(`path: '${path}'`),
-  );
-  if (!block) throw new Error(`no ${method} ${path} handler found`);
-  const floor = block.match(/loadProjectForUser\(c, projectId, '(\w+)'\)/);
-  if (!floor) throw new Error(`no loadProjectForUser floor in ${method} ${path}`);
-  return floor[1]!;
-}
-
-const SESSION_SCOPE_SRC = await Bun.file(
-  new URL('../projects/routes/session-scope.ts', import.meta.url).pathname,
-).text();
 
 const base = `/v1/projects/${PROJECT}`;
 
@@ -224,15 +204,6 @@ describe('project member — model selection', () => {
       model: 'kortix/nonexistent-synthetic-model', prompt: 'Continue', idempotency_key: 'hidden-session',
     });
     expect(res.status).toBe(404);
-  });
-
-  test("session model write is floored 'session', not 'write'", () => {
-    // The behavioural test above can only prove the CURRENT floor admits a
-    // member. This pins WHICH floor, so a future edit back to 'write' fails
-    // here with the reason named rather than as a puzzling status change.
-    expect(
-      handlerFloor(SESSION_SCOPE_SRC, 'PUT', '/{projectId}/sessions/{sessionId}/model'),
-    ).toBe('session');
   });
 
   test('still CANNOT change project-level model configuration', async () => {

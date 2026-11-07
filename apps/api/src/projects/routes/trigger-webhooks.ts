@@ -1,9 +1,12 @@
-/** Inbound trigger webhooks: `POST /v1/webhooks/projects/:projectId/:slug` fires a webhook trigger. */
+/**
+ * Inbound trigger webhooks: `POST /v1/webhooks/workspaces/:workspaceId/:slug`
+ * (canonical, `webhookWorkspacesApp`) and `POST /v1/webhooks/projects/:workspaceId/:slug`
+ * (permanent) fire a webhook trigger.
+ */
 import { db } from '../../shared/db';
 import { getProjectSecretValueForConsumer } from '../secrets';
 import { loadProjectTriggers } from '../triggers';
 import { invalidateProjectMirror } from '../git';
-import { projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json } from '../../openapi';
@@ -26,19 +29,21 @@ import { consumeProjectWebhookManifestRefreshBudget, consumeProjectWebhookReject
 import { logger } from '../../lib/logger';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 import { isRuntimeTriggerSlug, runtimeWebhookSpec } from '../lib/runtime-triggers';
+import { workspaceIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 export function registerTriggerWebhooksRoutes(): void {
-  projectWebhooksApp.use('/projects/:projectId/:slug', createProjectWebhookRateLimitMiddleware());
+  projectWebhooksApp.use('/projects/:workspaceId/:slug', createProjectWebhookRateLimitMiddleware());
 
   projectWebhooksApp.openapi(createRoute({
     method: 'post',
-    path: '/projects/{projectId}/{slug}',
+    path: '/projects/{workspaceId}/{slug}',
     tags: ['triggers'],
     summary: 'Fire a webhook trigger',
     description:
       'Authenticated by the trigger secret, not a bearer token: send `X-Kortix-Signature` / `X-Hub-Signature-256` (HMAC-SHA256 of `<X-Kortix-Timestamp>.<raw body>`) with `X-Kortix-Timestamp` (epoch seconds, within 5 minutes) — a missing or stale timestamp is refused, so a captured signature cannot replay — or the secret as `X-Kortix-Token` or `Authorization: Bearer`. Every pre-authentication miss answers 401. The JSON body is the payload the prompt template renders.',
     // No body schema: the handler HMACs the raw bytes, so nothing may parse them first.
-    request: { params: z.object({ projectId: z.string(), slug: z.string() }) },
+    request: { params: z.object({ workspaceId: z.string(), slug: z.string() }) },
     responses: {
       200: json(z.object({ status: z.literal('skipped'), reason: z.string() }), 'Accepted, not fired'),
       202: json(TriggerFireResultSchema, 'Queued or fired'),
@@ -47,7 +52,7 @@ export function registerTriggerWebhooksRoutes(): void {
       ...errors(400, 401, 402, 500),
     },
   }), async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const slug = c.req.param('slug');
     if (!isUuid(projectId)) return c.json({ error: 'Invalid project id' }, 400);
     // A kortix.yaml slug, or a runtime trigger id (`trigger.<hex>`, `automation.<hex>` from before the rename, `reminder.<hex>`).
@@ -67,10 +72,10 @@ export function registerTriggerWebhooksRoutes(): void {
 
     const [project] = await db
       .select()
-      .from(projects)
+      .from(projectsView)
       .where(and(
-        eq(projects.projectId, projectId),
-        eq(projects.status, 'active'),
+        eq(projectsView.projectId, projectId),
+        eq(projectsView.status, 'active'),
       ))
       .limit(1);
     // Every pre-authentication miss answers the same 401 as a bad signature, so a

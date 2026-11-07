@@ -139,7 +139,7 @@ export interface AgentConfigResponse {
 export async function getAgentConfig(projectId: string, agentName: string) {
   const response = unwrap(
     await backendApi.get<AgentConfigResponse>(
-      `/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`,
+      `/workspaces/${projectId}/agents/${encodeURIComponent(agentName)}/config`,
       { showErrors: false },
     ),
   );
@@ -161,7 +161,7 @@ export async function updateAgentConfig(
       agent: string;
       schema_version: number;
       block: AgentConfigBlock | null;
-    }>(`/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`, canonicalBlock),
+    }>(`/workspaces/${projectId}/agents/${encodeURIComponent(agentName)}/config`, canonicalBlock),
   );
   return {
     ...response,
@@ -212,23 +212,30 @@ export async function grantSecretToAgent(
 ) {
   return unwrap(
     await backendApi.post<GrantSecretToAgentResponse>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/grant`,
+      `/workspaces/${projectId}/secrets/${encodeURIComponent(identifier)}/grant`,
       { agent: agentName },
     ),
   );
 }
 
+/** @deprecated Use `UpdateWorkspaceDefaultAgentResponse`. Kept permanently. */
 export interface UpdateProjectDefaultAgentResponse {
   ok: boolean;
   default_agent: string;
 }
 
+/** The workspace name of {@link UpdateProjectDefaultAgentResponse}: the same type. */
+export type UpdateWorkspaceDefaultAgentResponse = UpdateProjectDefaultAgentResponse;
+
 /** Set the declared project default in `kortix.yaml` (v2 and v3 projects). */
-export async function updateProjectDefaultAgent(projectId: string, agentName: string) {
+export async function updateWorkspaceDefaultAgent(projectId: string, agentName: string) {
   return unwrap(
     await backendApi.put<UpdateProjectDefaultAgentResponse>(
-      `/projects/${projectId}/default-agent`,
+      `/workspaces/${projectId}/default-agent`,
       { agent: agentName },
     ),
   );
 }
+
+/** @deprecated Use `updateWorkspaceDefaultAgent`. Kept permanently. */
+export const updateProjectDefaultAgent = updateWorkspaceDefaultAgent;

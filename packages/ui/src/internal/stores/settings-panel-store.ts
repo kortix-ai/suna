@@ -61,6 +61,12 @@ interface SettingsPanelState {
   openSettings: (tab?: SettingsTab, opts?: SettingsPanelOptions) => void;
   setTab: (tab: SettingsTab) => void;
   close: () => void;
+  /** Where a close is going: a link in the panel (a workspace row) sets it, so
+   *  the `/settings` route's exit navigation goes there instead of back to the
+   *  last workspace. Null for a plain close (Escape, the backdrop). */
+  exitTo: string | null;
+  /** Close the panel on the way to `href` (the link navigates). */
+  closeTo: (href: string) => void;
 }
 
 export const useSettingsPanelStore = create<SettingsPanelState>((set) => ({
@@ -74,7 +80,10 @@ export const useSettingsPanelStore = create<SettingsPanelState>((set) => ({
       tab: tab ?? s.tab,
       membersTab: opts?.membersTab ?? 'people',
       paneRequested: tab !== undefined,
+      exitTo: null,
     })),
   setTab: (tab) => set({ tab }),
-  close: () => set({ open: false }),
+  close: () => set({ open: false, exitTo: null }),
+  exitTo: null,
+  closeTo: (href) => set({ open: false, exitTo: href }),
 }));

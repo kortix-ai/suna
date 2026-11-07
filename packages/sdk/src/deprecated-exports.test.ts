@@ -61,6 +61,32 @@ const TRANSCRIPT_SHARE_EXPORTS = [
   'PublicSessionTranscriptToolCall',
 ];
 
+/**
+ * The workspace rename (PR #11857): each older `Project*` / `Account*` name
+ * that has an exact `Workspace*` equivalent carries `@deprecated` naming the
+ * replacement. Compatibility is PERMANENT: these names are never removed, so
+ * the tag says `Kept permanently.` and never `Removed in the next major.`.
+ * A name with no exact equivalent (the IAM functions, until the one
+ * workspace scope lands) is not deprecated. Every project-named export is
+ * covered by `workspace-names.test.ts`.
+ */
+const WORKSPACE_EQUIVALENTS: Record<string, string> = {
+  updateProject: 'updateWorkspace',
+  updateAccountName: 'updateWorkspace',
+  listAccountMembers: 'listWorkspaceMembers',
+  inviteAccountMember: 'inviteWorkspaceMember',
+  removeAccountMember: 'removeWorkspaceMember',
+  updateAccountMemberRole: 'updateWorkspaceMemberRole',
+  listAccountInvites: 'listWorkspaceInvites',
+  cancelAccountInvite: 'cancelWorkspaceInvite',
+  resendAccountInvite: 'resendWorkspaceInvite',
+  leaveAccount: 'leaveWorkspace',
+  listAccountTokens: 'listWorkspaceTokens',
+  revokeAccountToken: 'revokeWorkspaceToken',
+};
+
+const KEPT_PERMANENTLY = /Kept permanently\./;
+
 const program = ts.createProgram([join(import.meta.dir, 'index.ts'), join(import.meta.dir, 'react/index.ts')], {
   target: ts.ScriptTarget.ES2022,
   module: ts.ModuleKind.ESNext,
@@ -114,6 +140,33 @@ describe('deprecated exports', () => {
     '%s is @deprecated and removed in the next major',
     (name) => {
       expect(deprecation(name)).toMatch(REMOVED_IN_NEXT_MAJOR);
+    },
+  );
+
+  test.each(Object.entries(WORKSPACE_EQUIVALENTS))(
+    '%s is @deprecated in favour of %s and kept permanently',
+    (name, replacement) => {
+      const text = deprecation(name);
+      expect(text).toContain(`\`${replacement}`);
+      expect(text).toMatch(KEPT_PERMANENTLY);
+      expect(text).not.toMatch(REMOVED_IN_NEXT_MAJOR);
+    },
+  );
+
+  test.each([...new Set(Object.values(WORKSPACE_EQUIVALENTS))])('%s, the workspace name, is current', (name) => {
+    expect(isDeprecated(name)).toBe(false);
+  });
+
+  // createAccountToken mints a PERSONAL key (acts as the person in every
+  // workspace); createWorkspaceToken mints a key bound to one workspace.
+  // Different reach: not an equivalent.
+  // The project names (getProject, listProjectsForAccount, …) are covered by
+  // workspace-names.test.ts since the Naming stage (2026-11-06): each has a
+  // workspace twin or a named replacement.
+  test.each(['KortixAccount', 'listAccounts', 'createAccountToken'])(
+    '%s has no exact workspace equivalent and stays current',
+    (name) => {
+      expect(isDeprecated(name)).toBe(false);
     },
   );
 

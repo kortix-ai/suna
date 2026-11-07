@@ -5,6 +5,7 @@ import { ACCOUNT_ACTIONS } from '../../iam/actions';
 import { actorOf } from '../../iam/actor';
 import { authorize } from '../../iam/authorize';
 import { AccountIdParam, accountsRouter, getMembership } from './app';
+import { accountIdParam } from '../../shared/route-params';
 
 /**
  * POST /v1/accounts/:accountId/top-up-requests — a member out of credits asks
@@ -15,7 +16,7 @@ export function registerTopUpRequestRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/top-up-requests',
+      path: '/{workspaceId}/top-up-requests',
       tags: ['accounts'],
       summary: 'Ask the account owners to add credits',
       description:
@@ -29,7 +30,7 @@ export function registerTopUpRequestRoutes(): void {
       },
     }),
     async (c) => {
-      const { accountId } = c.req.valid('param');
+      const accountId = accountIdParam(c);
       const userId = c.get('userId') as string;
       if (!(await getMembership(userId, accountId))) return c.json({ error: 'Forbidden' }, 403);
       if ((await authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.BILLING_WRITE)).allowed) {

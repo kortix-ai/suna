@@ -39,7 +39,7 @@ export function normalizeConversationPolicy(value: unknown): TeamsConversationPo
 }
 
 export function conversationPolicyLabel(policy: TeamsConversationPolicy): string {
-  if (policy === 'project_open') return 'Project members can join';
+  if (policy === 'project_open') return 'Workspace members can join';
   if (policy === 'owner_only') return 'Owner only';
   return 'Owner approval';
 }
@@ -79,7 +79,7 @@ async function loadParticipant(input: { tenantId: string; conversationId: string
     .where(
       and(
         eq(chatThreadParticipants.platform, PLATFORM),
-        eq(chatThreadParticipants.workspaceId, input.tenantId),
+        eq(chatThreadParticipants.platformTeamId, input.tenantId),
         eq(chatThreadParticipants.threadId, input.conversationId),
         eq(chatThreadParticipants.platformUserId, input.teamsUserId),
       ),
@@ -165,7 +165,7 @@ export async function ensureTeamsThreadParticipant(input: {
       .where(
         and(
           eq(chatThreadParticipants.platform, PLATFORM),
-          eq(chatThreadParticipants.workspaceId, input.tenantId),
+          eq(chatThreadParticipants.platformTeamId, input.tenantId),
           eq(chatThreadParticipants.threadId, input.conversationId),
           eq(chatThreadParticipants.platformUserId, input.teamsUserId),
         ),
@@ -176,7 +176,7 @@ export async function ensureTeamsThreadParticipant(input: {
       .insert(chatThreadParticipants)
       .values({
         platform: PLATFORM,
-        workspaceId: input.tenantId,
+        platformTeamId: input.tenantId,
         threadId: input.conversationId,
         sessionId: input.sessionId,
         platformUserId: input.teamsUserId,
@@ -186,7 +186,7 @@ export async function ensureTeamsThreadParticipant(input: {
       .onConflictDoNothing({
         target: [
           chatThreadParticipants.platform,
-          chatThreadParticipants.workspaceId,
+          chatThreadParticipants.platformTeamId,
           chatThreadParticipants.threadId,
           chatThreadParticipants.platformUserId,
         ],
@@ -232,7 +232,7 @@ export async function rememberTeamsThreadOwner(input: {
     .insert(chatThreadParticipants)
     .values({
       platform: PLATFORM,
-      workspaceId: input.tenantId,
+      platformTeamId: input.tenantId,
       threadId: input.conversationId,
       sessionId: input.sessionId,
       platformUserId: input.teamsUserId,
@@ -244,7 +244,7 @@ export async function rememberTeamsThreadOwner(input: {
     .onConflictDoUpdate({
       target: [
         chatThreadParticipants.platform,
-        chatThreadParticipants.workspaceId,
+        chatThreadParticipants.platformTeamId,
         chatThreadParticipants.threadId,
         chatThreadParticipants.platformUserId,
       ],
@@ -288,7 +288,7 @@ export async function decideTeamsThreadJoin(input: {
     .where(
       and(
         eq(chatThreads.platform, PLATFORM),
-        eq(chatThreads.workspaceId, input.tenantId),
+        eq(chatThreads.platformTeamId, input.tenantId),
         eq(chatThreads.threadId, input.conversationId),
       ),
     )
@@ -314,7 +314,7 @@ export async function decideTeamsThreadJoin(input: {
     return { ok: false, text: 'Only the session owner can approve people for this conversation.' };
   }
   if (!('userId' in (await resolveProjectChatActor(deciderUser, session.projectId)))) {
-    return { ok: false, text: 'Your Kortix account no longer has access to this project, so you cannot approve people for it.' };
+    return { ok: false, text: 'Your Kortix account no longer has access to this Kortix workspace, so you cannot approve people for it.' };
   }
 
   const now = new Date();

@@ -7,6 +7,7 @@
  */
 import type { KortixCardRow, KortixToolCard, KortixToolError } from '@kortix/api-contract/kortix-tool-card'
 import type { SessionBoardState } from '@kortix/api-contract/multi-agent'
+import { kortixApiFetch } from '@/lib/kortix-api/workspace-routes'
 
 /** Where this session's tools reach the API, or null without a control plane. */
 export interface ControlPlane {
@@ -37,7 +38,7 @@ export const CONTROL_PLANE_CALL_TIMEOUT_MS = 10_000
 export async function callApi(plane: ControlPlane, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown, signal?: AbortSignal): Promise<ApiAnswer> {
   const origin = plane.apiUrl.trim().replace(/\/+$/, '').replace(/\/v1$/, '')
   const timeout = AbortSignal.timeout(CONTROL_PLANE_CALL_TIMEOUT_MS)
-  const res = await fetch(`${origin}/v1${path}`, {
+  const res = await kortixApiFetch(`${origin}/v1${path}`, {
     method,
     headers: { authorization: `Bearer ${plane.token}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -55,7 +56,7 @@ export async function callApi(plane: ControlPlane, method: 'GET' | 'POST' | 'PAT
 
 /** `/projects/:id/sessions/:sid` with both ids encoded. */
 export function sessionPath(projectId: string, sessionId: string, suffix = ''): string {
-  return `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}${suffix}`
+  return `/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}${suffix}`
 }
 
 /** The tools whose result is a card (`KortixToolResult` with one of these names). */

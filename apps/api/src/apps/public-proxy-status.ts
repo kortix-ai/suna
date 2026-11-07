@@ -88,7 +88,7 @@ const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
 }> = {
   waiting: {
     title: 'Waiting for first deployment',
-    message: 'Deploy from a linked project with kortix apps deploy .',
+    message: 'Deploy from a linked workspace with kortix apps deploy .',
     code: 'app_waiting_for_deployment',
     progress: true,
   },

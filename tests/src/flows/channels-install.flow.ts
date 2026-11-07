@@ -20,8 +20,8 @@ flow(
     domain: "channels",
     requires: ["database"],
     routes: [
-      "POST /v1/projects/:projectId/channels/slack/oauth/complete",
-      "POST /v1/projects/:projectId/channels/teams/oauth/complete",
+      "POST /v1/workspaces/:projectId/channels/slack/oauth/complete",
+      "POST /v1/workspaces/:projectId/channels/teams/oauth/complete",
     ],
   },
   async (ctx) => {

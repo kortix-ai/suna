@@ -28,9 +28,9 @@ The difference shows up at the moment of action. A role can say an agent may wri
 
 Kortix is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. Work happens in a session, and session work reaches `main` through a change request. Merge is default-deny for agents. The change request carries the diff, the discussion and the decision, so a reviewer sees the exact configuration an agent changed before it becomes part of the company.
 
-Approval gates cover the other direction, the tool calls an agent makes while it works. Approval gates you set. Off until you set them. That default matters because a new project looks governed when it is not: the starter manifest has no `policy:` block, and the manifest reference lists `policy.default_mode` with a default of `allow_all`. A connector call that matches no rule runs. A team that installs Kortix and stops there has a review path for files and no gate on what an agent does to Gmail or Stripe.
+Approval gates cover the other direction, the tool calls an agent makes while it works. Approval gates you set. Off until you set them. That default matters because a new workspace looks governed when it is not: the starter manifest has no `policy:` block, and the manifest reference lists `policy.default_mode` with a default of `allow_all`. A connector call that matches no rule runs. A team that installs Kortix and stops there has a review path for files and no gate on what an agent does to Gmail or Stripe.
 
-Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free. Free is $0 with 500 credits a month and 1 project; credits start at $50 a month, and members are free and share one credit pool ([Kortix pricing](https://kortix.com/pricing)).
+Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free. Free is $0 with 500 credits a month on your first workspace; credits start at $50 a month, and members are free and share one credit pool ([Kortix pricing](https://kortix.com/pricing)).
 
 Together, the change request and the gate cover the two ways an agent can change a company: the files in the repo and the systems outside it.
 

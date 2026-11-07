@@ -15,7 +15,7 @@ import {
 
 const ACCOUNT = 'account_1';
 const SA = '55555555-5555-4555-8555-555555555555';
-const IAM = `/v1/accounts/${ACCOUNT}/iam`;
+const IAM = `/v1/workspaces/${ACCOUNT}/iam`;
 
 const laptop = {
   token_id: 'tok_a',
@@ -65,7 +65,7 @@ let api: FakeApi | null = null;
 
 const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   const p = url.pathname;
-  if (p === '/v1/accounts/me' && req.method === 'GET') {
+  if (p === '/v1/me' && req.method === 'GET') {
     return Response.json({ user_id: 'user_1', email: 'user@example.test', token_context: { auth_type: 'pat', token_id: meTokenId } });
   }
   if (p === '/v1/accounts/tokens' && req.method === 'GET') {
@@ -86,6 +86,24 @@ const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
         status: 'active',
         expires_at: (body as { expires_at?: string }).expires_at ?? null,
         created_at: '2026-08-01T00:00:00.000Z',
+      },
+      { status: 201 },
+    );
+  }
+  if (p === '/v1/workspaces/p1/tokens' && req.method === 'POST') {
+    const b = body as { name: string; scopes?: unknown; expires_at?: string | null };
+    return Response.json(
+      {
+        token_id: 'tok_scoped',
+        name: b.name,
+        project_id: 'p1',
+        public_key: 'kx_pub_scoped',
+        secret_key: 'kx_sec_SCOPED_ONCE',
+        status: 'active',
+        expires_at: b.expires_at === undefined ? '2027-02-01T00:00:00.000Z' : b.expires_at,
+        created_at: '2026-08-01T00:00:00.000Z',
+        scope: b.scopes === 'read' ? 'read' : Array.isArray(b.scopes) ? 'custom' : 'full',
+        workspace_permissions: Array.isArray(b.scopes) ? b.scopes : null,
       },
       { status: 201 },
     );
@@ -234,8 +252,8 @@ describe('kortix tokens', () => {
     const config = boot();
     const all = await runCommand(runner, ['ls'], { cwd: tmp, configFile: config });
     expect(all.code).toBe(0);
-    expect(all.stdout).toMatch(/laptop\s+kx_pub_a\s+active\s+never/);
-    expect(all.stdout).toMatch(/ci\s+kx_pub_b\s+revoked\s+2026-12-01/);
+    expect(all.stdout).toMatch(/laptop\s+kx_pub_a\s+active\s+full\s+never/);
+    expect(all.stdout).toMatch(/ci\s+kx_pub_b\s+revoked\s+full\s+2026-12-01/);
     expect(api!.requests[0]!.query).toContain(`account_id=${ACCOUNT}`);
     expect(api!.requests[0]!.query).not.toContain('mine=');
 
@@ -328,13 +346,43 @@ describe('kortix tokens', () => {
       project_id: string;
     };
     // account_id must ride in the body: this route resolves the account from
-    // the body, not the query string.
-    expect(body.account_id).toBe(ACCOUNT);
+    // the body, not the query string. --workspace/--project names the
+    // workspace, and its id is the account the API resolves.
+    expect(body.account_id).toBe('p1');
     expect(body.name).toBe('ci-deploy');
     expect(body.project_id).toBe('p1');
     expect(new Date(body.expires_at).getTime()).toBeGreaterThan(Date.now());
     expect(r.stdout).toContain('kx_sec_PLAINTEXT_ONCE');
     expect(r.stdout).toContain('only time the secret is shown');
+  });
+
+  test('new --scope mints a workspace key under the workspace; --expires never sends null', async () => {
+    const config = boot();
+    const read = await runCommand(runner, ['new', 'dash', '--scope', 'read', '--workspace', 'p1'], { cwd: tmp, configFile: config });
+    expect(read.code).toBe(0);
+    expect(api!.requests.at(-1)).toMatchObject({ method: 'POST', path: '/v1/workspaces/p1/tokens', body: { name: 'dash', scopes: 'read' } });
+    expect(read.stdout).toMatch(/scope\s+read/);
+
+    const custom = await runCommand(
+      runner,
+      ['new', 'runner', '--scope', 'workspace.session.read,workspace.session.start', '--expires', 'never', '--workspace', 'p1'],
+      { cwd: tmp, configFile: config },
+    );
+    expect(custom.code).toBe(0);
+    expect(api!.requests.at(-1)!.body).toEqual({
+      name: 'runner',
+      scopes: ['workspace.session.read', 'workspace.session.start'],
+      expires_at: null,
+    });
+    expect(custom.stdout).toMatch(/expires\s+never/);
+    expect(custom.stdout).toMatch(/scope\s+custom \(2\)/);
+  });
+
+  test('an empty --scope exits 2 before any HTTP call', async () => {
+    const config = boot();
+    const r = await runCommand(runner, ['new', 'x', '--scope', ' , ', '--workspace', 'p1'], { cwd: tmp, configFile: config });
+    expect(r.code).toBe(2);
+    expect(api!.requests).toHaveLength(0);
   });
 
   test('an unparseable --expires exits 2 before any HTTP call', async () => {

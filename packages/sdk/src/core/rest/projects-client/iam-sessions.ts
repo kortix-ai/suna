@@ -57,6 +57,12 @@ export interface PatPolicy {
   require_expiry: boolean;
   /** Null = no idle revoke; positive integer = days. */
   idle_revoke_days: number | null;
+  /** True: members may mint keys with no expiry. Off by default. Absent on older APIs. */
+  allow_no_expiry?: boolean;
+  /** Read-only: a new key without an expiry expires this many days out (90 by default). */
+  default_lifetime_days?: number;
+  /** Read-only: the longest expiry a new key may have (365 days by default). */
+  effective_max_lifetime_days?: number;
 }
 
 export async function getPatPolicy(accountId: string) {

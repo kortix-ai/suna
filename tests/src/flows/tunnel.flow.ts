@@ -38,7 +38,7 @@ flow(
       "DELETE /v1/tunnel/connections/:tunnelId",
       "POST /v1/tunnel/connections/:tunnelId/rotate-token",
       "POST /v1/tunnel/connections/:tunnelId/access",
-      "GET /v1/projects/:projectId/connections",
+      "GET /v1/workspaces/:projectId/connections",
     ],
     serial: true,
   },
@@ -55,7 +55,7 @@ flow(
       });
       ctx.track("tunnelConnection", machine.tunnelId);
       assert.match(machine.token, /^kortix_tnl_/);
-      const r = await owner.get("/v1/projects/:projectId/connections", { params: { projectId: project.id } });
+      const r = await owner.get("/v1/workspaces/:projectId/connections", { params: { projectId: project.id } });
       r.status(200);
       const account = r.json<any>().connections.find((c: any) => c.connection_id === machine.connectionId);
       assert.ok(account, "the paired machine is listed as a computer account");
@@ -117,7 +117,7 @@ flow(
         .status(200)
         .body()
         .has("$.success", true);
-      const r = await owner.get("/v1/projects/:projectId/connections", { params: { projectId: project.id } });
+      const r = await owner.get("/v1/workspaces/:projectId/connections", { params: { projectId: project.id } });
       r.status(200);
       const account = r.json<any>().connections.find((c: any) => c.connection_id === machine.connectionId);
       assert.equal(account?.status, "revoked");
@@ -137,8 +137,8 @@ flow(
       "POST /v1/tunnel/device-auth",
       "GET /v1/tunnel/device-auth/:code/status",
       "POST /v1/tunnel/device-auth/:code/approve",
-      "POST /v1/projects/:projectId/computers",
-      "GET /v1/projects/:projectId/connections",
+      "POST /v1/workspaces/:projectId/computers",
+      "GET /v1/workspaces/:projectId/connections",
       "GET /v1/tunnel/connections",
       "DELETE /v1/tunnel/connections/:tunnelId",
     ],
@@ -153,7 +153,7 @@ flow(
     const params = { params: { projectId: project.id } };
     let machine = { tunnelId: "", connectionId: "", token: "" };
     const connectionIds = async (client: Client) => {
-      const r = await client.get("/v1/projects/:projectId/connections", params);
+      const r = await client.get("/v1/workspaces/:projectId/connections", params);
       r.status(200);
       return r.json<any>().connections.map((c: any) => c.connection_id) as string[];
     };
@@ -173,13 +173,13 @@ flow(
     });
 
     await ctx.step("POST /computers is idempotent for the owner", async () => {
-      const r = await owner.post("/v1/projects/:projectId/computers", { tunnel_id: machine.tunnelId }, params);
+      const r = await owner.post("/v1/workspaces/:projectId/computers", { tunnel_id: machine.tunnelId }, params);
       r.status(200).body().has("$.connection_id", machine.connectionId).has("$.tunnel_id", machine.tunnelId);
     });
 
     await ctx.step("the member cannot add the owner's machine (404) or a malformed id (400)", async () => {
-      (await asMember.post("/v1/projects/:projectId/computers", { tunnel_id: machine.tunnelId }, params)).status(404);
-      (await asMember.post("/v1/projects/:projectId/computers", { tunnel_id: "not-a-uuid" }, params)).status(400);
+      (await asMember.post("/v1/workspaces/:projectId/computers", { tunnel_id: machine.tunnelId }, params)).status(404);
+      (await asMember.post("/v1/workspaces/:projectId/computers", { tunnel_id: "not-a-uuid" }, params)).status(400);
     });
 
     await ctx.step("the member cannot share a pairing with the project (403)", async () => {
@@ -198,7 +198,7 @@ flow(
 
     await ctx.step("OWNER shares the machine with the project; the member now sees that account", async () => {
       const r = await owner.post(
-        "/v1/projects/:projectId/computers",
+        "/v1/workspaces/:projectId/computers",
         { tunnel_id: machine.tunnelId, share: "project" },
         params,
       );
@@ -423,7 +423,7 @@ flow(
       "POST /v1/tunnel/device-auth",
       "GET /v1/tunnel/device-auth/:code/status",
       "POST /v1/tunnel/device-auth/:code/approve",
-      "GET /v1/projects/:projectId/connections",
+      "GET /v1/workspaces/:projectId/connections",
       "DELETE /v1/tunnel/self",
     ],
   },
@@ -456,7 +456,7 @@ flow(
     });
 
     await ctx.step("listing any project's connections gives OWNER the machine as a private account", async () => {
-      const r = await owner.get("/v1/projects/:projectId/connections", { params: { projectId: project.id } });
+      const r = await owner.get("/v1/workspaces/:projectId/connections", { params: { projectId: project.id } });
       r.status(200);
       const account = r.json<any>().connections.find((c: any) => c.tunnel_id === tunnelId);
       assert.ok(account, "the owner's machine is an account in the project without any setup");
@@ -472,7 +472,7 @@ flow(
         .status(200)
         .body()
         .has("$.success", true);
-      const r = await owner.get("/v1/projects/:projectId/connections", { params: { projectId: project.id } });
+      const r = await owner.get("/v1/workspaces/:projectId/connections", { params: { projectId: project.id } });
       r.status(200);
       const account = r.json<any>().connections.find((c: any) => c.label === name);
       assert.equal(account?.status, "revoked");

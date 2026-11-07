@@ -43,7 +43,7 @@ const last = () => calls[calls.length - 1];
 test("routing policy transport supports get, whole-document set, reset, and preview", async () => {
   await getGatewayRoutingPolicy("P1");
   expect(last()).toMatchObject({
-    url: expect.stringContaining("/projects/P1/gateway/routing-policy"),
+    url: expect.stringContaining("/workspaces/P1/gateway/routing-policy"),
     method: "GET",
   });
 
@@ -61,21 +61,21 @@ test("routing policy transport supports get, whole-document set, reset, and prev
   };
   await setGatewayRoutingPolicy("P1", project);
   expect(last()).toMatchObject({
-    url: expect.stringContaining("/projects/P1/gateway/routing-policy"),
+    url: expect.stringContaining("/workspaces/P1/gateway/routing-policy"),
     method: "PUT",
     body: project,
   });
 
   await previewGatewayRoute("P1", { requestedModel: "codex/gpt-5.6-sol", imageInput: true });
   expect(last()).toMatchObject({
-    url: expect.stringContaining("/projects/P1/gateway/routing-policy/preview"),
+    url: expect.stringContaining("/workspaces/P1/gateway/routing-policy/preview"),
     method: "POST",
     body: { requestedModel: "codex/gpt-5.6-sol", imageInput: true },
   });
 
   await resetGatewayRoutingPolicy("P1");
   expect(last()).toMatchObject({
-    url: expect.stringContaining("/projects/P1/gateway/routing-policy"),
+    url: expect.stringContaining("/workspaces/P1/gateway/routing-policy"),
     method: "DELETE",
   });
 });

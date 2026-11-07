@@ -5,7 +5,7 @@ import { getClient } from '../../core/runtime/client';
 import type { Agent } from '../../core/runtime/runtime-types';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap } from './shared';
-import { getProjectDetail } from '../../core/rest/projects-client';
+import { getWorkspaceDetail } from '../../core/rest/projects-client';
 import { projectConfigAgentsToRuntimeAgents } from '../../core/agents/composer-agents';
 import { contract } from '../query-contracts';
 import { qk } from '../query-keys';
@@ -52,7 +52,7 @@ export function useRuntimeAgents(options?: { directory?: string; projectId?: str
         // the shared key dedupes an in-flight read and serves a fresh one.
         const detail = await queryClient.fetchQuery({
           queryKey: qk.project.detail(projectId),
-          queryFn: () => getProjectDetail(projectId),
+          queryFn: () => getWorkspaceDetail(projectId),
           ...contract('config'),
         });
         return projectConfigAgentsToRuntimeAgents(detail.config);

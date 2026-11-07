@@ -4,12 +4,12 @@
  */
 
 import {
-  createProjectSession,
+  createWorkspaceSession,
   getProject,
-  startProjectSession,
+  startWorkspaceSession,
   listProjects,
-  restartProjectSession,
-  stopProjectSession,
+  restartWorkspaceSession,
+  stopWorkspaceSession,
 } from '../projects-client';
 import type {
   SandboxInfo,
@@ -55,10 +55,10 @@ export async function ensureSandbox(opts?: {
     throw new Error('Create a project before starting a sandbox');
   }
 
-  const session = await createProjectSession(project.project_id, {
+  const session = await createWorkspaceSession(project.project_id, {
     ...(opts?.provider ? { provider: opts.provider } : {}),
   });
-  const runtime = (await startProjectSession(project.project_id, session.session_id))?.sandbox ?? null;
+  const runtime = (await startWorkspaceSession(project.project_id, session.session_id))?.sandbox ?? null;
   return { sandbox: projectSessionToSandboxInfo(project, session, runtime), created: true };
 }
 
@@ -152,7 +152,7 @@ export async function restartSandbox(sandboxId?: string): Promise<void> {
   }
   const target = await resolveProjectSessionId(sandboxId);
   if (!target) throw new Error('Project session sandbox not found');
-  await restartProjectSession(target.projectId, target.sessionId);
+  await restartWorkspaceSession(target.projectId, target.sessionId);
 }
 
 /**
@@ -168,7 +168,7 @@ export async function stopSandbox(sandboxId?: string): Promise<void> {
   if (!sandboxId) throw new Error('No sandbox selected to stop');
   const target = await resolveProjectSessionId(sandboxId);
   if (!target) throw new Error('Project session sandbox not found');
-  await stopProjectSession(target.projectId, target.sessionId);
+  await stopWorkspaceSession(target.projectId, target.sessionId);
 }
 
 /**

@@ -701,7 +701,7 @@ describe('download proxy — confined to this project\'s conversations', () => {
       ownedBy({ threads: { [`${CHANNEL};messageid=171`]: 'proj-2' } }, true),
     );
     expect(r).toMatchObject({ ok: false, status: 403 });
-    if (!r.ok) expect(r.error).toContain('belongs to another Kortix project');
+    if (!r.ok) expect(r.error).toContain('belongs to another Kortix workspace');
     expect(fetchCalls).toHaveLength(0);
   });
 

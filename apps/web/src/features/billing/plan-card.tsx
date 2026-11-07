@@ -25,6 +25,7 @@ import {
   tierForMonthlyUsd,
 } from '@kortix/ui/internal/billing/compute-pricing';
 import { CreditExpiry } from '@/features/billing/credit-expiry';
+import { FreeGrantNotice, showsFreeGrantNotice } from '@/features/billing/free-grant-notice';
 import { CreditTierSelect } from '@/features/billing/credit-tier-select';
 import { useChangeCreditPlan } from '@/features/billing/use-change-credit-plan';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
@@ -89,7 +90,8 @@ function formatChargeUsd(amount: number, locale: string): string {
 function currentPlanCredits(state: AccountState): number | null {
   const plan = resolvedPlan(state);
   if (plan.monthlyUsd != null) return monthlyCreditsForUsd(plan.monthlyUsd);
-  if (plan.family === 'free') return FREE_MONTHLY_CREDITS;
+  // A further workspace gets no free credits: FreeGrantNotice says why.
+  if (plan.family === 'free') return showsFreeGrantNotice(state) ? null : FREE_MONTHLY_CREDITS;
   return null;
 }
 
@@ -106,6 +108,7 @@ export function PlanCard({ state }: { state: AccountState }) {
     active: t('active'),
     noSubscription: t('noSubscription'),
     graceUntil: (date: string) => t('graceUntil', { date }),
+    compedUntil: (date: string) => t('compedUntil', { date }),
     status: (status: string) =>
       t.has(`statuses.${status}`)
         ? t(`statuses.${status}`)
@@ -142,6 +145,12 @@ export function PlanCard({ state }: { state: AccountState }) {
             </p>
           ) : null}
           {state.credits.monthly > 0 && <CreditExpiry expiresAt={state.credits.expires_at} />}
+          {state.plan_comp ? (
+            <p className="text-muted-foreground mt-1.5 max-w-md text-xs text-pretty" data-testid="plan-comp-note">
+              {t('compedNote', { date: formatShortDate(state.plan_comp.until, locale) })}
+            </p>
+          ) : null}
+          <FreeGrantNotice state={state} className="mt-1.5 max-w-md" />
         </div>
         <span className="flex min-w-0 shrink-0 items-center gap-1.5">
           {isActive ? (

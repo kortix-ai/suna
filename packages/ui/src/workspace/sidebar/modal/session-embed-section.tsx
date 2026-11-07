@@ -19,7 +19,7 @@ import { useEffect, useRef, useState } from 'react';
  */
 export function sessionEmbedSnippet(projectId: string, sessionId: string, origin: string): string | null {
   if (!projectId || !sessionId || !origin) return null;
-  const src = `${origin}/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`;
+  const src = `${origin}/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`;
   return `<iframe src="${src}" style="height:640px;width:100%;border:0;border-radius:12px" title="Kortix session" loading="lazy"></iframe>`;
 }
 

@@ -4339,9 +4339,9 @@ flow(
         if (!row.includes(`group:${groupName}`)) throw new Error(`assignments row: ${row || r.stdout.slice(0, 800)}`);
       });
 
-      await ctx.step('`kortix access grant --everyone --connection` opens it to the project again', async () => {
+      await ctx.step('`kortix access grant --everyone --connection` opens it to the workspace again', async () => {
         const r = await kortix(owner, ['access', 'grant', '--everyone', '--connection', connectionId]);
-        if (!r.stdout.includes('to everyone in project')) throw new Error(`grant output: ${r.all.slice(0, 600)}`);
+        if (!r.stdout.includes('to everyone in workspace')) throw new Error(`grant output: ${r.all.slice(0, 600)}`);
         // The widen just added a project-principal grant beside the group
         // one. The outsider's own CLI process can land on a replica whose
         // object-grant cache (`apps/api/src/iam/authorize.ts`
@@ -4430,7 +4430,7 @@ flow(
           'connectors', 'connections', 'share', theirs, '--everyone', '--project', project.id,
         ]);
         throwIfCliInfraFailure(r, 'kortix connectors connections share');
-        if (r.exitCode === 0 || !/manage the project's connections/.test(r.all)) {
+        if (r.exitCode === 0 || !/manage the workspace's connections/.test(r.all)) {
           throw new Error(`plain member share: exit ${r.exitCode}: ${r.all.slice(0, 600)}`);
         }
       });
@@ -6457,7 +6457,7 @@ flow(
         );
         refused.status(403).body().has('$.code', 'custom_connector_needs_human');
         const link = refused.json<{ setup_url: string }>().setup_url;
-        if (!link.includes(`/projects/${p.id}/admin/connectors?`) || !link.includes(encodeURIComponent('https://mcp.example.com/mcp'))) {
+        if (!link.includes(`/workspaces/${p.id}/admin/connectors?`) || !link.includes(encodeURIComponent('https://mcp.example.com/mcp'))) {
           throw new Error(`setup_url: ${link}`);
         }
         // A server the project already has stays editable by the agent.

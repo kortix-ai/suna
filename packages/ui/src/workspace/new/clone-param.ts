@@ -1,5 +1,5 @@
 /**
- * `/new?clone=<itemId>` — seed the new workspace from a `registry:project`
+ * `/workspaces/new?clone=<itemId>` — seed the new workspace from a `registry:project`
  * marketplace item instead of the blank starter. Replaces the removed
  * projects-index list's `clone=` query param.
  *

@@ -252,7 +252,7 @@ describe('session-log journal', () => {
 
     expect(api.received).toHaveLength(1)
     const [first] = api.received
-    expect(first!.path).toBe('/v1/projects/project-1/sessions/session-1/log/journal')
+    expect(first!.path).toBe('/v1/workspaces/project-1/sessions/session-1/log/journal')
     expect(first!.headers.get('authorization')).toBe('Bearer session-token')
     expect(first!.headers.get('content-encoding')).toBe('gzip')
     expect(first!.body.generation).toBe(7)

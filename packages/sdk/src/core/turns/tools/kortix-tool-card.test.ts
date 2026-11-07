@@ -20,7 +20,7 @@ const DENIED = {
     title: 'Could not invite the person',
     subtitle: 'Sam, Alex can grant it.',
     status: 'denied',
-    links: [{ label: 'Members', href: '/projects/p-1/members' }],
+    links: [{ label: 'Members', href: '/workspaces/p-1/members' }],
   },
   error: {
     kind: 'denied',
@@ -44,7 +44,7 @@ describe('tool names', () => {
   });
 
   test('inAppHref keeps one leading slash only; isReadAction knows the read verbs', () => {
-    expect(inAppHref('/projects/p-1')).toBe('/projects/p-1');
+    expect(inAppHref('/workspaces/p-1')).toBe('/workspaces/p-1');
     expect(inAppHref('//evil.example.test')).toBeUndefined();
     expect(inAppHref('https://example.test')).toBeUndefined();
     expect(isReadAction('list')).toBe(true);
@@ -66,20 +66,20 @@ describe('parseKortixToolResult', () => {
           rows: [
             { title: 'A', href: '//evil.example.test/x' },
             { title: 'B', href: 'https://elsewhere.example.test' },
-            { title: 'C', href: '/projects/p-1/sessions/s-1' },
+            { title: 'C', href: '/workspaces/p-1/sessions/s-1' },
           ],
           links: [
-            { label: 'Open', href: '/projects/p-1/sessions' },
+            { label: 'Open', href: '/workspaces/p-1/sessions' },
             { label: 'Out', href: 'https://example.test/a' },
             { label: 'Script', href: 'javascript:void(0)' },
-            { label: '', href: '/projects/p-1' },
+            { label: '', href: '/workspaces/p-1' },
           ],
         },
       }),
     );
-    expect(result?.card.rows.map((row) => row.href)).toEqual([undefined, undefined, '/projects/p-1/sessions/s-1']);
+    expect(result?.card.rows.map((row) => row.href)).toEqual([undefined, undefined, '/workspaces/p-1/sessions/s-1']);
     expect(result?.card.links).toEqual([
-      { label: 'Open', href: '/projects/p-1/sessions', external: false },
+      { label: 'Open', href: '/workspaces/p-1/sessions', external: false },
       { label: 'Out', href: 'https://example.test/a', external: true },
     ]);
   });

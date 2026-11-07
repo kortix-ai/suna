@@ -22,6 +22,7 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
+import { workspaceIdParam } from '../../shared/route-params';
 
 function teamsPublicBaseUrl(): string | undefined {
   return config.KORTIX_URL?.startsWith('https://') ? config.KORTIX_URL : undefined;
@@ -33,15 +34,15 @@ export function registerChannelTeamsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/channels/teams/installation',
+      path: '/{workspaceId}/channels/teams/installation',
       tags: ['channels'],
       summary: 'Get the Microsoft Teams installation',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: { 200: json(z.any(), 'OK'), ...errors(404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const install = await loadTeamsInstall(projectId);
@@ -52,15 +53,15 @@ export function registerChannelTeamsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/channels/teams/mode',
+      path: '/{workspaceId}/channels/teams/mode',
       tags: ['channels'],
       summary: 'Get the Microsoft Teams connection mode',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: { 200: json(z.any(), 'OK'), ...errors(404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
@@ -83,12 +84,12 @@ export function registerChannelTeamsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/channels/teams/oauth/complete',
+      path: '/{workspaceId}/channels/teams/oauth/complete',
       tags: ['channels'],
       summary: 'Complete the Microsoft Teams OAuth connection',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: InstallCompletionBody } } },
       },
       responses: {
@@ -97,7 +98,7 @@ export function registerChannelTeamsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Same gate as the manual connect route: installing a Teams app is a
@@ -129,15 +130,15 @@ export function registerChannelTeamsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/channels/teams/manifest',
+      path: '/{workspaceId}/channels/teams/manifest',
       tags: ['channels'],
       summary: 'Download the Microsoft Teams app manifest',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: { 200: json(z.any(), 'OK'), ...errors(404, 409) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const byoAppId = await loadTeamsAppIdForProject(projectId);
@@ -160,18 +161,18 @@ export function registerChannelTeamsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/channels/teams/connect',
+      path: '/{workspaceId}/channels/teams/connect',
       tags: ['channels'],
       summary: 'Connect Microsoft Teams',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
       responses: { 200: json(z.any(), 'OK'), ...errors(400, 403, 404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Connecting a Teams bot is a connector-write capability — a custom role can
@@ -251,15 +252,15 @@ export function registerChannelTeamsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/channels/teams/installation',
+      path: '/{workspaceId}/channels/teams/installation',
       tags: ['channels'],
       summary: 'Disconnect Microsoft Teams',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: { 200: json(z.any(), 'OK'), ...errors(404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Disconnecting the Teams bot is connector-write — twin of the Slack/email
@@ -280,12 +281,12 @@ export function registerChannelTeamsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/channels/teams/file',
+      path: '/{workspaceId}/channels/teams/file',
       tags: ['channels'],
       summary: 'Download a Microsoft Teams file',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z.object({ url: z.string() }),
       },
       responses: {
@@ -297,7 +298,7 @@ export function registerChannelTeamsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const result = await downloadTeamsFile(projectId, c.req.query('url') ?? '');
@@ -310,11 +311,11 @@ export function registerChannelTeamsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/channels/teams/conversations',
+      path: '/{workspaceId}/channels/teams/conversations',
       tags: ['channels'],
       summary: 'List Microsoft Teams conversations the bot can post to',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: json(
           z.object({ conversations: z.array(z.object({ conversationId: z.string(), name: z.string().nullable(), type: z.string().nullable() })) }),
@@ -324,7 +325,7 @@ export function registerChannelTeamsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       return c.json({ conversations: await listTeamsPostTargets(projectId) });
@@ -334,12 +335,12 @@ export function registerChannelTeamsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/channels/teams/message',
+      path: '/{workspaceId}/channels/teams/message',
       tags: ['channels'],
       summary: 'Post a Microsoft Teams message',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
       responses: {
@@ -351,7 +352,7 @@ export function registerChannelTeamsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Posting into a customer's Teams conversation is a send primitive, gated
@@ -381,12 +382,12 @@ export function registerChannelTeamsRoutes(): void {
     projectsApp.openapi(
       createRoute({
         method: 'post',
-        path: `/{projectId}/channels/teams/message/${op}`,
+        path: `/{workspaceId}/channels/teams/message/${op}`,
         tags: ['channels'],
         summary: `${op === "edit" ? "Edit" : "Delete"} a Microsoft Teams bot message`,
         ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: AnyObject } } },
         },
         responses: {
@@ -395,7 +396,7 @@ export function registerChannelTeamsRoutes(): void {
         },
       }),
       async (c: any) => {
-        const projectId = c.req.param('projectId');
+        const projectId = workspaceIdParam(c);
         const loaded = await loadProjectForUser(c, projectId, 'read');
         if (!loaded) return c.json({ error: 'Not found' }, 404);
         await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
@@ -420,7 +421,7 @@ export function registerChannelTeamsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/channels/teams/file/upload',
+      path: '/{workspaceId}/channels/teams/file/upload',
       tags: ['channels'],
       summary: 'Upload a file to Microsoft Teams',
       description:
@@ -428,7 +429,7 @@ export function registerChannelTeamsRoutes(): void {
         "binding and the project's stored install, never from the request: `service_url` is accepted and ignored.",
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
       responses: {
@@ -442,7 +443,7 @@ export function registerChannelTeamsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Posting a consent card drives the project bot to SEND into the customer's

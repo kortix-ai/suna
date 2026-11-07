@@ -4,7 +4,6 @@ import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { json, errors, auth } from '../../openapi';
 import { eq } from 'drizzle-orm';
-import { projects } from '@kortix/db';
 import { groupProjectGrants } from '../../iam/read-models';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
@@ -35,6 +34,8 @@ import {
 } from './app';
 import { auditIam, isUniqueViolation, requireEntitlement } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
+import { accountIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 // Groups are an Enterprise-only construct (no free-tier group concept). The
 // `rbac` entitlement gates every route that CREATES or GROWS group state
@@ -83,7 +84,7 @@ export function registerIamGroupsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/groups',
+      path: '/{workspaceId}/iam/groups',
       tags: ['iam'],
       summary: 'List account groups',
       ...auth,
@@ -94,7 +95,7 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       // `group.read` lists every group; a plain member lists the groups they
       // share access with (iam/directory-visibility.ts).
       const { groupIds, projectIds } = await visibleGroups(c, accountId);
@@ -128,7 +129,7 @@ export function registerIamGroupsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/groups',
+      path: '/{workspaceId}/iam/groups',
       tags: ['iam'],
       summary: 'Create an account group',
       ...auth,
@@ -149,7 +150,7 @@ export function registerIamGroupsRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_CREATE);
       const denied = await requireEntitlement(c, accountId, 'rbac');
       if (denied) return denied;
@@ -194,7 +195,7 @@ export function registerIamGroupsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/groups/{groupId}',
+      path: '/{workspaceId}/iam/groups/{groupId}',
       tags: ['iam'],
       summary: 'Get a group',
       ...auth,
@@ -205,7 +206,7 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const groupId = c.req.param('groupId');
       // A group the caller may not see reads as missing, not as forbidden.
       const { groupIds } = await visibleGroups(c, accountId);
@@ -229,7 +230,7 @@ export function registerIamGroupsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/iam/groups/{groupId}',
+      path: '/{workspaceId}/iam/groups/{groupId}',
       tags: ['iam'],
       summary: 'Update a group',
       ...auth,
@@ -249,7 +250,7 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const groupId = c.req.param('groupId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_UPDATE);
       const denied = await requireEntitlement(c, accountId, 'rbac');
@@ -301,7 +302,7 @@ export function registerIamGroupsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/iam/groups/{groupId}',
+      path: '/{workspaceId}/iam/groups/{groupId}',
       tags: ['iam'],
       summary: 'Delete a group',
       ...auth,
@@ -312,7 +313,7 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const groupId = c.req.param('groupId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_DELETE);
       // No entitlement gate: deletion is cleanup, always allowed (see file header).
@@ -351,7 +352,7 @@ export function registerIamGroupsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/groups/{groupId}/members',
+      path: '/{workspaceId}/iam/groups/{groupId}/members',
       tags: ['iam'],
       summary: 'List group members',
       ...auth,
@@ -362,7 +363,7 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const groupId = c.req.param('groupId');
       const { groupIds } = await visibleGroups(c, accountId);
       if (groupIds && !groupIds.has(groupId)) return c.json({ error: 'group not found' }, 404);
@@ -381,7 +382,7 @@ export function registerIamGroupsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/groups/{groupId}/members',
+      path: '/{workspaceId}/iam/groups/{groupId}/members',
       tags: ['iam'],
       summary: 'Add members to a group',
       ...auth,
@@ -405,7 +406,7 @@ export function registerIamGroupsRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const groupId = c.req.param('groupId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_MEMBERS_MANAGE);
       const denied = await requireEntitlement(c, accountId, 'rbac');
@@ -447,12 +448,12 @@ export function registerIamGroupsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/iam/groups/{groupId}/members/{userId}',
+      path: '/{workspaceId}/iam/groups/{groupId}/members/{userId}',
       tags: ['iam'],
       summary: 'Remove a member from a group',
       ...auth,
       request: {
-        params: z.object({ accountId: z.string(), groupId: z.string(), userId: z.string() }),
+        params: z.object({ workspaceId: z.string(), groupId: z.string(), userId: z.string() }),
       },
       responses: {
         200: json(z.object({ removed: z.boolean() }), 'Removal result'),
@@ -460,7 +461,7 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const groupId = c.req.param('groupId');
       const targetUserId = c.req.param('userId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_MEMBERS_MANAGE);
@@ -503,7 +504,7 @@ export function registerIamGroupsRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/groups/{groupId}/project-grants',
+      path: '/{workspaceId}/iam/groups/{groupId}/project-grants',
       tags: ['iam'],
       summary: 'List project grants for a group',
       ...auth,
@@ -514,7 +515,7 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const groupId = c.req.param('groupId');
       const visible = await visibleGroups(c, accountId);
       if (visible.groupIds && !visible.groupIds.has(groupId)) {
@@ -532,9 +533,9 @@ export function registerIamGroupsRoutes(): void {
       const [assignments, projectRows] = await Promise.all([
         groupProjectGrants({ accountId, groupIds: [groupId] }),
         db
-          .select({ projectId: projects.projectId, name: projects.name })
-          .from(projects)
-          .where(eq(projects.accountId, accountId)),
+          .select({ projectId: projectsView.projectId, name: projectsView.name })
+          .from(projectsView)
+          .where(eq(projectsView.accountId, accountId)),
       ]);
       const projectById = new Map(projectRows.map((p) => [p.projectId, p] as const));
       const rows = assignments

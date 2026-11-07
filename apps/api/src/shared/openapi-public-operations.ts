@@ -95,4 +95,7 @@ export const PUBLIC_OPERATIONS: ReadonlySet<string> = new Set([
   'post /v1/tunnel/device-auth',
   'get /v1/tunnel/device-auth/{code}/status',
   'get /v1/p/config',
+  'get /v1/workspaces/{workspaceId}/.well-known/openid-configuration',
+  'get /v1/workspaces/{workspaceId}/jwks.json',
+  'post /v1/webhooks/workspaces/{workspaceId}/{slug}',
 ]);

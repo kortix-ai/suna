@@ -93,7 +93,7 @@ beforeAll(async () => {
     [LAST_GOOD, lastGood.repoUrl, {}],
     [LEGACY_ON, absent.repoUrl, { experimental: { meta_agent: true } }],
   ] as const) {
-    await db.insert(projects).values({ projectId, accountId: ACCOUNT, name: `builtin-agents-${projectId.slice(0, 8)}`, repoUrl, metadata });
+    await db.insert(projects).values({ splitPending: true, projectId, accountId: ACCOUNT, name: `builtin-agents-${projectId.slice(0, 8)}`, repoUrl, metadata });
     await insertIntoView(db, projectMembers, [{ accountId: ACCOUNT, projectId, userId: OWNER, projectRole: 'manager' }]);
     secrets[projectId] = (
       await createAccountToken({ accountId: ACCOUNT, userId: OWNER, projectId, name: 'builtin-agents-test', agentGrant: null as any })

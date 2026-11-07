@@ -8,6 +8,7 @@ import type { Config } from '@/lib/config/config'
 import { logger } from '@/lib/log/logger'
 import { runGit } from '@/lib/git/git'
 import { isLikelyBinary, mimeTypeFor } from './file-mime'
+import { kortixApiFetch } from '@/lib/kortix-api/workspace-routes'
 
 /**
  * The daemon owns the entire file API — direct sandbox filesystem access.
@@ -577,10 +578,10 @@ export function createFilesRouter(cfg: Config): Hono {
     try {
       const api = configuredApiUrl(cfg.apiUrl)
       const descriptorUrl = new URL(api)
-      descriptorUrl.pathname = `${api.pathname}/projects/${encodeURIComponent(cfg.projectId)}/runtime/prompt-attachments/${encodeURIComponent(request.attachment_id)}`
+      descriptorUrl.pathname = `${api.pathname}/workspaces/${encodeURIComponent(cfg.projectId)}/runtime/prompt-attachments/${encodeURIComponent(request.attachment_id)}`
       descriptorUrl.searchParams.set('command_id', request.command_id)
       descriptorUrl.searchParams.set('part_index', String(request.part_index))
-      const descriptorResponse = await fetch(descriptorUrl, {
+      const descriptorResponse = await kortixApiFetch(descriptorUrl, {
         headers: { Authorization: `Bearer ${cfg.sandboxToken}` },
         redirect: 'error',
         signal,

@@ -21,6 +21,7 @@ import type { SessionLog, SessionLogRestore } from '@kortix/api-contract/session
 import type { SandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { mapLimit } from '@/lib/map-limit'
 import { logger } from '@/lib/log/logger'
+import { kortixApiFetch } from '@/lib/kortix-api/workspace-routes'
 
 export type TruncatedText = { message_id: string; block_id: string; ref: string; reason: 'not_listed' | 'unreadable' | 'sha256_mismatch' }
 export type RestoredSessionLog = { generation: number; log: SessionLog; revs: Record<string, number>; seq_max: Record<string, number>; truncated: TruncatedText[] }
@@ -69,11 +70,11 @@ export function apiBytesReader(ctx: SandboxRelayContext, { attemptMs = 15_000, r
   const own = `kortix-attachment://${ctx.projectId}/${ctx.sessionId}/`
   return async (ref, budget) => {
     if (!ref.startsWith(own) || ref.slice(own.length).includes('/')) return null
-    const url = `${ctx.apiRoot}/projects/${ctx.projectId}/sessions/${ctx.sessionId}/attachments/${ref.slice(own.length)}`
+    const url = `${ctx.apiRoot}/workspaces/${ctx.projectId}/sessions/${ctx.sessionId}/attachments/${ref.slice(own.length)}`
     for (let n = 1; ; n++) {
       try {
         const attempt = AbortSignal.timeout(attemptMs)
-        const response = await fetch(url, { headers: { Authorization: `Bearer ${ctx.token}` }, signal: budget ? AbortSignal.any([attempt, budget]) : attempt })
+        const response = await kortixApiFetch(url, { headers: { Authorization: `Bearer ${ctx.token}` }, signal: budget ? AbortSignal.any([attempt, budget]) : attempt })
         if (response.ok) return Buffer.from(await response.arrayBuffer())
         // A 4xx other than 408/429 does not change on a retry.
         if (response.status < 500 && response.status !== 408 && response.status !== 429) return null

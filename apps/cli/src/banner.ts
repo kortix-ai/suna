@@ -9,7 +9,7 @@ export function printBanner(): void {
   const lines: string[] = ['', ''];
   for (const row of KORTIX_WORDMARK) lines.push(`   ${C.cyan}${row}${C.reset}`);
   lines.push('');
-  lines.push(`   ${C.white}${TAGLINE}${C.reset}   ${C.faded}·  configure your Kortix project${C.reset}`);
+  lines.push(`   ${C.white}${TAGLINE}${C.reset}   ${C.faded}·  configure your Kortix workspace${C.reset}`);
   lines.push('');
   process.stdout.write(lines.join('\n') + '\n');
 }
@@ -70,7 +70,7 @@ export function printGetStarted({ prompt }: GetStartedInput): void {
   lines.push(
     boxLine(`${C.dim}Paste this prompt into your ${C.reset}${C.bold}coding agent of choice${C.reset}`),
   );
-  lines.push(boxLine(`${C.dim}to configure your Kortix project:${C.reset}`));
+  lines.push(boxLine(`${C.dim}to configure your Kortix workspace:${C.reset}`));
   lines.push(boxLine(''));
 
   const innerInsetWidth = BOX_WIDTH - 4;

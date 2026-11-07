@@ -139,7 +139,7 @@ const BLOCK_REASON: Record<string, string> = {
   out_of_credits: 'Out of credits. Sessions are blocked until the balance is topped up.',
   payment_failed: 'Payment failed. Billing is blocked until the card is fixed.',
   no_subscription: 'No subscription. Sessions are blocked on this plan.',
-  no_account: 'No billing account for this account id.',
+  no_account: 'No billing record for this workspace.',
 };
 
 /**
@@ -176,7 +176,7 @@ export function billingView(state: BillingInput | null | undefined): BillingView
     blocked,
     blockedReason: blocked
       ? (BLOCK_REASON[billingState] ??
-        'Blocked: the API will refuse to start a session on this account.')
+        'Blocked: the API will refuse to start a session in this workspace.')
       : null,
     credits,
     tierName: state?.tier?.name ?? state?.subscription?.tier_display_name ?? 'none',

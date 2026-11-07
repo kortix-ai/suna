@@ -18,7 +18,7 @@ const KNOWN_SKILL = 'kortix-system';
 async function createProjectPat(ctx: FlowContext, label: string) {
   const project = await ctx.fixtures.project();
   const response = await ctx.client.as(ctx.P.OWNER).post(
-    '/v1/projects/:projectId/cli-token',
+    '/v1/workspaces/:projectId/cli-token',
     { name: ctx.fixtures.name(label) },
     { params: { projectId: project.id } },
   );
@@ -31,7 +31,7 @@ async function createProjectPat(ctx: FlowContext, label: string) {
 flow('SKILL-1', {
   domain: 'skills',
   tags: ['smoke'],
-  routes: ['GET /v1/skills', 'POST /v1/projects/:projectId/cli-token'],
+  routes: ['GET /v1/skills', 'POST /v1/workspaces/:projectId/cli-token'],
 }, async (ctx) => {
   const projectPat = await createProjectPat(ctx, 'skill-list-pat');
   await ctx.step('ANON cannot list the system skills', async () => {
@@ -66,7 +66,7 @@ flow(
   {
     domain: 'skills',
     tags: ['smoke'],
-    routes: ['GET /v1/skills/:name', 'POST /v1/projects/:projectId/cli-token'],
+    routes: ['GET /v1/skills/:name', 'POST /v1/workspaces/:projectId/cli-token'],
   },
   async (ctx) => {
     const projectPat = await createProjectPat(ctx, 'skill-read-pat');
@@ -168,10 +168,10 @@ flow(
     domain: 'skills',
     serial: true,
     routes: [
-      'POST /v1/projects/:projectId/skills',
-      'POST /v1/projects/:projectId/skills/remove',
-      'GET /v1/projects/:projectId/detail',
-      'GET /v1/projects/:projectId/files/content',
+      'POST /v1/workspaces/:projectId/skills',
+      'POST /v1/workspaces/:projectId/skills/remove',
+      'GET /v1/workspaces/:projectId/detail',
+      'GET /v1/workspaces/:projectId/files/content',
     ],
   },
   async (ctx) => {
@@ -181,14 +181,14 @@ flow(
     await ctx.step('ANON cannot create a skill', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post('/v1/projects/:projectId/skills', { name: 'Anon Skill' }, { params: { projectId: p.id } });
+        .post('/v1/workspaces/:projectId/skills', { name: 'Anon Skill' }, { params: { projectId: p.id } });
       r.status(401);
     });
 
     await ctx.step('a non-member cannot create a skill', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post('/v1/projects/:projectId/skills', { name: 'Outsider Skill' }, { params: { projectId: p.id } });
+        .post('/v1/workspaces/:projectId/skills', { name: 'Outsider Skill' }, { params: { projectId: p.id } });
       r.status([403, 404]);
     });
 
@@ -197,7 +197,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/skills',
+          '/v1/workspaces/:projectId/skills',
           { name: 'Release Notes', description: 'Draft the weekly "release notes": go' },
           { params: { projectId: p.id } },
         );
@@ -215,7 +215,7 @@ flow(
     });
 
     await ctx.step('a quoted description round-trips through the frontmatter reader', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/detail', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/detail', {
         params: { projectId: p.id },
       });
       r.status(200);
@@ -233,7 +233,7 @@ flow(
     });
 
     await ctx.step('the committed file reads back with frontmatter and body', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/files/content', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/files/content', {
         params: { projectId: p.id },
         query: { path: `skills/${slug}/SKILL.md` },
       });
@@ -250,13 +250,13 @@ flow(
       await ctx.step(`custom or blank body ${index} persists the expected Markdown`, async () => {
         const name = `Body Sample ${index}`;
         const created = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/projects/:projectId/skills',
+          '/v1/workspaces/:projectId/skills',
           { name, description: 'A body sample', body },
           { params: { projectId: p.id } },
         );
         created.status(201);
         const { path } = created.json<{ path: string }>();
-        const read = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/files/content', {
+        const read = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/files/content', {
           params: { projectId: p.id }, query: { path },
         });
         read.status(200);
@@ -270,7 +270,7 @@ flow(
     for (const body of [null, 42, {}]) {
       await ctx.step('a non-string body is rejected', async () => {
         const response = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/projects/:projectId/skills', { name: 'Invalid Body', body },
+          '/v1/workspaces/:projectId/skills', { name: 'Invalid Body', body },
           { params: { projectId: p.id } },
         );
         response.status(400);
@@ -280,28 +280,28 @@ flow(
     await ctx.step('the same slug again → 409', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post('/v1/projects/:projectId/skills', { name: 'Release Notes' }, { params: { projectId: p.id } });
+        .post('/v1/workspaces/:projectId/skills', { name: 'Release Notes' }, { params: { projectId: p.id } });
       r.status(409);
     });
 
     await ctx.step('a blank name → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post('/v1/projects/:projectId/skills', { name: '   ' }, { params: { projectId: p.id } });
+        .post('/v1/workspaces/:projectId/skills', { name: '   ' }, { params: { projectId: p.id } });
       r.status(400);
     });
     await ctx.step('removal requires confirmation and rejects a non-member', async () => {
-      const route = '/v1/projects/:projectId/skills/remove';
+      const route = '/v1/workspaces/:projectId/skills/remove';
       (await ctx.client.as(ctx.P.OWNER).post(route, { folder: `skills/${slug}` }, { params: { projectId: p.id } })).status(400);
       (await ctx.client.as(ctx.P.NONMEMBER).post(route, { folder: `skills/${slug}`, confirm: true }, { params: { projectId: p.id } })).status([403, 404]);
     });
     await ctx.step('confirmed removal deletes the skill, not the project', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/projects/:projectId/skills/remove', { folder: `skills/${slug}`, confirm: true }, { params: { projectId: p.id } });
+      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/workspaces/:projectId/skills/remove', { folder: `skills/${slug}`, confirm: true }, { params: { projectId: p.id } });
       r.status(200).body().has('$.ok', true);
       const removed = r.json<{ removed: string[] }>().removed;
       if (!removed.includes(`skills/${slug}/SKILL.md`)) throw new Error('selected skill was not removed');
-      (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/files/content', { params: { projectId: p.id }, query: { path: `skills/${slug}/SKILL.md` } })).status(404);
-      (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/detail', { params: { projectId: p.id } })).status(200);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/files/content', { params: { projectId: p.id }, query: { path: `skills/${slug}/SKILL.md` } })).status(404);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/detail', { params: { projectId: p.id } })).status(200);
     });
 
   },

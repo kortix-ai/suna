@@ -116,7 +116,7 @@ test('app block degrades to a notice when the slug resolves to no App', () => {
   appsResult = { data: [liveApp('other')], isLoading: false };
   const html = render([{ type: 'app', label: 'App', app: 'missing' }]);
   expect(html).not.toContain('data-testid="app-preview"');
-  expect(html).toContain('is not in this project');
+  expect(html).toContain('is not in this workspace');
 });
 
 test('app block shows a loading line while the inventory loads', () => {

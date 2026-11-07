@@ -20,11 +20,11 @@ mock.module('../../http/auth', () => ({
 }));
 
 const {
-  listSandboxProjectMembers,
-  grantSandboxProjectAccess,
-  revokeSandboxProjectAccess,
+  listSandboxWorkspaceMembers,
+  grantSandboxWorkspaceAccess,
+  revokeSandboxWorkspaceAccess,
 } = await import('./members');
-type SandboxProjectMembersResponse = Awaited<ReturnType<typeof listSandboxProjectMembers>>;
+type SandboxProjectMembersResponse = Awaited<ReturnType<typeof listSandboxWorkspaceMembers>>;
 const { configureKortix } = await import('../../http/config');
 
 configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => 'tok' });
@@ -74,7 +74,7 @@ test('listSandboxProjectMembers GETs the kortix-master project members route thr
   nextBodyText = JSON.stringify(body);
   nextStatus = 200;
 
-  const result = await listSandboxProjectMembers(sandbox, 'proj-1');
+  const result = await listSandboxWorkspaceMembers(sandbox, 'proj-1');
 
   expect(last().url).toBe('http://backend.local/v1/p/ext-123/8000/kortix/projects/proj-1/members');
   expect(last().method).toBe('GET');
@@ -85,7 +85,7 @@ test('grantSandboxProjectAccess POSTs user_id + role, defaulting role to member'
   nextBodyText = '{}';
   nextStatus = 200;
 
-  await grantSandboxProjectAccess(sandbox, 'proj-1', 'user-9');
+  await grantSandboxWorkspaceAccess(sandbox, 'proj-1', 'user-9');
 
   expect(last().url).toBe('http://backend.local/v1/p/ext-123/8000/kortix/projects/proj-1/members');
   expect(last().method).toBe('POST');
@@ -96,7 +96,7 @@ test('grantSandboxProjectAccess honors an explicit admin role', async () => {
   nextBodyText = '{}';
   nextStatus = 200;
 
-  await grantSandboxProjectAccess(sandbox, 'proj-1', 'user-9', 'admin');
+  await grantSandboxWorkspaceAccess(sandbox, 'proj-1', 'user-9', 'admin');
 
   expect(last().body).toEqual({ user_id: 'user-9', role: 'admin' });
 });
@@ -105,7 +105,7 @@ test('revokeSandboxProjectAccess DELETEs the specific member route', async () =>
   nextBodyText = '{}';
   nextStatus = 200;
 
-  await revokeSandboxProjectAccess(sandbox, 'proj-1', 'user-9');
+  await revokeSandboxWorkspaceAccess(sandbox, 'proj-1', 'user-9');
 
   expect(last().url).toBe('http://backend.local/v1/p/ext-123/8000/kortix/projects/proj-1/members/user-9');
   expect(last().method).toBe('DELETE');
@@ -115,28 +115,28 @@ test('fetchKortixMaster throws the response body text on a non-ok response', asy
   nextStatus = 404;
   nextBodyText = 'Project not found';
 
-  await expect(listSandboxProjectMembers(sandbox, 'proj-1')).rejects.toThrow('Project not found');
+  await expect(listSandboxWorkspaceMembers(sandbox, 'proj-1')).rejects.toThrow('Project not found');
 });
 
 test('fetchKortixMaster falls back to "Request failed (status)" when the error body is empty', async () => {
   nextStatus = 500;
   nextBodyText = '';
 
-  await expect(revokeSandboxProjectAccess(sandbox, 'proj-1', 'user-9')).rejects.toThrow('Request failed (500)');
+  await expect(revokeSandboxWorkspaceAccess(sandbox, 'proj-1', 'user-9')).rejects.toThrow('Request failed (500)');
 });
 
 test('URL-encodes projectId and userId with special characters', async () => {
   nextBodyText = '{}';
   nextStatus = 200;
 
-  await grantSandboxProjectAccess(sandbox, 'proj/one two', 'user id&1');
+  await grantSandboxWorkspaceAccess(sandbox, 'proj/one two', 'user id&1');
 
   expect(last().url).toBe(
     `http://backend.local/v1/p/ext-123/8000/kortix/projects/${encodeURIComponent('proj/one two')}/members`,
   );
   expect(last().body).toEqual({ user_id: 'user id&1', role: 'member' });
 
-  await revokeSandboxProjectAccess(sandbox, 'proj/one two', 'user id&1');
+  await revokeSandboxWorkspaceAccess(sandbox, 'proj/one two', 'user id&1');
   expect(last().url).toBe(
     `http://backend.local/v1/p/ext-123/8000/kortix/projects/${encodeURIComponent('proj/one two')}/members/${encodeURIComponent('user id&1')}`,
   );

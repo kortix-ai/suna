@@ -17,7 +17,7 @@ mock.module('react', () => ({
   useCallback: (fn: unknown) => fn,
 }));
 
-const { useProjectModelPickerCatalog, useProjectModels } = await import('./use-project-models');
+const { useWorkspaceModelPickerCatalog, useWorkspaceModels } = await import('./use-project-models');
 const { useModelEnablement } = await import('./use-model-enablement');
 
 beforeEach(() => {
@@ -25,8 +25,8 @@ beforeEach(() => {
 });
 
 test('every /model-picker reader fetches for a project with no detail read', () => {
-  useProjectModels('P1');
-  useProjectModelPickerCatalog('P1');
+  useWorkspaceModels('P1');
+  useWorkspaceModelPickerCatalog('P1');
   useModelEnablement('P1');
   expect(queried).toEqual([
     { queryKey: qk.project.modelPicker('P1'), enabled: true },
@@ -36,6 +36,6 @@ test('every /model-picker reader fetches for a project with no detail read', () 
 });
 
 test('no project: nothing fetches', () => {
-  useProjectModels(null);
+  useWorkspaceModels(null);
   expect(queried).toEqual([{ queryKey: qk.project.modelPicker(''), enabled: false }]);
 });

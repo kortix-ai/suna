@@ -355,7 +355,7 @@ for (const savedChild of [false, true]) {
     try {
       const hook = await mount('ses_log_first', { ...offline, savedChild });
       await settle();
-      expect(requests).toEqual([`http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/log?limit=40`]);
+      expect(requests).toEqual([`http://test.local/v1/workspaces/${PROJECT}/sessions/${SESSION}/log?limit=40`]);
       expect(useSyncStore.getState().sessionLogs[SESSION]?.messages[golden.threads[0]!.thread_id]).toHaveLength(golden.threads[0]!.messages.length);
       expect(hook.value().messages).toHaveLength(0);
       expect(hook.value().mirrorState).not.toBe('absent');
@@ -392,7 +392,7 @@ test('a new session on an API that serves the log (404 session_log_missing): no 
   }) as unknown as typeof fetch;
   const hook = await mount('ses_log_missing', offline);
   await settle();
-  expect(requests).toEqual([`http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/log?limit=40`]);
+  expect(requests).toEqual([`http://test.local/v1/workspaces/${PROJECT}/sessions/${SESSION}/log?limit=40`]);
   expect(hook.value().messages).toHaveLength(0);
   expect(hook.value().mirrorState).toBe('absent');
 });
@@ -423,7 +423,7 @@ describe('no GET …/transcript on any path (P8.3)', () => {
         const requests = recordAll(answer);
         const hook = await mount('ses_no_v1', { ...offline, savedChild });
         await settle();
-        expect(requests).toEqual([`http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/log?limit=40`]);
+        expect(requests).toEqual([`http://test.local/v1/workspaces/${PROJECT}/sessions/${SESSION}/log?limit=40`]);
         expect(v1Reads(requests)).toEqual([]);
         expect(hook.value().messages).toHaveLength(0);
         expect(hook.value().mirrorState).toBe('absent');

@@ -1,6 +1,6 @@
 ---
 name: kortix-cli
-description: "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS project's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, set a loop to check back on this task later (`kortix loop \"…\" --in 24h --every 1h`), search the screen, action and audio timeline Kortix Capture recorded for the person this session acts for (`kortix capture search \"…\"`, when Capture is on for the account), call connectors, connect Slack, or read project info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get kortix-system` and its reference files."
+description: "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS workspace's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, set a loop to check back on this task later (`kortix loop \"…\" --in 24h --every 1h`), search the screen, action and audio timeline Kortix Capture recorded for the person this session acts for (`kortix capture search \"…\"`, when Capture is on for the account), call connectors, connect Slack, or read workspace info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get kortix-system` and its reference files."
 ---
 
 # kortix-cli
@@ -8,7 +8,7 @@ description: "Drive Kortix itself from the terminal with the `kortix` CLI — pr
 The **`kortix`** CLI is the control plane for Kortix — the same surface a human
 drives in the dashboard, fully scriptable from a terminal. It is **already
 installed and pre-authenticated** in every session sandbox: the binary is on
-`$PATH` (`/usr/local/bin/kortix`), a project-scoped token (`KORTIX_TOKEN`)
+`$PATH` (`/usr/local/bin/kortix`), a workspace-scoped token (`KORTIX_TOKEN`)
 and `KORTIX_API_URL` are pre-injected, so `kortix …` just works with no setup.
 
 ## Start here
@@ -115,8 +115,8 @@ Pi reconfigures without restarting; the running turn finishes before the next tu
 
 **Agent pins, permissions and precedence.** An agent's configured `model` is a
 default, not a lock: an authorized caller may replace it with a durable session
-pin. Changing that pin requires session-owner or project-manager lifecycle
-permission; a scoped agent token also needs `project.session.stop`. Project
+pin. Changing that pin requires session-owner or workspace-manager lifecycle
+permission; a scoped agent token also needs `workspace.session.stop`. Workspace
 visibility alone grants no override permission. The requested model must pass
 account/model availability and provider-key access checks; changing a pin does
 not bypass those checks.

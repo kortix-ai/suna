@@ -34,7 +34,7 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
  * `updateProjectGroupGrant`, `detachGroupFromProject`) — no reimplementation.
  *
  * **The extended access contract these rows render.** `GET
- * /projects/:id/access` (`listProjectAccess`) carries, per member,
+ * /workspaces/:id/access` (`listProjectAccess`) carries, per member,
  * `custom_role_policies` (this member's custom IAM-role bindings, direct or
  * inherited via a group) and `resource_grants` (which agents/skills this
  * member is scoped to, same direct-or-via-group shape), plus a top-level
@@ -314,7 +314,10 @@ export function isDirectGrant(grant: Pick<ResourceGrantEntry, 'source'>): boolea
   return grant.source !== 'group' && grant.source !== 'project';
 }
 
-/** "via account admin" / "via Engineering +1 more" / "no access". `null` for
+/** The `accessVia` answer for an owner's or admin's implicit access; rendered as the role name. */
+export const ACCESS_VIA_ADMIN = 'Admin';
+
+/** "Admin" / "via Engineering +1 more" / "no access". `null` for
  *  a plain direct grant, which needs no attribution line. */
 export function accessVia(
   member: Pick<
@@ -323,7 +326,8 @@ export function accessVia(
   >,
 ): string | null {
   if (!member.effective_project_role) return 'no access';
-  if (member.effective_source === 'implicit') return 'via account admin';
+  // Owners and admins reach every workspace of their account: their role is the reason.
+  if (member.effective_source === 'implicit') return ACCESS_VIA_ADMIN;
   if (member.effective_source === 'group') {
     const groupName = member.group_sources?.[0]?.group_name;
     const extra = (member.group_sources?.length ?? 0) - 1;
@@ -361,7 +365,7 @@ function ExpiryMeta({ expiresAt }: { expiresAt: string | null | undefined }) {
 
 /**
  * The one muted fact under a row's name, or none. In order: how the access
- * arrives when it is inherited ("via account admin", "via Engineering"),
+ * arrives when it is inherited ("Admin", "via Engineering"),
  * then agents when they are narrowed ("Agents: 2 of 5"), then an expiry when
  * there is one. "Agents: all" and "Expires never" are the defaults and say
  * nothing.
@@ -638,21 +642,25 @@ interface EditTarget {
   inheritedFrom?: string[];
 }
 
-function ProjectAccessPanel({
+export function ProjectAccessPanel({
   accountId,
   projectId,
   rbacEnabled,
   canManageRoles,
   onBack,
+  heading,
 }: {
   accountId: string;
   projectId: string;
   rbacEnabled: boolean;
   canManageRoles: boolean;
-  /** Back to the project list. */
-  onBack: () => void;
+  /** Back to the project list. Absent: there is no list to go back to. */
+  onBack?: () => void;
+  /** Replaces the project's avatar and name above the table (a one-workspace account). */
+  heading?: ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSharing = useTranslations('accessSharing');
   const locale = useLocale();
   const queryClient = useQueryClient();
 
@@ -668,7 +676,7 @@ function ProjectAccessPanel({
     ...contract('config'),
   });
   const project = projectQuery.data;
-  const projectName = project?.name ?? 'this project';
+  const projectName = project?.name ?? tSharing('thisWorkspace');
 
   const accessQuery = useQuery({
     queryKey: qk.project.access(projectId),
@@ -1010,14 +1018,22 @@ function ProjectAccessPanel({
       {/* "‹ Projects" above the project's tile: the same link the member and
           group pages draw (`AccessDetailShell`). The breadcrumb stays too. */}
       <div className="space-y-4">
-        <button
-          type="button"
-          onClick={onBack}
-          className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-sm transition-colors"
-        >
-          <CaretLeftIcon className="size-4" />
-          {tI18nComplete.raw('text04e2a9728af7')}
-        </button>
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-sm transition-colors"
+          >
+            <CaretLeftIcon className="size-4" />
+            {tI18nComplete.raw('text04e2a9728af7')}
+          </button>
+        ) : null}
+        {heading ? (
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0 space-y-1">{heading}</div>
+            {grantButton}
+          </div>
+        ) : (
         <div className="flex min-w-0 items-center gap-3">
           {projectQuery.isLoading ? (
             <Skeleton className="size-8 rounded-md" />
@@ -1040,11 +1056,12 @@ function ProjectAccessPanel({
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button asChild type="button" variant="ghost" size="sm">
-              <Link href={`/projects/${projectId}`}>{tI18nComplete.raw('text5e5eba7f41ab')}</Link>
+              <Link href={`/workspaces/${projectId}`}>{tI18nComplete.raw('text5e5eba7f41ab')}</Link>
             </Button>
             {grantButton}
           </div>
         </div>
+        )}
       </div>
 
       {/* ── People: one table, the account Members table's rows ──────────
@@ -1426,6 +1443,7 @@ function MemberAccessRow({
   onRequestRemove: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tWorkspaceRoles = useTranslations('workspaces.roles');
   const label = principalLabel(member) || member.user_id;
   const policy = directProjectPolicy(member.custom_role_policies);
 
@@ -1463,7 +1481,8 @@ function MemberAccessRow({
   const agentGrants = distinctAgentGrants(agentGrantsOf(member.resource_grants));
   const directAgentIds = agentGrants.filter(isDirectGrant).map((g) => g.resource_id);
   const expiresAt = policy ? policy.expires_at : (member.expires_at ?? null);
-  const via = accessVia(member);
+  const rawVia = accessVia(member);
+  const via = rawVia === ACCESS_VIA_ADMIN ? tWorkspaceRoles('admin.label') : rawVia;
   const inheritedFrom = (member.group_sources ?? []).map((g) => g.group_name);
 
   const inheritedOnly = isInheritedFromGroupOnly(member);

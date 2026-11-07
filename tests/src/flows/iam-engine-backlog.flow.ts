@@ -57,7 +57,7 @@ const EFFECTIVE_BATCH = '/v1/accounts/:accountId/iam/members/:userId/effective:b
 const SUPER_ADMIN = '/v1/accounts/:accountId/iam/members/:userId/super-admin';
 const GROUPS = '/v1/accounts/:accountId/iam/groups';
 const GROUP_MEMBERS = '/v1/accounts/:accountId/iam/groups/:groupId/members';
-const PROJECT_GRANTS = '/v1/projects/:projectId/group-grants';
+const PROJECT_GRANTS = '/v1/workspaces/:projectId/group-grants';
 
 // Coverage keys for `meta.routes` — must be `METHOD PATH`, matching the
 // route manifest (spec/routes.generated.json) exactly.
@@ -168,12 +168,19 @@ flow('IAM-6', { domain: 'iam', routes: [R_EFFECTIVE] }, async (ctx) => {
     },
   );
 
-  await ctx.step('member with no project path → project.delete denied', async () => {
+  // Membership is access (design.md C3): an account member of a 1:1 workspace
+  // holds the member tier, which reads and runs but cannot delete.
+  await ctx.step('a member (member tier, membership is access) → project.read allowed, project.delete denied for the role', async () => {
+    const read = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
+      params: { accountId: team.id, userId: member.userId! },
+      query: { action: 'project.read', resourceType: 'project', resourceId: project.id },
+    });
+    read.status(200).body().has('$.allowed', true).has('$.reason', 'role');
     const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
       params: { accountId: team.id, userId: member.userId! },
       query: { action: 'project.delete', resourceType: 'project', resourceId: project.id },
     });
-    r.status(200).body().has('$.allowed', false).has('$.reason', 'no_project_membership');
+    r.status(200).body().has('$.allowed', false).has('$.reason', 'project_role_insufficient');
   });
 });
 

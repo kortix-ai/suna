@@ -9,7 +9,7 @@
  */
 import { authenticatedFetch } from '../http/auth';
 import { ApiError } from '../http/api/errors';
-import { getProjectSession } from '../rest/projects-client/sessions';
+import { getWorkspaceSession } from '../rest/projects-client/sessions';
 import { projectSessionStartSeed } from '../rest/projects-client/session-sandbox';
 import type {
   WorkflowControlBody,
@@ -71,7 +71,7 @@ export function controlRuntimeWorkflowRun(
 export async function runningSessionRuntimeUrl(projectId: string, sessionId: string): Promise<string | null> {
   const known = getSessionRuntime(projectId, sessionId)?.runtimeUrl;
   if (known) return known;
-  const row = await getProjectSession(projectId, sessionId, { showErrors: false }).catch(() => null);
+  const row = await getWorkspaceSession(projectId, sessionId, { showErrors: false }).catch(() => null);
   const externalId = row ? projectSessionStartSeed(row)?.sandbox?.external_id : undefined;
   return externalId ? getSandboxUrlForExternalId(externalId) : null;
 }

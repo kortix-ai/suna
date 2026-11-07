@@ -32,9 +32,9 @@ flow(
   {
     domain: 'projects',
     routes: [
-      'GET /v1/projects/:projectId/access',
-      'PUT /v1/projects/:projectId/access/:userId',
-      'DELETE /v1/projects/:projectId/access/:userId',
+      'GET /v1/workspaces/:projectId/access',
+      'PUT /v1/workspaces/:projectId/access/:userId',
+      'DELETE /v1/workspaces/:projectId/access/:userId',
     ],
   },
   async (ctx) => {
@@ -45,7 +45,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/projects/:projectId/access/:userId',
+          '/v1/workspaces/:projectId/access/:userId',
           { role: 'manager' },
           { params: { projectId: p.id, userId: member.userId! } },
         );
@@ -58,7 +58,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/projects/:projectId/access/:userId',
+          '/v1/workspaces/:projectId/access/:userId',
           { role: 'editor' },
           { params: { projectId: p.id, userId: member.userId! } },
         );
@@ -67,15 +67,15 @@ flow(
     await ctx.step('GET access lists the granted member → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/access', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/access', { params: { projectId: p.id } });
       r.status(200).body().has('$.project_id', p.id).has('$.can_manage', true).exists('$.members');
     });
     await ctx.step('PUT a role on the account owner → 200, stays implicit manager with no direct grant', async () => {
-      (await ctx.client.as(ctx.P.OWNER).put('/v1/projects/:projectId/access/:userId', { role: 'member' }, { params: { projectId: p.id, userId: ctx.P.OWNER.userId! } }))
+      (await ctx.client.as(ctx.P.OWNER).put('/v1/workspaces/:projectId/access/:userId', { role: 'member' }, { params: { projectId: p.id, userId: ctx.P.OWNER.userId! } }))
         .status(200).body().has('$.account_role', 'owner').has('$.project_role', null).has('$.effective_project_role', 'manager').has('$.has_implicit_access', true);
     });
     await ctx.step('OWNER revokes the grant → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/access/:userId', {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/workspaces/:projectId/access/:userId', {
         params: { projectId: p.id, userId: member.userId! },
       });
       r.status(200).body().has('$.ok', true);
@@ -83,7 +83,7 @@ flow(
     await ctx.step('NONMEMBER cannot read access → 404 (project not loadable)', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/access', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/access', { params: { projectId: p.id } });
       r.status([403, 404]);
     });
   },
@@ -93,14 +93,14 @@ flow(
 // never reaches the access roster. Seeded in the database: no route writes it.
 flow(
   'PACC-8',
-  { domain: 'projects', requires: ['database'], routes: ['GET /v1/projects/:projectId/access'] },
+  { domain: 'projects', requires: ['database'], routes: ['GET /v1/workspaces/:projectId/access'] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const p = await team.project();
     try {
       await ctx.step('an account membership with no auth user (user_id = account_id) is not listed; the real owner is', async () => {
         await withDb(ctx, (db) => db.query('INSERT INTO kortix.account_memberships (user_id, account_id) VALUES ($1, $1) ON CONFLICT DO NOTHING', [team.id]));
-        const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/access', { params: { projectId: p.id } });
+        const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/access', { params: { projectId: p.id } });
         r.status(200);
         const ids = r.json<{ members: Array<{ user_id: string }> }>().members.map((m) => m.user_id);
         if (ids.includes(team.id)) throw new Error('the shadow member is listed');
@@ -116,7 +116,7 @@ flow(
   'PACC-3',
   {
     domain: 'projects',
-    routes: ['PUT /v1/projects/:projectId/access/:userId'],
+    routes: ['PUT /v1/workspaces/:projectId/access/:userId'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -131,7 +131,7 @@ flow(
       const r = await ctx.client
         .as(plain)
         .put(
-          '/v1/projects/:projectId/access/:userId',
+          '/v1/workspaces/:projectId/access/:userId',
           { role: 'user' },
           { params: { projectId: p.id, userId: target.userId! } },
         );
@@ -141,7 +141,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/projects/:projectId/access/:userId',
+          '/v1/workspaces/:projectId/access/:userId',
           { role: 'wizard' },
           { params: { projectId: p.id, userId: target.userId! } },
         );
@@ -151,7 +151,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
-          '/v1/projects/:projectId/access/:userId',
+          '/v1/workspaces/:projectId/access/:userId',
           { role: 'user' },
           { params: { projectId: p.id, userId: '00000000-0000-4000-a000-000000000000' } },
         );
@@ -164,7 +164,7 @@ flow(
   'PACC-4',
   {
     domain: 'projects',
-    routes: ['DELETE /v1/projects/:projectId/access/:userId'],
+    routes: ['DELETE /v1/workspaces/:projectId/access/:userId'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -173,7 +173,7 @@ flow(
     const admin = await team.addMember('admin');
     await ctx.step('grant then revoke a real member → 200', async () => {
       await team.grantProjectRole(p.id, member.userId!, 'user');
-      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/access/:userId', {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/workspaces/:projectId/access/:userId', {
         params: { projectId: p.id, userId: member.userId! },
       });
       r.status(200).body().has('$.ok', true);
@@ -181,13 +181,13 @@ flow(
     await ctx.step("revoking an account admin's implicit access → 409", async () => {
       // Owners/admins hold implicit Manager on every project — there's no
       // explicit grant to remove.
-      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/access/:userId', {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/workspaces/:projectId/access/:userId', {
         params: { projectId: p.id, userId: admin.userId! },
       });
       r.status(409);
     });
     await ctx.step('revoking a non-account-member → 404', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/access/:userId', {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/workspaces/:projectId/access/:userId', {
         params: { projectId: p.id, userId: '00000000-0000-4000-a000-000000000000' },
       });
       r.status(404);
@@ -202,10 +202,10 @@ flow(
   {
     domain: 'projects',
     routes: [
-      'POST /v1/projects/:projectId/access/invite',
-      'GET /v1/projects/:projectId/access/pending-invites',
-      'POST /v1/projects/:projectId/access/pending-invites/:inviteId/resend',
-      'DELETE /v1/projects/:projectId/access/pending-invites/:inviteId',
+      'POST /v1/workspaces/:projectId/access/invite',
+      'GET /v1/workspaces/:projectId/access/pending-invites',
+      'POST /v1/workspaces/:projectId/access/pending-invites/:inviteId/resend',
+      'DELETE /v1/workspaces/:projectId/access/pending-invites/:inviteId',
     ],
   },
   async (ctx) => {
@@ -217,7 +217,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access/invite',
+          '/v1/workspaces/:projectId/access/invite',
           { email: inviteEmail, role: 'manager' },
           { params: { projectId: p.id } },
         );
@@ -232,7 +232,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access/invite',
+          '/v1/workspaces/:projectId/access/invite',
           { role: 'manager' },
           { params: { projectId: p.id } },
         );
@@ -242,7 +242,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access/invite',
+          '/v1/workspaces/:projectId/access/invite',
           { email: `${ctx.fixtures.name('x')}@ke2e.kortix.test`, role: 'wizard' },
           { params: { projectId: p.id } },
         );
@@ -251,14 +251,14 @@ flow(
     await ctx.step("pending-invites lists this project's queued invite → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/access/pending-invites', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/access/pending-invites', { params: { projectId: p.id } });
       r.status(200).body().exists('$.pending');
     });
     await ctx.step('resend the pending invite → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access/pending-invites/:inviteId/resend',
+          '/v1/workspaces/:projectId/access/pending-invites/:inviteId/resend',
           {},
           { params: { projectId: p.id, inviteId } },
         );
@@ -268,7 +268,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access/pending-invites/:inviteId/resend',
+          '/v1/workspaces/:projectId/access/pending-invites/:inviteId/resend',
           {},
           { params: { projectId: p.id, inviteId: '00000000-0000-4000-a000-000000000000' } },
         );
@@ -277,7 +277,7 @@ flow(
     await ctx.step('cancel the pending invite → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/projects/:projectId/access/pending-invites/:inviteId', {
+        .del('/v1/workspaces/:projectId/access/pending-invites/:inviteId', {
           params: { projectId: p.id, inviteId },
         });
       r.status(200).body().has('$.ok', true);
@@ -285,7 +285,7 @@ flow(
     await ctx.step('cancel again (gone) → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/projects/:projectId/access/pending-invites/:inviteId', {
+        .del('/v1/workspaces/:projectId/access/pending-invites/:inviteId', {
           params: { projectId: p.id, inviteId },
         });
       r.status(404);
@@ -300,10 +300,10 @@ flow(
   {
     domain: 'projects',
     routes: [
-      'GET /v1/projects/:projectId/group-grants',
-      'POST /v1/projects/:projectId/group-grants',
-      'PATCH /v1/projects/:projectId/group-grants/:groupId',
-      'DELETE /v1/projects/:projectId/group-grants/:groupId',
+      'GET /v1/workspaces/:projectId/group-grants',
+      'POST /v1/workspaces/:projectId/group-grants',
+      'PATCH /v1/workspaces/:projectId/group-grants/:groupId',
+      'DELETE /v1/workspaces/:projectId/group-grants/:groupId',
     ],
   },
   async (ctx) => {
@@ -324,14 +324,14 @@ flow(
     await ctx.step('list grants (empty) → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/group-grants', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/group-grants', { params: { projectId: p.id } });
       r.status(200).body().exists('$.grants');
     });
     await ctx.step('attach group at manager → 201', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/group-grants',
+          '/v1/workspaces/:projectId/group-grants',
           { group_id: groupId, role: 'manager' },
           { params: { projectId: p.id } },
         );
@@ -341,7 +341,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/group-grants',
+          '/v1/workspaces/:projectId/group-grants',
           { role: 'manager' },
           { params: { projectId: p.id } },
         );
@@ -351,7 +351,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/group-grants',
+          '/v1/workspaces/:projectId/group-grants',
           { group_id: '00000000-0000-4000-a000-000000000000', role: 'user' },
           { params: { projectId: p.id } },
         );
@@ -361,7 +361,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/projects/:projectId/group-grants/:groupId',
+          '/v1/workspaces/:projectId/group-grants/:groupId',
           { role: 'user' },
           { params: { projectId: p.id, groupId } },
         );
@@ -371,7 +371,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/projects/:projectId/group-grants/:groupId',
+          '/v1/workspaces/:projectId/group-grants/:groupId',
           { role: 'user' },
           { params: { projectId: p.id, groupId: '00000000-0000-4000-a000-000000000000' } },
         );
@@ -380,7 +380,7 @@ flow(
     await ctx.step('detach the group → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/projects/:projectId/group-grants/:groupId', {
+        .del('/v1/workspaces/:projectId/group-grants/:groupId', {
           params: { projectId: p.id, groupId },
         });
       r.status(200).body().has('$.ok', true);
@@ -401,9 +401,9 @@ flow(
   {
     domain: 'projects',
     routes: [
-      'GET /v1/projects/:projectId/resource-grants',
-      'POST /v1/projects/:projectId/resource-grants',
-      'DELETE /v1/projects/:projectId/resource-grants/:grantId',
+      'GET /v1/workspaces/:projectId/resource-grants',
+      'POST /v1/workspaces/:projectId/resource-grants',
+      'DELETE /v1/workspaces/:projectId/resource-grants/:grantId',
     ],
   },
   async (ctx) => {
@@ -416,7 +416,7 @@ flow(
     await ctx.step('OWNER lists grantable resources and existing grants → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/resource-grants', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/resource-grants', { params: { projectId: p.id } });
       r.status(200).body().exists('$.resources').exists('$.grants');
       const agents = r.json<any>()?.resources?.agents ?? [];
       firstAgentId = agents[0]?.id ?? '';
@@ -425,7 +425,7 @@ flow(
     // ── The core agent-only invariant: skill/secret creation is rejected ──
     await ctx.step('scoping a SECRET is rejected (agent-only) → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/resource-grants',
+        '/v1/workspaces/:projectId/resource-grants',
         {
           resource_type: 'secret',
           resource_id: 'ANY_SECRET',
@@ -439,7 +439,7 @@ flow(
 
     await ctx.step('scoping a SKILL is rejected (agent-only) → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/resource-grants',
+        '/v1/workspaces/:projectId/resource-grants',
         {
           resource_type: 'skill',
           resource_id: 'any-skill',
@@ -453,7 +453,7 @@ flow(
 
     await ctx.step('invalid resource type → 400', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/resource-grants',
+        '/v1/workspaces/:projectId/resource-grants',
         {
           resource_type: 'database',
           resource_id: 'x',
@@ -472,7 +472,7 @@ flow(
       async () => {
         if (!firstAgentId) return; // bare project with no declared agents — nothing to scope
         const r = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/projects/:projectId/resource-grants',
+          '/v1/workspaces/:projectId/resource-grants',
           {
             resource_type: 'agent',
             resource_id: firstAgentId,
@@ -492,7 +492,7 @@ flow(
         if (!grantId) return;
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .del('/v1/projects/:projectId/resource-grants/:grantId', {
+          .del('/v1/workspaces/:projectId/resource-grants/:grantId', {
             params: { projectId: p.id, grantId },
           });
         r.status(200).body().has('$.ok', true);
@@ -503,7 +503,7 @@ flow(
     await ctx.step('deleting a nonexistent grant → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/projects/:projectId/resource-grants/:grantId', {
+        .del('/v1/workspaces/:projectId/resource-grants/:grantId', {
           params: { projectId: p.id, grantId: grantId || NONEXISTENT_GRANT },
         });
       // If a real grant was created+deleted above, re-deleting it is 404 too.
@@ -525,9 +525,9 @@ flow(
   {
     domain: 'projects',
     routes: [
-      'GET /v1/account-invites/:inviteId',
-      'POST /v1/account-invites/:inviteId/accept',
-      'POST /v1/account-invites/:inviteId/decline',
+      'GET /v1/invites/:inviteId',
+      'POST /v1/invites/:inviteId/accept',
+      'POST /v1/invites/:inviteId/decline',
     ],
   },
   async (ctx) => {
@@ -551,12 +551,12 @@ flow(
         // OWNER isn't the invited email → email_matches_caller:false, no account leak.
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .get('/v1/account-invites/:inviteId', { params: { inviteId } });
+          .get('/v1/invites/:inviteId', { params: { inviteId } });
         r.status(200).body().has('$.email_matches_caller', false).has('$.email', null);
       },
     );
     await ctx.step('describe unknown invite → 404', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/account-invites/:inviteId', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/invites/:inviteId', {
         params: { inviteId: '00000000-0000-4000-a000-000000000000' },
       });
       r.status(404);
@@ -565,14 +565,14 @@ flow(
     // answered 500 (KRTX-1731).
     await ctx.step('a malformed invite id → 404 on describe, accept and decline, never 500', async () => {
       const params = { inviteId: 'not-a-uuid' };
-      (await ctx.client.as(ctx.P.OWNER).get('/v1/account-invites/:inviteId', { params })).status(404);
-      (await ctx.client.as(ctx.P.OWNER).post('/v1/account-invites/:inviteId/accept', {}, { params })).status(404);
-      (await ctx.client.as(ctx.P.OWNER).post('/v1/account-invites/:inviteId/decline', {}, { params })).status(404);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/invites/:inviteId', { params })).status(404);
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/invites/:inviteId/accept', {}, { params })).status(404);
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/invites/:inviteId/decline', {}, { params })).status(404);
     });
     await ctx.step('ANON cannot describe → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/account-invites/:inviteId', { params: { inviteId } });
+        .get('/v1/invites/:inviteId', { params: { inviteId } });
       r.status(401);
     });
   },
@@ -585,7 +585,7 @@ flow(
   'INV-10',
   {
     domain: 'projects',
-    routes: ['POST /v1/projects/:projectId/access/invite', 'GET /v1/account-invites/:inviteId'],
+    routes: ['POST /v1/workspaces/:projectId/access/invite', 'GET /v1/invites/:inviteId'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -595,13 +595,13 @@ flow(
     await ctx.step('a project invite to an address with no Kortix user yet → 201 invited', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post('/v1/projects/:projectId/access/invite', { email: inviteEmail, role: 'member' }, { params: { projectId: project.id } });
+        .post('/v1/workspaces/:projectId/access/invite', { email: inviteEmail, role: 'member' }, { params: { projectId: project.id } });
       r.status(201).body().has('$.status', 'invited').exists('$.invite_id');
       inviteId = r.json<{ invite_id: string }>().invite_id;
     });
     await ctx.step('the invitee reads the project name and role in the describe', async () => {
       const invitee = await ctx.fixtures.userWithEmail(inviteEmail);
-      const r = await ctx.client.as(invitee).get('/v1/account-invites/:inviteId', { params: { inviteId } });
+      const r = await ctx.client.as(invitee).get('/v1/invites/:inviteId', { params: { inviteId } });
       r.status(200)
         .body()
         .has('$.email_matches_caller', true)
@@ -610,7 +610,7 @@ flow(
         .exists('$.projects[0].name');
     });
     await ctx.step('anyone else gets no projects (redacted)', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/account-invites/:inviteId', { params: { inviteId } });
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/invites/:inviteId', { params: { inviteId } });
       r.status(200).body().has('$.email_matches_caller', false);
       if ((r.json<{ projects?: unknown[] }>().projects ?? []).length !== 0) throw new Error('a non-addressee read the invited projects');
     });
@@ -621,7 +621,7 @@ flow(
   'INV-4',
   {
     domain: 'projects',
-    routes: ['POST /v1/account-invites/:inviteId/accept'],
+    routes: ['POST /v1/invites/:inviteId/accept'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -642,14 +642,14 @@ flow(
       // OWNER's email != the invited address → the invite refuses.
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        .post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } });
       r.status(403);
     });
     await ctx.step('accept an unknown invite → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/account-invites/:inviteId/accept',
+          '/v1/invites/:inviteId/accept',
           {},
           { params: { inviteId: '00000000-0000-4000-a000-000000000000' } },
         );
@@ -658,7 +658,7 @@ flow(
     await ctx.step('ANON cannot accept → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        .post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } });
       r.status(401);
     });
   },
@@ -668,7 +668,7 @@ flow(
   'INV-5',
   {
     domain: 'projects',
-    routes: ['POST /v1/account-invites/:inviteId/decline'],
+    routes: ['POST /v1/invites/:inviteId/decline'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -688,14 +688,14 @@ flow(
     await ctx.step('decline as the wrong email → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post('/v1/account-invites/:inviteId/decline', {}, { params: { inviteId } });
+        .post('/v1/invites/:inviteId/decline', {}, { params: { inviteId } });
       r.status(403);
     });
     await ctx.step('decline an unknown invite → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/account-invites/:inviteId/decline',
+          '/v1/invites/:inviteId/decline',
           {},
           { params: { inviteId: '00000000-0000-4000-a000-000000000000' } },
         );
@@ -704,7 +704,7 @@ flow(
     await ctx.step('ANON cannot decline → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post('/v1/account-invites/:inviteId/decline', {}, { params: { inviteId } });
+        .post('/v1/invites/:inviteId/decline', {}, { params: { inviteId } });
       r.status(401);
     });
   },
@@ -723,8 +723,8 @@ flow(
     serial: true,
     routes: [
       'POST /v1/accounts/:accountId/members',
-      'POST /v1/account-invites/:inviteId/accept',
-      'GET /v1/account-invites/:inviteId',
+      'POST /v1/invites/:inviteId/accept',
+      'GET /v1/invites/:inviteId',
     ],
   },
   async (ctx) => {
@@ -751,7 +751,7 @@ flow(
     await ctx.step('first accept as the addressee → 200 {already_accepted:false}', async () => {
       const r = await ctx.client
         .as(addressee)
-        .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        .post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } });
       r.status(200)
         .body()
         .has('$.account_id', team.id)
@@ -764,13 +764,13 @@ flow(
       // re-entry can repair a grant that was never written (invites.ts:307-312).
       const r = await ctx.client
         .as(addressee)
-        .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        .post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } });
       r.status(200).body().has('$.already_accepted', true);
     });
     await ctx.step('describe as the addressee reflects the accepted state', async () => {
       const r = await ctx.client
         .as(addressee)
-        .get('/v1/account-invites/:inviteId', { params: { inviteId } });
+        .get('/v1/invites/:inviteId', { params: { inviteId } });
       r.status(200)
         .body()
         .has('$.email_matches_caller', true)
@@ -786,7 +786,7 @@ flow(
       async () => {
         const r = await ctx.client
           .as(ctx.P.NONMEMBER)
-          .get('/v1/account-invites/:inviteId', { params: { inviteId } });
+          .get('/v1/invites/:inviteId', { params: { inviteId } });
         r.status(200).body().has('$.email_matches_caller', false).has('$.email', null);
       },
     );
@@ -794,7 +794,7 @@ flow(
     await ctx.step('another user who now holds the address cannot use the accepted invite → 409', async () => {
       await adminUpdateUserEmail(ctx.env, addressee.userId!, `${ctx.fixtures.name('inv6-moved')}@${ctx.env.testEmailDomain}`.toLowerCase());
       const successor = await ctx.fixtures.userWithEmail(inviteEmail, { label: 'INV6-SUCCESSOR' });
-      (await ctx.client.as(successor).post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+      (await ctx.client.as(successor).post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } }))
         .status(409).body().has('$.error', 'Invite has already been accepted by another account.');
     });
   },
@@ -812,7 +812,7 @@ flow(
       'POST /v1/accounts/:accountId/members',
       'GET /v1/accounts/:accountId/invites',
       'POST /v1/accounts/:accountId/invites/:inviteId/resend',
-      'POST /v1/account-invites/:inviteId/accept',
+      'POST /v1/invites/:inviteId/accept',
     ],
   },
   async (ctx) => {
@@ -836,7 +836,7 @@ flow(
     });
     const addressee = await ctx.fixtures.userWithEmail(email, { label: 'INV9-ADDRESSEE' });
     await ctx.step('accepting the expired invite → 410; the owner no longer lists it as pending', async () => {
-      (await ctx.client.as(addressee).post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+      (await ctx.client.as(addressee).post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } }))
         .status(410).body().has('$.error', 'This invite has expired. Ask the owner to send a new one.');
       if (await listed()) throw new Error('an expired invite is still listed');
     });
@@ -847,7 +847,7 @@ flow(
       if (!(await listed())) throw new Error('a renewed invite is not listed');
     });
     await ctx.step('the renewed invite accepts → 200 {already_accepted:false}', async () => {
-      (await ctx.client.as(addressee).post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+      (await ctx.client.as(addressee).post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } }))
         .status(200).body().has('$.account_id', team.id).has('$.already_accepted', false);
     });
   },
@@ -864,9 +864,9 @@ flow(
     domain: 'projects',
     serial: true,
     routes: [
-      'POST /v1/projects/:projectId/access/invite',
-      'GET /v1/account-invites',
-      'POST /v1/account-invites/:inviteId/accept',
+      'POST /v1/workspaces/:projectId/access/invite',
+      'GET /v1/invites',
+      'POST /v1/invites/:inviteId/accept',
     ],
   },
   async (ctx) => {
@@ -878,7 +878,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access/invite',
+          '/v1/workspaces/:projectId/access/invite',
           { email: inviteEmail, role: 'member' },
           { params: { projectId: p.id } },
         );
@@ -889,7 +889,7 @@ flow(
     const addressee = await ctx.fixtures.userWithEmail(inviteEmail, { label: 'INV8-ADDRESSEE' });
 
     await ctx.step('the invitee lists the invite with its workspace and project', async () => {
-      const r = await ctx.client.as(addressee).get('/v1/account-invites');
+      const r = await ctx.client.as(addressee).get('/v1/invites');
       r.status(200);
       const mine = (r.json<any>().invites as any[]).find((invite) => invite.invite_id === inviteId);
       const actual = mine
@@ -917,7 +917,7 @@ flow(
       });
     });
     await ctx.step('another user never sees an invite addressed to someone else', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/account-invites');
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/invites');
       r.status(200);
       const ids = (r.json<any>().invites as any[]).map((invite) => invite.invite_id);
       assert({
@@ -929,13 +929,13 @@ flow(
       });
     });
     await ctx.step('ANON cannot list invites → 401', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/account-invites');
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/invites');
       r.status(401);
     });
     await ctx.step('joining grants the project and removes the invite from the list', async () => {
       const accept = await ctx.client
         .as(addressee)
-        .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        .post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } });
       accept.status(200).body().has('$.account_id', team.id);
       const granted = JSON.stringify(accept.json<any>().bootstrap_grants_applied);
       const expectedGrant = JSON.stringify([{ project_id: p.id, role: 'member' }]);
@@ -946,7 +946,7 @@ flow(
         actual: granted,
         pass: granted === expectedGrant,
       });
-      const r = await ctx.client.as(addressee).get('/v1/account-invites');
+      const r = await ctx.client.as(addressee).get('/v1/invites');
       r.status(200);
       const ids = (r.json<any>().invites as any[]).map((invite) => invite.invite_id);
       assert({
@@ -972,9 +972,9 @@ flow(
     serial: true,
     routes: [
       'POST /v1/accounts/:accountId/members',
-      'POST /v1/account-invites/:inviteId/accept',
-      'POST /v1/account-invites/:inviteId/decline',
-      'GET /v1/account-invites/:inviteId',
+      'POST /v1/invites/:inviteId/accept',
+      'POST /v1/invites/:inviteId/decline',
+      'GET /v1/invites/:inviteId',
     ],
   },
   async (ctx) => {
@@ -999,7 +999,7 @@ flow(
     await ctx.step('accept invite A as the addressee → 200 {already_accepted:false}', async () => {
       const ar = await ctx.client
         .as(addresseeA)
-        .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId: inviteA } });
+        .post('/v1/invites/:inviteId/accept', {}, { params: { inviteId: inviteA } });
       ar.status(200).body().has('$.already_accepted', false);
     });
     await ctx.step('decline the already-accepted invite → 409', async () => {
@@ -1007,7 +1007,7 @@ flow(
       // (declining would silently strip a membership the user already has).
       const r = await ctx.client
         .as(addresseeA)
-        .post('/v1/account-invites/:inviteId/decline', {}, { params: { inviteId: inviteA } });
+        .post('/v1/invites/:inviteId/decline', {}, { params: { inviteId: inviteA } });
       r.status(409);
     });
 
@@ -1030,20 +1030,20 @@ flow(
     await ctx.step('decline the pending invite as the addressee → 200 {ok:true}', async () => {
       const r = await ctx.client
         .as(addresseeB)
-        .post('/v1/account-invites/:inviteId/decline', {}, { params: { inviteId: inviteB } });
+        .post('/v1/invites/:inviteId/decline', {}, { params: { inviteId: inviteB } });
       r.status(200).body().has('$.ok', true);
     });
     await ctx.step('describe the declined (deleted) invite → 404', async () => {
       const r = await ctx.client
         .as(addresseeB)
-        .get('/v1/account-invites/:inviteId', { params: { inviteId: inviteB } });
+        .get('/v1/invites/:inviteId', { params: { inviteId: inviteB } });
       r.status(404);
     });
     await ctx.step('accept the declined (deleted) invite → 404 (not 200/410)', async () => {
       // The row is gone, so there's nothing to accept OR to 410-expire — 404.
       const r = await ctx.client
         .as(addresseeB)
-        .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId: inviteB } });
+        .post('/v1/invites/:inviteId/accept', {}, { params: { inviteId: inviteB } });
       r.status(404);
     });
     await ctx.step(
@@ -1051,7 +1051,7 @@ flow(
       async () => {
         const r = await ctx.client
           .as(addresseeB)
-          .post('/v1/account-invites/:inviteId/decline', {}, { params: { inviteId: inviteB } });
+          .post('/v1/invites/:inviteId/decline', {}, { params: { inviteId: inviteB } });
         r.status(404);
       },
     );
@@ -1064,7 +1064,7 @@ flow(
 // manage gate (non-member → 404, project not loadable) are enforced.
 flow(
   'PACC-2',
-  { domain: 'projects', routes: ['POST /v1/projects/:projectId/access/invite'] },
+  { domain: 'projects', routes: ['POST /v1/workspaces/:projectId/access/invite'] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const p = await team.project();
@@ -1073,7 +1073,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access/invite',
+          '/v1/workspaces/:projectId/access/invite',
           { email, role: 'manager' },
           { params: { projectId: p.id } },
         );
@@ -1086,7 +1086,7 @@ flow(
     const member = await team.addMember('member');
     await ctx.step('invite an existing user → immediate access and an added-to-project email', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/access/invite',
+        '/v1/workspaces/:projectId/access/invite',
         { email: member.email, role: 'member' },
         { params: { projectId: p.id } },
       );
@@ -1101,7 +1101,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access/invite',
+          '/v1/workspaces/:projectId/access/invite',
           { role: 'manager' },
           { params: { projectId: p.id } },
         );
@@ -1111,21 +1111,21 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/access/invite',
+          '/v1/workspaces/:projectId/access/invite',
           { email: 'nope@example.com', role: 'superboss' },
           { params: { projectId: p.id } },
         );
       r.status(400);
     });
-    await ctx.step('NONMEMBER cannot invite → 403 (not a member of the account)', async () => {
+    await ctx.step('NONMEMBER cannot invite → 404 workspace_not_found (not a member of the workspace)', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
-          '/v1/projects/:projectId/access/invite',
+          '/v1/workspaces/:projectId/access/invite',
           { email: 'stranger@example.com', role: 'user' },
           { params: { projectId: p.id } },
         );
-      r.status(403);
+      r.status(404).body().has('$.code', 'workspace_not_found');
     });
   },
 );

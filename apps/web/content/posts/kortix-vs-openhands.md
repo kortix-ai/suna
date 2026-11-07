@@ -57,7 +57,7 @@ We treat the company as the codebase. An agent is `agents/<name>.md` plus its `a
 - **Permissions cover people and agents.** Per-resource permissions for people and agents. Roles, groups, and an audit trail.
 - **Scheduled work takes the same road.** A trigger is a cron schedule or a signed webhook, and the session it starts lands through the same change request as a person's.
 
-Price works the other way round. We bill the machine, not the headcount. Free is $0 with 500 credits per month and 1 project, on your own provider keys or ChatGPT subscription. The paid plan is credits: tiers from $50 a month, and the account shares one credit pool ([pricing](https://kortix.com/pricing), checked October 2026). The models we manage, open-weight DeepSeek and GLM, run on the Credits plan or Enterprise, with zero data retention ([models](https://kortix.com/docs/project/models), checked October 2026).
+Price works the other way round. We bill the machine, not the headcount. Free is $0 with 500 credits per month on your first workspace, on your own provider keys or ChatGPT subscription. The paid plan is credits: tiers from $50 a month, and the account shares one credit pool ([pricing](https://kortix.com/pricing), checked October 2026). The models we manage, open-weight DeepSeek and GLM, run on the Credits plan or Enterprise, with zero data retention ([models](https://kortix.com/docs/project/models), checked October 2026).
 
 ## Where OpenHands is the better answer
 

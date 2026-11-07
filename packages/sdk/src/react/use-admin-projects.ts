@@ -11,7 +11,11 @@ import { backendApi } from '../core/http/api-client';
  * the end rather than the front.
  */
 
-/** One row of the admin projects list. */
+/**
+ * One row of the admin projects list.
+ *
+ * @deprecated Use `AdminWorkspace`. Kept permanently.
+ */
 export interface AdminProject {
   projectId: string;
   name: string;
@@ -29,6 +33,10 @@ export interface AdminProject {
   lastSessionAt: string | null;
 }
 
+/** The workspace name of {@link AdminProject}: the same type. */
+export type AdminWorkspace = AdminProject;
+
+/** @deprecated Use `AdminWorkspacesResponse`. Kept permanently. */
 export interface AdminProjectsResponse {
   projects: AdminProject[];
   total: number;
@@ -37,10 +45,25 @@ export interface AdminProjectsResponse {
   error?: string;
 }
 
-/** `activity` sorts on `lastSessionAt`, nulls last in both directions. */
+/** The workspace name of {@link AdminProjectsResponse}: the same type. */
+export type AdminWorkspacesResponse = AdminProjectsResponse;
+
+/**
+ * `activity` sorts on `lastSessionAt`, nulls last in both directions.
+ *
+ * @deprecated Use `AdminWorkspacesSortBy`. Kept permanently.
+ */
 export type AdminProjectsSortBy = 'activity' | 'created' | 'sessions';
+
+/** The workspace name of {@link AdminProjectsSortBy}: the same type. */
+export type AdminWorkspacesSortBy = AdminProjectsSortBy;
+/** @deprecated Use `AdminWorkspacesSortDir`. Kept permanently. */
 export type AdminProjectsSortDir = 'asc' | 'desc';
 
+/** The workspace name of {@link AdminProjectsSortDir}: the same type. */
+export type AdminWorkspacesSortDir = AdminProjectsSortDir;
+
+/** @deprecated Use `AdminWorkspacesFilters`. Kept permanently. */
 export interface AdminProjectsFilters {
   /** Matches project name, account name, or any account member's email. */
   search?: string;
@@ -54,7 +77,10 @@ export interface AdminProjectsFilters {
   limit?: number;
 }
 
-export function useAdminProjects(filters: AdminProjectsFilters = {}) {
+/** The workspace name of {@link AdminProjectsFilters}: the same type. */
+export type AdminWorkspacesFilters = AdminProjectsFilters;
+
+export function useAdminWorkspaces(filters: AdminProjectsFilters = {}) {
   const {
     search = '',
     accountId = '',
@@ -86,3 +112,6 @@ export function useAdminProjects(filters: AdminProjectsFilters = {}) {
     placeholderData: (prev) => prev,
   });
 }
+
+/** @deprecated Use `useAdminWorkspaces`. Kept permanently. */
+export const useAdminProjects = useAdminWorkspaces;

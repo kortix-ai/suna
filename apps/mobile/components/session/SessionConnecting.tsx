@@ -475,7 +475,7 @@ function ConnectErrorState({
       ) : null}
       <View className="flex-row gap-2">
         <Button variant="secondary" onPress={onCancel} className="flex-1 rounded-full">
-          <Text>Back to project</Text>
+          <Text>Back to workspace</Text>
         </Button>
         {onRestart ? (
           <Button variant="default" onPress={onRestart} disabled={restarting} className="flex-1 rounded-full">

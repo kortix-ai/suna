@@ -36,6 +36,7 @@ import { readJsonObject } from '../../shared/http-body';
 import { logger } from '../../lib/logger';
 import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { workspaceIdParam } from '../../shared/route-params';
 
 /**
  * Derive the ONE sandbox status every surface renders — sidebar alert, Customize
@@ -251,12 +252,12 @@ export function registerSandboxesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sandboxes',
+      path: '/{workspaceId}/sandboxes',
       tags: ['sandboxes'],
       summary: 'List project sandboxes',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -264,7 +265,7 @@ export function registerSandboxesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -289,12 +290,12 @@ export function registerSandboxesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/snapshots',
+      path: '/{workspaceId}/snapshots',
       tags: ['sandboxes'],
       summary: 'List project sandbox snapshots',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
         },
       responses: {
           200: json(z.array(SnapshotSchema), 'Snapshots'),
@@ -302,7 +303,7 @@ export function registerSandboxesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -351,12 +352,12 @@ export function registerSandboxesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sandbox-health',
+      path: '/{workspaceId}/sandbox-health',
       tags: ['sandboxes'],
       summary: 'Get project sandbox health',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -364,7 +365,7 @@ export function registerSandboxesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -393,12 +394,12 @@ export function registerSandboxesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/snapshots/rebuild',
+      path: '/{workspaceId}/snapshots/rebuild',
       tags: ['sandboxes'],
       summary: 'Rebuild the project sandbox snapshot',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: AnyObject } } },
         },
       responses: {
@@ -407,7 +408,7 @@ export function registerSandboxesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
@@ -494,12 +495,12 @@ export function registerSandboxesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/snapshots/fix-with-agent',
+      path: '/{workspaceId}/snapshots/fix-with-agent',
       tags: ['sandboxes'],
       summary: 'Ask an agent to fix a failing snapshot build',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
         },
       responses: {
           201: json(z.any(), 'OK'),
@@ -507,7 +508,7 @@ export function registerSandboxesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on

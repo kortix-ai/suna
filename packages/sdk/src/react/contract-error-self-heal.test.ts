@@ -41,7 +41,7 @@ import { type FreshnessTier, contract } from './query-contracts';
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
 // useProjectName reads the bare project row since #11651; useProjectConfig still
 // reads the git-backed detail entry (qk.project.detail) these tests are about.
-const { useProjectConfig } = await import('./use-project-config');
+const { useWorkspaceConfig } = await import('./use-project-config');
 
 // A test that times out never reaches its own `finally { jest.useRealTimers() }`.
 // Restore real timers here too, so one stuck test cannot freeze every later
@@ -104,7 +104,7 @@ test('a failed detail read self-heals on the mounted page', async () => {
 
   let config: object | undefined;
   function Probe() {
-    config = useProjectConfig('p1');
+    config = useWorkspaceConfig('p1');
     return null;
   }
   let root: ReturnType<typeof create> | undefined;
@@ -168,7 +168,7 @@ test('a final 404 stands down: the self-heal interval never refires on the mount
   jest.useFakeTimers();
 
   function Probe() {
-    useProjectConfig('p1');
+    useWorkspaceConfig('p1');
     return null;
   }
   let root: ReturnType<typeof create> | undefined;
@@ -215,7 +215,7 @@ test('a final 404 does not refetch when a new observer mounts the settled entry'
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   function Probe() {
-    useProjectConfig('p1');
+    useWorkspaceConfig('p1');
     return null;
   }
   let root: ReturnType<typeof create> | undefined;
@@ -255,7 +255,7 @@ test('the self-heal interval stands down after the first success', async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   jest.useFakeTimers();
   function Probe() {
-    useProjectConfig('p1');
+    useWorkspaceConfig('p1');
     return null;
   }
   let root: ReturnType<typeof create> | undefined;

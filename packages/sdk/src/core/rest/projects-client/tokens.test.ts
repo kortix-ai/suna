@@ -17,6 +17,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   approveCliDevice,
+  createAccountToken,
   listAccountTokens,
   listOAuthGrants,
   listSignedInDevices,
@@ -145,14 +146,14 @@ test('listSignedInDevices() reads the caller’s own browser sign-ins', async ()
   };
   nextResponse = { status: 200, body: { devices: [device] } };
   expect(await listSignedInDevices()).toEqual([device]);
-  expect(last().url).toBe('http://test.local/accounts/me/devices');
+  expect(last().url).toBe('http://test.local/me/devices');
   expect(last().method).toBe('GET');
 });
 
 test('signOutDevice(id) ends that one sign-in', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await signOutDevice('00000000-0000-4000-8000-000000000002');
-  expect(last().url).toBe('http://test.local/accounts/me/devices/00000000-0000-4000-8000-000000000002');
+  expect(last().url).toBe('http://test.local/me/devices/00000000-0000-4000-8000-000000000002');
   expect(last().method).toBe('DELETE');
 });
 
@@ -166,7 +167,25 @@ test('approveCliDevice(code) approves that device login', async () => {
   expect(JSON.parse(String(last().body))).toEqual({ user_code: 'abcd-ef01-2345-6789', approve: true });
 });
 
+test('approveCliDevice(code, { accountId }) binds the CLI key to that workspace', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  const accountId = '00000000-0000-4000-8000-0000000000aa';
+  expect(await approveCliDevice('abcd-ef01-2345-6789', { accountId })).toEqual({ ok: true });
+  expect(JSON.parse(String(last().body))).toEqual({
+    user_code: 'abcd-ef01-2345-6789',
+    approve: true,
+    account_id: accountId,
+  });
+});
+
 test('approveCliDevice rejects with the API sentence on an expired code', async () => {
   nextResponse = { status: 404, body: { error: 'Login code expired or already used.' } };
   await expect(approveCliDevice('abcd-ef01-2345-6789')).rejects.toThrow('Login code expired or already used.');
+});
+
+test('createAccountToken({ renews: true }) asks for a renewing expiry (the CLI browser login)', async () => {
+  nextResponse = { status: 201, body: { token_id: 't1', secret_key: 'kortix_pat_x', expiry_renews: true } };
+  const minted = await createAccountToken({ name: 'CLI · laptop', renews: true });
+  expect(minted.expiry_renews).toBe(true);
+  expect(calls[0]?.body).toBe(JSON.stringify({ name: 'CLI · laptop', renews: true }));
 });

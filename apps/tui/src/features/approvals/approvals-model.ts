@@ -293,8 +293,8 @@ export function detailLines(item: ReviewItem, width: number, now: number): Detai
         if (action.canResolve === false) {
           push(
             action.resolvers === 'managers'
-              ? 'Only a project manager can decide this call.'
-              : 'Only a project manager or the session launcher can decide this call.',
+              ? 'Only a person who manages this workspace can decide this call.'
+              : 'Only a person who manages this workspace or the session launcher can decide this call.',
             'danger',
           );
         }
@@ -393,5 +393,5 @@ export function detailLines(item: ReviewItem, width: number, now: number): Detai
 
 /** The item in the web Review Center. `/review` redirects and keeps `?id`. */
 export function webReviewUrl(webBaseUrl: string, projectId: string, id: string): string {
-  return `${webBaseUrl.replace(/\/+$/, '')}/projects/${projectId}/review?id=${encodeURIComponent(id)}`;
+  return `${webBaseUrl.replace(/\/+$/, '')}/workspaces/${projectId}/review?id=${encodeURIComponent(id)}`;
 }

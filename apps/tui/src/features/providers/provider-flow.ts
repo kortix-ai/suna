@@ -226,12 +226,12 @@ export function useProviderKeys({
     // ── View ──
     if (is(key, 'providers.toggle')) {
       if (row.status === 'none' || !data.canWrite || (isDefault && enabled)) {
-        if (isDefault && enabled) onToast('Choose a project default from another provider before disabling this provider.', 'error');
+        if (isDefault && enabled) onToast('Choose a workspace default from another provider before disabling this provider.', 'error');
         return;
       }
       void data
         .setProviderEnabled(entry.id, !enabled)
-        .then(() => onToast(`${entry.label} ${enabled ? 'turned off' : 'turned on'} for this project`))
+        .then(() => onToast(`${entry.label} ${enabled ? 'turned off' : 'turned on'} for this workspace`))
         .catch((error: unknown) => onToast(errorText(error, 'Could not update provider access.'), 'error'));
       return;
     }

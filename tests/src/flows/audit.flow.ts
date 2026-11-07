@@ -501,7 +501,7 @@ flow(
   'AUD-FILTER',
   {
     domain: 'audit',
-    routes: ['GET /v1/accounts/:accountId/audit', 'GET /v1/projects/:projectId'],
+    routes: ['GET /v1/accounts/:accountId/audit', 'GET /v1/workspaces/:projectId'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team({ enterprise: true });
@@ -510,7 +510,7 @@ flow(
     const correlationId = ctx.fixtures.name('audit-reconstruction');
 
     await ctx.step('a spoofed client header changes nothing: the row records the credential', async () => {
-      const action = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId', {
+      const action = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId', {
         params: { projectId: project.id },
         headers: {
           'x-correlation-id': correlationId,
@@ -689,11 +689,12 @@ flow(
   {
     domain: 'audit',
     routes: [
+      'GET /v1/workspaces/:projectId/audit/events',
       'GET /v1/projects/:projectId/audit',
       'POST /v1/accounts/:accountId/audit/reconcile',
       'GET /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries',
       'POST /v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay',
-      'POST /v1/projects/:projectId/sessions/:sessionId/audit/events',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/audit/events',
       'POST /v1/accounts/:accountId/audit/webhooks',
       'DELETE /v1/accounts/:accountId/audit/webhooks/:webhookId',
     ],
@@ -711,6 +712,15 @@ flow(
         query: { limit: '10' },
       });
       r.status(200).body().exists('$.events').has('$.next_cursor', null);
+    });
+
+    await ctx.step('the canonical name GET /v1/workspaces/:id/audit/events → 200, the same page shape; an account id → 404 workspace_not_found', async () => {
+      const canonical = await owner.get('/v1/workspaces/:projectId/audit/events', { params: { projectId: project.id }, query: { limit: '10' } });
+      canonical.status(200).body().exists('$.events').has('$.next_cursor', null);
+      if (team.id !== project.id) {
+        (await owner.get('/v1/workspaces/:projectId/audit/events', { params: { projectId: team.id }, query: { limit: '10' } }))
+          .status(404).body().has('$.code', 'workspace_not_found');
+      }
     });
 
     await ctx.step('create a webhook scoped to reconciliation events', async () => {
@@ -764,7 +774,7 @@ flow(
 
     await ctx.step('human auth cannot ingest sandbox OpenCode events → 403', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/audit/events',
+        '/v1/workspaces/:projectId/sessions/:sessionId/audit/events',
         { events: [] },
         {
           params: {

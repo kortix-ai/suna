@@ -2,8 +2,8 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   type ApprovalLinkDetails,
-  requestProjectConnector,
-  requestProjectSecret,
+  requestWorkspaceConnector,
+  requestWorkspaceSecret,
 } from './setup-links';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -39,8 +39,8 @@ test('requestProjectSecret posts names/labels/descriptions/scope to secret-reque
       expires_at: '2026-01-01',
     },
   };
-  const result = await requestProjectSecret('P1', { names: ['STRIPE_KEY'], scope: 'runtime' });
-  expect(last().url).toContain('/projects/P1/secret-requests');
+  const result = await requestWorkspaceSecret('P1', { names: ['STRIPE_KEY'], scope: 'runtime' });
+  expect(last().url).toContain('/workspaces/P1/secret-requests');
   expect(last().method).toBe('POST');
   expect(last().body).toMatchObject({ names: ['STRIPE_KEY'], scope: 'runtime' });
   expect(result.url).toContain('/secret-intake/');
@@ -48,7 +48,7 @@ test('requestProjectSecret posts names/labels/descriptions/scope to secret-reque
 
 test('requestProjectSecret throws on failure', async () => {
   nextResponse = { status: 400, body: { message: 'names is required' } };
-  await expect(requestProjectSecret('P1', { names: [] })).rejects.toThrow();
+  await expect(requestWorkspaceSecret('P1', { names: [] })).rejects.toThrow();
 });
 
 test('requestProjectConnector posts slug to connect-requests', async () => {
@@ -62,8 +62,8 @@ test('requestProjectConnector posts slug to connect-requests', async () => {
       expires_at: '2026-01-01',
     },
   };
-  const result = await requestProjectConnector('P1', { slug: 'github' });
-  expect(last().url).toContain('/projects/P1/connect-requests');
+  const result = await requestWorkspaceConnector('P1', { slug: 'github' });
+  expect(last().url).toContain('/workspaces/P1/connect-requests');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ slug: 'github', expires_in_minutes: undefined });
   expect(result.slug).toBe('github');
@@ -110,14 +110,14 @@ test('requestProjectConnector mints a shared-account link when the owner is the 
   };
   // The public /connect/<token> page shows which account it creates, so the
   // minting side has to be able to say. Unset still means the human's own.
-  await requestProjectConnector('P1', { slug: 'github', owner: 'project' });
+  await requestWorkspaceConnector('P1', { slug: 'github', owner: 'project' });
   expect(last().body).toEqual({
     slug: 'github',
     owner: 'project',
     expires_in_minutes: undefined,
   });
 
-  await requestProjectConnector('P1', { slug: 'github' });
+  await requestWorkspaceConnector('P1', { slug: 'github' });
   expect(last().body).toEqual({ slug: 'github', expires_in_minutes: undefined });
   expect(Object.keys(last().body as Record<string, unknown>)).not.toContain('owner');
 });
@@ -134,11 +134,11 @@ test('requestProjectConnector sends the name suggested for the new account, only
       expires_at: '2026-01-01',
     },
   };
-  const link = await requestProjectConnector('P1', { slug: 'gmail', label: "Dad's Gmail" });
+  const link = await requestWorkspaceConnector('P1', { slug: 'gmail', label: "Dad's Gmail" });
   expect(last().body).toEqual({ slug: 'gmail', label: "Dad's Gmail", expires_in_minutes: undefined });
   const label: string | null | undefined = link.label;
   expect(label).toBe("Dad's Gmail");
 
-  await requestProjectConnector('P1', { slug: 'gmail' });
+  await requestWorkspaceConnector('P1', { slug: 'gmail' });
   expect(Object.keys(last().body as Record<string, unknown>)).not.toContain('label');
 });

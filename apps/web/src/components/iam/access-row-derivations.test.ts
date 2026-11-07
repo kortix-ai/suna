@@ -29,7 +29,7 @@ describe('accessVia', () => {
   test('an owner/admin row says the access comes from the account role', () => {
     expect(
       accessVia(member({ effective_project_role: 'manager', effective_source: 'implicit' })),
-    ).toBe('via account admin');
+    ).toBe('Admin');
   });
 
   test('a single group source names the group', () => {

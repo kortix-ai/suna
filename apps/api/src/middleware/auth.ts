@@ -1,3 +1,4 @@
+import { asLegacyWorkspaceRoute } from '@kortix/shared/workspace-routes';
 import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { validateSecretKey } from '../repositories/api-keys';
@@ -173,7 +174,7 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     await applyOAuthAccessTokenPrincipal(c, token);
     return next();
   }
-  if (isKortixToken(token) && sandboxTokenPathAllowed(c.req.path)) return resolveSandboxToken(c, next, token);
+  if (isKortixToken(token) && sandboxTokenPathAllowed(asLegacyWorkspaceRoute(c.req.path))) return resolveSandboxToken(c, next, token);
   return resolveJwt(c, next, token);
 }
 

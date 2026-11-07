@@ -1,11 +1,12 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { chatThreads, projectSessions, projects } from '@kortix/db';
+import { chatThreads, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 import { authorize } from '../../iam';
 import { actorForUser } from '../../iam/actor';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { canAccessSandboxSession } from '../../shared/preview-ownership';
 import { type ChatUser, isAccountMember, lookupChatIdentity } from './identity';
+import { projectsView } from '../../workspaces/rows';
 
 export interface ChatSessionListing {
   projectId: string;
@@ -39,19 +40,19 @@ export async function listVisibleChatSessions(
       projectId: chatThreads.projectId,
       sessionId: chatThreads.sessionId,
       lastMessageAt: chatThreads.lastMessageAt,
-      accountId: projects.accountId,
-      projectName: projects.name,
-      repoUrl: projects.repoUrl,
+      accountId: projectsView.accountId,
+      projectName: projectsView.name,
+      repoUrl: projectsView.repoUrl,
       title: sql<string | null>`${projectSessions.metadata}->>'name'`,
       status: projectSessions.status,
     })
     .from(chatThreads)
-    .innerJoin(projects, eq(projects.projectId, chatThreads.projectId))
+    .innerJoin(projectsView, eq(projectsView.projectId, chatThreads.projectId))
     .innerJoin(projectSessions, eq(projectSessions.sessionId, chatThreads.sessionId))
     .where(
       and(
         eq(chatThreads.platform, user.platform),
-        eq(chatThreads.workspaceId, user.workspaceId),
+        eq(chatThreads.platformTeamId, user.workspaceId),
         opts.projectId ? eq(chatThreads.projectId, opts.projectId) : undefined,
         sql`${projectSessions.metadata}->>'deletedAt' IS NULL`,
       ),

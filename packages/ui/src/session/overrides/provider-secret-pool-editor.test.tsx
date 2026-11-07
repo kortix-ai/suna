@@ -46,7 +46,7 @@ const key = (id: string) => ({ secret_id: id, provider_id: 'anthropic', consumer
 
 test('an empty configured pool remains recoverable after every resource is deleted', () => {
   const html = render();
-  expect(html).toContain('Reset to project default');
+  expect(html).toContain('Reset to workspace default');
   expect(html).toContain('This provider is disabled for this session.');
 });
 
@@ -59,7 +59,7 @@ test('failed pool reads show recovery instead of an editable default', () => {
 
 test('pre-create selection retains a provider whose grant disappeared', () => {
   const html = render({ selection: { anthropic: ['removed'] } });
-  expect(html).toContain('Reset to project default');
+  expect(html).toContain('Reset to workspace default');
   expect(html).toContain('1 selected key is unavailable');
 });
 
@@ -76,13 +76,13 @@ test('read-only viewers can switch providers while selection controls stay locke
   expect(select).toBeDefined();
   expect(select).not.toContain('disabled=');
   expect(html).toMatch(/role="checkbox"[^>]*disabled/);
-  expect(html).toContain('Only the session owner or a project manager');
-  expect(html).not.toContain('Reset to project default');
+  expect(html).toContain('Only the session owner or a workspace manager');
+  expect(html).not.toContain('Reset to workspace default');
 });
 
 test('saving prevents navigation away from the pending selection', () => {
   const html = render({ resources: [key('Primary')], saving: true });
-  expect(html).not.toContain('href="/projects/project/admin/models"');
+  expect(html).not.toContain('href="/workspaces/project/admin/models"');
   expect(html).toMatch(/<button[^>]*disabled[^>]*>Manage provider keys<\/button>/);
 });
 
@@ -110,7 +110,7 @@ describe('a session offers only keys it can use when it runs', () => {
     const html = render({ resources: [team, mine], session: { visibility: 'project', created_by: 'me' } });
     expect(html).toContain('Team key');
     expect(html).not.toContain('My key');
-    expect(html).toContain('This session is shared with the project, so only keys shared with the whole project work here.');
+    expect(html).toContain('This session is shared with the workspace, so only keys shared with the whole workspace work here.');
   });
 
   test('a private session offers its creator`s own keys too, without the note', () => {
@@ -151,7 +151,7 @@ describe('a session offers only keys it can use when it runs', () => {
   test('a shared session never promises the person`s own ChatGPT connection', () => {
     const chatgpt = { ...team, provider_id: 'codex', label: 'Team ChatGPT' };
     const shared = render({ resources: [chatgpt], session: { visibility: 'project', created_by: 'me' }, providerId: 'codex' });
-    expect(shared).toContain('Using the project default');
+    expect(shared).toContain('Using the workspace default');
     expect(shared).not.toContain('Using your default ChatGPT connection');
     const own = render({ resources: [chatgpt], session: { visibility: 'private', created_by: 'me' }, providerId: 'codex' });
     expect(own).toContain('Using your default ChatGPT connection');

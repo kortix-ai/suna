@@ -140,9 +140,9 @@ export const AttachmentUploadResponseSchema = z
   .openapi('ConnectorAttachmentUpload');
 
 // Path-param schema shared by all admin routes.
-export const ProjectParam = z.object({ projectId: z.string() });
-export const ProjectSlugParam = z.object({ projectId: z.string(), slug: z.string() });
-export const ProjectSlugPolicySetParam = z.object({ projectId: z.string(), slug: z.string(), name: z.string() });
+export const ProjectParam = z.object({ workspaceId: z.string() });
+export const ProjectSlugParam = z.object({ workspaceId: z.string(), slug: z.string() });
+export const ProjectSlugPolicySetParam = z.object({ workspaceId: z.string(), slug: z.string(), name: z.string() });
 /** `?policy_set=<name>` on the connector policy routes: one set's rules. */
 export const PolicySetQuery = z.object({ policy_set: z.string().optional() });
 export const ConnectorSecretBindingInputSchema = z.object({

@@ -16,7 +16,6 @@
  * `count / batch` ticks.
  */
 import { GOAL_LIMITS } from '@kortix/api-contract';
-import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
@@ -26,6 +25,7 @@ import { notifyGoal } from './notify';
 import { isOpenState, utcDay } from './rules';
 import { applyHeartbeat, dropHeartbeat, finishGoalSetup, heartbeatWanted, moveHeartbeat } from './service';
 import { appendGoalEvent, dbNow, forgetGoalPrompts, goalsToReconcile, pendingGoalPrompts, writeGoal, type GoalRow } from './store';
+import { projectsView } from '../../workspaces/rows';
 
 export const GOAL_RECONCILE_BATCH = 50;
 const SETUP_GRACE_MS = 30_000;
@@ -42,7 +42,7 @@ export interface GoalReconcileResult {
 }
 
 async function loadProject(projectId: string): Promise<ProjectRow | null> {
-  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   return row ?? null;
 }
 

@@ -51,7 +51,7 @@ export interface AreaDef {
  *  adds without an entry here renders with a humanized key and no hint, so a
  *  new permission is never invisible. */
 const AREA_COPY: Record<string, { label: string; hint?: string; note?: string }> = {
-  project: { label: 'Project', hint: 'The project itself — open it, rename it, delete it.' },
+  project: { label: 'Workspace', hint: 'The project itself — open it, rename it, delete it.' },
   sessions: { label: 'Sessions', hint: 'Read transcripts, start and stop runs.' },
   files: { label: 'Files', hint: 'The project workspace tree.' },
   customize: {
@@ -72,7 +72,7 @@ const AREA_COPY: Record<string, { label: string; hint?: string; note?: string }>
   groups: { label: 'Groups', hint: 'Groups and who belongs to them.' },
   roles: { label: 'Roles', hint: 'Custom roles and the assignments that hand them out.' },
   tokens: { label: 'API keys', hint: 'Service-account API keys and personal access keys.' },
-  projects: { label: 'Projects', hint: 'Creating a brand-new project in this account.' },
+  projects: { label: 'Workspaces', hint: 'Creating a brand-new project in this account.' },
   billing: { label: 'Billing', hint: 'Plan, invoices and payment method.' },
   audit: { label: 'Audit', hint: 'The account audit log.' },
   credentials: { label: 'Credentials', hint: 'Minting long-lived project tokens.' },

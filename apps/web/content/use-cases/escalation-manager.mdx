@@ -62,14 +62,14 @@ issue. It never closes a ticket, and it never tells the customer anything.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the escalation-routing skill and the
 15-minute trigger, and opens a change request for you to review.
 Prefer clicks? Choose **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a support escalation agent in this project.
+  code={`Set up a support escalation agent in this workspace.
 
 1. Create the agent agents/escalation-manager.md. Its job is to find open Plain tickets that need to jump the line, route them to the right team, and alert the escalation channel. It may use the Linear connector, the Slack channel, and the PLAIN_API_KEY secret.
 
@@ -91,7 +91,7 @@ Prefer clicks? Choose **Use this template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect Linear, then add your Plain API
+Open **Connectors** in your workspace and connect Linear, then add your Plain API
 key as the `PLAIN_API_KEY` secret and connect Slack under **Channels**.
 Credentials are brokered server-side and never enter the agent's machine.
 
@@ -130,7 +130,7 @@ you let the schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every 15 minutes, each run in a new session on its own cloud computer.
-To change the time, edit the cron line, or open **Triggers** in the project.
+To change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

@@ -28,6 +28,20 @@ describe('startDestination', () => {
     expect(startDestination({ kind: 'empty' }, true)).toEqual({ kind: 'new' });
   });
 
+  // Workspaces D3: sign-up creates no account. With 0 accounts there is no
+  // plan to offer, so the create-or-join screen opens at once.
+  test('no account at all: /new (create or join), never the upgrade screen', () => {
+    expect(startDestination({ kind: 'empty' }, false, [], new Set(), 0)).toEqual({ kind: 'new' });
+    expect(startDestination({ kind: 'empty' }, true, [], new Set(), 0)).toEqual({ kind: 'new' });
+  });
+
+  test('no account but a pending invite: the invite first', () => {
+    expect(startDestination({ kind: 'empty' }, false, [{ invite_id: 'inv-9' }], new Set(), 0)).toEqual({
+      kind: 'invite',
+      inviteId: 'inv-9',
+    });
+  });
+
   // KRTX-1731: a project invite stays pending until it is accepted (the
   // account list claims only workspace invites), so the door opens it first —
   // web `decideDoor` shows the selector for a pending invite.

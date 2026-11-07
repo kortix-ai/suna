@@ -39,6 +39,7 @@ const REVIEWERS = crypto.randomUUID();
 const TODAY = new Date('2026-10-09T15:30:00.000Z');
 
 let project: SeededProject;
+let sibling: SeededProject | undefined;
 const pushed: string[] = [];
 const send = (input: Parameters<typeof deliver>[0]) =>
   deliver(
@@ -57,6 +58,10 @@ const send = (input: Parameters<typeof deliver>[0]) =>
 
 beforeAll(async () => {
   project = await seedProject('notify-share');
+  // A legacy account (2 projects, split_pending): only there does an account
+  // member without a project role stay out of the project. In a 1:1
+  // workspace membership is access (design.md §3.2 C3).
+  sibling = await seedProject('notify-share-sibling', { accountId: project.account_id });
   const user = (id: string, name: string | null) =>
     sql`(${id}::uuid, ${`share-${id.slice(0, 8)}@example.test`}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', ${JSON.stringify(name ? { name } : {})}::jsonb)`;
   await db.execute(sql`
@@ -86,7 +91,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!project) return;
   await db.delete(accountGroups).where(eq(accountGroups.groupId, REVIEWERS));
-  await removeSeeded([project]);
+  await removeSeeded(sibling ? [sibling, project] : [project]);
   await db.execute(sql`DELETE FROM auth.users WHERE id IN (${sql.join(users.map((id) => sql`${id}::uuid`), sql`, `)})`);
 });
 

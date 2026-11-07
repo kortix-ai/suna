@@ -56,22 +56,22 @@ function startServer(): string {
     fetch: async (req) => {
       const url = new URL(req.url);
       hits.push({ method: req.method, path: url.pathname, query: url.search });
-      if (url.pathname === `/v1/projects/${PROJECT}/agents/bot/scope` && req.method === 'PUT') {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/agents/bot/scope` && req.method === 'PUT') {
         scopePuts += 1;
         if (scopePuts === 1) {
           return Response.json({ error: 'File "kortix.yaml" changed since it was read' }, { status: 409 });
         }
         return Response.json({ ok: true, agent: 'bot', env: 'all', connectors: [], connectors_required: [] });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/agents/bot/config` && req.method === 'GET') {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/agents/bot/config` && req.method === 'GET') {
         return Response.json({ agent: 'bot', schema_version: 2, editable: true, block: { secrets: 'all', connectors: [] } });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/features` && req.method === 'PATCH') {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/features` && req.method === 'PATCH') {
         // A CAS-looking 409 on a NON-manifest route is replayed too (same
         // message = same server contract), but a different 409 is not.
         return Response.json({ error: 'enabled must be a boolean or null' }, { status: 409 });
       }
-      if (url.pathname === '/v1/projects' && req.method === 'GET') {
+      if (url.pathname === '/v1/workspaces' && req.method === 'GET') {
         const acct = url.searchParams.get('account_id');
         return Response.json([
           { project_id: `p_${acct}`, account_id: acct, name: `Project of ${acct}`, repo_url: '', default_branch: 'main', manifest_path: 'kortix.yaml', status: 'active', last_opened_at: null, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' },
@@ -154,7 +154,7 @@ describe('kortix projects ls honors --host / --account', () => {
     const r2 = await runCli(['projects', 'ls', '--host', 'other-host', '--account', 'acct_x', '--json'], config);
     expect(r2.code).toBe(0);
     expect(JSON.parse(r2.stdout)[0].project_id).toBe('p_acct_x');
-    expect(hits.filter((h) => h.path === '/v1/projects').map((h) => h.query)).toEqual(['?account_id=acct_other', '?account_id=acct_x']);
+    expect(hits.filter((h) => h.path === '/v1/workspaces').map((h) => h.query)).toEqual(['?account_id=acct_other', '?account_id=acct_x']);
   });
 
   test('--host that is not logged in exits 1 with a login hint', async () => {

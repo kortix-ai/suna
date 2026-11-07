@@ -57,7 +57,7 @@ describe('attemptKeyFor', () => {
 });
 
 /**
- * Fix round 1, finding 2: before `/new` exposed a clickable `retry` control
+ * Fix round 1, finding 2: before `/workspaces/new` exposed a clickable `retry` control
  * (Task 14, `new-workspace-page.tsx`), a storage-unavailable browser minting
  * a fresh key per `attemptKeyFor` call was low-frequency — at most once per
  * manual form resubmit. With a retry BUTTON, a user can click it repeatedly;

@@ -4,7 +4,7 @@
  * one line per item, the link or path under it, and the key that reaches it:
  *
  *   ▣ Q3 churn report                                    Doc
- *     https://kortix.com/projects/…/artifacts/…
+ *     https://kortix.com/workspaces/…/artifacts/…
  *     Alt+O open · reference · copy
  *
  * Items come from `shownItems` (the SDK's `showGroupItems`), so the card,

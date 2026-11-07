@@ -42,7 +42,7 @@ export function directSubsessions(session: SessionTree): ProjectRuntimeSession[]
  * root pin first, then any conversation of a row (a child runs in its
  * parent's sandbox). Null for null or an unknown id.
  */
-export function projectSessionForRuntimeId<S extends SessionTree & Pick<ProjectSession, 'session_id'>>(
+export function workspaceSessionForRuntimeId<S extends SessionTree & Pick<ProjectSession, 'session_id'>>(
   sessions: readonly S[],
   runtimeId: string | null,
 ): S | null {
@@ -54,3 +54,6 @@ export function projectSessionForRuntimeId<S extends SessionTree & Pick<ProjectS
   if (direct) return direct;
   return sessions.find((session) => runtimeSessionsOf(session).some((item) => item.id === runtimeId)) ?? null;
 }
+
+/** @deprecated Use `workspaceSessionForRuntimeId`. Kept permanently. */
+export const projectSessionForRuntimeId = workspaceSessionForRuntimeId;

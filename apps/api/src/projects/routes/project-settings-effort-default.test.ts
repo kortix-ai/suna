@@ -6,7 +6,7 @@
  * injected at delivery when the prompt carries no variant), so the route:
  *   - writes ONLY its own key through the SQL-side atomic merge
  *     (`metadataMerge`) — the same concurrent-writer guarantee every other
- *     `projects.metadata` writer relies on (see `../lib/metadata-merge.ts`);
+ *     `projects.metadata` writer relies on (see the metadata merge helpers in `workspaces/rows.ts`);
  *   - accepts only effort labels the catalog actually publishes;
  *   - never lets a session-bound principal flip it (the sandbox-provider-pin
  *     guard: the agent that wants a different effort has the per-session
@@ -115,7 +115,7 @@ function metadataQuery(): { sql: string; params: unknown[] } {
   expect(setCalls).toHaveLength(1);
   const value = setCalls[0]?.metadata;
   // A plain object here would mean the handler went back to read-modify-write
-  // on the jsonb, which is exactly what metadata-merge.ts exists to prevent.
+  // on the jsonb, which is exactly what the metadata merge helpers exist to prevent.
   expect(typeof (value as SQL)?.getSQL).toBe('function');
   return dialect.sqlToQuery(value as SQL);
 }

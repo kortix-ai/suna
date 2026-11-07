@@ -51,14 +51,14 @@ for (const key of [
 let search = '';
 mock.module('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(search),
-  usePathname: () => '/projects/p/review',
+  usePathname: () => '/workspaces/p/review',
   useRouter: () => ({ push() {}, replace() {}, prefetch() {} }),
 }));
 const realUiProvider = { ...(await import('@kortix/ui/providers/ui-provider')) };
 mock.module('@kortix/ui/providers/ui-provider', () => ({
   ...realUiProvider,
   useUiSearchParams: () => new URLSearchParams(search),
-  useUiPathname: () => '/projects/p/review',
+  useUiPathname: () => '/workspaces/p/review',
   useUiRouter: () => ({ push() {}, replace() {}, prefetch() {}, back() {} }),
 }));
 
@@ -326,7 +326,7 @@ describe('the review page of one item', () => {
     expect(buttons().some((b) => /^Approve( and \w+)?$/.test(b))).toBe(false);
     expect(buttons()).not.toContain('Deny');
     expect(text()).toContain(
-      'Waiting for the person who started this session or anyone who manages this project to approve or deny it.',
+      'Waiting for the person who started this session or anyone who manages this workspace to approve or deny it.',
     );
     expect(text()).not.toContain('Approved');
     // The dialog's screen-reader title and description say the same: no
@@ -352,7 +352,7 @@ describe('the review page of one item', () => {
     action.canResolve = false;
     action.resolvers = 'managers';
     mount([waiting], MEMBER);
-    expect(text()).toContain('Waiting for anyone who manages this project to approve or deny it.');
+    expect(text()).toContain('Waiting for anyone who manages this workspace to approve or deny it.');
     expect(text()).not.toContain('the person who started this session');
   });
 

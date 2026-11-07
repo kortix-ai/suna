@@ -53,7 +53,7 @@ export const CHANNELS = {
   email: {
     label: 'Email',
     envelope: 'Email',
-    catalog: { domain: 'email.kortix', description: 'Give the project an inbox: people email the agent and it replies.' },
+    catalog: { domain: 'email.kortix', description: 'Give the workspace an inbox: people email the agent and it replies.' },
   },
   telegram: {
     label: 'Telegram',

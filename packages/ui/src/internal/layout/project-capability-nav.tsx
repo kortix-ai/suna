@@ -49,7 +49,7 @@ export function sortCustomizeAgents<T extends Pick<Agent, 'name'> & { hidden?: b
 /** Whether the pathname is a Project admin (Settings) page. The locale prefix
  *  the host may not strip is tolerated. */
 export function isProjectAdminPath(pathname: string | null | undefined): boolean {
-  return !!pathname && /\/projects\/[^/]+\/admin(?:[/?#]|$)/.test(pathname);
+  return !!pathname && /\/(?:workspaces|projects)\/[^/]+\/admin(?:[/?#]|$)/.test(pathname);
 }
 
 /** A row's glyph in a 20px box (literal px, as the sidebar's agent marks), so
@@ -69,8 +69,8 @@ function RowGlyph({ children }: { children: ReactNode }) {
 /**
  * What Customize opens to, kept short on purpose: most configuration happens
  * by asking an agent in a session, so the sidebar lists only the agents you
- * pinned (none pinned: the first five) and All agents when more exist, then Review (with its "needs you" count), Models, and Settings
- * (Project admin, whose top bar holds every library and Members).
+ * pinned (none pinned: the first five) and All agents when more exist, then Review (with its "needs you" count), Models, and
+ * Workspace settings (the one Settings panel, whose rail holds every library and People).
  * The header's + (New agent) button sits on the Customize row itself.
  */
 export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
@@ -85,6 +85,7 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
   const tTabs = useI18nTranslations('agentEditor.tabs');
+  const tSettings = useI18nTranslations('workspaces.settings');
   const pinned = usePinnedAgents(projectId);
 
   if (!access.settled) return null;
@@ -179,7 +180,7 @@ export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
               <RowGlyph>
                 <GearSixIcon className="size-3.5" />
               </RowGlyph>
-              <span className="truncate">{tTabs('settings')}</span>
+              <span className="truncate">{tSettings('title')}</span>
             </Link>
           </SidebarMenuSubButton>
         </SidebarMenuSubItem>

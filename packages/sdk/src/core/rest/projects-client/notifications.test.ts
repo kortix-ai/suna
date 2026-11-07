@@ -164,7 +164,7 @@ const ROW: InboxNotification = {
   session_id: 'S1',
   trigger_slug: null,
   actor_user_id: null,
-  url: '/projects/P1/sessions/S1?notification=0192a000-0000-7000-8000-000000000001',
+  url: '/workspaces/P1/sessions/S1?notification=0192a000-0000-7000-8000-000000000001',
   read: false,
   created_at: '2026-10-09T10:00:00.000Z',
 };

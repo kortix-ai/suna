@@ -1,5 +1,5 @@
 /**
- * `/new?account=<accountId>` — which account the form creates the workspace in.
+ * `/workspaces/new?account=<accountId>` — which account the form creates the workspace in.
  *
  * Exists for one flow: the user just created an ACCOUNT. A brand-new account
  * owns no workspace, so the honest next step is this page — but the page's own
@@ -8,7 +8,7 @@
  * account and landing here would preselect the wrong account and quietly create
  * the first workspace somewhere else.
  *
- * The landing door (`/projects/start`) cannot serve this flow: it opens the
+ * The landing door (`/workspaces/start`) cannot serve this flow: it opens the
  * remembered project in ANY account (`decideDoor`), so an
  * empty new account always falls through to a different account's project —
  * and `start/page.tsx` then heals the persisted selection to THAT account,
@@ -30,7 +30,7 @@ export function readAccountParam(params: URLSearchParams): string | null {
   return raw && isValidProjectId(raw) ? raw : null;
 }
 
-/** `/new` scoped to one account — the destination after creating an account. */
+/** `/workspaces/new` scoped to one account — the destination after creating an account. */
 export function newWorkspacePathForAccount(accountId: string): string {
-  return `/new?account=${encodeURIComponent(accountId)}`;
+  return `/workspaces/new?account=${encodeURIComponent(accountId)}`;
 }

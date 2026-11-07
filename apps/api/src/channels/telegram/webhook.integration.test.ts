@@ -98,7 +98,7 @@ const CASES: Case[] = [
       message: 'Validation failed',
       status: 400,
       // zod 4's issue; its `pattern` is the library's UUID regex, so only the stable fields are pinned.
-      issues: [expect.objectContaining({ code: 'invalid_format', format: 'uuid', message: 'Invalid UUID', path: ['projectId'] })],
+      issues: [expect.objectContaining({ code: 'invalid_format', format: 'uuid', message: 'Invalid UUID', path: ['workspaceId'] })],
       issue_count: 1,
     },
     stored: [],
@@ -322,8 +322,8 @@ const errorLog = spyOn(logger, 'error');
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'telegram-webhook-parity' });
   await db.insert(projects).values([
-    { projectId: LIVE, accountId: ACCOUNT, name: 'telegram-webhook-live', repoUrl: 'file:///nonexistent/live.git' },
-    { projectId: TOMBSTONE, accountId: ACCOUNT, name: 'telegram-webhook-tombstone', repoUrl: 'file:///nonexistent/tombstone.git' },
+    { splitPending: true, projectId: LIVE, accountId: ACCOUNT, name: 'telegram-webhook-live', repoUrl: 'file:///nonexistent/live.git' },
+    { splitPending: true, projectId: TOMBSTONE, accountId: ACCOUNT, name: 'telegram-webhook-tombstone', repoUrl: 'file:///nonexistent/tombstone.git' },
   ]);
   await saveTelegramInstall({ projectId: LIVE, botId: BOT, username: 'parity_bot', token: `${BOT}:${'A'.repeat(35)}`, webhookSecret: SECRET });
   await saveTelegramInstall({

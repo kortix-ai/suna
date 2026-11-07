@@ -90,6 +90,9 @@ mock.module('@kortix/ui/select', () => ({
   SelectValue: Passthrough,
 }));
 
+// Radix Tooltip (the workspace id row's copy hint) needs a browser DOM too.
+mock.module('@kortix/ui/hint', () => ({ default: Passthrough, Hint: Passthrough }));
+
 const { GeneralTab } = await import('@kortix/ui/customize/settings/tabs/general-tab');
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -146,7 +149,7 @@ beforeEach(() => {
     fetch: async (url, init = {}) => {
       const method = init.method ?? 'GET';
       const path = String(url).split('?')[0];
-      if (method === 'PATCH' && path.endsWith('/v1/projects/proj-1')) {
+      if (method === 'PATCH' && path.endsWith('/v1/workspaces/proj-1')) {
         await networkTick();
         const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
         const status = failNextPatch ? 500 : 200;
@@ -163,7 +166,7 @@ beforeEach(() => {
           headers: { 'content-type': 'application/json' },
         });
       }
-      if (method === 'GET' && path.endsWith('/v1/projects/proj-1')) {
+      if (method === 'GET' && path.endsWith('/v1/workspaces/proj-1')) {
         return new Response(JSON.stringify(staleReads ? savedProject : stored), {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -230,7 +233,7 @@ describe('GeneralTab workspace rename autosave: one attempt per edit', () => {
 
     expect(patches()).toEqual([
       {
-        url: 'http://api.test/v1/projects/proj-1',
+        url: 'http://api.test/v1/workspaces/proj-1',
         method: 'PATCH',
         body: { name: 'Renamed' },
         status: 200,
@@ -276,13 +279,13 @@ describe('GeneralTab workspace rename autosave: one attempt per edit', () => {
 
     expect(patches()).toEqual([
       {
-        url: 'http://api.test/v1/projects/proj-1',
+        url: 'http://api.test/v1/workspaces/proj-1',
         method: 'PATCH',
         body: { name: 'Renamed' },
         status: 500,
       },
       {
-        url: 'http://api.test/v1/projects/proj-1',
+        url: 'http://api.test/v1/workspaces/proj-1',
         method: 'PATCH',
         body: { name: 'Renamed Two' },
         status: 200,
