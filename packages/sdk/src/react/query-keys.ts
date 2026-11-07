@@ -230,6 +230,13 @@ export const qk = {
      *  same key refetches a fresh answer. */
     quota: (accountId?: string) =>
       [...qk.projects.scope(), 'quota', accountId ?? 'default'] as const,
+
+    /** `listWorkspaces()` — every workspace of the user, one request. Keyed by
+     *  user like `accounts.list`, and under `scope()` so a create, a rename or
+     *  a delete (which invalidate that prefix) refetches it. The `'workspaces'`
+     *  segment is never an account id, so it collides with no `list(id)`. */
+    workspaces: (userId?: string | null) =>
+      [...qk.projects.scope(), 'workspaces', userId ?? 'anonymous'] as const,
   },
 
   /**
@@ -308,6 +315,13 @@ export const qk = {
      * `executorPolicies` below are kept apart for the identical reason.
      */
     summary: (id: string) => [...qk.project.scope(id), 'summary'] as const,
+    /**
+     * The workspace — `getWorkspace`, a `Workspace` (the project row plus the
+     * caller's role and the workspace settings). Its own entry, not
+     * `summary(id)`: the two responses have different shapes. Under the
+     * project scope, so `invalidateProject` reaches it.
+     */
+    workspace: (id: string) => [...qk.project.scope(id), 'workspace'] as const,
 
     detail: (id: string) => [...qk.project.scope(id), 'detail'] as const,
     /**
@@ -661,7 +675,7 @@ export const qk = {
      * purpose: the record is fixed at the thread's first turn, so no write refreshes it.
      */
     sessionMemoryUsage: (id: string, sessionId: string) => [...qk.project.scope(id), 'memory-usage', sessionId] as const,
-    /** Every artifact read of a project (flag `artifacts`): the prefix of the
+    /** Every artifact read of a project: the prefix of the
      *  keys below, so a publish refreshes the gallery and the open artifact. */
     artifacts: (id: string) => [...qk.project.scope(id), 'artifacts'] as const,
     /** `listArtifacts` — the gallery, per scope/type/search. */
@@ -670,10 +684,6 @@ export const qk = {
     artifact: (id: string, artifactId: string, version: string = 'current') => [...qk.project.artifacts(id), 'one', artifactId, version] as const,
     /** `listArtifactVersions`. */
     artifactVersions: (id: string, artifactId: string) => [...qk.project.artifacts(id), 'versions', artifactId] as const,
-    artifactComments: (id: string, artifactId: string, status?: string, version?: string) => [...qk.project.artifacts(id), 'comments', artifactId, ...(status ? [status] : []), ...(version ? [{ version }] : [])] as const,
-    artifactCommentContext: (id: string, artifactId: string, options: { version?: string; agent?: string } = {}) => [...qk.project.artifactComments(id, artifactId), 'context', JSON.stringify(options)] as const,
-    artifactActivity: (id: string, artifactId: string, options?: { limit?: number; cursor?: string }) => [...qk.project.artifacts(id), 'activity', artifactId, ...(options ? [JSON.stringify(options)] : [])] as const,
-    artifactActivityInfinite: (id: string, artifactId: string, limit: number) => [...qk.project.artifactActivity(id, artifactId), 'infinite', limit] as const,
     /** `readArtifactFile` of a doc's Markdown at one entry version. Immutable,
      *  so outside the `artifacts` prefix: a write never refetches it. */
     artifactText: (id: string, artifactId: string, entryVersion: string) => [...qk.project.scope(id), 'artifact-text', artifactId, entryVersion] as const,
@@ -763,5 +773,12 @@ export const qk = {
   },
 } as const;
 
+/** @deprecated Use `WorkspaceScopeKey`. Kept permanently. */
 export type ProjectScopeKey = ReturnType<typeof qk.project.scope>;
+
+/** The workspace name of {@link ProjectScopeKey}: the same type. */
+export type WorkspaceScopeKey = ProjectScopeKey;
+/**
+ * @deprecated The query key of `useProjects`; use `useWorkspaces`. Kept permanently.
+ */
 export type ProjectsListKey = ReturnType<typeof qk.projects.list>;

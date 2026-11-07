@@ -65,14 +65,14 @@ It never changes a deal's stage, reassigns its owner, or edits its amount.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the pipeline-hygiene-rules skill and the daily
 trigger, and opens a change request for you to review. Prefer clicks? Choose
 **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a daily pipeline-hygiene agent in this project.
+  code={`Set up a daily pipeline-hygiene agent in this workspace.
 
 1. Create the agent agents/pipeline-hygiene.md. Its job is to find open HubSpot deals that need attention and nudge their owners. It may use the HubSpot and Slack connectors.
 
@@ -94,7 +94,7 @@ trigger, and opens a change request for you to review. Prefer clicks? Choose
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect your CRM and Slack. Credentials
+Open **Connectors** in your workspace and connect your CRM and Slack. Credentials
 are brokered server-side and never enter the agent's machine.
 
 <ToolList>
@@ -129,7 +129,7 @@ schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every day at 06:00, each run in a new session on its own cloud computer.
-To change the time, edit the cron line, or open **Triggers** in the project.
+To change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

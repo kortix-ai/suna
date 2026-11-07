@@ -6,6 +6,7 @@ slug: "/cloudflare-os-open-source-ownership"
 canonical: "https://kortix.com/blog/cloudflare-os-open-source-ownership"
 author: "team"
 tags: ["Comparisons"]
+updated: "2026-11-06"
 ---
 Cloudflare OS is an open-source agent workspace for every person in a company; Kortix is the open-source CompanyOS that a company runs from a git repo it owns. You can fork the Cloudflare core repository, change it, and deploy it. Cloudflare says any organization can connect it to internal systems and make it their own. A company weighing it should ask one more question: whose account the finished system runs in, and how much of the company's own context stays there.
 
@@ -29,24 +30,26 @@ It also decides where you can take the product. Cloudflare's README points out t
 
 ## Your company's setup lives in a repo you can clone
 
-A Kortix project is a git repository. `kortix.yaml` at its root is the operating setup itself: which agents exist, what each may reach, which connectors and secrets they get, and what runs on a clock.
+A Kortix workspace is backed by a git repository. `kortix.yaml` at its root is the operating setup itself: which agents exist, what each may reach, which connectors and secrets they get, and what runs on a clock.
 
 ```yaml
-kortix_version: 2
-runtime: opencode
-default_agent: kortix
-
 project:
   name: acme
 
+default_agent: worker
+
 agents:
-  kortix:
-    connectors: all
-    secrets: all
-    skills: all
+  worker:
+    prompt_file: agents/worker.md
+    tools: "*"
+    connectors: "*"
+    secrets: "*"
+    skills: "*"
 
   memory-reflector:
-    kortix_cli: [project.cr.open]
+    prompt_file: agents/memory-reflector.md
+    tools: "*"
+    kortix_permissions: [project.gitops.push]
 
 triggers:
   - slug: memory-reflector

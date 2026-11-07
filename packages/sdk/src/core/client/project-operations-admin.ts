@@ -5,14 +5,14 @@ import type { DropFirst } from './binding-types';
 export function bindProjectOperationsAdmin(projectId: string) {
   return {
     policies: {
-      list: () => P.listProjectPolicies(projectId),
-      set: (...a: DropFirst<Parameters<typeof P.setProjectPolicies>>) =>
-        P.setProjectPolicies(projectId, ...a),
+      list: () => P.listWorkspacePolicies(projectId),
+      set: (...a: DropFirst<Parameters<typeof P.setWorkspacePolicies>>) =>
+        P.setWorkspacePolicies(projectId, ...a),
     },
 
     /** Reminders on every session the caller can open — see `listProjectReminders`. */
     reminders: {
-      list: () => P.listProjectReminders(projectId),
+      list: () => P.listWorkspaceReminders(projectId),
       /** Pause or resume a selection — see `updateSessionReminders`. */
       updateMany: (...a: DropFirst<Parameters<typeof P.updateSessionReminders>>) =>
         P.updateSessionReminders(projectId, ...a),
@@ -40,7 +40,7 @@ export function bindProjectOperationsAdmin(projectId: string) {
       people: (...a: DropFirst<Parameters<typeof P.listRoomPeople>>) => P.listRoomPeople(projectId, ...a),
     },
     triggers: {
-      list: () => P.listProjectTriggers(projectId),
+      list: () => P.listWorkspaceTriggers(projectId),
       /** kortix.yaml and runtime triggers (loops included) in one list — see `listUnifiedTriggers`. */
       all: () => P.listUnifiedTriggers(projectId),
       /** A runtime trigger: no kortix.yaml commit — see `createRuntimeTrigger`. */
@@ -48,17 +48,17 @@ export function bindProjectOperationsAdmin(projectId: string) {
       updateRuntime: (...a: DropFirst<Parameters<typeof P.updateRuntimeTrigger>>) => P.updateRuntimeTrigger(projectId, ...a),
       runRuntime: (...a: DropFirst<Parameters<typeof P.runRuntimeTrigger>>) => P.runRuntimeTrigger(projectId, ...a),
       removeRuntime: (...a: DropFirst<Parameters<typeof P.deleteRuntimeTrigger>>) => P.deleteRuntimeTrigger(projectId, ...a),
-      eventApps: () => P.listProjectTriggerEventApps(projectId),
-      eventTypes: (...a: DropFirst<Parameters<typeof P.listProjectTriggerEventTypes>>) =>
-        P.listProjectTriggerEventTypes(projectId, ...a),
-      create: (...a: DropFirst<Parameters<typeof P.createProjectTrigger>>) =>
-        P.createProjectTrigger(projectId, ...a),
-      update: (...a: DropFirst<Parameters<typeof P.updateProjectTrigger>>) =>
-        P.updateProjectTrigger(projectId, ...a),
-      remove: (...a: DropFirst<Parameters<typeof P.deleteProjectTrigger>>) =>
-        P.deleteProjectTrigger(projectId, ...a),
+      eventApps: () => P.listWorkspaceTriggerEventApps(projectId),
+      eventTypes: (...a: DropFirst<Parameters<typeof P.listWorkspaceTriggerEventTypes>>) =>
+        P.listWorkspaceTriggerEventTypes(projectId, ...a),
+      create: (...a: DropFirst<Parameters<typeof P.createWorkspaceTrigger>>) =>
+        P.createWorkspaceTrigger(projectId, ...a),
+      update: (...a: DropFirst<Parameters<typeof P.updateWorkspaceTrigger>>) =>
+        P.updateWorkspaceTrigger(projectId, ...a),
+      remove: (...a: DropFirst<Parameters<typeof P.deleteWorkspaceTrigger>>) =>
+        P.deleteWorkspaceTrigger(projectId, ...a),
       fire: ((slug: string, options?: P.FireProjectTriggerOptions) =>
-        P.fireProjectTrigger(projectId, slug, options)) as {
+        P.fireWorkspaceTrigger(projectId, slug, options)) as {
         (slug: string, options: P.FireProjectTriggerOptions & { dryRun: true }): Promise<P.ProjectTriggerDryRunResult>;
         (
           slug: string,
@@ -72,12 +72,12 @@ export function bindProjectOperationsAdmin(projectId: string) {
       /** One trigger's runs, newest first — see `listTriggerRuns`. */
       runs: (...a: DropFirst<Parameters<typeof P.listTriggerRuns>>) => P.listTriggerRuns(projectId, ...a),
       /** Every run of the project — see `listProjectTriggerRuns`. */
-      projectRuns: (...a: DropFirst<Parameters<typeof P.listProjectTriggerRuns>>) =>
-        P.listProjectTriggerRuns(projectId, ...a),
+      projectRuns: (...a: DropFirst<Parameters<typeof P.listWorkspaceTriggerRuns>>) =>
+        P.listWorkspaceTriggerRuns(projectId, ...a),
       /** Fire again with a past run's payload — see `replayTriggerRun`. */
       replay: (...a: DropFirst<Parameters<typeof P.replayTriggerRun>>) => P.replayTriggerRun(projectId, ...a),
-      setActivation: (...a: DropFirst<Parameters<typeof P.setProjectTriggersActivation>>) =>
-        P.setProjectTriggersActivation(projectId, ...a),
+      setActivation: (...a: DropFirst<Parameters<typeof P.setWorkspaceTriggersActivation>>) =>
+        P.setWorkspaceTriggersActivation(projectId, ...a),
     },
 
     ...bindProjectOperationsWorkspace(projectId),

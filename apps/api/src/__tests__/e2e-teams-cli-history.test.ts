@@ -101,7 +101,8 @@ beforeEach(() => {
       if (req.headers.get('authorization') !== `Bearer ${TOKEN}`) {
         return Response.json({ error: 'unauthorized' }, { status: 401 });
       }
-      if (url.pathname === `/v1/connectors/projects/${PROJECT}/call`) {
+      // The CLI calls the canonical name; the legacy name stays served for old CLIs.
+      if (url.pathname === `/v1/connectors/workspaces/${PROJECT}/call` || url.pathname === `/v1/connectors/projects/${PROJECT}/call`) {
         const body = (await req.json()) as { connector: string; action: string; args?: Record<string, unknown> };
         calls.push({ action: body.action, args: body.args ?? {} });
         return Response.json({ ok: true, data: graphFor(body.action), risk: 'read' });

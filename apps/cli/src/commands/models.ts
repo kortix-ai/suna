@@ -62,15 +62,15 @@ interface ModelPicker {
 
 const HELP = help`Usage: kortix models <subcommand> [options]
 
-Which models this project offers, and which one it starts with. Same surface as
-the dashboard's Project admin → Models.
+Which models this workspace offers, and which one it starts with. Same surface as
+the dashboard's Workspace admin → Models.
 
 The list is yours: Kortix models, plus models you reach through a provider API
 key or a ChatGPT subscription — your own, one shared with you, or one shared
-with the whole project. \`kortix sessions new --model <id>\` runs such a model on
+with the whole workspace. \`kortix sessions new --model <id>\` runs such a model on
 every key you may use for it, and they rotate.
 
-A project stores only its EXCEPTIONS to the catalog default (the newest model of
+A workspace stores only its EXCEPTIONS to the catalog default (the newest model of
 each family). \`enable\`/\`disable\` merge into that stored map; \`reset\` empties it.
 Enablement is display-only — it decides what pickers OFFER, never what the
 gateway serves.
@@ -80,14 +80,14 @@ Subcommands:
                                   availability, state, origin, how it is
                                   paid for (VIA), provider.
   enable <model-id>...            Offer these models.
-  disable <model-id>...           Stop offering them. The project default
+  disable <model-id>...           Stop offering them. The workspace default
                                   refuses with 409 — change the default first.
   reset                           Drop every exception; back to catalog default.
-  default [--json]                Print the default chain (project → account →
+  default [--json]                Print the default chain (workspace → account →
                                   platform) and what it resolves to.
-  default <model-id> [--account]  Set the project default (or the account-wide
+  default <model-id> [--account]  Set the workspace default (or the account-wide
                                   one with --account).
-  default --clear [--account]     Clear the project (or account) default.
+  default --clear [--account]     Clear the workspace (or account) default.
 
 Model ids are gateway wire ids — a bare managed id (\`deepseek-v4.1-flash\`) or a BYOK
 \`provider/model\`. Copy one from \`kortix models ls --json\`.
@@ -95,10 +95,10 @@ Model ids are gateway wire ids — a bare managed id (\`deepseek-v4.1-flash\`) o
 Per-agent pins live on \`kortix agents model <agent> <model-id>\`.
 
 Options:
-  --account          default: act on the ACCOUNT scope, not this project.
+  --account          default: act on the ACCOUNT scope, not this workspace.
   --clear            default: remove the pin instead of setting one.
   --json             Machine-readable output (ls, default).
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>   Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 
@@ -120,7 +120,7 @@ export async function runModels(argv: string[]): Promise<number> {
     json = takeFlagBool(rest, ['--json']);
     account = takeFlagBool(rest, ['--account']);
     clear = takeFlagBool(rest, ['--clear', '--unset']);
-    projectFlag = takeFlagValue(rest, ['--project']);
+    projectFlag = takeFlagValue(rest, ['--project', '--workspace']);
     hostFlag = takeFlagValue(rest, ['--host']);
   } catch (err) {
     return fail((err as Error).message);
@@ -129,7 +129,7 @@ export async function runModels(argv: string[]): Promise<number> {
 
   const ctx = await resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}`;
+  const base = `/workspaces/${ctx.projectId}`;
 
   try {
     switch (sub) {
@@ -198,7 +198,7 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
     );
   }
   if (unavailable.length > 0) {
-    process.stdout.write(`\n  ${C.dim}Unavailable catalog ids (not served by this project):${C.reset}\n`);
+    process.stdout.write(`\n  ${C.dim}Unavailable catalog ids (not served by this workspace):${C.reset}\n`);
     for (const [id, model] of unavailable.sort(([a], [b]) => a.localeCompare(b))) {
       process.stdout.write(`  ${pad(id, idW)}   ${model.availability}\n`);
     }
@@ -211,7 +211,7 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
   process.stdout.write(
     `\n  ${C.dim}${enabledCount}/${rows.length} offered · ` +
       `${exceptions === 0 ? 'no exceptions (catalog default)' : `${exceptions} exception${exceptions === 1 ? '' : 's'}`} · ` +
-      `${C.reset}${C.green}●${C.reset}${C.dim} = project default (${picker.defaultModel ?? '—'})${C.reset}\n`,
+      `${C.reset}${C.green}●${C.reset}${C.dim} = workspace default (${picker.defaultModel ?? '—'})${C.reset}\n`,
   );
   if (rows.some(([id, model]) => paidVia(id, model.provider) !== 'Kortix')) {
     process.stdout.write(
@@ -255,11 +255,11 @@ async function modelsToggle(
     // list — the dead end behind KRTX-1538. Answer how to get models instead.
     const hint =
       known.size === 0
-        ? `This project serves no models yet — connect one with ${C.cyan}kortix providers set <provider>${C.reset} ` +
+        ? `This workspace serves no models yet — connect one with ${C.cyan}kortix providers set <provider>${C.reset} ` +
           `or ${C.cyan}kortix providers login <provider>${C.reset}; ${C.cyan}kortix models ls${C.reset} lists what they unlock.`
         : `List the ids with ${C.cyan}kortix models ls${C.reset}.`;
     process.stderr.write(
-      `${status.err(`Not served by this project: ${unknown.join(', ')}`)} ${hint}\n`,
+      `${status.err(`Not served by this workspace: ${unknown.join(', ')}`)} ${hint}\n`,
     );
     return 1;
   }
@@ -290,7 +290,7 @@ async function modelsReset(client: Client, base: string, json: boolean): Promise
     return 0;
   }
   process.stdout.write(
-    `${status.ok('Every exception dropped')} ${C.dim}— the project offers the catalog default again.${C.reset}\n`,
+    `${status.ok('Every exception dropped')} ${C.dim}— the workspace offers the catalog default again.${C.reset}\n`,
   );
   return 0;
 }
@@ -303,6 +303,7 @@ async function modelsDefault(
 ): Promise<number> {
   const path = `${base}/model-defaults`;
   const scope = opts.account ? 'account' : 'project';
+  const scopeLabel = opts.account ? 'account' : 'workspace';
 
   if (opts.clear) {
     const resp = await client.delete<{ ok: boolean }>(`${path}?scope=${scope}`);
@@ -310,7 +311,7 @@ async function modelsDefault(
       emitJson(resp);
       return 0;
     }
-    process.stdout.write(`${status.ok(`Cleared the ${scope} default model`)}\n`);
+    process.stdout.write(`${status.ok(`Cleared the ${scopeLabel} default model`)}\n`);
     return 0;
   }
 
@@ -321,7 +322,7 @@ async function modelsDefault(
       return 0;
     }
     process.stdout.write('\n');
-    row('project', d.projectDefault);
+    row('workspace', d.projectDefault);
     row('account', d.accountDefault);
     row('platform', d.platformDefault);
     process.stdout.write(
@@ -347,7 +348,7 @@ async function modelsDefault(
     return 0;
   }
   process.stdout.write(
-    `${status.ok(`${scope} default → ${C.cyan}${model}${C.reset}`)} ${C.dim}(applies to new sessions)${C.reset}\n`,
+    `${status.ok(`${scopeLabel} default → ${C.cyan}${model}${C.reset}`)} ${C.dim}(applies to new sessions)${C.reset}\n`,
   );
   return 0;
 }

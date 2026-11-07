@@ -267,6 +267,9 @@ Run the install script.
     }
     expect(showsMarketingLink('/services')).toBe(false);
     expect(urls.has(absoluteUrl('/case-studies'))).toBe(true);
+    // The two public pages that are not content records.
+    expect(urls.has(absoluteUrl('/a1o'))).toBe(true);
+    expect(urls.has(absoluteUrl('/changelog/releases'))).toBe(true);
     expect(
       [...urls].every((url) => url.startsWith(CANONICAL_ORIGIN) && !url.includes('www.')),
     ).toBe(true);

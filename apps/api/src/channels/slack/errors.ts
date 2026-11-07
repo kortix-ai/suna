@@ -337,7 +337,7 @@ export function classifyTurnError(
       title: 'Agent unavailable',
       text:
         `:warning: *The agent configured for this channel isn't available* — it may have been deleted, renamed, or disabled.` +
-        ` Run \`/kortix agents\` to pick one of this project's current agents, then mention me again.`,
+        ` Run \`/kortix agents\` to pick one of this Kortix workspace's current agents, then mention me again.`,
       aborted: false,
     };
   }

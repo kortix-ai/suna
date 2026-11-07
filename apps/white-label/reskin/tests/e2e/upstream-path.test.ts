@@ -70,3 +70,26 @@ describe('buildUpstreamPath', () => {
     expect(buildUpstreamPath(['projects', OWN, 'files', '..hidden']).ok).toBe(true);
   });
 });
+
+describe('buildUpstreamPath: canonical workspace names', () => {
+  // The SDK calls the canonical `/v1/workspaces` names. The proxy turns each
+  // into the legacy name it has always judged, and forwards that same string:
+  // the policy and the upstream never see two different routes. The API
+  // serves every legacy name permanently, on old and new deployments.
+  test.each([
+    [['workspaces'], 'projects'],
+    [['workspaces', 'provision'], 'projects/provision'],
+    [['workspaces', OWN, 'sessions', 's1', 'start'], `projects/${OWN}/sessions/s1/start`],
+    [['workspaces', OWN, 'members'], `accounts/${OWN}/members`],
+    [['workspaces', OWN, 'iam', 'groups'], `accounts/${OWN}/iam/groups`],
+    [['me'], 'accounts/me'],
+    [['me', 'devices'], 'accounts/me/devices'],
+    [['invites', 'i1', 'accept'], 'account-invites/i1/accept'],
+    [['connectors', 'workspaces', OWN, 'connectors'], `connectors/projects/${OWN}/connectors`],
+    [['projects', OWN, 'secrets'], `projects/${OWN}/secrets`],
+    [['p', 'ext', '8000', 'v1', 'me'], 'p/ext/8000/v1/me'],
+    [['memberships'], 'memberships'],
+  ])('%j → %s', (segments, path) => {
+    expect(buildUpstreamPath(segments)).toEqual({ ok: true, path });
+  });
+});

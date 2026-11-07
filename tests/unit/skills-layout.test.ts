@@ -1,11 +1,11 @@
 import { lstatSync, readdirSync, readlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT } from '../src/fixtures/repo';
 
 // Every repo skill lives in .agents/skills/<name>/. .claude/skills/<name> is a
 // symlink to it, so Claude Code and every other agent read the same files.
 
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const AGENTS = join(REPO_ROOT, '.agents', 'skills');
 const CLAUDE = join(REPO_ROOT, '.claude', 'skills');
 

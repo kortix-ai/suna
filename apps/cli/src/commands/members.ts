@@ -14,27 +14,25 @@ import { resolveUserId } from '../iam.ts';
 import { confirm } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 
-// `kortix members` — the CLI face of the account member directory:
-// `/accounts/:id/members` + `/accounts/:id/invites`.
+// `kortix members` — the CLI face of the workspace member directory:
+// `/workspaces/:id/members` + `/workspaces/:id/invites`.
 //
-// Membership is TWO facts on the server: the IDENTITY row (who belongs to this
-// account, plus the `is_super_admin` bypass flag) and the account-scope ROLE
-// assignment. Both move together here, which is why `set-role` is a member
-// verb and not a `kortix access grant`.
-//
-// Project-level access is a different surface: `kortix access` binds roles to
-// one project, `kortix groups` binds people to groups. This command only
-// covers the account itself.
+// Joining a workspace is access to it. Every member holds one workspace role
+// on one ladder: owner > admin > manager > member. `set-role` moves it.
+// `kortix groups` binds people to groups; `kortix access` binds roles to one
+// resource.
 
-/** Account roles the API accepts on `PATCH /members/:userId`. */
-const ACCOUNT_ROLES = ['owner', 'admin', 'member'] as const;
-/** Roles `POST /members` accepts. Anything else is silently coerced to
- *  `member` server-side, so the CLI refuses instead of downgrading quietly. */
-const INVITE_ROLES = ['admin', 'member'] as const;
+/** Workspace roles `PATCH /members/:userId` accepts (owner: owners only). */
+const WORKSPACE_ROLES = ['owner', 'admin', 'manager', 'member'] as const;
+/** Roles `POST /members` accepts. The CLI refuses anything else locally. */
+const INVITE_ROLES = ['admin', 'manager', 'member'] as const;
 
 interface MemberRow {
   user_id: string;
   email: string | null;
+  /** The workspace role (APIs after 2026-11-06). */
+  role?: string;
+  /** @deprecated The older name of `role`. */
   account_role: string;
   is_super_admin: boolean;
   explicit_project_count: number;
@@ -60,6 +58,7 @@ interface InviteResult {
   user_id?: string;
   invite_id?: string;
   email: string;
+  role?: string;
   account_role: string;
   project_grants: Array<{ project_id: string; role: string }>;
   expires_at?: string;
@@ -70,16 +69,16 @@ interface InviteResult {
 
 const HELP = help`Usage: kortix members <subcommand> [options]
 
-Who belongs to the account, and at what account role. Roles are owner, admin
-and member; owners and admins hold implicit Manager on every project, so a
-member is the only role that takes per-project grants.
+Who belongs to the workspace, and at what workspace role. The roles are
+owner > admin > manager > member. Joining a workspace is access to it.
 
 Members:
-  ls [--json]                       List members, roles and project counts.
-  invite <email> --role <r>         Invite by email. Adds an existing Kortix
-                                    user immediately; otherwise mails an
-                                    invite link. Needs member.invite.
-  set-role <user|email> --role <r>  Change an account role. Needs member.update
+  ls [--json]                       List members and their workspace roles.
+  invite <email> [--role <r>]       Invite by email (default role: member). Adds
+                                    an existing Kortix user immediately;
+                                    otherwise mails an invite link. Needs
+                                    member.invite.
+  set-role <user|email> --role <r>  Change a workspace role. Needs member.update
                                     (owner-only for the owner role).
   rm <user|email> [-y]              Remove a member and revoke their tokens.
                                     Needs member.remove.
@@ -92,27 +91,42 @@ Pending invitations you sent:
   invites resend <invite-id>        Re-send the email, refresh the 14-day expiry.
 
 Options:
-  --role <r>          Account role. invite: ${INVITE_ROLES.join('|')}.
-                      set-role: ${ACCOUNT_ROLES.join('|')}.
-  --project <id>:<r>  Repeatable. Project access to grant alongside a member
-                      invite: project roles are manager|member (default
-                      member). Applied on accept for a pending invite. Ignored
-                      by the server for an admin invite.
-  --account <id>      Operate on this account (default: the linked project's account, else the active account).
-  --host <name>       Operate against a non-default Kortix host.
-  --json              Machine-readable output (read subcommands).
-  -y, --yes           Skip the confirmation prompt.
-  -h, --help          Show this help.
+  --workspace <id>      The workspace (default: KORTIX_WORKSPACE_ID, then
+                        KORTIX_PROJECT_ID, the linked workspace, the default
+                        workspace). --project is the older name.
+  --role <r>            invite: ${INVITE_ROLES.join('|')}.
+                        set-role: ${WORKSPACE_ROLES.join('|')}.
+  --grant <id>:<r>      Repeatable. Only for a workspace that still holds
+                        several older projects: the project access to grant
+                        with the invite (manager|member, default member).
+  --host <name>         Operate against a non-default Kortix host.
+  --json                Machine-readable output (read subcommands).
+  -y, --yes             Skip the confirmation prompt.
+  -h, --help            Show this help.
 
-A <user> is a user id, or the email of someone already in the account.
+A <user> is a user id, or the email of someone already in the workspace.
 
 Examples:
   kortix members ls
-  kortix members invite alice@corp.com --role member --project 1a2b…:manager
-  kortix members set-role alice@corp.com --role admin
+  kortix members invite alice@corp.com
+  kortix members invite bob@corp.com --role admin --workspace 1a2b…
+  kortix members set-role alice@corp.com --role manager
   kortix members super-admin alice@corp.com on
   kortix members invites ls
 `;
+
+/**
+ * Split the `--workspace` / `--project` values: a value with a role suffix
+ * (`<id>:<role>`) is the older spelling of `--grant`; a bare id selects the
+ * workspace. More than one bare id is an error, never a silent pick.
+ */
+export function splitWorkspaceFlags(values: string[]): { workspace?: string; grants: string[] } | { error: string } {
+  const grants: string[] = [];
+  const workspaces: string[] = [];
+  for (const raw of values) (raw.includes(':') ? grants : workspaces).push(raw);
+  if (workspaces.length > 1) return { error: '--workspace names one workspace; pass it once.' };
+  return { workspace: workspaces[0], grants };
+}
 
 export async function runMembers(argv: string[]): Promise<number> {
   const helpCode = splitHelp(argv, HELP);
@@ -128,7 +142,16 @@ export async function runMembers(argv: string[]): Promise<number> {
     f.account = takeFlagValue(rest, ['--account']);
     f.host = takeFlagValue(rest, ['--host']);
     f.role = takeFlagValue(rest, ['--role']);
-    projectGrantArgs = takeFlagValues(rest, ['--project']);
+    projectGrantArgs = takeFlagValues(rest, ['--grant']);
+    const split = splitWorkspaceFlags(takeFlagValues(rest, ['--workspace', '--project']));
+    if ('error' in split) return fail(split.error);
+    f.workspace = split.workspace;
+    if (split.grants.length > 0) {
+      process.stderr.write(
+        `${status.warn('--workspace <id>:<role> is the older spelling of --grant <id>:<role>.')}\n`,
+      );
+      projectGrantArgs = [...projectGrantArgs, ...split.grants];
+    }
     json = takeFlagBool(rest, ['--json']);
     yes = takeFlagBool(rest, ['-y', '--yes']);
   } catch (err) {
@@ -136,9 +159,9 @@ export async function runMembers(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
+  const ctx = resolveAccountContext({ workspaceArg: f.workspace, accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
-  const base = `/accounts/${encodeURIComponent(ctx.accountId)}`;
+  const base = `/workspaces/${encodeURIComponent(ctx.accountId)}`;
 
   try {
     switch (sub) {
@@ -198,10 +221,11 @@ async function membersLs(
   }
   const label = (m: MemberRow) => m.email ?? m.user_id;
   const emailW = Math.max(...members.map((m) => label(m).length), 5);
-  const roleW = Math.max(...members.map((m) => m.account_role.length), 4);
+  const roleOf = (m: MemberRow) => m.role ?? m.account_role;
+  const roleW = Math.max(...members.map((m) => roleOf(m).length), 4);
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('MEMBER', emailW)}   ${pad('ROLE', roleW)}   ${pad('PROJECTS', 8)}   ${pad('MFA', 3)}   FLAGS${C.reset}\n`,
+    `  ${C.dim}${pad('MEMBER', emailW)}   ${pad('ROLE', roleW)}   ${pad('WORKSPACES', 10)}   ${pad('MFA', 3)}   FLAGS${C.reset}\n`,
   );
   for (const m of members) {
     const flags: string[] = [];
@@ -211,8 +235,8 @@ async function membersLs(
       flags.push(`${C.faded}${m.groups.map((g) => g.name).join(', ')}${C.reset}`);
     }
     process.stdout.write(
-      `  ${pad(label(m), emailW)}   ${pad(m.account_role, roleW)}   ` +
-        `${pad(String(m.explicit_project_count), 8)}   ${pad(m.has_verified_mfa ? 'yes' : 'no', 3)}   ` +
+      `  ${pad(label(m), emailW)}   ${pad(roleOf(m), roleW)}   ` +
+        `${pad(String(m.explicit_project_count), 10)}   ${pad(m.has_verified_mfa ? 'yes' : 'no', 3)}   ` +
         `${flags.join(' · ')}\n`,
     );
   }
@@ -224,15 +248,15 @@ async function membersLs(
 
 // ── members invite ─────────────────────────────────────────────────────────
 
-/** `--project <id>:<role>` → the `project_grants` entry the API expects. */
+/** `--grant <id>:<role>` → the `project_grants` entry the API expects. */
 function parseProjectGrant(raw: string): { project_id: string; role: string } | { error: string } {
   const idx = raw.lastIndexOf(':');
   const projectId = idx < 0 ? raw : raw.slice(0, idx);
   const role = idx < 0 ? 'member' : raw.slice(idx + 1);
-  if (!projectId) return { error: `--project "${raw}" has no project id` };
-  if (!role) return { error: `--project "${raw}" has no role — use <id>:manager or <id>:member` };
+  if (!projectId) return { error: `--grant "${raw}" has no project id` };
+  if (!role) return { error: `--grant "${raw}" has no role — use <id>:manager or <id>:member` };
   if (role !== 'manager' && role !== 'member') {
-    return { error: `--project role must be manager or member (got "${role}")` };
+    return { error: `--grant role must be manager or member (got "${role}")` };
   }
   return { project_id: projectId, role };
 }
@@ -246,7 +270,7 @@ async function membersInvite(
   json: boolean,
 ): Promise<number> {
   if (!email) return missing('an email address');
-  if (!role) return missing(`--role <${INVITE_ROLES.join('|')}>`);
+  role ??= 'member';
   if (!(INVITE_ROLES as readonly string[]).includes(role)) {
     if (role === 'owner') {
       process.stderr.write(
@@ -266,7 +290,7 @@ async function membersInvite(
   }
   if (grants.length > 0 && role !== 'member') {
     process.stdout.write(
-      `${status.warn('--project is ignored for an admin invite — admins already manage every project.')}\n`,
+      `${status.warn(`--grant is ignored for a ${role} invite: that role already reaches the whole workspace.`)}\n`,
     );
   }
 
@@ -281,11 +305,11 @@ async function membersInvite(
   }
   if (result.status === 'added') {
     process.stdout.write(
-      `${status.ok(`Added ${C.bold}${result.email}${C.reset} as ${result.account_role} ${C.faded}(${result.user_id})${C.reset}`)}\n`,
+      `${status.ok(`Added ${C.bold}${result.email}${C.reset} as ${result.role ?? result.account_role} ${C.faded}(${result.user_id})${C.reset}`)}\n`,
     );
   } else {
     process.stdout.write(
-      `${status.ok(`Invited ${C.bold}${result.email}${C.reset} as ${result.account_role}`)}\n`,
+      `${status.ok(`Invited ${C.bold}${result.email}${C.reset} as ${result.role ?? result.account_role}`)}\n`,
     );
     if (result.invite_url) {
       process.stdout.write(`  ${C.dim}link    ${C.reset}${result.invite_url}\n`);
@@ -301,7 +325,7 @@ async function membersInvite(
   }
   for (const g of result.project_grants ?? []) {
     process.stdout.write(
-      `  ${C.dim}project ${C.reset}${g.project_id} ${C.faded}${g.role}${C.reset}\n`,
+      `  ${C.dim}project   ${C.reset}${g.project_id} ${C.faded}${g.role}${C.reset}\n`,
     );
   }
   return 0;
@@ -318,15 +342,16 @@ async function membersSetRole(
   json: boolean,
 ): Promise<number> {
   if (!who) return missing('a user id or email');
-  if (!role) return missing(`--role <${ACCOUNT_ROLES.join('|')}>`);
-  if (!(ACCOUNT_ROLES as readonly string[]).includes(role)) {
-    return fail(`--role must be one of ${ACCOUNT_ROLES.join('|')}.`);
+  if (!role) return missing(`--role <${WORKSPACE_ROLES.join('|')}>`);
+  if (!(WORKSPACE_ROLES as readonly string[]).includes(role)) {
+    return fail(`--role must be one of ${WORKSPACE_ROLES.join('|')}.`);
   }
   const userId = await resolveUserId(client, accountId, who);
   if (!userId) return 1;
 
   const result = await client.patch<{
     user_id: string;
+    role?: string;
     account_role: string;
     unchanged?: boolean;
   }>(`${base}/members/${encodeURIComponent(userId)}`, { role });
@@ -334,10 +359,11 @@ async function membersSetRole(
     emitJson(result);
     return 0;
   }
+  const newRole = result.role ?? result.account_role;
   process.stdout.write(
     result.unchanged
-      ? `${status.info(`${who} is already ${result.account_role}.`)}\n`
-      : `${status.ok(`${C.bold}${who}${C.reset} → ${result.account_role}`)}\n`,
+      ? `${status.info(`${who} is already ${newRole}.`)}\n`
+      : `${status.ok(`${C.bold}${who}${C.reset} → ${newRole}`)}\n`,
   );
   return 0;
 }
@@ -355,7 +381,7 @@ async function membersRm(
 
   if (!yes) {
     const ok = await confirm(
-      `Remove ${C.bold}${who}${C.reset} from this account? Their API keys and live sessions are revoked immediately.`,
+      `Remove ${C.bold}${who}${C.reset} from this workspace? Their API keys and live sessions are revoked immediately.`,
       false,
       { onEndOfInput: false },
     );
@@ -395,7 +421,7 @@ async function membersSuperAdmin(
   );
   if (result.is_super_admin) {
     process.stdout.write(
-      `  ${C.dim}Super-admin bypasses every permission check in this account, and MFA enforcement.${C.reset}\n`,
+      `  ${C.dim}Super-admin bypasses every permission check in this workspace, and MFA enforcement.${C.reset}\n`,
     );
   }
   return 0;

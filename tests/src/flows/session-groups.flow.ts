@@ -12,9 +12,9 @@ import {
   SessionGroupListSchema,
   SessionGroupSchema,
 } from '@kortix/api-contract';
-import { flow } from '../core/flow';
-import type { FlowContext, FlowMeta } from '../core/types';
-import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
+import { flow, flowMeta } from '../core/flow';
+import { fail } from '../core/expect';
+import { insertSession, openWorld } from '../fixtures/agent-principals';
 
 const ROUTES = {
   list: 'GET /v1/projects/:projectId/session-groups',
@@ -28,48 +28,17 @@ const SESSION_ROUTES = {
   list: 'GET /v1/projects/:projectId/sessions',
   read: 'GET /v1/projects/:projectId/sessions/:sessionId',
 };
-const GROUPS = '/v1/projects/:projectId/session-groups';
-const GROUP = '/v1/projects/:projectId/session-groups/:groupId';
-const ORDER = '/v1/projects/:projectId/session-groups/order';
-const ASSIGN = '/v1/projects/:projectId/sessions/:sessionId/group';
-const SESSIONS = '/v1/projects/:projectId/sessions';
-const SESSION = '/v1/projects/:projectId/sessions/:sessionId';
+const GROUPS = '/v1/workspaces/:projectId/session-groups';
+const GROUP = '/v1/workspaces/:projectId/session-groups/:groupId';
+const ORDER = '/v1/workspaces/:projectId/session-groups/order';
+const ASSIGN = '/v1/workspaces/:projectId/sessions/:sessionId/group';
+const SESSIONS = '/v1/workspaces/:projectId/sessions';
+const SESSION = '/v1/workspaces/:projectId/sessions/:sessionId';
 
 type Group = { group_id: string; name: string; position: number };
 type Session = { session_id: string; group_id: string | null; updated_at: string };
 
-function fail(message: string, detail?: unknown): never {
-  throw new Error(detail === undefined ? message : `${message}: ${JSON.stringify(detail)}`);
-}
-
-async function openWorld(ctx: FlowContext) {
-  const team = await ctx.fixtures.team();
-  const project = await team.project({ managedGit: true });
-  const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
-  return { team, project, world };
-}
-
-/** A stopped session row of the project, started by `createdBy`, cleaned up by the world. */
-async function insertSession(
-  world: AgentPrincipalsWorld,
-  projectId: string,
-  createdBy: string,
-  visibility: 'private' | 'project',
-): Promise<string> {
-  const sessionId = randomUUID();
-  world.sessions.push(sessionId);
-  await world.db.query(
-    `INSERT INTO kortix.project_sessions
-       (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, metadata)
-     VALUES ($1, $2, $3, $1, 'kortix', 'stopped', $4, $5, '{}'::jsonb)`,
-    [sessionId, world.accountId, projectId, createdBy, visibility],
-  );
-  return sessionId;
-}
-
-const meta = (routes: string[]): FlowMeta => ({ domain: 'session-groups', requires: ['database'], timeoutMs: 120_000, routes });
-
-flow('SGRP-1', meta(Object.values(ROUTES)), async (ctx) => {
+flow('SGRP-1', flowMeta('session-groups', Object.values(ROUTES), { timeoutMs: 120_000 }), async (ctx) => {
   const { project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
@@ -100,13 +69,14 @@ flow('SGRP-1', meta(Object.values(ROUTES)), async (ctx) => {
   }
 });
 
-flow('SGRP-2', meta([ROUTES.list, ROUTES.create, ROUTES.update, ROUTES.remove, ROUTES.order]), async (ctx) => {
+flow('SGRP-2', flowMeta('session-groups', [ROUTES.list, ROUTES.create, ROUTES.update, ROUTES.remove, ROUTES.order], { timeoutMs: 120_000 }), async (ctx) => {
   const { team, project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   const member = await team.addMember('member');
   await team.grantProjectRole(project.id, member.userId!, 'member');
   const asMember = ctx.client.as(member);
-  const outsider = ctx.client.as(await team.addMember('member'));
+  // Membership is access (design.md C3): the outsider is a person outside the workspace.
+  const outsider = ctx.client.as(ctx.P.NONMEMBER);
   const ids: Record<string, string> = {};
   try {
     await world.setFeature('session_groups', true);
@@ -181,7 +151,7 @@ flow('SGRP-2', meta([ROUTES.list, ROUTES.create, ROUTES.update, ROUTES.remove, R
   }
 });
 
-flow('SGRP-3', meta([ROUTES.create, ROUTES.assign, ROUTES.remove, SESSION_ROUTES.list, SESSION_ROUTES.read]), async (ctx) => {
+flow('SGRP-3', flowMeta('session-groups', [ROUTES.create, ROUTES.assign, ROUTES.remove, SESSION_ROUTES.list, SESSION_ROUTES.read], { timeoutMs: 120_000 }), async (ctx) => {
   const { team, project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   const member = await team.addMember('member');
@@ -191,9 +161,9 @@ flow('SGRP-3', meta([ROUTES.create, ROUTES.assign, ROUTES.remove, SESSION_ROUTES
   try {
     await world.setFeature('session_groups', true);
     const store = (await world.owner.post(GROUPS, { name: 'Store A' }, { params })).status(201).json<Group>().group_id;
-    const shared = await insertSession(world, project.id, world.ownerUserId, 'project');
-    const loose = await insertSession(world, project.id, world.ownerUserId, 'project');
-    const hidden = await insertSession(world, project.id, world.ownerUserId, 'private');
+    const shared = await insertSession(world, world.ownerUserId, 'project');
+    const loose = await insertSession(world, world.ownerUserId, 'project');
+    const hidden = await insertSession(world, world.ownerUserId, 'private');
     const readSession = async (sessionId: string) =>
       (await world.owner.get(SESSION, { params: { ...params, sessionId } })).status(200).json<Session>();
     const listIds = async (query: Record<string, string>) =>
@@ -236,7 +206,7 @@ flow('SGRP-3', meta([ROUTES.create, ROUTES.assign, ROUTES.remove, SESSION_ROUTES
     });
 
     await ctx.step('a session another session started stays with its parent: filing it → 400 group_child_session', async () => {
-      const child = await insertSession(world, project.id, world.ownerUserId, 'project');
+      const child = await insertSession(world, world.ownerUserId, 'project');
       await world.db.query('UPDATE kortix.project_sessions SET parent_session_id = $1 WHERE session_id = $2', [shared, child]);
       (await world.owner.put(ASSIGN, { group_id: store }, { params: { ...params, sessionId: child } }))
         .status(400).body().has('$.code', 'group_child_session');

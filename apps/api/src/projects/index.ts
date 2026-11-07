@@ -88,9 +88,6 @@ import { registerSessionPromptsRoutes } from './routes/session-prompts';
 import { registerPeerMessagesRoutes } from './routes/peer-messages';
 import { registerTeamTasksRoutes } from './routes/team-tasks';
 import { registerArtifactRoutes } from './routes/artifacts';
-import { registerArtifactCommentRoutes } from './routes/artifact-comments';
-import { registerArtifactLiveRoutes } from './routes/artifact-live';
-import { registerArtifactDocRoutes } from './routes/artifact-doc';
 import { registerLinkPreviewRoutes } from './routes/link-preview';
 import { registerSessionRemindersRoutes } from './routes/session-reminders';
 import { registerGoalRoutes } from './routes/goals';
@@ -196,9 +193,6 @@ export function registerAllProjectRoutes(): void {
   registerPeerMessagesRoutes();
   registerTeamTasksRoutes();
   registerArtifactRoutes();
-  registerArtifactCommentRoutes();
-  registerArtifactLiveRoutes();
-  registerArtifactDocRoutes();
   registerLinkPreviewRoutes();
   registerSessionRemindersRoutes();
   registerGoalRoutes();
@@ -225,6 +219,9 @@ export function registerAllProjectRoutes(): void {
 export { projectsApp, projectWebhooksApp, sessionsApp };
 // `/v1/sessions` (one session by id). app.ts calls it right before mounting sessionsApp.
 export { registerSessionLookupRoutes };
+// The canonical workspace records (`workspaces/routes.ts` declares the routes).
+export { ProjectSchema } from './lib/app';
+export { createWorkspace, listCallerWorkspaces, patchWorkspace, readWorkspace } from './routes/workspace-records';
 
 // The service surface (git-proxy, session, trigger and manifest helpers).
 export * from './surface';

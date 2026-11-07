@@ -61,6 +61,7 @@ export async function addGroupMembers(accountId: string, groupId: string, userId
 // Backed by GET /accounts/:id/iam/groups/:gid/project-grants. Each row
 // can be detached via the per-project DELETE /projects/:pid/group-grants/:gid
 // endpoint (already in projects-client as detachGroupFromProject).
+/** @deprecated Use `GroupWorkspaceGrant`. Kept permanently. */
 export interface GroupProjectGrant {
   project_id: string;
   project_name: string;
@@ -72,13 +73,19 @@ export interface GroupProjectGrant {
   expires_at?: string | null;
 }
 
-export async function listGroupProjectGrants(accountId: string, groupId: string) {
+/** The workspace name of {@link GroupProjectGrant}: the same type. */
+export type GroupWorkspaceGrant = GroupProjectGrant;
+
+export async function listGroupWorkspaceGrants(accountId: string, groupId: string) {
   return unwrap(
     await iamGet<{ grants: GroupProjectGrant[] }>(
       `/accounts/${accountId}/iam/groups/${groupId}/project-grants`,
     ),
   ).grants;
 }
+
+/** @deprecated Use `listGroupWorkspaceGrants`. Kept permanently. */
+export const listGroupProjectGrants = listGroupWorkspaceGrants;
 
 export async function removeGroupMember(accountId: string, groupId: string, userId: string) {
   return unwrap(
@@ -109,6 +116,7 @@ export async function listMemberGroups(accountId: string, userId: string) {
 //   implicit — they're an account owner/admin (manager on every project)
 //   direct   — explicit project_members row
 //   group    — inherited from a project_group_grants attachment
+/** @deprecated Use `MemberWorkspaceAccess`. Kept permanently. */
 export interface MemberProjectAccess {
   project_id: string;
   project_name: string;
@@ -130,7 +138,10 @@ export interface MemberProjectAccess {
   }>;
 }
 
-export async function listMemberProjectAccess(accountId: string, userId: string) {
+/** The workspace name of {@link MemberProjectAccess}: the same type. */
+export type MemberWorkspaceAccess = MemberProjectAccess;
+
+export async function listMemberWorkspaceAccess(accountId: string, userId: string) {
   const data = unwrap(
     await iamGet<{
       projects: MemberProjectAccess[];
@@ -145,3 +156,6 @@ export async function listMemberProjectAccess(accountId: string, userId: string)
     account_wide_policies: data.account_wide_policies ?? [],
   };
 }
+
+/** @deprecated Use `listMemberWorkspaceAccess`. Kept permanently. */
+export const listMemberProjectAccess = listMemberWorkspaceAccess;

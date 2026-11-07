@@ -177,7 +177,7 @@ describe('SubagentDialog: a child that is its own project session', () => {
     expect(text).toContain('runs as My Kortix');
     expect(text).toContain('working · 1m');
     expect(dom.q('[data-turn="u0"]')).not.toBeNull();
-    expect(dom.q('a[href="/projects/proj_1/sessions/ses_child"]')?.textContent).toContain('Open page');
+    expect(dom.q('a[href="/workspaces/proj_1/sessions/ses_child"]')?.textContent).toContain('Open page');
     expect(dom.q('[aria-label="Stop namer"]')).not.toBeNull();
     expect(dom.q('[aria-label="Close"]')).not.toBeNull();
   });
@@ -278,7 +278,7 @@ describe('SubagentPanel: an agent beside the chat', () => {
     expect(panel.querySelector('header [data-agent-state="working"]')?.textContent).toContain('Working1m');
     // Beside the chat, opening it leaves the focus where the person was typing.
     expect(windowObject.document.activeElement?.getAttribute('data-testid')).not.toBe('subagent-dialog-message');
-    expect(dom.q('a[href="/projects/proj_1/sessions/ses_child"]')?.textContent).toContain('Open page');
+    expect(dom.q('a[href="/workspaces/proj_1/sessions/ses_child"]')?.textContent).toContain('Open page');
     expect(dom.q('[aria-label="Stop namer"]')).not.toBeNull();
     expect(dom.q('[data-turn="u0"]')).not.toBeNull();
     expect(dom.q('[data-testid="subagent-dialog-message"]')).not.toBeNull();

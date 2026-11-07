@@ -20,7 +20,7 @@ flow(
   {
     domain: 'feedback',
     tags: ['smoke'],
-    routes: ['POST /v1/feedback', 'POST /v1/projects/:projectId/cli-token'],
+    routes: ['POST /v1/feedback', 'POST /v1/workspaces/:projectId/cli-token'],
   },
   async (ctx) => {
     await ctx.step('ANON cannot file feedback → 401', async () => {
@@ -46,7 +46,7 @@ flow(
       const project = await ctx.fixtures.project();
       const minted = await ctx.client
         .as(ctx.P.OWNER)
-        .post('/v1/projects/:projectId/cli-token', { name: ctx.fixtures.name('fb-agent') }, { params: { projectId: project.id } });
+        .post('/v1/workspaces/:projectId/cli-token', { name: ctx.fixtures.name('fb-agent') }, { params: { projectId: project.id } });
       minted.status(201);
       const secret = minted.json<{ secret_key: string }>().secret_key;
       const sb = new CliSandbox('fb1-agent');

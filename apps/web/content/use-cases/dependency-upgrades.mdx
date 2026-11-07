@@ -51,14 +51,14 @@ change is green; a human merges.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the upgrade skill and the weekly trigger, and
 opens a change request for you to review. Prefer clicks? Choose **Use this
 template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a weekly dependency upgrade agent in this project.
+  code={`Set up a weekly dependency upgrade agent in this workspace.
 
 1. Create the agent agents/dep-upgrader.md. Its job is to keep the dependencies of owner/repo current. It may use a GH_TOKEN secret for GitHub and open pull requests.
 
@@ -80,7 +80,7 @@ template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Add a GitHub token as the `GH_TOKEN` secret in your project. The agent uses it
+Add a GitHub token as the `GH_TOKEN` secret in your workspace. The agent uses it
 to push its branch and open the pull request. Secrets are encrypted and injected
 at runtime, scoped to the agents you grant them to.
 
@@ -122,7 +122,7 @@ The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every Tuesday at 05:00, each run in a new session on its own cloud
 computer. The ledger in memory carries pins and deferred upgrades from one week
 to the next.
-To change the time, edit the cron line, or open **Triggers** in the project.
+To change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

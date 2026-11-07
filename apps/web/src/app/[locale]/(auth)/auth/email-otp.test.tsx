@@ -75,7 +75,7 @@ test('email code verifies the sent address, establishes returned tokens, and nav
     await act(async () => tree.root.findByType('form').props.onSubmit({ preventDefault() {} }));
     expect(calls[0]).toEqual({ email: 'synthetic@example.test', token: '123456', type: 'email' });
     expect(calls[1]).toEqual({ access_token: 'synthetic-access', refresh_token: 'synthetic-refresh' });
-    expect(destination).toBe('/projects/start');
+    expect(destination).toBe('/workspaces/start');
   } finally { await act(async () => tree.unmount()); }
 });
 
@@ -112,9 +112,9 @@ for (const flags of ['expired=true', 'error=private-query-detail']) {
   });
 }
 
-for (const target of ['/projects/existing', '/invites/synthetic', '/projects/start']) {
+for (const target of ['/workspaces/existing', '/invites/synthetic', '/workspaces/start']) {
   test(`OTP preserves the server-resolved destination ${target}`, async () => {
-    query = 'returnUrl=/projects/existing'; calls = []; destination = ''; resolvedDestination = target;
+    query = 'returnUrl=/workspaces/existing'; calls = []; destination = ''; resolvedDestination = target;
     const tree = await renderPage();
     try {
       await act(async () => tree.root.findByProps({ autoComplete: 'email' }).props.onChange({ target: { value: 'synthetic@example.test' } }));

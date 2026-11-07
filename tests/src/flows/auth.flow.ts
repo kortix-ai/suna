@@ -38,7 +38,7 @@ flow(
 
 flow(
   "AUTH-1",
-  { domain: "auth", tags: ["deployed"], routes: ["POST /v1/auth/logout", "POST /v1/p/auth", "GET /v1/accounts/me"] },
+  { domain: "auth", tags: ["deployed"], routes: ["POST /v1/auth/logout", "POST /v1/p/auth", "GET /v1/me"] },
   async (ctx) => {
     const session = await ctx.fixtures.user({ label: "LOGOUT" });
     await ctx.step("logout revokes only this flow's session, not the shared OWNER", async () => {
@@ -48,7 +48,7 @@ flow(
       r.status([200, 204]);
       const revoked = await ctx.client.as(session).post("/v1/p/auth", {});
       revoked.status(401);
-      const me = await ctx.client.as(session).get("/v1/accounts/me");
+      const me = await ctx.client.as(session).get("/v1/me");
       me.status(401);
       const owner = await ctx.client.as(ctx.P.OWNER).post("/v1/p/auth", {});
       owner.status([200, 204]);
@@ -64,7 +64,7 @@ flow(
 // auth.sessions by the API (a browser can only see its own session).
 flow(
   "AUTH-7",
-  { domain: "auth", routes: ["GET /v1/accounts/me/devices", "DELETE /v1/accounts/me/devices/:sessionId"] },
+  { domain: "auth", routes: ["GET /v1/me/devices", "DELETE /v1/me/devices/:sessionId"] },
   async (ctx) => {
     const here = await ctx.fixtures.user({ label: "DEVICES" });
     const bearer = (token: string) => ({ headers: { Authorization: `Bearer ${token}` } });
@@ -77,7 +77,7 @@ flow(
       });
       signIn.status(200);
       other = { access: signIn.json<any>().session.access_token, refresh: signIn.json<any>().session.refresh_token, id: "" };
-      const r = await ctx.client.as(here).get("/v1/accounts/me/devices");
+      const r = await ctx.client.as(here).get("/v1/me/devices");
       r.status(200);
       const devices = r.json<any>().devices as Array<{ session_id: string; current: boolean; signed_in_at: string; last_active_at: string }>;
       if (devices.length !== 2) throw new Error(`expected 2 devices, got ${devices.length}`);
@@ -87,39 +87,39 @@ flow(
       for (const d of devices) {
         if (Number.isNaN(Date.parse(d.signed_in_at)) || Number.isNaN(Date.parse(d.last_active_at))) throw new Error("timestamps must be ISO dates");
       }
-      const fromOther = await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me/devices", bearer(other.access));
+      const fromOther = await ctx.client.as(ctx.P.ANON).get("/v1/me/devices", bearer(other.access));
       fromOther.status(200);
       const otherView = fromOther.json<any>().devices.find((d: { current: boolean }) => d.current);
       if (otherView?.session_id !== other.id) throw new Error("the second sign-in must see itself as current");
     });
 
     await ctx.step("the current device, a malformed id, and another user's session are refused", async () => {
-      (await ctx.client.as(here).del(`/v1/accounts/me/devices/${hereId}`)).status(400);
+      (await ctx.client.as(here).del(`/v1/me/devices/${hereId}`)).status(400);
       (await ctx.client.as(here).del("/v1/accounts/me/devices/not-a-uuid")).status(400);
-      (await ctx.client.as(ctx.P.OWNER).del(`/v1/accounts/me/devices/${other.id}`)).status(404);
+      (await ctx.client.as(ctx.P.OWNER).del(`/v1/me/devices/${other.id}`)).status(404);
     });
 
     await ctx.step("a PAT has no device: list and sign-out → 403", async () => {
       const minted = await ctx.client.as(here).post("/v1/accounts/tokens", { name: "e2e-devices-pat" });
       minted.status(201);
       const pat = minted.json<any>().secret_key as string;
-      (await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me/devices", bearer(pat))).status(403);
-      (await ctx.client.as(ctx.P.ANON).del(`/v1/accounts/me/devices/${other.id}`, bearer(pat))).status(403);
+      (await ctx.client.as(ctx.P.ANON).get("/v1/me/devices", bearer(pat))).status(403);
+      (await ctx.client.as(ctx.P.ANON).del(`/v1/me/devices/${other.id}`, bearer(pat))).status(403);
     });
 
     await ctx.step("signing the other device out ends its refresh and its bearer; the caller keeps working", async () => {
-      (await ctx.client.as(here).del(`/v1/accounts/me/devices/${other.id}`)).status(200).body().has("$.ok", true);
+      (await ctx.client.as(here).del(`/v1/me/devices/${other.id}`)).status(200).body().has("$.ok", true);
       (await ctx.client.as(ctx.P.ANON).post("/v1/auth/refresh", { refresh_token: other.refresh })).status(400);
-      (await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", bearer(other.access))).status(401);
-      const after = await ctx.client.as(here).get("/v1/accounts/me/devices");
+      (await ctx.client.as(ctx.P.ANON).get("/v1/me", bearer(other.access))).status(401);
+      const after = await ctx.client.as(here).get("/v1/me/devices");
       after.status(200);
       const ids = (after.json<any>().devices as Array<{ session_id: string }>).map((d) => d.session_id);
       if (ids.join() !== hereId) throw new Error(`expected only the current device, got ${ids.join()}`);
-      (await ctx.client.as(here).del(`/v1/accounts/me/devices/${other.id}`)).status(404);
+      (await ctx.client.as(here).del(`/v1/me/devices/${other.id}`)).status(404);
     });
 
     await ctx.step("ANON → 401", async () => {
-      (await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me/devices")).status(401);
+      (await ctx.client.as(ctx.P.ANON).get("/v1/me/devices")).status(401);
     });
   },
 );

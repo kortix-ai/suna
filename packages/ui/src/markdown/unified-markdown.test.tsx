@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { IntlTestProvider } from '../test-utils/intl';
 import { createRequire } from 'node:module';
 import type { ReactNode } from 'react';
@@ -692,12 +692,12 @@ describe('UnifiedMarkdown — a link to a workspace file', () => {
       withIntl(
         <UnifiedMarkdown
           trust="agent"
-          content="[home](/projects/p1) and [site](https://kortix.com/a.pdf)"
+          content="[home](/workspaces/p1) and [site](https://kortix.com/a.pdf)"
         />,
       ),
     );
 
-    expect(html).toContain('href="/projects/p1"');
+    expect(html).toContain('href="/workspaces/p1"');
     expect(html).toContain('href="https://kortix.com/a.pdf"');
     expect(html).not.toContain('<button');
   });
@@ -707,6 +707,42 @@ describe('UnifiedMarkdown — a link to a workspace file', () => {
       withIntl(<UnifiedMarkdown trust="untrusted" content="[x](sandbox:/workspace/a.docx)" />),
     );
 
+    expect(html).not.toContain('<button');
+  });
+});
+
+// ─── A link to a Drive file ─────────────────────────────────────────────────
+// A chat message linked a Drive file as `/drives/me/…`, or as the same path on
+// this app's origin. The web app has no `/drives` route: the link opened the
+// 404 page. It opens the file preview, which reads the bytes through the drive
+// API with the viewer's own access.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe('UnifiedMarkdown — a link to a Drive file', () => {
+  const ORIGIN = 'https://app.example.com';
+  beforeAll(() => {
+    Object.defineProperty(globalThis, 'window', { value: { location: { origin: ORIGIN } }, configurable: true });
+  });
+  afterAll(() => {
+    Reflect.deleteProperty(globalThis, 'window');
+  });
+
+  for (const href of ['/drives/me/Avatars/avatar.jpg', `${ORIGIN}/drives/me/Avatars/avatar.jpg`]) {
+    test(`a ${href} link opens the file preview, never the app route`, () => {
+      const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown trust="agent" content={`[Download](${href})`} />));
+
+      expect(html).not.toContain('<a');
+      expect(html).toContain('title="/drives/me/Avatars/avatar.jpg — Click to preview"');
+      expect(visibleText(html)).toBe('Download');
+    });
+  }
+
+  test('a drive path on another origin stays a link', () => {
+    const html = renderToStaticMarkup(
+      withIntl(<UnifiedMarkdown trust="agent" content="[x](https://other.example.com/drives/me/a.jpg)" />),
+    );
+
+    expect(html).toContain('href="https://other.example.com/drives/me/a.jpg"');
     expect(html).not.toContain('<button');
   });
 });

@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { afterAll, describe, expect, test } from 'vitest';
+import { REPO_ROOT as root } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const script = join(root, '.github', 'scripts', 'audit-actions.mjs');
 
 const run = (cwd: string) => spawnSync('node', [script, cwd], { encoding: 'utf8' });

@@ -1,4 +1,4 @@
-// Artifacts (project flag `artifacts`): paths in the project's Files volume
+// Artifacts: paths in the project's Files volume
 // shared as a `doc` (a Markdown file people edit in place) or an `html` page
 // (a file, or a folder with index.html: decks, dashboards, mockups, tools).
 // The files are plain files in Files; their history is the Files commit log
@@ -56,12 +56,6 @@ export interface Artifact {
   space?: string | null;
   /** The agent that owns it: by default the agent of the session that published it. Older servers omit it. */
   agent?: string | null;
-  /**
-   * Open comment threads: status `open` and a root comment that is not deleted.
-   * Only the list and the read of one artifact carry it, and only while the
-   * project has `artifact_comments` on. Absent from older APIs.
-   */
-  open_thread_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -110,220 +104,6 @@ export interface ArtifactDetail extends Artifact {
   version: { id: string | null; files: ArtifactFile[]; view_url: string };
   /** Who can open it, owner first, in a session's participants shape. Only on a read (`getArtifact`). */
   participants?: SessionParticipants;
-}
-
-export type ArtifactCommentStatus = 'open' | 'resolved';
-export type ArtifactCommentAuthor =
-  | { kind: 'user'; user_id: string; name: string }
-  | { kind: 'session'; session_id: string; agent_name: string; title: string | null };
-
-export type ArtifactCommentMention =
-  | { kind: 'user'; user_id: string }
-  | { kind: 'session'; session_id: string; agent_name: string; token?: string }
-  | { kind: 'agent'; agent_name: string; token?: string };
-
-export type ArtifactCommentAnchor =
-  | { type: 'none'; version: string }
-  | { type: 'text'; version: string; quote: string; prefix: string; suffix: string }
-  | {
-    type: 'point'; version: string; selector: string; snippet: string; viewport_width: number;
-    scroll: { x: number; y: number }; offset: { x: number; y: number };
-  }
-  | {
-    type: 'region'; version: string; selector: string; snippet: string; viewport_width: number;
-    scroll: { x: number; y: number }; offset: { x: number; y: number; width: number; height: number };
-  };
-
-export interface ArtifactCommentMark {
-  tool: "pen" | "arrow" | "rectangle";
-  color: "black" | "red" | "blue";
-  points: Array<{ x: number; y: number }>;
-  /** Stroke width relative to the region width, 0.001–0.05. */
-  width: number;
-}
-
-/** Validate stored marks without changing the published unknown[] response type. */
-export function parseArtifactCommentMarks(
-  value: unknown,
-): ArtifactCommentMark[] | null {
-  try {
-    if (!Array.isArray(value) || value.length > 64) return null;
-    const marks: ArtifactCommentMark[] = [];
-    let total = 0;
-    for (const mark of value) {
-      if (
-        !mark ||
-        typeof mark !== "object" ||
-        Array.isArray(mark) ||
-        Object.keys(mark).some(
-          (key) => !["tool", "color", "points", "width"].includes(key),
-        )
-      )
-        return null;
-      if (
-        !["pen", "arrow", "rectangle"].includes(mark.tool) ||
-        !["black", "red", "blue"].includes(mark.color) ||
-        !Number.isFinite(mark.width) ||
-        mark.width < 0.001 ||
-        mark.width > 0.05 ||
-        !Array.isArray(mark.points)
-      )
-        return null;
-      if (
-        mark.points.length < 2 ||
-        mark.points.length > (mark.tool === "pen" ? 1024 : 2) ||
-        (total += mark.points.length) > 8192
-      )
-        return null;
-      const points: Array<{ x: number; y: number }> = [];
-      for (const point of mark.points) {
-        if (
-          !point ||
-          typeof point !== "object" ||
-          Array.isArray(point) ||
-          Object.keys(point).some((key) => key !== "x" && key !== "y") ||
-          !Number.isFinite(point.x) ||
-          !Number.isFinite(point.y) ||
-          point.x < 0 ||
-          point.x > 1 ||
-          point.y < 0 ||
-          point.y > 1
-        )
-          return null;
-        points.push({ x: point.x, y: point.y });
-      }
-      if (
-        mark.tool !== "pen" &&
-        points[0].x === points[1].x &&
-        points[0].y === points[1].y
-      )
-        return null;
-      marks.push({
-        tool: mark.tool,
-        color: mark.color,
-        width: mark.width,
-        points,
-      });
-    }
-    return marks;
-  } catch {
-    return null;
-  }
-}
-
-export interface ArtifactComment {
-  comment_id: string;
-  thread_id: string;
-  author_user_id: string | null;
-  author_session_id: string | null;
-  author: ArtifactCommentAuthor;
-  body: string;
-  mentions: ArtifactCommentMention[];
-  marks: unknown[];
-  screenshot_key: string | null;
-  /** Protected API path; read with readArtifactCommentScreenshot. */
-  screenshot_url?: string | null;
-  created_at: string;
-  edited_at: string | null;
-  deleted_at: string | null;
-  /** Authoritative action permissions; absent from older APIs. */
-  can_edit?: boolean;
-  can_delete?: boolean;
-}
-
-export interface ArtifactCommentThread {
-  thread_id: string;
-  artifact_id: string;
-  project_id: string;
-  anchor: ArtifactCommentAnchor;
-  anchor_version: string;
-  created_by_user_id: string | null;
-  created_by_session_id: string | null;
-  status: ArtifactCommentStatus;
-  resolved_by_user_id: string | null;
-  resolved_by_session_id: string | null;
-  resolved_at: string | null;
-  agent_state: 'none' | 'pending' | 'sent' | 'paused';
-  /** A bounded delivery failure; null for the loop guard. Absent from older APIs. */
-  agent_error?: string | null;
-  sent_session_id: string | null;
-  sent_at: string | null;
-  created_at: string;
-  updated_at: string;
-  comments: ArtifactComment[];
-  outdated: boolean;
-  position: { start: number; end: number } | null;
-  /** Historical reads return false for both actions. Absent from older APIs. */
-  can_reply?: boolean;
-  can_resolve?: boolean;
-}
-
-export interface ArtifactCommentContext {
-  can_comment: boolean;
-  can_moderate: boolean;
-  comment_count: number;
-  /** Total eligible threads. One Send request contains at most the first 100 IDs. */
-  send_thread_count: number;
-  send_thread_ids: string[];
-  people: Array<{ user_id: string; name: string; avatar_url: string | null; token: string }>;
-  agents: Array<{ agent_name: string; name: string; session_id: string | null; token: string }>;
-  /**
-   * True when the project's agent manifest could not be read (a git outage, a
-   * missing repository). `agents` is then empty and `send_target` is null, but
-   * people can still comment. Absent from older APIs.
-   */
-  agents_unavailable?: boolean;
-  send_target: { kind: 'session' | 'new'; session_id: string | null; agent_name: string } | null;
-  version: { commit_id: string | null; entry_version: string | null };
-}
-
-export interface ArtifactCommentSnapshot {
-  /** Immutable Files history commit, distinct from an entry ETag. */
-  version: string;
-  text: string;
-}
-
-export interface CreateArtifactCommentInput {
-  /** A text quote is at most 500 UTF-16 code units; its prefix and suffix are at most 32 each. */
-  anchor: ArtifactCommentAnchor;
-  body: string;
-  marks?: ArtifactCommentMark[];
-  screenshot_base64?: string;
-}
-
-export interface ArtifactCommentBodyInput { body: string }
-
-export interface ReplyArtifactCommentInput extends ArtifactCommentBodyInput {
-  marks?: ArtifactCommentMark[];
-  screenshot_base64?: string;
-}
-
-export interface SendArtifactCommentsInput {
-  thread_ids: string[];
-  /** Reuse this id when retrying one handoff. The SDK generates it when omitted. */
-  batch_id?: string;
-  agent?: string;
-}
-
-export interface SendArtifactCommentsResult {
-  session_id: string;
-  created: boolean;
-}
-
-export interface ArtifactActivityItem {
-  id: string;
-  type: 'saved' | 'published' | 'renamed' | 'visibility_changed' | 'shared_with_changed' | 'restored'
-    | 'thread_opened' | 'replied' | 'resolved' | 'reopened' | 'comment_deleted' | 'sent_to_agent';
-  at: string;
-  actor: { kind: 'user' | 'session'; id: string; name: string } | { kind: 'system'; id: null; name: string };
-  data: Record<string, unknown>;
-}
-
-export interface ArtifactActivityPage {
-  items: ArtifactActivityItem[];
-  next_cursor: string | null;
-  /** The Files history reached its 100-commit limit; older saves can be unavailable. */
-  older_versions: boolean;
 }
 
 export interface ArtifactTypeInfo {
@@ -376,65 +156,7 @@ export interface UpdateArtifactInput extends ArtifactBindingInput {
   shared_with_user_ids?: string[];
 }
 
-const base = (projectId: string) => `/projects/${projectId}/artifacts`;
-
-export async function listArtifactComments(projectId: string, artifactId: string, options: { status?: ArtifactCommentStatus | 'all'; version?: string } = {}) {
-  return unwrap(await backendApi.get<{ threads: ArtifactCommentThread[] }>(`${base(projectId)}/${artifactId}/comments${query(options)}`)).threads;
-}
-
-/** Current permissions, literal mention tokens, and the proposed Send target. Historical contexts are read-only. */
-export async function getArtifactCommentContext(projectId: string, artifactId: string, options: { version?: string; agent?: string } = {}) {
-  return unwrap(await backendApi.get<ArtifactCommentContext>(`${base(projectId)}/${artifactId}/comments/context${query(options)}`));
-}
-
-/** Read the exact saved text a selection anchor identifies. Never substitutes an entry ETag for its commit. */
-export async function readArtifactCommentSnapshot(projectId: string, artifactId: string, options: { version?: string } = {}): Promise<ArtifactCommentSnapshot> {
-  const context = await getArtifactCommentContext(projectId, artifactId, options);
-  const version = context.version.commit_id;
-  if (!version) throw new ApiError('The Artifact has no saved comment version', { status: 404, code: 'artifact_comment_snapshot_unavailable' });
-  return { version, text: await (await readArtifactFile(projectId, artifactId, { version })).text() };
-}
-
-/** Resolve a thread id without scanning a project's Artifacts. Visibility still applies. */
-export async function getArtifactCommentThread(projectId: string, threadId: string) {
-  return unwrap(await backendApi.get<{ thread: ArtifactCommentThread }>(`/projects/${projectId}/artifact-comment-threads/${threadId}`)).thread;
-}
-
-/**
- * Comment writes throw their failure and never report it to `onError`: the caller already shows
- * it (beside the composer, or as one toast). A global toast as well reported each failure twice.
- */
-const CALLER_SHOWS_ERRORS = { showErrors: false } as const;
-
-export async function createArtifactComment(projectId: string, artifactId: string, input: CreateArtifactCommentInput) {
-  return unwrap(await backendApi.post<{ thread: ArtifactCommentThread }>(`${base(projectId)}/${artifactId}/comments`, input, CALLER_SHOWS_ERRORS)).thread;
-}
-
-export async function replyArtifactComment(projectId: string, artifactId: string, threadId: string, input: ReplyArtifactCommentInput) {
-  return unwrap(await backendApi.post<{ comment: ArtifactComment }>(`${base(projectId)}/${artifactId}/comments/${threadId}/replies`, input, CALLER_SHOWS_ERRORS)).comment;
-}
-
-export async function setArtifactCommentStatus(projectId: string, artifactId: string, threadId: string, status: ArtifactCommentStatus) {
-  return unwrap(await backendApi.patch<{ thread: ArtifactCommentThread }>(`${base(projectId)}/${artifactId}/comments/${threadId}`, { status }, CALLER_SHOWS_ERRORS)).thread;
-}
-
-export async function editArtifactComment(projectId: string, artifactId: string, threadId: string, commentId: string, input: ArtifactCommentBodyInput) {
-  return unwrap(await backendApi.patch<{ comment: ArtifactComment }>(`${base(projectId)}/${artifactId}/comments/${threadId}/${commentId}`, input, CALLER_SHOWS_ERRORS)).comment;
-}
-
-export async function deleteArtifactComment(projectId: string, artifactId: string, threadId: string, commentId: string) {
-  return unwrap(await backendApi.delete<{ comment: ArtifactComment }>(`${base(projectId)}/${artifactId}/comments/${threadId}/${commentId}`, CALLER_SHOWS_ERRORS)).comment;
-}
-
-export async function listArtifactActivity(projectId: string, artifactId: string, options: { limit?: number; cursor?: string } = {}) {
-  return unwrap(await backendApi.get<ArtifactActivityPage>(`${base(projectId)}/${artifactId}/activity${query(options)}`));
-}
-
-/** Send selected threads. A newly reserved session stays pending until its queued creation completes. */
-export async function sendArtifactComments(projectId: string, artifactId: string, input: SendArtifactCommentsInput) {
-  const body = { ...input, batch_id: input.batch_id ?? crypto.randomUUID() };
-  return unwrap(await backendApi.post<SendArtifactCommentsResult>(`${base(projectId)}/${artifactId}/comments/send`, body, CALLER_SHOWS_ERRORS));
-}
+const base = (projectId: string) => `/workspaces/${projectId}/artifacts`;
 
 function query(params: Record<string, string | number | undefined>): string {
   const search = new URLSearchParams();
@@ -472,7 +194,7 @@ export interface LinkPreview {
  * be read answers nulls.
  */
 export async function getLinkPreview(projectId: string, url: string) {
-  return unwrap(await backendApi.get<LinkPreview>(`/projects/${projectId}/link-preview?url=${encodeURIComponent(url)}`));
+  return unwrap(await backendApi.get<LinkPreview>(`/workspaces/${projectId}/link-preview?url=${encodeURIComponent(url)}`));
 }
 
 export async function getArtifact(projectId: string, artifactId: string, options: { version?: string } = {}) {
@@ -533,38 +255,14 @@ export async function readArtifactFile(
 }
 
 
-/** Read a private screenshot through the authenticated API on every request. */
-export async function readArtifactCommentScreenshot(
-  projectId: string,
-  artifactId: string,
-  commentId: string,
-  options: { signal?: AbortSignal } = {},
-): Promise<Blob> {
-  const url = `${stripTrailingSlashes(platformConfig().backendUrl)}${base(projectId)}/${artifactId}/comments/${encodeURIComponent(commentId)}/screenshot`;
-  const response = await authenticatedFetch(url, { signal: options.signal });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      error?: string;
-      code?: string;
-    } | null;
-    throw new ApiError(body?.error || "Could not read the comment screenshot", {
-      status: response.status,
-      code: body?.code,
-      details: body,
-      data: body,
-      response,
-    });
-  }
-  return response.blob();
-}
-
 const ARTIFACT_UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
-const ARTIFACT_IN_PROJECT = new RegExp(`/projects/(${ARTIFACT_UUID})/artifacts/(${ARTIFACT_UUID})/?$`, 'i');
+const ARTIFACT_IN_PROJECT = new RegExp(`/(?:workspaces|projects)/(${ARTIFACT_UUID})/artifacts/(${ARTIFACT_UUID})/?$`, 'i');
 const ARTIFACT_PUBLIC = new RegExp(`/share/artifact/(${ARTIFACT_UUID})/?$`, 'i');
 
 /**
- * The artifact an app link names: `/projects/<project>/artifacts/<artifact>`
- * (the app viewer, on any Kortix host, or a relative path) or
+ * The artifact an app link names: `/workspaces/<workspace>/artifacts/<artifact>`
+ * or the older `/projects/<project>/artifacts/<artifact>` (the app viewer, on
+ * any Kortix host, or a relative path) or
  * `/share/artifact/<artifact>` (a public link, no project). Ids are
  * lower-case. Null for any other URL. This is the link an agent hands over
  * with `show`, so a host uses it to tell an artifact from a website.

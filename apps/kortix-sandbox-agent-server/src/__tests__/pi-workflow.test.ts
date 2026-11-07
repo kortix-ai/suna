@@ -78,7 +78,7 @@ function startFakeApi(parent = PARENT_SESSION) {
     async fetch(req) {
       const url = new URL(req.url)
       const path = url.pathname
-      const project = `/v1/projects/${PROJECT_ID}`
+      const project = `/v1/workspaces/${PROJECT_ID}`
       const base = `${project}/sessions`
       if (req.method === 'GET' && path === `${project}/files/content`) {
         const file = url.searchParams.get('path')!

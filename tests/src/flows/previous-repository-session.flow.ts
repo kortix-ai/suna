@@ -11,7 +11,7 @@ flow(
   {
     domain: 'sessions',
     requires: ['database'],
-    routes: ['POST /v1/projects/:projectId/sessions/:sessionId/start'],
+    routes: ['POST /v1/workspaces/:projectId/sessions/:sessionId/start'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team({
@@ -32,7 +32,7 @@ flow(
       visibility: 'project',
     });
     const params = { projectId: project.id, sessionId };
-    const path = '/v1/projects/:projectId/sessions/:sessionId/start';
+    const path = '/v1/workspaces/:projectId/sessions/:sessionId/start';
 
     await configurePreviousRepositorySession(ctx.env, {
       projectId: project.id,

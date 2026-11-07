@@ -71,7 +71,7 @@ beforeEach(() => {
       const url = new URL(request.url);
       const body = request.method === "GET" ? undefined : await request.json().catch(() => undefined);
       requests.push({ method: request.method, path: url.pathname, search: url.search, body });
-      const list = `/v1/projects/${PROJECT_ID}/sessions`;
+      const list = `/v1/workspaces/${PROJECT_ID}/sessions`;
       if (url.pathname === list && request.method === "GET") return Response.json([stored, row({ session_id: "33333333-3333-4333-8333-333333333333", name: "Plain", labels: [] })]);
       if (url.pathname === list && request.method === "POST") return Response.json(row({ ...(body as object) }), { status: 201 });
       if (url.pathname === `${list}/${SESSION_ID}` && request.method === "GET") return Response.json(stored);
@@ -135,7 +135,7 @@ describe("kortix sessions labels and metadata", () => {
   test("update defaults to $KORTIX_SESSION_ID, so an agent labels its own session", async () => {
     const r = await runCli(["sessions", "update", "--label", "needs-review", "--json"], { KORTIX_SESSION_ID: SESSION_ID });
     expect(r.code).toBe(0);
-    expect(patches()[0]?.path).toBe(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`);
+    expect(patches()[0]?.path).toBe(`/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}`);
     expect(JSON.parse(r.stdout).labels).toEqual(["bug", "ui", "needs-review"]);
   });
 

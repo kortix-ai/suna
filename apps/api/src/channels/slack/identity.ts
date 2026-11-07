@@ -52,7 +52,7 @@ export function requestAccessBlocks(projectId: string): unknown[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: "You're connected, but your Kortix account doesn't have access to this project yet. Request access and an admin will approve it. _Only you can see this._",
+        text: "You're connected, but your Kortix account doesn't have access to this Kortix workspace yet. Request access and an admin will approve it. _Only you can see this._",
       },
     },
     {
@@ -103,7 +103,7 @@ export async function postIdentityPrompt(input: {
     fallback = 'Kortix needs a linked Kortix account to continue.';
   } else {
     blocks = requestAccessBlocks(input.projectId);
-    fallback = "You're connected, but don't have access to this project yet.";
+    fallback = "You're connected, but don't have access to this Kortix workspace yet.";
   }
 
   // Send BOTH: an in-thread ephemeral for context right where they asked, AND a
@@ -145,8 +145,8 @@ export async function notifyAdminsOfAccessRequest(input: {
     input.requesterUserId,
   );
   const who = email ? `*${email}*` : `<@${input.requesterSlackUserId}>`;
-  const projectUrl = `${dashboardBase(config.FRONTEND_URL)}/projects/${input.projectId}/customize/members`;
-  const text = `${who} requested access to a Kortix project in this workspace.`;
+  const projectUrl = `${dashboardBase(config.FRONTEND_URL)}/workspaces/${input.projectId}/customize/members`;
+  const text = `${who} requested access to a Kortix workspace in this Slack workspace.`;
   const blocks = [
     {
       type: 'section',

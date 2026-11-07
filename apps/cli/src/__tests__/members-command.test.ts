@@ -53,10 +53,10 @@ function boot(handler: Parameters<typeof startFakeApi>[0]): string {
 /** Routes every members subcommand needs, so one server serves all of them. */
 const defaultRoutes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   const p = url.pathname;
-  if (p === `/v1/accounts/${ACCOUNT}/members` && req.method === 'GET') {
+  if (p === `/v1/workspaces/${ACCOUNT}/members` && req.method === 'GET') {
     return Response.json(MEMBERS);
   }
-  if (p === `/v1/accounts/${ACCOUNT}/members` && req.method === 'POST') {
+  if (p === `/v1/workspaces/${ACCOUNT}/members` && req.method === 'POST') {
     const b = body as { email: string; role: string };
     if (!b.email.includes('@')) {
       return Response.json({ error: 'A valid email is required' }, { status: 400 });
@@ -76,19 +76,19 @@ const defaultRoutes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
       { status: 201 },
     );
   }
-  if (p === `/v1/accounts/${ACCOUNT}/members/${ALICE}` && req.method === 'PATCH') {
+  if (p === `/v1/workspaces/${ACCOUNT}/members/${ALICE}` && req.method === 'PATCH') {
     return Response.json({ user_id: ALICE, account_role: (body as { role: string }).role });
   }
-  if (p === `/v1/accounts/${ACCOUNT}/members/${ALICE}` && req.method === 'DELETE') {
+  if (p === `/v1/workspaces/${ACCOUNT}/members/${ALICE}` && req.method === 'DELETE') {
     return Response.json({ ok: true });
   }
-  if (p === `/v1/accounts/${ACCOUNT}/iam/members/${ALICE}/super-admin` && req.method === 'PATCH') {
+  if (p === `/v1/workspaces/${ACCOUNT}/iam/members/${ALICE}/super-admin` && req.method === 'PATCH') {
     return Response.json({
       user_id: ALICE,
       is_super_admin: (body as { isSuperAdmin: boolean }).isSuperAdmin,
     });
   }
-  if (p === `/v1/accounts/${ACCOUNT}/invites` && req.method === 'GET') {
+  if (p === `/v1/workspaces/${ACCOUNT}/invites` && req.method === 'GET') {
     return Response.json([
       {
         invite_id: 'inv_1',
@@ -101,10 +101,10 @@ const defaultRoutes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
       },
     ]);
   }
-  if (p === `/v1/accounts/${ACCOUNT}/invites/inv_1` && req.method === 'DELETE') {
+  if (p === `/v1/workspaces/${ACCOUNT}/invites/inv_1` && req.method === 'DELETE') {
     return Response.json({ ok: true });
   }
-  if (p === `/v1/accounts/${ACCOUNT}/invites/inv_1/resend` && req.method === 'POST') {
+  if (p === `/v1/workspaces/${ACCOUNT}/invites/inv_1/resend` && req.method === 'POST') {
     return Response.json({
       ok: true,
       expires_at: '2026-09-01T00:00:00.000Z',
@@ -133,7 +133,8 @@ describe('kortix members', () => {
     expect(h.code).toBe(0);
     for (const fragment of [
       'Usage: kortix members',
-      'invite <email> --role <r>',
+      'invite <email> [--role <r>]',
+      '--grant <id>:<r>',
       'set-role <user|email> --role <r>',
       'super-admin <user|email> on|off',
       'invites ls',
@@ -158,7 +159,7 @@ describe('kortix members', () => {
     expect(r.stdout).toContain('Engineering');
     expect(api!.requests[0]).toMatchObject({
       method: 'GET',
-      path: `/v1/accounts/${ACCOUNT}/members`,
+      path: `/v1/workspaces/${ACCOUNT}/members`,
     });
 
     const j = await runCommand(runner, ['ls', '--json'], { cwd: tmp, configFile: config });
@@ -173,13 +174,13 @@ describe('kortix members', () => {
     const config = boot(defaultRoutes);
     const r = await runCommand(
       runner,
-      ['invite', 'carol@corp.com', '--role', 'member', '--project', 'p1:manager', '--project', 'p2'],
+      ['invite', 'carol@corp.com', '--role', 'member', '--grant', 'p1:manager', '--grant', 'p2'],
       { cwd: tmp, configFile: config },
     );
     expect(r.code).toBe(0);
     expect(api!.requests[0]).toMatchObject({
       method: 'POST',
-      path: `/v1/accounts/${ACCOUNT}/members`,
+      path: `/v1/workspaces/${ACCOUNT}/members`,
       body: {
         email: 'carol@corp.com',
         role: 'member',
@@ -191,6 +192,30 @@ describe('kortix members', () => {
     });
     expect(r.stdout).toContain('Invited carol@corp.com as member');
     expect(r.stdout).toContain('https://kortix.test/invite/inv_1');
+  });
+
+  test('invite with no --role invites a member; --workspace <id>:<role> is the older --grant', async () => {
+    const config = boot(defaultRoutes);
+    const r = await runCommand(runner, ['invite', 'carol@corp.com', '--workspace', 'p1:manager'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(r.code).toBe(0);
+    expect(api!.requests[0]).toMatchObject({
+      method: 'POST',
+      path: `/v1/workspaces/${ACCOUNT}/members`,
+      body: { email: 'carol@corp.com', role: 'member', project_grants: [{ project_id: 'p1', role: 'manager' }] },
+    });
+    expect(r.stderr).toContain('older spelling of --grant');
+  });
+
+  test('--workspace <id> selects the workspace the command acts on', async () => {
+    const config = boot((req, url) =>
+      url.pathname === '/v1/workspaces/ws_other/members' ? Response.json([]) : defaultRoutes(req, url, undefined),
+    );
+    const r = await runCommand(runner, ['ls', '--workspace', 'ws_other', '--json'], { cwd: tmp, configFile: config });
+    expect(r.code).toBe(0);
+    expect(api!.requests[0]).toMatchObject({ method: 'GET', path: '/v1/workspaces/ws_other/members' });
   });
 
   test('invite --role owner is refused locally (the API would silently downgrade it)', async () => {
@@ -212,8 +237,8 @@ describe('kortix members', () => {
     });
     expect(r.code).toBe(0);
     expect(api!.requests.map((q) => `${q.method} ${q.path}`)).toEqual([
-      `GET /v1/accounts/${ACCOUNT}/members`,
-      `PATCH /v1/accounts/${ACCOUNT}/members/${ALICE}`,
+      `GET /v1/workspaces/${ACCOUNT}/members`,
+      `PATCH /v1/workspaces/${ACCOUNT}/members/${ALICE}`,
     ]);
     expect(api!.requests[1]!.body).toEqual({ role: 'owner' });
     expect(r.stdout).toContain('alice@corp.com → owner');
@@ -228,7 +253,7 @@ describe('kortix members', () => {
     expect(ok.code).toBe(0);
     expect(api!.requests[1]).toMatchObject({
       method: 'DELETE',
-      path: `/v1/accounts/${ACCOUNT}/members/${ALICE}`,
+      path: `/v1/workspaces/${ACCOUNT}/members/${ALICE}`,
     });
 
     const miss = await runCommand(runner, ['rm', 'nobody@corp.com', '-y'], {
@@ -248,7 +273,7 @@ describe('kortix members', () => {
     expect(r.code).toBe(0);
     expect(api!.requests[1]).toMatchObject({
       method: 'PATCH',
-      path: `/v1/accounts/${ACCOUNT}/iam/members/${ALICE}/super-admin`,
+      path: `/v1/workspaces/${ACCOUNT}/iam/members/${ALICE}/super-admin`,
       body: { isSuperAdmin: true },
     });
     expect(r.stdout).toContain('super-admin on');
@@ -274,7 +299,7 @@ describe('kortix members', () => {
     expect(cancel.code).toBe(0);
     expect(api!.requests.at(-1)).toMatchObject({
       method: 'DELETE',
-      path: `/v1/accounts/${ACCOUNT}/invites/inv_1`,
+      path: `/v1/workspaces/${ACCOUNT}/invites/inv_1`,
     });
 
     const resend = await runCommand(runner, ['invites', 'resend', 'inv_1'], {
@@ -297,7 +322,7 @@ describe('kortix members', () => {
 
   test('missing required arguments exit 2 without any HTTP call', async () => {
     const config = boot(defaultRoutes);
-    for (const args of [['invite'], ['invite', 'a@b.com'], ['set-role'], ['rm'], ['groups']]) {
+    for (const args of [['invite'], ['set-role'], ['rm'], ['groups']]) {
       const r = await runCommand(runner, args, { cwd: tmp, configFile: config });
       expect(r.code).toBe(2);
     }

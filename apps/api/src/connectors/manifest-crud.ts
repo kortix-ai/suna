@@ -1,5 +1,5 @@
 import type { UpdateConnectionCredentialInput } from '@kortix/api-contract';
-import { connectorConnections, connectors, projects, projectSessionConnectorBindings } from '@kortix/db';
+import { connectorConnections, connectors, projectSessionConnectorBindings } from '@kortix/db';
 /**
  * Connector CRUD that round-trips `kortix.yaml` — the web UI "Add connector"
  * flow (mirrors triggers). The manifest holds the connector definition.
@@ -50,6 +50,7 @@ import {
   type ManifestMutationResult,
   mutateManifestWithRetry,
 } from './manifest-mutation';
+import { projectsView } from '../workspaces/rows';
 
 export interface ConnectorDraft {
   slug: string;
@@ -174,7 +175,7 @@ export function mergeConnectorDraftEntry(
 }
 
 async function loadRow(projectId: string) {
-  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   return row ?? null;
 }
 
@@ -374,7 +375,7 @@ export async function setConnectorCredentialShared(
   if (connector.authSecret) {
     return {
       ok: false,
-      error: 'Clear the project secret binding before storing a connector credential',
+      error: 'Clear the workspace secret binding before storing a connector credential',
       status: 409,
     };
   }

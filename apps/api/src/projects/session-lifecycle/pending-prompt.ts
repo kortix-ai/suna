@@ -40,8 +40,6 @@ export function convertPendingPromptToInboxRow(input: {
   sessionId: string;
   actorUserId: string | null;
   source?: SessionInvocationSource;
-  artifactId?: string;
-  artifactCommentDelivery?: { job_id: string; target_key: string };
   /** The session whose agent created this one (see `authorSessionId`). */
   authorSessionId?: string | null;
   /** Post it without a turn: a conversation with people starts with it. */
@@ -50,10 +48,6 @@ export function convertPendingPromptToInboxRow(input: {
 }): PendingPromptConversion {
   const { pendingPrompt } = input;
   const { text: _text, parts: _parts, ...metadataPicks } = pendingPrompt;
-  if (input.source === 'system:artifact-comment' && (!input.artifactId || !input.artifactCommentDelivery?.job_id || !input.artifactCommentDelivery.target_key)) {
-    return { rowValues: null, metadataPicks, error: 'Artifact comment delivery context is required' };
-  }
-
   const text = typeof pendingPrompt.text === 'string' ? pendingPrompt.text.trim() : '';
   const rawParts = Array.isArray(pendingPrompt.parts) ? pendingPrompt.parts : [];
   const effectiveRaw = rawParts.length > 0 ? rawParts : text ? [{ type: 'text', text }] : [];
@@ -76,7 +70,6 @@ export function convertPendingPromptToInboxRow(input: {
 
   const rowValues = buildContinueSessionCommandValues({
     source: input.source ?? 'ui',
-    artifactId: input.artifactId,
     projectId: input.projectId,
     accountId: input.accountId,
     sessionId: input.sessionId,
@@ -95,6 +88,5 @@ export function convertPendingPromptToInboxRow(input: {
     authorSessionId: input.authorSessionId ?? null,
     ...(input.noReply ? { noReply: true } : {}),
   });
-  if (input.source === 'system:artifact-comment') rowValues.payload = { ...rowValues.payload, artifactCommentDelivery: input.artifactCommentDelivery };
   return { rowValues, metadataPicks, error: null };
 }

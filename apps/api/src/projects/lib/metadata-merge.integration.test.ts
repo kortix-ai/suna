@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { createDb, accounts, projects, type Database } from '@kortix/db';
-import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from './metadata-merge';
+import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../../workspaces/rows';
 import { activateWithCas } from '../provider-transition/provider-transition-activate';
 import {
   ACTIVE_EXTERNAL_ID_META_KEY, ACTIVE_SNAPSHOT_NAME_META_KEY, PIN_META_KEY, readActiveRouting,
@@ -12,8 +12,9 @@ import {
 } from '../provider-transition/provider-transition-store';
 
 // DB-backed behavior of the atomic metadata merge. Runs in the `db-suites`
-// lane of `pnpm test` against a throwaway migrated database. The static
-// no-RMW-writer guard lives in metadata-merge.test.ts.
+// lane of `pnpm test` against a throwaway migrated database. The no-RMW rule
+// itself is a type: a project write's `metadata` is SQL (`ProjectRowSet`,
+// workspaces/rows.ts).
 
 const DB_URL = process.env.TEST_DATABASE_URL;
 const RUN = !!DB_URL;
@@ -25,7 +26,7 @@ let accountId: string;
 async function freshProject(): Promise<string> {
   const [row] = await db
     .insert(projects)
-    .values({ accountId, name: 'meta', repoUrl: 'https://example.test/r.git', metadata: {} })
+    .values({ splitPending: true, accountId, name: 'meta', repoUrl: 'https://example.test/r.git', metadata: {} })
     .returning();
   return row!.projectId;
 }

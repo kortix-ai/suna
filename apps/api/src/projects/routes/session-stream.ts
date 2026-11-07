@@ -89,7 +89,6 @@ import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { isUuid } from '../../shared/validate';
 import { isPgBroadcastListening, waitForSessionChange } from '../../shared/pg-broadcast';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { PRESENCE_RENEW_MS, expireSessionPresence, renewSessionPresence } from '../lib/session-presence';
 import {
   CONTROL_EPOCH,
@@ -113,6 +112,7 @@ import {
   parseSseFrames,
 } from '../lib/session-runtime-transport';
 import { isV1TranscriptEvent } from '@kortix/api-contract/session-log';
+import { workspaceIdParam } from '../../shared/route-params';
 import { isParkedRuntimeDownReason } from '@kortix/api-contract/wire-values';
 
 /** Our own keepalive cadence. Matches the daemon's, so a stream with no box
@@ -225,12 +225,12 @@ export function registerSessionStreamRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/events',
+      path: '/{workspaceId}/sessions/{sessionId}/events',
       tags: ['sessions'],
       summary: 'Stream live events of a session',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         query: z.object({
           since: z.string().optional(),
           epoch: z.string().optional(),
@@ -255,7 +255,7 @@ export function registerSessionStreamRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -297,9 +297,6 @@ export function registerSessionStreamRoutes(): void {
           ? {
               userId: String(loaded.userId),
               tabId: presenceTabId,
-              // KRTX-1742, only with the `notification_center` flag on: the
-              // stream end expires the lease. Off, it lives to its expiry.
-              expireOnClose: notificationsEnabled(loaded.row.metadata),
               extendDeadline: await projectCapabilityAllowed(
                 c,
                 String(loaded.userId),
@@ -499,7 +496,7 @@ export function registerSessionStreamRoutes(): void {
               // of its lease. Only the expiry this stream wrote: a newer stream
               // of the same tab (a reconnect, a control-to-runtime upgrade) may
               // have renewed it since. A reconnecting stream's renewal restores it.
-              if (presenceRenewal.expireOnClose && leaseWrittenUntil) {
+              if (leaseWrittenUntil) {
                 void expireSessionPresence(
                   presenceRenewal.userId,
                   sessionId,

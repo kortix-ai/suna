@@ -2,7 +2,7 @@
  * `kortix goals` — what a person wants plus a definition of done, worked by an
  * assigned agent until an independent verifier session confirms it.
  *
- * The Goals API is the authority (`/v1/projects/:projectId/goals/*`, wire
+ * The Goals API is the authority (`/v1/workspaces/:projectId/goals/*`, wire
  * contract `packages/api-contract/src/goals.ts`). The `project_goals` row
  * holds state, pause, stop, owner, verifier, caps and counters. The API
  * derives who calls from the credential: inside a session that is the session
@@ -17,7 +17,7 @@
  * Every write carries the `revision` of a fresh read. On `409 goal_conflict`
  * the CLI re-reads once and retries only when the move is still valid.
  */
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, ftruncateSync, mkdirSync, openSync, readFileSync, readdirSync, writeFileSync, writeSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -244,10 +244,18 @@ export function withLifecycleMirror(text: string, g: Pick<Goal, 'state' | 'revis
 /** Best effort: the mirror is orientation only, so a missing or odd GOAL.md is left alone. */
 function writeMirror(g: Goal): void {
   const path = join(localFolder(g), 'GOAL.md');
+  let fd: number | undefined;
   try {
-    if (!lstatSync(path).isFile()) return;
-    writeFileSync(path, withLifecycleMirror(readFileSync(path, 'utf8'), g));
-  } catch {}
+    // One descriptor, opened without following a symlink, for the check, the read and the write.
+    fd = openSync(path, constants.O_RDWR | constants.O_NOFOLLOW);
+    if (!fstatSync(fd).isFile()) return;
+    const next = withLifecycleMirror(readFileSync(fd, 'utf8'), g);
+    ftruncateSync(fd, 0);
+    writeSync(fd, next, 0);
+  } catch {
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }
 
 /** The verifier's report, read without following a symlink. Null: not a regular, non-empty file. */
@@ -348,7 +356,7 @@ export async function runGoals(argv: string[]): Promise<number> {
     client: resolved.client,
     projectId: resolved.projectId,
     sessionId: process.env.KORTIX_SESSION_ID || null,
-    base: `/projects/${encodeURIComponent(resolved.projectId)}/goals`,
+    base: `/workspaces/${encodeURIComponent(resolved.projectId)}/goals`,
   };
   const inSession = ['transition', 'progress', 'verify', 'verdict', 'handover', 'check'];
   if (inSession.includes(sub) && !ctx.sessionId) return fail(`No $KORTIX_SESSION_ID: kortix goals ${sub} runs inside the goal's session.`);
@@ -399,7 +407,7 @@ async function listByRole(ctx: Ctx, role: 'owner' | 'verifier'): Promise<Goal[]>
 async function resolveGoal(ctx: Ctx, role: 'owner' | 'verifier', explicit?: string): Promise<Goal> {
   if (explicit) return getGoal(ctx, explicit);
   const session = await ctx.client
-    .get<{ metadata?: Record<string, unknown> }>(`/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId!)}`)
+    .get<{ metadata?: Record<string, unknown> }>(`/workspaces/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId!)}`)
     .catch(() => null);
   const fromMeta = session?.metadata?.goal_id;
   if (typeof fromMeta === 'string' && fromMeta) return getGoal(ctx, fromMeta);
@@ -771,7 +779,7 @@ async function checkGoals(ctx: Ctx, flags: Flags): Promise<number> {
   if (!flags.enforce) return broken.length ? 1 : 0;
   const due = broken.filter((b) => takeEnforcementSlot(b.goal_id, Date.now()));
   if (due.length) {
-    const session = await ctx.client.get<ProjectSession>(`/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId!)}`);
+    const session = await ctx.client.get<ProjectSession>(`/workspaces/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId!)}`);
     const text =
       '[GOAL CHECK] A goal this session owns needs you. Do this now, then end the turn:\n' +
       due.map((b) => `${b.title} (${b.goal_id})\n${b.problems.map((p) => `- ${p}`).join('\n')}`).join('\n\n');

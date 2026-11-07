@@ -55,6 +55,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { mintAccountToken, type Client } from '../core/client';
+import { fail } from '../core/expect';
 import type { FlowContext, Principal } from '../core/types';
 import { sleep } from '../core/poll';
 import { withTransientGitRetry } from './git-transient';
@@ -439,6 +440,74 @@ export class AgentPrincipalsWorld {
     }
     await this.db.end().catch(() => {});
   }
+}
+
+/** The `kortix.yaml` of a flow's project: one `kortix` agent with every permission. */
+export const manifest = (name: string): string =>
+  `project:\n  name: ke2e-${name}\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n`;
+
+/** A team project with a world on it: the `manifest(name)` committed when `manifest` names it, each of `features` turned on. */
+export async function openWorld(ctx: FlowContext, opts: { manifest?: string; features?: string[] } = {}) {
+  const team = await ctx.fixtures.team();
+  const project = await team.project({ managedGit: true });
+  const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
+  if (opts.manifest) await world.writeManifest(manifest(opts.manifest), `ke2e: ${opts.manifest.replaceAll('-', ' ')} agent`);
+  for (const feature of opts.features ?? []) await world.setFeature(feature, true);
+  return { team, project, world };
+}
+
+/** Insert a session row directly: the local profile has no sandbox, so its create route answers 503. */
+export async function insertSession(
+  world: AgentPrincipalsWorld,
+  createdBy: string,
+  visibility: 'private' | 'project',
+  opts: { spaceId?: string; updatedAt?: Date; metadata?: Record<string, unknown>; agentName?: string } = {},
+): Promise<string> {
+  const sessionId = randomUUID();
+  world.sessions.push(sessionId);
+  await world.db.query(
+    `INSERT INTO kortix.project_sessions
+       (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, metadata, space_id, updated_at)
+     VALUES ($1, $2, $3, $1, $9, 'stopped', $4, $5, $6::jsonb, $7, coalesce($8::timestamptz, now()))`,
+    [
+      sessionId,
+      world.accountId,
+      world.projectId,
+      createdBy,
+      visibility,
+      JSON.stringify(opts.metadata ?? {}),
+      opts.spaceId ?? null,
+      opts.updatedAt?.toISOString() ?? null,
+      opts.agentName ?? 'kortix',
+    ],
+  );
+  return sessionId;
+}
+
+/**
+ * The target has drive storage: a write lands (a folder made and removed in
+ * the owner's own folder), not 503 `drive_storage_unavailable`. A read cannot
+ * tell: a drive with no volume yet reads as empty on every target.
+ */
+export async function hasStorage(world: AgentPrincipalsWorld): Promise<boolean> {
+  const { driveId, personalFolder } = await driveOf(world.owner, world.projectId);
+  const path = `${personalFolder}/.storage-probe-${randomUUID().slice(0, 8)}`;
+  const r = await world.owner.post('/v1/drives/:driveId/files/mkdir', { path }, { params: { driveId } });
+  if (r.statusCode === 503) {
+    r.body().has('$.code', 'drive_storage_unavailable');
+    return false;
+  }
+  r.status([200, 201]);
+  // A new folder on Platinum storage is not empty to a plain delete; remove it as the web UI does.
+  (await world.owner.del('/v1/drives/:driveId/files', { params: { driveId }, query: { path, recursive: 'true' } })).status([200, 204]);
+  return true;
+}
+
+/** The project drive's id and the caller's own folder. */
+export async function driveOf(client: Client, projectId: string): Promise<{ driveId: string; personalFolder: string }> {
+  const drive = (await client.get('/v1/drives', { query: { projectId } })).status(200).json<{ drives: { driveId: string; personalFolder: string }[] }>().drives[0];
+  if (!drive) fail('no project drive', null);
+  return drive;
 }
 
 /** Raw HTTP with an arbitrary bearer and headers (for paths outside /v1 or custom headers). */

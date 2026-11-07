@@ -218,14 +218,14 @@ export function GoalsScreen({
   if (!projectId) {
     return (
       <box flexDirection="column" width={width}>
-        <text fg={theme.faint}>No project selected.</text>
+        <text fg={theme.faint}>No workspace open. Type /workspaces to pick one.</text>
       </box>
     );
   }
   if (!flag.isLoading && !flag.enabled) {
     return (
       <box flexDirection="column" width={width}>
-        <text fg={theme.faint}>Goals are off for this project (flag `goals`).</text>
+        <text fg={theme.faint}>Goals are off for this workspace (flag `goals`).</text>
       </box>
     );
   }

@@ -70,13 +70,13 @@ async function settledManifestHistory(
 
 flow(
   'TRG-1',
-  { domain: 'triggers', routes: ['GET /v1/projects/:projectId/triggers'] },
+  { domain: 'triggers', routes: ['GET /v1/workspaces/:projectId/triggers'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step('list triggers; the body is the contract TriggerList envelope', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/triggers', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/triggers', { params: { projectId: p.id } });
       r.status(200).body().schema(TriggerListSchema);
     });
     // project.trigger.read gate (IAM enforcement audit) — a stranger with no
@@ -88,13 +88,13 @@ flow(
     await ctx.step('NONMEMBER → 403/404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/triggers', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/triggers', { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step('ANON → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/triggers', { params: { projectId: p.id } });
+        .get('/v1/workspaces/:projectId/triggers', { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -105,16 +105,16 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/files/content',
-      'GET /v1/projects/:projectId/files/history',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/files/content',
+      'GET /v1/workspaces/:projectId/files/history',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project({ managedGit: true });
     await ctx.step('create a cron trigger with a pinned model → 201', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         {
           name: 'Nightly',
           type: 'cron',
@@ -132,7 +132,7 @@ flow(
       const owner = ctx.client.as(ctx.P.OWNER);
       await waitFor(
         async () => {
-          const r = await owner.get('/v1/projects/:projectId/files/history', { params: { projectId: p.id }, query: { path: 'kortix.yaml' } });
+          const r = await owner.get('/v1/workspaces/:projectId/files/history', { params: { projectId: p.id }, query: { path: 'kortix.yaml' } });
           r.status(200);
           return r.json<{ commits: Array<{ subject: string }> }>().commits;
         },
@@ -145,7 +145,7 @@ flow(
       );
       const text = await waitFor(
         async () => {
-          const r = await owner.get('/v1/projects/:projectId/files/content', { params: { projectId: p.id }, query: { path: 'kortix.yaml' } });
+          const r = await owner.get('/v1/workspaces/:projectId/files/content', { params: { projectId: p.id }, query: { path: 'kortix.yaml' } });
           r.status(200);
           return r.json<{ content: string }>().content;
         },
@@ -160,7 +160,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/triggers',
+          '/v1/workspaces/:projectId/triggers',
           {
             name: 'Nightly',
             type: 'cron',
@@ -177,13 +177,13 @@ flow(
 
 flow(
   'TRG-3',
-  { domain: 'triggers', routes: ['PATCH /v1/projects/:projectId/triggers/:slug'] },
+  { domain: 'triggers', routes: ['PATCH /v1/workspaces/:projectId/triggers/:slug'] },
   async (ctx) => {
     const p = await ctx.fixtures.project({ managedGit: true });
     await ctx.client
       .as(ctx.P.OWNER)
       .post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         {
           name: 'Toggle Me',
           type: 'cron',
@@ -197,7 +197,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/projects/:projectId/triggers/:slug',
+          '/v1/workspaces/:projectId/triggers/:slug',
           { enabled: false },
           { params: { projectId: p.id, slug: 'toggle-me' } },
         );
@@ -215,7 +215,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          '/v1/projects/:projectId/triggers/:slug',
+          '/v1/workspaces/:projectId/triggers/:slug',
           { model: 'openai/gpt-5' },
           { params: { projectId: p.id, slug: 'toggle-me' } },
         );
@@ -227,14 +227,14 @@ flow(
 
 flow(
   'TRG-4',
-  { domain: 'triggers', routes: ['DELETE /v1/projects/:projectId/triggers/:slug', 'GET /v1/projects/:projectId/triggers'] },
+  { domain: 'triggers', routes: ['DELETE /v1/workspaces/:projectId/triggers/:slug', 'GET /v1/workspaces/:projectId/triggers'] },
   async (ctx) => {
     const p = await ctx.fixtures.project({ managedGit: true });
     for (const name of ['Delete Me', 'Keep Me']) {
       (await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/triggers',
+          '/v1/workspaces/:projectId/triggers',
           { name, type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' },
           { params: { projectId: p.id } },
         )).status(201);
@@ -242,13 +242,13 @@ flow(
     await ctx.step('delete trigger → 200', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/projects/:projectId/triggers/:slug', {
+        .del('/v1/workspaces/:projectId/triggers/:slug', {
           params: { projectId: p.id, slug: 'delete-me' },
         });
       r.status(200);
     });
     await ctx.step('the delete removes only that entry: GET lists keep-me, not delete-me', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/triggers', { params: { projectId: p.id } });
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/triggers', { params: { projectId: p.id } });
       r.status(200);
       const slugs = r.json<{ triggers: TriggerRow[] }>().triggers.map((t) => t.slug);
       if (slugs.includes('delete-me') || !slugs.includes('keep-me')) throw new Error(`unexpected triggers after delete: ${JSON.stringify(slugs)}`);
@@ -269,16 +269,20 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'GET /v1/projects/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers',
       'PUT /v1/accounts/:accountId/iam/enterprise-demo',
       'POST /v1/accounts/:accountId/iam/roles',
       'POST /v1/accounts/:accountId/iam/policies',
+      'POST /v1/accounts/:accountId/iam/service-accounts',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project();
-    const noTriggerRead = await team.addMember('member');
+    // Membership is access (design.md §3.2 C3): every member of a 1:1
+    // workspace holds the member tier, which carries project.trigger.read. The
+    // principal without it is a service account bound to the custom role only.
+    let noTriggerRead = ctx.P.ANON;
     const floorMember = await team.addMember('member');
     const roleKey = `notrig_${team.id.replace(/-/g, '').slice(0, 10)}`;
     let roleId = '';
@@ -310,12 +314,20 @@ flow(
       },
     );
 
-    await ctx.step('bind that member to the custom role on this project', async () => {
+    await ctx.step('a service account is bound to the custom role on this project, and to nothing else', async () => {
+      const sa = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/service-accounts',
+        { name: `trg10-${team.id.slice(0, 8)}` },
+        { params: { accountId: team.id } },
+      );
+      sa.status(201);
+      const { service_account_id: saId, secret } = sa.json<{ service_account_id: string; secret: string }>();
+      noTriggerRead = { ...ctx.P.OWNER, label: 'TRG10_SERVICE_ACCOUNT', userId: saId, auth: { mode: 'bearer', token: secret } };
       const r = await ctx.client.as(ctx.P.OWNER).post(
         '/v1/accounts/:accountId/iam/policies',
         {
-          principalType: 'member',
-          principalId: noTriggerRead.userId!,
+          principalType: 'token',
+          principalId: saId,
           roleId,
           scopeType: 'project',
           scopeId: project.id,
@@ -325,10 +337,10 @@ flow(
       r.status(201);
     });
 
-    await ctx.step('member WITHOUT trigger.read → GET /triggers 403 (leaf gate)', async () => {
+    await ctx.step('a principal WITHOUT trigger.read → GET /triggers 403 (leaf gate)', async () => {
       const r = await ctx.client
         .as(noTriggerRead)
-        .get('/v1/projects/:projectId/triggers', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/triggers', { params: { projectId: project.id } });
       r.status(403);
     });
 
@@ -336,7 +348,7 @@ flow(
       await team.grantProjectRole(project.id, floorMember.userId!, 'user');
       const r = await ctx.client
         .as(floorMember)
-        .get('/v1/projects/:projectId/triggers', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/triggers', { params: { projectId: project.id } });
       r.status(200);
     });
   },
@@ -363,12 +375,12 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'GET /v1/projects/:projectId/triggers',
-      'POST /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
-      'DELETE /v1/projects/:projectId/triggers/:slug',
-      'POST /v1/projects/:projectId/triggers/:slug/fire',
-      'PATCH /v1/projects/:projectId/triggers/activation',
+      'GET /v1/workspaces/:projectId/triggers',
+      'POST /v1/workspaces/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
+      'DELETE /v1/workspaces/:projectId/triggers/:slug',
+      'POST /v1/workspaces/:projectId/triggers/:slug/fire',
+      'PATCH /v1/workspaces/:projectId/triggers/activation',
     ],
   },
   async (ctx) => {
@@ -383,7 +395,7 @@ flow(
     // missing slug would still 403 — but using a real slug proves the denial
     // is the authz gate, not a 404 masquerading as a denial).
     await ctx.client.as(ctx.P.OWNER).post(
-      '/v1/projects/:projectId/triggers',
+      '/v1/workspaces/:projectId/triggers',
       {
         name: 'Target Trigger',
         type: 'cron',
@@ -399,7 +411,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post(
-          '/v1/projects/:projectId/triggers',
+          '/v1/workspaces/:projectId/triggers',
           { name: 'x', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' },
           { params: { projectId: project.id } },
         );
@@ -409,21 +421,21 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .patch(
-          '/v1/projects/:projectId/triggers/:slug',
+          '/v1/workspaces/:projectId/triggers/:slug',
           { enabled: false },
           { params: { projectId: project.id, slug: 'target-trigger' } },
         );
       r.status(401);
     });
     await ctx.step('ANON DELETE → 401', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).del('/v1/projects/:projectId/triggers/:slug', {
+      const r = await ctx.client.as(ctx.P.ANON).del('/v1/workspaces/:projectId/triggers/:slug', {
         params: { projectId: project.id, slug: 'target-trigger' },
       });
       r.status(401);
     });
     await ctx.step('ANON fire → 401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post(
-        '/v1/projects/:projectId/triggers/:slug/fire',
+        '/v1/workspaces/:projectId/triggers/:slug/fire',
         {},
         {
           params: { projectId: project.id, slug: 'target-trigger' },
@@ -435,7 +447,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .patch(
-          '/v1/projects/:projectId/triggers/activation',
+          '/v1/workspaces/:projectId/triggers/activation',
           { paused: true },
           { params: { projectId: project.id } },
         );
@@ -444,14 +456,14 @@ flow(
 
     // ── project member (floor) authz boundary ───────────────────────────
     await ctx.step('member GET /triggers → 200 (holds trigger.read)', async () => {
-      const r = await asMember.get('/v1/projects/:projectId/triggers', {
+      const r = await asMember.get('/v1/workspaces/:projectId/triggers', {
         params: { projectId: project.id },
       });
       r.status(200);
     });
     await ctx.step('member POST → 403 (no project.write / trigger.create)', async () => {
       const r = await asMember.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'nope', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' },
         { params: { projectId: project.id } },
       );
@@ -459,21 +471,21 @@ flow(
     });
     await ctx.step('member PATCH → 403 (no trigger.update)', async () => {
       const r = await asMember.patch(
-        '/v1/projects/:projectId/triggers/:slug',
+        '/v1/workspaces/:projectId/triggers/:slug',
         { enabled: false },
         { params: { projectId: project.id, slug: 'target-trigger' } },
       );
       r.status(403);
     });
     await ctx.step('member DELETE → 403 (no trigger.delete)', async () => {
-      const r = await asMember.del('/v1/projects/:projectId/triggers/:slug', {
+      const r = await asMember.del('/v1/workspaces/:projectId/triggers/:slug', {
         params: { projectId: project.id, slug: 'target-trigger' },
       });
       r.status(403);
     });
     await ctx.step('member activation → 403 (no trigger.update)', async () => {
       const r = await asMember.patch(
-        '/v1/projects/:projectId/triggers/activation',
+        '/v1/workspaces/:projectId/triggers/activation',
         { paused: true },
         { params: { projectId: project.id } },
       );
@@ -486,7 +498,7 @@ flow(
     // member is NOT 403'd at the gate.
     await ctx.step('member fire unknown slug → 404 (NOT 403 — holds trigger.fire)', async () => {
       const r = await asMember.post(
-        '/v1/projects/:projectId/triggers/:slug/fire',
+        '/v1/workspaces/:projectId/triggers/:slug/fire',
         {},
         {
           params: { projectId: project.id, slug: 'no-such-trigger' },
@@ -514,7 +526,7 @@ flow(
 //   - invalid slug (explicit, doesn't match ^[a-z0-9][a-z0-9_-]{0,127}$) → 400
 flow(
   'TRG-12',
-  { domain: 'triggers', routes: ['POST /v1/projects/:projectId/triggers'] },
+  { domain: 'triggers', routes: ['POST /v1/workspaces/:projectId/triggers'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     // Every payload below is invalid and cannot create a trigger. Retry only
@@ -524,7 +536,7 @@ flow(
 
     await ctx.step('missing name → 400', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' },
         { params },
       );
@@ -532,7 +544,7 @@ flow(
     });
     await ctx.step('missing type → 400', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'x', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' },
         { params },
       );
@@ -540,7 +552,7 @@ flow(
     });
     await ctx.step('bad type (not cron/webhook/monitor/event) → 400', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'x', type: 'bogus', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' },
         { params },
       );
@@ -549,7 +561,7 @@ flow(
     // KRTX-1721: the first of 6 fields is seconds, so this fires every 30 s.
     await ctx.step('a cron that fires more than once a minute → 400 naming the 60-second minimum', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'x', type: 'cron', cron: '*/30 * * * * *', timezone: 'UTC', prompt_template: 'x' },
         { params },
       );
@@ -559,7 +571,7 @@ flow(
     });
     await ctx.step('missing prompt_template → 400', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'x', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC' },
         { params },
       );
@@ -567,7 +579,7 @@ flow(
     });
     await ctx.step('invalid session_mode → 400', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         {
           name: 'x',
           type: 'cron',
@@ -582,7 +594,7 @@ flow(
     });
     await ctx.step('pinned session_mode without session_id → 400', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         {
           name: 'x',
           type: 'cron',
@@ -597,7 +609,7 @@ flow(
     });
     await ctx.step('pinned with session_id from another project → 400', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         {
           name: 'x',
           type: 'cron',
@@ -613,7 +625,7 @@ flow(
     });
     await ctx.step('webhook without secret_env → 400', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'x', type: 'webhook', prompt_template: 'x' },
         { params },
       );
@@ -621,7 +633,7 @@ flow(
     });
     await ctx.step('webhook with bad secret_env (lowercase) → 400', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'x', type: 'webhook', prompt_template: 'x', secret_env: 'lowercase_name' },
         { params },
       );
@@ -629,7 +641,7 @@ flow(
     });
     await ctx.step('webhook with bad secret_env (starts with digit) → 400', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'x', type: 'webhook', prompt_template: 'x', secret_env: '9BAD' },
         { params },
       );
@@ -637,7 +649,7 @@ flow(
     });
     await ctx.step('cron without cron expr AND without run_at → 400', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'x', type: 'cron', timezone: 'UTC', prompt_template: 'x' },
         { params },
       );
@@ -645,7 +657,7 @@ flow(
     });
     await ctx.step('cron with bad run_at (not ISO) → 400', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'x', type: 'cron', timezone: 'UTC', prompt_template: 'x', run_at: 'not-a-date' },
         { params },
       );
@@ -653,7 +665,7 @@ flow(
     });
     await ctx.step('explicit invalid slug (uppercase) → 400', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         {
           name: 'x',
           slug: 'UPPERCASE',
@@ -668,7 +680,7 @@ flow(
     });
     await ctx.step('explicit invalid slug (starts with dash) → 400', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         {
           name: 'x',
           slug: '-leading-dash',
@@ -698,10 +710,10 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'PATCH /v1/projects/:projectId/triggers/:slug',
-      'DELETE /v1/projects/:projectId/triggers/:slug',
-      'PATCH /v1/projects/:projectId/triggers/activation',
-      'GET /v1/projects/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
+      'DELETE /v1/workspaces/:projectId/triggers/:slug',
+      'PATCH /v1/workspaces/:projectId/triggers/activation',
+      'GET /v1/workspaces/:projectId/triggers',
     ],
   },
   async (ctx) => {
@@ -711,7 +723,7 @@ flow(
 
     // Seed a trigger to target.
     await owner.post(
-      '/v1/projects/:projectId/triggers',
+      '/v1/workspaces/:projectId/triggers',
       {
         name: 'Edge Target',
         type: 'cron',
@@ -724,7 +736,7 @@ flow(
 
     await ctx.step('PATCH unknown slug → 404', async () => {
       const r = await owner.patch(
-        '/v1/projects/:projectId/triggers/:slug',
+        '/v1/workspaces/:projectId/triggers/:slug',
         { enabled: false },
         { params: { ...params, slug: 'no-such-trigger' } },
       );
@@ -732,26 +744,26 @@ flow(
     });
     await ctx.step('PATCH no-op body {} → 200 (no manifest keys, no commit)', async () => {
       const r = await owner.patch(
-        '/v1/projects/:projectId/triggers/:slug',
+        '/v1/workspaces/:projectId/triggers/:slug',
         {},
         { params: { ...params, slug: 'edge-target' } },
       );
       r.status(200);
     });
     await ctx.step('DELETE unknown slug → 404', async () => {
-      const r = await owner.del('/v1/projects/:projectId/triggers/:slug', {
+      const r = await owner.del('/v1/workspaces/:projectId/triggers/:slug', {
         params: { ...params, slug: 'no-such-trigger' },
       });
       r.status(404);
     });
     await ctx.step('DELETE invalid slug format (uppercase) → 400', async () => {
-      const r = await owner.del('/v1/projects/:projectId/triggers/:slug', {
+      const r = await owner.del('/v1/workspaces/:projectId/triggers/:slug', {
         params: { ...params, slug: 'UPPERCASE' },
       });
       r.status(400);
     });
     await ctx.step('DELETE invalid slug format (leading dash) → 400', async () => {
-      const r = await owner.del('/v1/projects/:projectId/triggers/:slug', {
+      const r = await owner.del('/v1/workspaces/:projectId/triggers/:slug', {
         params: { ...params, slug: '-leading-dash' },
       });
       r.status(400);
@@ -760,12 +772,12 @@ flow(
     // ── activation kill-switch round-trip ───────────────────────────────
     await ctx.step('activation pause → 200, triggers_paused reflected on readback', async () => {
       const r = await owner.patch(
-        '/v1/projects/:projectId/triggers/activation',
+        '/v1/workspaces/:projectId/triggers/activation',
         { paused: true },
         { params },
       );
       r.status(200);
-      const readback = await owner.get('/v1/projects/:projectId/triggers', { params });
+      const readback = await owner.get('/v1/workspaces/:projectId/triggers', { params });
       readback.status(200);
       if (readback.json<any>().triggers_paused !== true) {
         throw new Error('triggers_paused not persisted as true after pause');
@@ -773,12 +785,12 @@ flow(
     });
     await ctx.step('activation resume → 200, triggers_paused false on readback', async () => {
       const r = await owner.patch(
-        '/v1/projects/:projectId/triggers/activation',
+        '/v1/workspaces/:projectId/triggers/activation',
         { paused: false },
         { params },
       );
       r.status(200);
-      const readback = await owner.get('/v1/projects/:projectId/triggers', { params });
+      const readback = await owner.get('/v1/workspaces/:projectId/triggers', { params });
       readback.status(200);
       if (readback.json<any>().triggers_paused !== false) {
         throw new Error('triggers_paused not persisted as false after resume');
@@ -786,14 +798,14 @@ flow(
     });
     await ctx.step('activation non-boolean paused → 400', async () => {
       const r = await owner.patch(
-        '/v1/projects/:projectId/triggers/activation',
+        '/v1/workspaces/:projectId/triggers/activation',
         { paused: 'yes' },
         { params },
       );
       r.status(400);
     });
     await ctx.step('activation missing paused → 400', async () => {
-      const r = await owner.patch('/v1/projects/:projectId/triggers/activation', {}, { params });
+      const r = await owner.patch('/v1/workspaces/:projectId/triggers/activation', {}, { params });
       r.status(400);
     });
   },
@@ -803,12 +815,12 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
-      'GET /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/files/history',
-      'GET /v1/projects/:projectId/sessions',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/workspaces/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
+      'GET /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/files/history',
+      'GET /v1/workspaces/:projectId/sessions',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
       'POST /v1/accounts/:accountId/iam/groups',
     ],
   },
@@ -852,7 +864,7 @@ flow(
 
     await ctx.step('omitted session_access defaults to private', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         {
           name: 'Access policy target',
           type: 'cron',
@@ -874,7 +886,7 @@ flow(
         throw new Error(`unexpected default session_access: ${JSON.stringify(access)}`);
       }
       const readHistory = async (): Promise<ManifestCommit[]> => {
-        const history = await owner.get('/v1/projects/:projectId/files/history', {
+        const history = await owner.get('/v1/workspaces/:projectId/files/history', {
           params: { projectId: project.id },
           query: { path: 'kortix.yaml' },
         });
@@ -888,13 +900,13 @@ flow(
       'project manager opens a private trigger session but not a private human session',
       async () => {
         const triggerSession = await ctx.client.as(manager).get(
-          '/v1/projects/:projectId/sessions/:sessionId',
+          '/v1/workspaces/:projectId/sessions/:sessionId',
           { params: { projectId: project.id, sessionId: triggerPrivateSessionId } },
         );
         triggerSession.status(200).body().has('$.session_id', triggerPrivateSessionId);
 
         const humanSession = await ctx.client.as(manager).get(
-          '/v1/projects/:projectId/sessions/:sessionId',
+          '/v1/workspaces/:projectId/sessions/:sessionId',
           { params: { projectId: project.id, sessionId: humanPrivateSessionId } },
         );
         humanSession.status(404);
@@ -903,14 +915,14 @@ flow(
 
     await ctx.step('ordinary project member cannot open a private trigger session', async () => {
       const r = await ctx.client.as(teammate).get(
-        '/v1/projects/:projectId/sessions/:sessionId',
+        '/v1/workspaces/:projectId/sessions/:sessionId',
         { params: { projectId: project.id, sessionId: triggerPrivateSessionId } },
       );
       r.status(404);
     });
 
     await ctx.step('ordinary project member cannot discover a private trigger session', async () => {
-      const r = await ctx.client.as(teammate).get('/v1/projects/:projectId/sessions', {
+      const r = await ctx.client.as(teammate).get('/v1/workspaces/:projectId/sessions', {
         params: { projectId: project.id },
       });
       r.status(200);
@@ -921,7 +933,7 @@ flow(
     });
 
     await ctx.step('manager inventory includes the trigger session and hides inaccessible sessions', async () => {
-      const r = await ctx.client.as(manager).get('/v1/projects/:projectId/sessions', {
+      const r = await ctx.client.as(manager).get('/v1/workspaces/:projectId/sessions', {
         params: { projectId: project.id },
         query: { scope: 'project' },
       });
@@ -940,7 +952,7 @@ flow(
       'policy-only PATCH persists selected access without committing kortix.yaml',
       async () => {
         const r = await owner.patch(
-          '/v1/projects/:projectId/triggers/:slug',
+          '/v1/workspaces/:projectId/triggers/:slug',
           {
             session_access: {
               mode: 'members',
@@ -964,7 +976,7 @@ flow(
           throw new Error(`selected session_access was not normalized: ${JSON.stringify(access)}`);
         }
         const current = await settledManifestHistory(async () => {
-          const history = await owner.get('/v1/projects/:projectId/files/history', {
+          const history = await owner.get('/v1/workspaces/:projectId/files/history', {
             params: { projectId: project.id },
             query: { path: 'kortix.yaml' },
           });
@@ -984,7 +996,7 @@ flow(
 
     await ctx.step('explicit project access persists', async () => {
       const r = await owner.patch(
-        '/v1/projects/:projectId/triggers/:slug',
+        '/v1/workspaces/:projectId/triggers/:slug',
         { session_access: { mode: 'project', memberIds: [], groupIds: [] } },
         { params: { projectId: project.id, slug: 'access-policy-target' } },
       );
@@ -993,7 +1005,7 @@ flow(
 
     await ctx.step('empty selected access normalizes to private', async () => {
       const r = await owner.patch(
-        '/v1/projects/:projectId/triggers/:slug',
+        '/v1/workspaces/:projectId/triggers/:slug',
         { session_access: { mode: 'members', memberIds: [], groupIds: [] } },
         { params: { projectId: project.id, slug: 'access-policy-target' } },
       );
@@ -1002,7 +1014,7 @@ flow(
 
     await ctx.step('unknown member is rejected', async () => {
       const r = await owner.patch(
-        '/v1/projects/:projectId/triggers/:slug',
+        '/v1/workspaces/:projectId/triggers/:slug',
         {
           session_access: {
             mode: 'members',
@@ -1018,7 +1030,7 @@ flow(
     await ctx.step('cross-account member is rejected', async () => {
       if (!ctx.P.NONMEMBER.userId) throw new Error('NONMEMBER fixture has no user id');
       const r = await owner.patch(
-        '/v1/projects/:projectId/triggers/:slug',
+        '/v1/workspaces/:projectId/triggers/:slug',
         {
           session_access: {
             mode: 'members',
@@ -1033,7 +1045,7 @@ flow(
 
     await ctx.step('unknown group is rejected', async () => {
       const r = await owner.patch(
-        '/v1/projects/:projectId/triggers/:slug',
+        '/v1/workspaces/:projectId/triggers/:slug',
         {
           session_access: {
             mode: 'members',
@@ -1053,8 +1065,8 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'GET /v1/projects/:projectId/sessions/:sessionId',
-      'DELETE /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
+      'DELETE /v1/workspaces/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx) => {
@@ -1098,37 +1110,37 @@ flow(
     });
 
     await ctx.step('manager reads a private trigger session before pruning it', async () => {
-      const r = await ctx.client.as(manager).get('/v1/projects/:projectId/sessions/:sessionId', {
+      const r = await ctx.client.as(manager).get('/v1/workspaces/:projectId/sessions/:sessionId', {
         params: { projectId: project.id, sessionId: triggerSession },
       });
       r.status(200).body().has('$.session_id', triggerSession);
     });
 
     await ctx.step('manager deletes a private trigger session', async () => {
-      const r = await ctx.client.as(manager).del('/v1/projects/:projectId/sessions/:sessionId', {
+      const r = await ctx.client.as(manager).del('/v1/workspaces/:projectId/sessions/:sessionId', {
         params: { projectId: project.id, sessionId: triggerSession },
       });
       r.status(200);
     });
 
     await ctx.step('ordinary member cannot discover the sibling trigger session to delete it', async () => {
-      const r = await ctx.client.as(teammate).del('/v1/projects/:projectId/sessions/:sessionId', {
+      const r = await ctx.client.as(teammate).del('/v1/workspaces/:projectId/sessions/:sessionId', {
         params: { projectId: project.id, sessionId: siblingTriggerSession },
       });
       r.status(404);
     });
 
     await ctx.step('non-manager delete of a project-visible automation session is refused', async () => {
-      const r = await ctx.client.as(teammate).del('/v1/projects/:projectId/sessions/:sessionId', {
+      const r = await ctx.client.as(teammate).del('/v1/workspaces/:projectId/sessions/:sessionId', {
         params: { projectId: project.id, sessionId: automationSession },
       });
       r.status(403)
         .body()
-        .has('$.error', 'Only the session owner or a project manager can stop this session');
+        .has('$.error', 'Only the session owner or a workspace manager can stop this session');
     });
 
     await ctx.step('manager deletes the project-visible automation session', async () => {
-      const r = await ctx.client.as(manager).del('/v1/projects/:projectId/sessions/:sessionId', {
+      const r = await ctx.client.as(manager).del('/v1/workspaces/:projectId/sessions/:sessionId', {
         params: { projectId: project.id, sessionId: automationSession },
       });
       r.status(200);
@@ -1173,13 +1185,13 @@ flow(
     requires: ['managedGitPush'],
     timeoutMs: 600_000,
     routes: [
-      'GET /v1/accounts/me',
+      'GET /v1/me',
       'POST /v1/projects/provision',
-      'POST /v1/projects/:projectId/git-token',
-      'GET /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/files/content',
+      'POST /v1/workspaces/:projectId/git-token',
+      'GET /v1/workspaces/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/files/content',
     ],
   },
   async (ctx) => {
@@ -1191,7 +1203,7 @@ flow(
     let rootText = '';
 
     const readFile = async (path: string): Promise<string> => {
-      const r = await owner.get('/v1/projects/:projectId/files/content', {
+      const r = await owner.get('/v1/workspaces/:projectId/files/content', {
         params: { projectId },
         query: { path },
       });
@@ -1199,7 +1211,7 @@ flow(
       return r.json<{ content: string }>().content;
     };
     const listTriggers = async (): Promise<{ triggers: ImportedTriggerRow[]; errors: unknown[] }> => {
-      const r = await owner.get('/v1/projects/:projectId/triggers', { params: { projectId } });
+      const r = await owner.get('/v1/workspaces/:projectId/triggers', { params: { projectId } });
       r.status(200);
       return r.json<{ triggers: ImportedTriggerRow[]; errors: unknown[] }>();
     };
@@ -1281,7 +1293,7 @@ flow(
         'PATCH an imported trigger {enabled:false} → 200; only its declaring file changes, kortix.yaml is byte-identical',
         async () => {
           const r = await owner.patch(
-            '/v1/projects/:projectId/triggers/:slug',
+            '/v1/workspaces/:projectId/triggers/:slug',
             { enabled: false },
             { params: { projectId, slug: 'weekly-report' } },
           );
@@ -1317,10 +1329,10 @@ flow(
             timezone: 'UTC',
             prompt_template: 'new',
           };
-          (await owner.post('/v1/projects/:projectId/triggers', body, { params: { projectId } })).status(201);
+          (await owner.post('/v1/workspaces/:projectId/triggers', body, { params: { projectId } })).status(201);
           (
             await owner.post(
-              '/v1/projects/:projectId/triggers',
+              '/v1/workspaces/:projectId/triggers',
               { ...body, name: 'Dup', slug: 'docket-monitor' },
               { params: { projectId } },
             )
@@ -1357,9 +1369,9 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/triggers',
-      'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers',
+      'POST /v1/workspaces/:projectId/triggers/:slug/fire',
     ],
   },
   async (ctx) => {
@@ -1368,7 +1380,7 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: p.id };
     const digest = async () =>
-      (await owner.get('/v1/projects/:projectId/triggers', { params }))
+      (await owner.get('/v1/workspaces/:projectId/triggers', { params }))
         .status(200)
         .json<{ triggers: Array<{ slug: string; next_fire_at?: string | null; last_status?: string | null; last_error?: string | null }> }>()
         .triggers.find((t) => t.slug === 'digest');
@@ -1376,7 +1388,7 @@ flow(
     await ctx.step('a daily cron trigger lists its next run, within a day of now', async () => {
       (
         await owner.post(
-          '/v1/projects/:projectId/triggers',
+          '/v1/workspaces/:projectId/triggers',
           { name: 'Digest', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'Summarize.' },
           { params },
         )
@@ -1391,7 +1403,7 @@ flow(
     await ctx.step('a manual fire that fails is recorded on the trigger: last_status failed, with the error', async () => {
       // KRTX-1505: the account has no usable model here, so the fire is gated
       // with 402 no_usable_model — recorded like any other failed fire.
-      const fired = await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'digest' } });
+      const fired = await owner.post('/v1/workspaces/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'digest' } });
       fired.status(402);
       const error = fired.json<{ error?: string }>()?.error ?? '';
       const after = await digest();
@@ -1413,10 +1425,10 @@ flow(
     domain: 'triggers',
     requires: ['database'],
     routes: [
-      'POST /v1/projects/:projectId/secrets',
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/triggers',
-      'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'POST /v1/workspaces/:projectId/secrets',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers',
+      'POST /v1/workspaces/:projectId/triggers/:slug/fire',
       'POST /v1/webhooks/projects/:projectId/:slug',
     ],
   },
@@ -1429,13 +1441,13 @@ flow(
     // reach the backpressure path this flow exists to prove (KRTX-1505:
     // without it the no-usable-model gate 402s before queuing).
     (await owner.post(
-      '/v1/projects/:projectId/secrets',
+      '/v1/workspaces/:projectId/secrets',
       { name: 'ANTHROPIC_API_KEY', value: 'sk-ant-ke2e-backpressure', strategy: 'broker', consumer: 'llm_gateway' },
       { params },
     )).status(200);
     const secret = `ke2e-hook-${crypto.randomUUID()}`;
     (await owner.post(
-      '/v1/projects/:projectId/triggers',
+      '/v1/workspaces/:projectId/triggers',
       {
         name: 'Backpressure cron',
         slug: 'bp-cron',
@@ -1447,9 +1459,9 @@ flow(
       },
       { params },
     )).status(201);
-    (await owner.post('/v1/projects/:projectId/secrets', { name: 'BP_HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+    (await owner.post('/v1/workspaces/:projectId/secrets', { name: 'BP_HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
     (await owner.post(
-      '/v1/projects/:projectId/triggers',
+      '/v1/workspaces/:projectId/triggers',
       { name: 'Backpressure hook', slug: 'bp-hook', type: 'webhook', secret_env: 'BP_HOOK_SECRET', prompt_template: 'New {{ body.action }}' },
       { params },
     )).status(201);
@@ -1462,7 +1474,7 @@ flow(
       await ctx.step(
         'manual fire under backpressure → 202 queued; one queued create_session with the rendered prompt, the pinned model and private visibility; last_fired_at stamped',
         async () => {
-          const r = await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'bp-cron' } });
+          const r = await owner.post('/v1/workspaces/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'bp-cron' } });
           r.status(202).body().has('$.status', 'queued').has('$.reason', 'project provisioning backpressure').has('$.deduped', false);
           const commandId = r.json<{ command_id: string | null }>().command_id;
           if (!commandId) throw new Error(`queued fire returned no command_id: ${r.text()}`);
@@ -1485,7 +1497,7 @@ flow(
           ) {
             throw new Error(`queued create command is wrong: ${JSON.stringify(row)}`);
           }
-          const listed = await owner.get('/v1/projects/:projectId/triggers', { params });
+          const listed = await owner.get('/v1/workspaces/:projectId/triggers', { params });
           listed.status(200);
           const fired = listed.json<{ triggers: Array<{ slug: string; last_fired_at: string | null }> }>().triggers.find((t) => t.slug === 'bp-cron');
           if (!fired?.last_fired_at) throw new Error(`last_fired_at not stamped: ${JSON.stringify(fired)}`);
@@ -1536,7 +1548,7 @@ flow(
     domain: 'triggers',
     requires: ['database'],
     timeoutMs: 300_000,
-    routes: ['POST /v1/projects/:projectId/triggers', 'GET /v1/projects/:projectId/triggers', 'GET /v1/projects/:projectId/detail'],
+    routes: ['POST /v1/workspaces/:projectId/triggers', 'GET /v1/workspaces/:projectId/triggers', 'GET /v1/workspaces/:projectId/detail'],
   },
   async (ctx) => {
     if (ctx.env.target !== 'local') return; // pushes straight to the local bare repository, as PROJ-39
@@ -1545,7 +1557,7 @@ flow(
     const params = { projectId: p.id };
     type Listing = { triggers: Array<{ slug: string }>; errors: Array<{ slug: string }> };
     const list = async (): Promise<Listing> => {
-      const r = await owner.get('/v1/projects/:projectId/triggers', { params });
+      const r = await owner.get('/v1/workspaces/:projectId/triggers', { params });
       r.status(200);
       return r.json<Listing>();
     };
@@ -1566,7 +1578,7 @@ flow(
     try {
       await ctx.step('POST a cron trigger → 201 and one runtime row for it', async () => {
         (await owner.post(
-          '/v1/projects/:projectId/triggers',
+          '/v1/workspaces/:projectId/triggers',
           { name: 'Keep me', slug: 'keep-me', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'keep' },
           { params },
         )).status(201);
@@ -1596,7 +1608,7 @@ flow(
         type Detail = { config?: { manifest_health?: { issues?: Array<{ message?: string }> } } };
         await waitFor(
           async () => {
-            const r = await owner.get('/v1/projects/:projectId/detail', { params });
+            const r = await owner.get('/v1/workspaces/:projectId/detail', { params });
             r.status(200);
             return r.json<Detail>();
           },
@@ -1627,12 +1639,13 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/secrets',
-      'DELETE /v1/projects/:projectId/secrets/:name',
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
-      'PATCH /v1/projects/:projectId/triggers/activation',
+      'POST /v1/workspaces/:projectId/secrets',
+      'DELETE /v1/workspaces/:projectId/secrets/:name',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
+      'PATCH /v1/workspaces/:projectId/triggers/activation',
+      'POST /v1/webhooks/workspaces/:projectId/:slug',
       'POST /v1/webhooks/projects/:projectId/:slug',
     ],
   },
@@ -1648,12 +1661,16 @@ flow(
       'x-kortix-timestamp': String(ts),
       'x-kortix-signature': sign(`${ts}.${rawBody}`),
     });
-    const deliver = (headers: Record<string, string>, slug = 'hook', projectId = p.id) =>
-      ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
-        params: { projectId, slug },
-        raw: true,
-        headers: { 'content-type': 'application/json', ...headers },
-      });
+    // The URL Kortix shows names the workspace; the project path answers the same, permanently.
+    const deliverAt = (route: '/v1/webhooks/workspaces/:projectId/:slug' | '/v1/webhooks/projects/:projectId/:slug') =>
+      (headers: Record<string, string>, slug = 'hook', projectId = p.id) =>
+        ctx.client.as(ctx.P.ANON).post(route, rawBody, {
+          params: { projectId, slug },
+          raw: true,
+          headers: { 'content-type': 'application/json', ...headers },
+        });
+    const deliver = deliverAt('/v1/webhooks/workspaces/:projectId/:slug');
+    const deliverLegacy = deliverAt('/v1/webhooks/projects/:projectId/:slug');
     const rejected = async (headers: Record<string, string>, slug?: string) => {
       (await deliver(headers, slug)).status(401).body().has('$.error', 'Invalid webhook signature');
     };
@@ -1669,35 +1686,35 @@ flow(
     });
     type Listed = { triggers: Array<{ slug: string; name: string; type: string; secret_env: string | null; webhook_url: string | null }> };
     const listed = async (): Promise<Listed['triggers']> => {
-      const r = await owner.get('/v1/projects/:projectId/triggers', { params });
+      const r = await owner.get('/v1/workspaces/:projectId/triggers', { params });
       r.status(200);
       return r.json<Listed>().triggers;
     };
 
     await ctx.step('webhook trigger naming a missing secret → 409 webhook_secret_missing; nothing listed', async () => {
-      const r = await owner.post('/v1/projects/:projectId/triggers', webhookTrigger('missing-hook', 'NO_SUCH_HOOK_SECRET'), { params });
+      const r = await owner.post('/v1/workspaces/:projectId/triggers', webhookTrigger('missing-hook', 'NO_SUCH_HOOK_SECRET'), { params });
       r.status(409).body().has('$.code', 'webhook_secret_missing');
       if ((await listed()).some((t) => t.slug === 'missing-hook')) throw new Error('a refused webhook trigger was committed');
     });
 
     await ctx.step('webhook trigger naming a sandbox-delivered secret → 409 webhook_secret_delivery_mismatch', async () => {
-      (await owner.post('/v1/projects/:projectId/secrets', { name: 'SANDBOX_HOOK_SECRET', value: 'sandbox-only' }, { params })).status([200, 201]);
-      const r = await owner.post('/v1/projects/:projectId/triggers', webhookTrigger('sandbox-hook', 'SANDBOX_HOOK_SECRET'), { params });
+      (await owner.post('/v1/workspaces/:projectId/secrets', { name: 'SANDBOX_HOOK_SECRET', value: 'sandbox-only' }, { params })).status([200, 201]);
+      const r = await owner.post('/v1/workspaces/:projectId/triggers', webhookTrigger('sandbox-hook', 'SANDBOX_HOOK_SECRET'), { params });
       r.status(409).body().has('$.code', 'webhook_secret_delivery_mismatch');
     });
 
-    await ctx.step('connector-delivered secret → 201; the listing carries secret_env and the public webhook_url', async () => {
-      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params }))
+    await ctx.step('connector-delivered secret → 201; the listing carries secret_env and the public webhook_url on the workspace path', async () => {
+      (await owner.post('/v1/workspaces/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params }))
         .status(200).body().has('$.strategy', 'broker').has('$.consumer', 'connector');
-      (await owner.post('/v1/projects/:projectId/triggers', webhookTrigger('hook', 'HOOK_SECRET'), { params })).status(201);
+      (await owner.post('/v1/workspaces/:projectId/triggers', webhookTrigger('hook', 'HOOK_SECRET'), { params })).status(201);
       const row = (await listed()).find((t) => t.slug === 'hook');
-      if (!row || row.type !== 'webhook' || row.secret_env !== 'HOOK_SECRET' || !row.webhook_url?.endsWith(`/v1/webhooks/projects/${p.id}/hook`)) {
+      if (!row || row.type !== 'webhook' || row.secret_env !== 'HOOK_SECRET' || !row.webhook_url?.endsWith(`/v1/webhooks/workspaces/${p.id}/hook`)) {
         throw new Error(`webhook trigger listing is wrong: ${JSON.stringify(row)}`);
       }
     });
 
     await ctx.step('pause triggers server-side → 200, triggers_paused true', async () => {
-      (await owner.patch('/v1/projects/:projectId/triggers/activation', { paused: true }, { params })).status(200).body().has('$.triggers_paused', true);
+      (await owner.patch('/v1/workspaces/:projectId/triggers/activation', { paused: true }, { params })).status(200).body().has('$.triggers_paused', true);
     });
 
     await ctx.step('malformed project id or slug → 400 before any lookup', async () => {
@@ -1716,6 +1733,11 @@ flow(
       const ts = Math.floor(Date.now() / 1000);
       await accepted(signed(ts));
       await accepted({ 'x-kortix-timestamp': String(ts), 'x-hub-signature-256': sign(`${ts}.${rawBody}`) });
+    });
+
+    await ctx.step('the older /v1/webhooks/projects path: a valid signature → the same 200 skipped, a wrong one → the same 401', async () => {
+      (await deliverLegacy(signed())).status(200).body().has('$.status', 'skipped');
+      (await deliverLegacy({})).status(401).body().has('$.error', 'Invalid webhook signature');
     });
 
     await ctx.step('X-Kortix-Timestamp signs <timestamp>.<body>: 1 h stale or 1 h ahead → 401, current → 200', async () => {
@@ -1743,10 +1765,10 @@ flow(
     });
 
     await ctx.step('the secret loses connector delivery → a signed delivery is 401; PATCH → 409 webhook_secret_delivery_mismatch', async () => {
-      (await owner.del('/v1/projects/:projectId/secrets/:name', { params: { ...params, name: 'HOOK_SECRET' } })).status(200);
-      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret }, { params })).status([200, 201]);
+      (await owner.del('/v1/workspaces/:projectId/secrets/:name', { params: { ...params, name: 'HOOK_SECRET' } })).status(200);
+      (await owner.post('/v1/workspaces/:projectId/secrets', { name: 'HOOK_SECRET', value: secret }, { params })).status([200, 201]);
       await rejected(signed());
-      const r = await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Renamed hook' }, { params: { ...params, slug: 'hook' } });
+      const r = await owner.patch('/v1/workspaces/:projectId/triggers/:slug', { name: 'Renamed hook' }, { params: { ...params, slug: 'hook' } });
       r.status(409).body().has('$.code', 'webhook_secret_delivery_mismatch');
       if ((await listed()).find((t) => t.slug === 'hook')?.name !== 'hook') throw new Error('a refused PATCH changed the trigger');
     });
@@ -1760,7 +1782,7 @@ async function enableEventTriggers(
   projectId: string,
 ): Promise<void> {
   await ctx.step('turn the event_triggers flag on → 200 and it reads enabled', async () => {
-    const r = await owner.patch('/v1/projects/:projectId/features', { feature: 'event_triggers', enabled: true }, { params: { projectId } });
+    const r = await owner.patch('/v1/workspaces/:projectId/features', { feature: 'event_triggers', enabled: true }, { params: { projectId } });
     r.status(200);
     const row = r.json().experimental_features.find((f: { key: string }) => f.key === 'event_triggers') as { enabled: boolean } | undefined;
     if (!row?.enabled) throw new Error(`event_triggers did not turn on: ${JSON.stringify(row)}`);
@@ -1777,10 +1799,10 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
-      'DELETE /v1/projects/:projectId/triggers/:slug',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
+      'DELETE /v1/workspaces/:projectId/triggers/:slug',
     ],
   },
   async (ctx) => {
@@ -1795,7 +1817,7 @@ flow(
     };
     await ctx.step('create an event trigger → 201, listed as type event with its connector, event and config', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         {
           name: 'New mail',
           type: 'event',
@@ -1820,7 +1842,7 @@ flow(
     });
     await ctx.step('PATCH event_config → 200 and the new config reads back', async () => {
       const r = await owner.patch(
-        '/v1/projects/:projectId/triggers/:slug',
+        '/v1/workspaces/:projectId/triggers/:slug',
         { event_config: { label: 'STARRED' } },
         { params: { ...params, slug: 'new-mail' } },
       );
@@ -1829,8 +1851,8 @@ flow(
       if (config?.label !== 'STARRED') throw new Error(`config not updated: ${JSON.stringify(config)}`);
     });
     await ctx.step('DELETE → 200 and the trigger leaves the list', async () => {
-      (await owner.del('/v1/projects/:projectId/triggers/:slug', { params: { ...params, slug: 'new-mail' } })).status(200);
-      const listed = (await owner.get('/v1/projects/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
+      (await owner.del('/v1/workspaces/:projectId/triggers/:slug', { params: { ...params, slug: 'new-mail' } })).status(200);
+      const listed = (await owner.get('/v1/workspaces/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
       if (listed.triggers.some((t) => t.slug === 'new-mail')) throw new Error('trigger still listed after DELETE');
     });
   },
@@ -1838,7 +1860,7 @@ flow(
 
 flow(
   'TRG-22',
-  { domain: 'triggers', routes: ['POST /v1/projects/:projectId/triggers'] },
+  { domain: 'triggers', routes: ['POST /v1/workspaces/:projectId/triggers'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     const owner = ctx.client.as(ctx.P.OWNER).withTransientGatewayRetries();
@@ -1854,7 +1876,7 @@ flow(
     ];
     for (const [name, body] of cases) {
       await ctx.step(`${name} → 400`, async () => {
-        (await owner.post('/v1/projects/:projectId/triggers', body, { params })).status(400);
+        (await owner.post('/v1/workspaces/:projectId/triggers', body, { params })).status(400);
       });
     }
   },
@@ -1877,35 +1899,35 @@ flow(
 
 flow(
   'TRG-24',
-  { domain: 'triggers', routes: ['GET /v1/projects/:projectId/triggers/event-types'] },
+  { domain: 'triggers', routes: ['GET /v1/workspaces/:projectId/triggers/event-types'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     const params = { projectId: p.id };
     await enableEventTriggers(ctx, ctx.client.as(ctx.P.OWNER), p.id);
     await ctx.step('ANON → 401', async () => {
-      (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/triggers/event-types', { params, query: { connector: 'inbox' } })).status(401);
+      (await ctx.client.as(ctx.P.ANON).get('/v1/workspaces/:projectId/triggers/event-types', { params, query: { connector: 'inbox' } })).status(401);
     });
     await ctx.step('missing connector → 400', async () => {
-      (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/triggers/event-types', { params })).status(400);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/triggers/event-types', { params })).status(400);
     });
     await ctx.step('unknown connector → 404', async () => {
-      (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/triggers/event-types', { params, query: { connector: 'inbox' } })).status(404);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/triggers/event-types', { params, query: { connector: 'inbox' } })).status(404);
     });
   },
 );
 
 flow(
   'TRG-25',
-  { domain: 'triggers', routes: ['GET /v1/projects/:projectId/triggers/event-apps'] },
+  { domain: 'triggers', routes: ['GET /v1/workspaces/:projectId/triggers/event-apps'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     const params = { projectId: p.id };
     await enableEventTriggers(ctx, ctx.client.as(ctx.P.OWNER), p.id);
     await ctx.step('ANON → 401', async () => {
-      (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/triggers/event-apps', { params })).status(401);
+      (await ctx.client.as(ctx.P.ANON).get('/v1/workspaces/:projectId/triggers/event-apps', { params })).status(401);
     });
     await ctx.step('owner → 200 with an apps array (empty when no event provider is configured)', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/triggers/event-apps', { params });
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/triggers/event-apps', { params });
       r.status(200);
       if (!Array.isArray(r.json<{ apps: unknown[] }>().apps)) throw new Error('apps must be an array');
     });
@@ -1917,9 +1939,9 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
     ],
   },
   async (ctx) => {
@@ -1935,7 +1957,7 @@ flow(
     };
     const create = (extra: Record<string, unknown>) =>
       owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'Acct mail', type: 'event', connector: 'inbox', event: 'EXAMPLE_NEW_MESSAGE', prompt_template: 'x', ...extra },
         { params },
       );
@@ -1948,15 +1970,15 @@ flow(
       }
     });
     await ctx.step('PATCH event_account: null → 200 and the account clears to the connector default', async () => {
-      const r = await owner.patch('/v1/projects/:projectId/triggers/:slug', { event_account: null }, { params: { ...params, slug: 'acct-mail' } });
+      const r = await owner.patch('/v1/workspaces/:projectId/triggers/:slug', { event_account: null }, { params: { ...params, slug: 'acct-mail' } });
       r.status(200);
       const event = eventOf(r.json<{ triggers: AccountRow[] }>());
       if (event.account !== null) throw new Error(`account not cleared: ${JSON.stringify(event)}`);
     });
     await ctx.step('PATCH event_account → 200 and it reads back; PATCH of another field keeps it', async () => {
       const slug = 'acct-mail';
-      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { event_account: 'ops-bot' }, { params: { ...params, slug } })).status(200);
-      const r = await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Acct mail 2' }, { params: { ...params, slug } });
+      (await owner.patch('/v1/workspaces/:projectId/triggers/:slug', { event_account: 'ops-bot' }, { params: { ...params, slug } })).status(200);
+      const r = await owner.patch('/v1/workspaces/:projectId/triggers/:slug', { name: 'Acct mail 2' }, { params: { ...params, slug } });
       r.status(200);
       const event = eventOf(r.json<{ triggers: AccountRow[] }>());
       if (event.account !== 'ops-bot') throw new Error(`account lost on unrelated PATCH: ${JSON.stringify(event)}`);
@@ -1964,7 +1986,7 @@ flow(
     await ctx.step('empty event_account → 400; event_account on a cron trigger → 400', async () => {
       (await create({ name: 'Bad', event_account: ' ' })).status(400);
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'Cron', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x', event_account: 'acme-bot' },
         { params },
       );
@@ -1978,9 +2000,9 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
     ],
   },
   async (ctx) => {
@@ -1996,7 +2018,7 @@ flow(
     };
     const create = (extra: Record<string, unknown>) =>
       owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'Src mail', type: 'event', connector: 'inbox', event: 'EXAMPLE_NEW_MESSAGE', prompt_template: 'x', ...extra },
         { params },
       );
@@ -2008,10 +2030,10 @@ flow(
     });
     await ctx.step('PATCH of another field keeps the source; PATCH event_source null clears it', async () => {
       const at = { params: { ...params, slug: 'src-mail' } };
-      const kept = await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Src mail 2' }, at);
+      const kept = await owner.patch('/v1/workspaces/:projectId/triggers/:slug', { name: 'Src mail 2' }, at);
       kept.status(200);
       if (sourceOf(kept.json<{ triggers: SourceRow[] }>()) !== 'composio') throw new Error('source lost on an unrelated PATCH');
-      const cleared = await owner.patch('/v1/projects/:projectId/triggers/:slug', { event_source: null }, at);
+      const cleared = await owner.patch('/v1/workspaces/:projectId/triggers/:slug', { event_source: null }, at);
       cleared.status(200);
       const source = sourceOf(cleared.json<{ triggers: SourceRow[] }>());
       // The connector is undeclared, so no provider fills in: the source is unset.
@@ -2024,7 +2046,7 @@ flow(
       if (!text.includes('Unknown event source \\"nope\\". Sources: composio, mcp.')) throw new Error(`error text missing: ${text}`);
       (await create({ name: 'Blank source', event_source: ' ' })).status(400);
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'Cron', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x', event_source: 'composio' },
         { params },
       );
@@ -2035,13 +2057,13 @@ flow(
 
 flow(
   'TRG-28',
-  { domain: 'triggers', routes: ['GET /v1/projects/:projectId/triggers/event-types'] },
+  { domain: 'triggers', routes: ['GET /v1/workspaces/:projectId/triggers/event-types'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     const params = { projectId: p.id };
     const owner = ctx.client.as(ctx.P.OWNER);
     await enableEventTriggers(ctx, owner, p.id);
-    const url = '/v1/projects/:projectId/triggers/event-types';
+    const url = '/v1/workspaces/:projectId/triggers/event-types';
     await ctx.step('?app= with no connector → 200 (provider configured) or 409 event_source_unavailable (local profile)', async () => {
       const r = await owner.get(url, { params, query: { app: 'github' } });
       r.status([200, 409, 404, 502]);
@@ -2063,28 +2085,28 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'GET /v1/projects/:projectId/triggers/event-types',
-      'GET /v1/projects/:projectId/triggers/event-apps',
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
-      'DELETE /v1/projects/:projectId/triggers/:slug',
-      'PATCH /v1/projects/:projectId/features',
+      'GET /v1/workspaces/:projectId/triggers/event-types',
+      'GET /v1/workspaces/:projectId/triggers/event-apps',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
+      'DELETE /v1/workspaces/:projectId/triggers/:slug',
+      'PATCH /v1/workspaces/:projectId/features',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: p.id };
-    const types = '/v1/projects/:projectId/triggers/event-types';
-    const apps = '/v1/projects/:projectId/triggers/event-apps';
+    const types = '/v1/workspaces/:projectId/triggers/event-types';
+    const apps = '/v1/workspaces/:projectId/triggers/event-apps';
     const eventBody = { name: 'Gated mail', type: 'event', connector: 'inbox', event: 'EXAMPLE_NEW_MESSAGE', prompt_template: 'x' };
     const cronBody = { name: 'Gated cron', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' };
     const denied = (r: { status: (s: number) => { body: () => { has: (path: string, value: unknown) => unknown } } }) => {
       r.status(403).body().has('$.code', 'feature_disabled');
     };
     const setFlag = async (enabled: boolean) => {
-      (await owner.patch('/v1/projects/:projectId/features', { feature: 'event_triggers', enabled }, { params })).status(200);
+      (await owner.patch('/v1/workspaces/:projectId/features', { feature: 'event_triggers', enabled }, { params })).status(200);
     };
 
     await ctx.step('flag off (the default): event-types by connector and by app, and event-apps → 403 feature_disabled', async () => {
@@ -2095,9 +2117,9 @@ flow(
       r.body().has('$.feature', 'event_triggers');
     });
     await ctx.step('flag off: POST of an event trigger → 403 and nothing is committed; a cron POST is still 201', async () => {
-      denied(await owner.post('/v1/projects/:projectId/triggers', eventBody, { params }));
-      (await owner.post('/v1/projects/:projectId/triggers', cronBody, { params })).status(201);
-      const listed = (await owner.get('/v1/projects/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
+      denied(await owner.post('/v1/workspaces/:projectId/triggers', eventBody, { params }));
+      (await owner.post('/v1/workspaces/:projectId/triggers', cronBody, { params })).status(201);
+      const listed = (await owner.get('/v1/workspaces/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
       if (listed.triggers.some((t) => t.type === 'event')) throw new Error('a refused event trigger was committed');
       if (!listed.triggers.some((t) => t.slug === 'gated-cron')) throw new Error('the cron trigger is missing');
     });
@@ -2105,18 +2127,18 @@ flow(
     await ctx.step('the flag is on → the same calls pass the gate (404 unknown connector, 200 apps, 201 create)', async () => {
       (await owner.get(types, { params, query: { connector: 'inbox' } })).status(404);
       (await owner.get(apps, { params })).status(200);
-      (await owner.post('/v1/projects/:projectId/triggers', eventBody, { params })).status(201);
+      (await owner.post('/v1/workspaces/:projectId/triggers', eventBody, { params })).status(201);
     });
     await ctx.step('flag off again: the declared event trigger reads status error with the off text; PATCH of it → 403; cron PATCH → 200; DELETE → 200', async () => {
       await setFlag(false);
-      const listed = (await owner.get('/v1/projects/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
+      const listed = (await owner.get('/v1/workspaces/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
       const row = listed.triggers.find((t) => t.slug === 'gated-mail');
-      if (row?.event?.status !== 'error' || !/Composio event triggers are off for this project/.test(row.event.error ?? '')) {
+      if (row?.event?.status !== 'error' || !/Composio event triggers are off for this workspace/.test(row.event.error ?? '')) {
         throw new Error(`expected status error with the off text — got ${JSON.stringify(row?.event)}`);
       }
-      denied(await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Renamed' }, { params: { ...params, slug: 'gated-mail' } }));
-      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Gated cron 2' }, { params: { ...params, slug: 'gated-cron' } })).status(200);
-      (await owner.del('/v1/projects/:projectId/triggers/:slug', { params: { ...params, slug: 'gated-mail' } })).status(200);
+      denied(await owner.patch('/v1/workspaces/:projectId/triggers/:slug', { name: 'Renamed' }, { params: { ...params, slug: 'gated-mail' } }));
+      (await owner.patch('/v1/workspaces/:projectId/triggers/:slug', { name: 'Gated cron 2' }, { params: { ...params, slug: 'gated-cron' } })).status(200);
+      (await owner.del('/v1/workspaces/:projectId/triggers/:slug', { params: { ...params, slug: 'gated-mail' } })).status(200);
     });
   },
 );
@@ -2148,10 +2170,10 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/triggers',
-      'POST /v1/projects/:projectId/triggers/:slug/fire',
-      'GET /v1/projects/:projectId/triggers/:slug/runs',
-      'GET /v1/projects/:projectId/trigger-runs',
+      'POST /v1/workspaces/:projectId/triggers',
+      'POST /v1/workspaces/:projectId/triggers/:slug/fire',
+      'GET /v1/workspaces/:projectId/triggers/:slug/runs',
+      'GET /v1/workspaces/:projectId/trigger-runs',
     ],
   },
   async (ctx) => {
@@ -2162,15 +2184,15 @@ flow(
     let runId = '';
 
     await ctx.step('a manual fire that fails → 402 with the run_id of the run it wrote', async () => {
-      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Digest', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'Summarize.' }, { params })).status(201);
-      const fired = await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'digest' } });
+      (await owner.post('/v1/workspaces/:projectId/triggers', { name: 'Digest', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'Summarize.' }, { params })).status(201);
+      const fired = await owner.post('/v1/workspaces/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'digest' } });
       fired.status(402);
       runId = fired.json<{ run_id?: string | null }>().run_id ?? '';
       if (!runId) throw new Error(`the failed fire named no run: ${fired.text()}`);
     });
 
     await ctx.step("the trigger's runs list it first: source manual, status failed, the fire's error, no session, no cost", async () => {
-      const list = (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'digest' } })).status(200).json<RunList>();
+      const list = (await owner.get('/v1/workspaces/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'digest' } })).status(200).json<RunList>();
       const run = list.runs[0];
       if (list.runs.length !== 1 || list.next_cursor !== null) throw new Error(`expected one run, no next page: ${JSON.stringify(list)}`);
       if (run?.run_id !== runId || run.source !== 'manual' || run.status !== 'failed' || !run.error) {
@@ -2182,18 +2204,18 @@ flow(
     });
 
     await ctx.step('the project runs list it under ?status=failed with its slug, not under ?status=fired', async () => {
-      const failed = (await owner.get('/v1/projects/:projectId/trigger-runs', { params, query: { status: 'failed' } })).status(200).json<RunList>();
+      const failed = (await owner.get('/v1/workspaces/:projectId/trigger-runs', { params, query: { status: 'failed' } })).status(200).json<RunList>();
       if (!failed.runs.some((r) => r.run_id === runId && r.slug === 'digest')) throw new Error(`?status=failed lacks the run: ${JSON.stringify(failed)}`);
-      const fired = (await owner.get('/v1/projects/:projectId/trigger-runs', { params, query: { status: 'fired' } })).status(200).json<RunList>();
+      const fired = (await owner.get('/v1/workspaces/:projectId/trigger-runs', { params, query: { status: 'fired' } })).status(200).json<RunList>();
       if (fired.runs.some((r) => r.run_id === runId)) throw new Error('?status=fired lists a failed run');
     });
 
     await ctx.step('a bad status, limit or cursor → 400; no token → 401', async () => {
-      (await owner.get('/v1/projects/:projectId/trigger-runs', { params, query: { status: 'succeeded' } })).status(400);
-      (await owner.get('/v1/projects/:projectId/trigger-runs', { params, query: { limit: '101' } })).status(400);
-      (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'digest' }, query: { cursor: 'nope' } })).status(400);
-      (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/trigger-runs', { params })).status(401);
-      (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'digest' } })).status(401);
+      (await owner.get('/v1/workspaces/:projectId/trigger-runs', { params, query: { status: 'succeeded' } })).status(400);
+      (await owner.get('/v1/workspaces/:projectId/trigger-runs', { params, query: { limit: '101' } })).status(400);
+      (await owner.get('/v1/workspaces/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'digest' }, query: { cursor: 'nope' } })).status(400);
+      (await ctx.client.as(ctx.P.ANON).get('/v1/workspaces/:projectId/trigger-runs', { params })).status(401);
+      (await ctx.client.as(ctx.P.ANON).get('/v1/workspaces/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'digest' } })).status(401);
     });
   },
 );
@@ -2203,10 +2225,10 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/triggers',
-      'POST /v1/projects/:projectId/triggers/:slug/fire',
-      'GET /v1/projects/:projectId/triggers/:slug/runs',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers',
+      'POST /v1/workspaces/:projectId/triggers/:slug/fire',
+      'GET /v1/workspaces/:projectId/triggers/:slug/runs',
     ],
   },
   async (ctx) => {
@@ -2214,7 +2236,7 @@ flow(
     const p = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: p.id };
-    const fire = (body: unknown) => owner.post('/v1/projects/:projectId/triggers/:slug/fire', body, { params: { ...params, slug: 'tickets' } });
+    const fire = (body: unknown) => owner.post('/v1/workspaces/:projectId/triggers/:slug/fire', body, { params: { ...params, slug: 'tickets' } });
     const writes = () =>
       withDb(ctx, async (db) => {
         const count = async (table: string) =>
@@ -2230,7 +2252,7 @@ flow(
     await ctx.step('a keyed, filtered trigger is created', async () => {
       (
         await owner.post(
-          '/v1/projects/:projectId/triggers',
+          '/v1/workspaces/:projectId/triggers',
           {
             name: 'Tickets',
             type: 'cron',
@@ -2290,9 +2312,9 @@ flow(
     await ctx.step('read-back: no run row, no session, no command; the runs list is empty and last_fired_at is unset', async () => {
       const after = await writes();
       if (JSON.stringify(after) !== JSON.stringify(before)) throw new Error(`dry run wrote rows: ${JSON.stringify({ before, after })}`);
-      const list = (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'tickets' } })).status(200).json<RunList>();
+      const list = (await owner.get('/v1/workspaces/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'tickets' } })).status(200).json<RunList>();
       if (list.runs.length !== 0) throw new Error(`dry run listed a run: ${JSON.stringify(list)}`);
-      const row = (await owner.get('/v1/projects/:projectId/triggers', { params })).json<{ triggers: Array<{ slug: string; last_fired_at: string | null; last_status: string | null }> }>()
+      const row = (await owner.get('/v1/workspaces/:projectId/triggers', { params })).json<{ triggers: Array<{ slug: string; last_fired_at: string | null; last_status: string | null }> }>()
         .triggers.find((t) => t.slug === 'tickets');
       if (row?.last_fired_at || row?.last_status) throw new Error(`dry run changed the trigger state: ${JSON.stringify(row)}`);
     });
@@ -2304,12 +2326,12 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/secrets',
-      'DELETE /v1/projects/:projectId/secrets/:name',
-      'POST /v1/projects/:projectId/triggers',
+      'POST /v1/workspaces/:projectId/secrets',
+      'DELETE /v1/workspaces/:projectId/secrets/:name',
+      'POST /v1/workspaces/:projectId/triggers',
       'POST /v1/webhooks/projects/:projectId/:slug',
-      'GET /v1/projects/:projectId/triggers/:slug/runs',
-      'POST /v1/projects/:projectId/triggers/:slug/runs/:run_id/replay',
+      'GET /v1/workspaces/:projectId/triggers/:slug/runs',
+      'POST /v1/workspaces/:projectId/triggers/:slug/runs/:run_id/replay',
     ],
   },
   async (ctx) => {
@@ -2322,19 +2344,19 @@ flow(
     const timestamp = String(Math.floor(Date.now() / 1000));
     const signature = `sha256=${createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex')}`;
     const addSecret = async () =>
-      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      (await owner.post('/v1/workspaces/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
     const runs = async (slug = 'hook') =>
-      (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug } })).status(200).json<RunList>().runs;
+      (await owner.get('/v1/workspaces/:projectId/triggers/:slug/runs', { params: { ...params, slug } })).status(200).json<RunList>().runs;
     const replay = (runId: string, body: unknown, slug = 'hook') =>
-      owner.post('/v1/projects/:projectId/triggers/:slug/runs/:run_id/replay', body, { params: { ...params, slug, run_id: runId } });
+      owner.post('/v1/workspaces/:projectId/triggers/:slug/runs/:run_id/replay', body, { params: { ...params, slug, run_id: runId } });
     let rejected: RunRow | undefined;
     let replayedId = '';
 
     await ctx.step('a webhook trigger whose secret is then deleted: a signed delivery → 401', async () => {
       await addSecret();
-      (await owner.post('/v1/projects/:projectId/triggers', { name: 'hook', slug: 'hook', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'New {{ body.action }}' }, { params })).status(201);
-      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Other', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x' }, { params })).status(201);
-      (await owner.del('/v1/projects/:projectId/secrets/:name', { params: { ...params, name: 'HOOK_SECRET' } })).status(200);
+      (await owner.post('/v1/workspaces/:projectId/triggers', { name: 'hook', slug: 'hook', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'New {{ body.action }}' }, { params })).status(201);
+      (await owner.post('/v1/workspaces/:projectId/triggers', { name: 'Other', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x' }, { params })).status(201);
+      (await owner.del('/v1/workspaces/:projectId/secrets/:name', { params: { ...params, name: 'HOOK_SECRET' } })).status(200);
       (
         await ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
           params: { ...params, slug: 'hook' },
@@ -2425,9 +2447,9 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/triggers/:slug/runs',
-      'GET /v1/projects/:projectId/trigger-runs',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers/:slug/runs',
+      'GET /v1/workspaces/:projectId/trigger-runs',
     ],
   },
   async (ctx) => {
@@ -2446,13 +2468,13 @@ flow(
       metadata: { source: 'trigger:scheduler', trigger_kind: 'git', trigger_slug: 'nightly' },
     });
     const list = async (as: typeof owner, query: Record<string, string> = {}) =>
-      (await as.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'nightly' }, query })).status(200).json<RunList>();
+      (await as.get('/v1/workspaces/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'nightly' }, query })).status(200).json<RunList>();
 
     // Teardown keeps the team account (an earlier run left its rows), so the seeded
     // gateway logs are deleted here, pass or fail.
     try {
       await ctx.step('seed: three manual runs and one cron slot with no session, one run of a private trigger session, and the session\'s LLM spend', async () => {
-        (await owner.post('/v1/projects/:projectId/triggers', { name: 'Nightly', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' }, { params })).status(201);
+        (await owner.post('/v1/workspaces/:projectId/triggers', { name: 'Nightly', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' }, { params })).status(201);
         await withDb(ctx, async (db) => {
           for (const minutes of [3, 2, 1]) {
             await db.query(
@@ -2530,7 +2552,7 @@ flow(
           forge('2026-10-16 18:03:54+00', '-'.repeat(36)), // 36 dashes, not a UUID
         ];
         for (const cursor of forged) {
-          (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'nightly' }, query: { cursor } })).status(400);
+          (await owner.get('/v1/workspaces/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'nightly' }, query: { cursor } })).status(400);
         }
       });
 
@@ -2538,7 +2560,7 @@ flow(
         const asMember = ctx.client.as(member);
         const runs = (await list(asMember)).runs;
         if (runs.length !== 4 || runs.some((r) => r.session_id !== null)) throw new Error(`member trigger list is wrong: ${JSON.stringify(runs)}`);
-        const project_runs = (await asMember.get('/v1/projects/:projectId/trigger-runs', { params })).status(200).json<RunList>().runs;
+        const project_runs = (await asMember.get('/v1/workspaces/:projectId/trigger-runs', { params })).status(200).json<RunList>().runs;
         if (project_runs.length !== 4 || project_runs.some((r) => r.session_id === sessionId)) {
           throw new Error(`member project list is wrong: ${JSON.stringify(project_runs)}`);
         }
@@ -2559,10 +2581,10 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'GET /v1/projects/:projectId/triggers/event-apps',
-      'GET /v1/projects/:projectId/triggers/event-types',
-      'POST /v1/connectors/projects/:projectId/connectors',
-      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers/event-apps',
+      'GET /v1/workspaces/:projectId/triggers/event-types',
+      'POST /v1/connectors/workspaces/:projectId/connectors',
+      'POST /v1/workspaces/:projectId/triggers',
     ],
   },
   async (ctx) => {
@@ -2571,7 +2593,7 @@ flow(
     const stored = await ctx.fixtures.project({ metadata: { experimental: { event_triggers: true, connectors_v2: false } } });
     type App = { source: string; app: string; event_count: number; connector: string | null; connected: boolean; mcp_url: string | null };
     const apps = async (projectId: string) =>
-      (await owner.get('/v1/projects/:projectId/triggers/event-apps', { params: { projectId } })).status(200).json<{ apps: App[] }>().apps;
+      (await owner.get('/v1/workspaces/:projectId/triggers/event-apps', { params: { projectId } })).status(200).json<{ apps: App[] }>().apps;
 
     await ctx.step('catalog apps with sign-in are event apps of source mcp, with the MCP server to install', async () => {
       const list = await apps(on.id);
@@ -2584,29 +2606,29 @@ flow(
 
     await ctx.step('an uninstalled catalog app answers 200 with no events yet; an unknown app → 404', async () => {
       const params = { projectId: on.id };
-      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params, query: { app: 'linear', source: 'mcp' } });
+      const r = await owner.get('/v1/workspaces/:projectId/triggers/event-types', { params, query: { app: 'linear', source: 'mcp' } });
       r.status(200).body().has('$.source', 'mcp');
       if (r.json<{ event_types: unknown[] }>().event_types.length !== 0) throw new Error(`expected no events: ${r.text()}`);
-      (await owner.get('/v1/projects/:projectId/triggers/event-types', { params, query: { app: 'no-such-app', source: 'mcp' } })).status(404);
+      (await owner.get('/v1/workspaces/:projectId/triggers/event-types', { params, query: { app: 'no-such-app', source: 'mcp' } })).status(404);
     });
 
     await ctx.step('a project MCP server is an event app of its own; with no list tool read yet it offers no event', async () => {
       const params = { projectId: on.id };
       // auth set explicitly: the create route then skips its live discovery probe of this unreachable url.
-      (await owner.post('/v1/connectors/projects/:projectId/connectors', { slug: 'inbox', provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } }, { params }))
+      (await owner.post('/v1/connectors/workspaces/:projectId/connectors', { slug: 'inbox', provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } }, { params }))
         .status(200);
       const inbox = (await apps(on.id)).find((a) => a.app === 'inbox');
       if (!inbox || inbox.source !== 'mcp' || inbox.connector !== 'inbox' || inbox.mcp_url !== null || inbox.event_count !== 0) {
         throw new Error(`inbox entry is wrong: ${JSON.stringify(inbox)}`);
       }
-      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params, query: { connector: 'inbox' } });
+      const r = await owner.get('/v1/workspaces/:projectId/triggers/event-types', { params, query: { connector: 'inbox' } });
       r.status(200).body().has('$.source', 'mcp').has('$.app', 'inbox');
       if (r.json<{ event_types: unknown[] }>().event_types.length !== 0) throw new Error(`expected no events: ${r.text()}`);
     });
 
     await ctx.step('an event the connector does not offer → 400 that names the command to list its events', async () => {
       const r = await owner.post(
-        '/v1/projects/:projectId/triggers',
+        '/v1/workspaces/:projectId/triggers',
         { name: 'New inbox item', type: 'event', connector: 'inbox', event: 'new_item.list_items', event_config: { interval: 5 }, prompt_template: 'x' },
         { params: { projectId: on.id } },
       );
@@ -2618,7 +2640,7 @@ flow(
 
     await ctx.step('a stored connectors_v2: false is inert: the mcp source is listed, and an unknown source → 400 that lists the sources', async () => {
       if (!(await apps(stored.id)).some((a) => a.source === 'mcp' && a.app === 'linear')) throw new Error('mcp apps missing for a project with a stale stored flag');
-      const r = await owner.get('/v1/projects/:projectId/triggers/event-types', { params: { projectId: stored.id }, query: { app: 'linear', source: 'nope' } });
+      const r = await owner.get('/v1/workspaces/:projectId/triggers/event-types', { params: { projectId: stored.id }, query: { app: 'linear', source: 'nope' } });
       r.status(400);
       const error = r.json<{ error?: string }>().error ?? '';
       if (!error.startsWith('Unknown event source "nope". Sources: ') || !error.includes('mcp')) throw new Error(`unexpected refusal: ${r.text()}`);
@@ -2639,13 +2661,13 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/secrets',
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'POST /v1/workspaces/:projectId/secrets',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
       'POST /v1/webhooks/projects/:projectId/:slug',
-      'GET /v1/projects/:projectId/triggers/:slug/runs',
-      'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'GET /v1/workspaces/:projectId/triggers/:slug/runs',
+      'POST /v1/workspaces/:projectId/triggers/:slug/fire',
     ],
   },
   async (ctx) => {
@@ -2656,7 +2678,7 @@ flow(
     const secret = `ke2e-capped-${crypto.randomUUID()}`;
     type Listed = { slug: string; max_runs_per_hour?: number | null; max_runs_per_day?: number | null };
     const limits = async (slug: string) => {
-      const t = (await owner.get('/v1/projects/:projectId/triggers', { params })).status(200).json<{ triggers: Listed[] }>().triggers.find((row) => row.slug === slug);
+      const t = (await owner.get('/v1/workspaces/:projectId/triggers', { params })).status(200).json<{ triggers: Listed[] }>().triggers.find((row) => row.slug === slug);
       if (!t) throw new Error(`trigger ${slug} is not listed`);
       return [t.max_runs_per_hour ?? null, t.max_runs_per_day ?? null];
     };
@@ -2667,26 +2689,26 @@ flow(
     const throttled = 'throttled: 1 runs in the last hour (max_runs_per_hour 1)';
 
     await ctx.step('a run limit that is not a whole number of at least 1 → 400 naming the field', async () => {
-      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Bad', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x', max_runs_per_hour: 0 }, { params }))
+      (await owner.post('/v1/workspaces/:projectId/triggers', { name: 'Bad', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x', max_runs_per_hour: 0 }, { params }))
         .status(400).body().has('$.error', 'max_runs_per_hour must be a whole number of at least 1');
-      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Bad', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x', max_runs_per_day: 1.5 }, { params }))
+      (await owner.post('/v1/workspaces/:projectId/triggers', { name: 'Bad', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x', max_runs_per_day: 1.5 }, { params }))
         .status(400).body().has('$.error', 'max_runs_per_day must be a whole number of at least 1');
     });
 
     await ctx.step('a webhook trigger with max_runs_per_hour 1 → 201 and reads 1 / null; a trigger without limits reads null / null', async () => {
-      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
-      (await owner.post('/v1/projects/:projectId/triggers', { name: 'capped', slug: 'capped', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'New {{ body.action }}', max_runs_per_hour: 1 }, { params })).status(201);
-      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Plain', slug: 'plain', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x' }, { params })).status(201);
+      (await owner.post('/v1/workspaces/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      (await owner.post('/v1/workspaces/:projectId/triggers', { name: 'capped', slug: 'capped', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'New {{ body.action }}', max_runs_per_hour: 1 }, { params })).status(201);
+      (await owner.post('/v1/workspaces/:projectId/triggers', { name: 'Plain', slug: 'plain', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x' }, { params })).status(201);
       await expectLimits('capped', [1, null]);
       await expectLimits('plain', [null, null]);
     });
 
     await ctx.step('a PATCH of another field keeps the limits; max_runs_per_day 5 sets it, null removes it', async () => {
-      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { prompt_template: 'Changed {{ body.action }}' }, { params: { ...params, slug: 'capped' } })).status(200);
+      (await owner.patch('/v1/workspaces/:projectId/triggers/:slug', { prompt_template: 'Changed {{ body.action }}' }, { params: { ...params, slug: 'capped' } })).status(200);
       await expectLimits('capped', [1, null]);
-      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { max_runs_per_day: 5 }, { params: { ...params, slug: 'capped' } })).status(200);
+      (await owner.patch('/v1/workspaces/:projectId/triggers/:slug', { max_runs_per_day: 5 }, { params: { ...params, slug: 'capped' } })).status(200);
       await expectLimits('capped', [1, 5]);
-      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { max_runs_per_day: null }, { params: { ...params, slug: 'capped' } })).status(200);
+      (await owner.patch('/v1/workspaces/:projectId/triggers/:slug', { max_runs_per_day: null }, { params: { ...params, slug: 'capped' } })).status(200);
       await expectLimits('capped', [1, null]);
     });
 
@@ -2711,7 +2733,7 @@ flow(
         },
       });
       r.status(200).body().has('$.status', 'skipped').has('$.reason', throttled);
-      const runs = (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'capped' } })).status(200).json<RunList>().runs;
+      const runs = (await owner.get('/v1/workspaces/:projectId/triggers/:slug/runs', { params: { ...params, slug: 'capped' } })).status(200).json<RunList>().runs;
       const skipped = runs.find((run) => run.status === 'skipped');
       if (!skipped || skipped.error !== throttled || skipped.source !== 'webhook' || skipped.session_id !== null) {
         throw new Error(`throttled run is wrong: ${JSON.stringify(runs)}`);
@@ -2723,7 +2745,7 @@ flow(
     });
 
     await ctx.step('a manual fire past the limit is not held: it reaches the fire path (402, no usable model locally), not skipped', async () => {
-      const r = await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'capped' } });
+      const r = await owner.post('/v1/workspaces/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'capped' } });
       r.status(402);
     });
 
@@ -2770,11 +2792,11 @@ flow(
     routes: [
       'GET /v1/accounts/:accountId/automations',
       'PATCH /v1/accounts/:accountId/automations',
-      'POST /v1/projects/:projectId/secrets',
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/triggers',
+      'POST /v1/workspaces/:projectId/secrets',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers',
       'POST /v1/webhooks/projects/:projectId/:slug',
-      'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'POST /v1/workspaces/:projectId/triggers/:slug/fire',
     ],
   },
   async (ctx) => {
@@ -2803,11 +2825,11 @@ flow(
       });
     };
     const listingPaused = async () =>
-      (await owner.get('/v1/projects/:projectId/triggers', { params })).status(200).json<{ account_automations_paused?: boolean }>().account_automations_paused;
+      (await owner.get('/v1/workspaces/:projectId/triggers', { params })).status(200).json<{ account_automations_paused?: boolean }>().account_automations_paused;
 
     await ctx.step('setup: a webhook trigger on the team project', async () => {
-      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
-      (await owner.post('/v1/projects/:projectId/triggers', { name: 'hook', slug: 'hook', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'New {{ body.action }}' }, { params })).status(201);
+      (await owner.post('/v1/workspaces/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      (await owner.post('/v1/workspaces/:projectId/triggers', { name: 'hook', slug: 'hook', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'New {{ body.action }}' }, { params })).status(201);
     });
 
     await ctx.step('GET automations: running; the owner may change it, a member may read it but not change it, an outsider → 403', async () => {
@@ -2825,7 +2847,7 @@ flow(
 
     await ctx.step('while paused, a signed delivery → 200 skipped "account automations are paused"; a manual fire still runs (402)', async () => {
       (await deliver()).status(200).body().has('$.status', 'skipped').has('$.reason', 'account automations are paused');
-      (await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'hook' } })).status(402);
+      (await owner.post('/v1/workspaces/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'hook' } })).status(402);
     });
 
     await ctx.step('resumed: the switch reads running and a delivery reaches the fire path again (402, not skipped)', async () => {
@@ -2865,12 +2887,12 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/secrets',
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/triggers',
+      'POST /v1/workspaces/:projectId/secrets',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers',
       'POST /v1/webhooks/projects/:projectId/:slug',
-      'GET /v1/projects/:projectId/triggers/:slug/runs',
-      'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'GET /v1/workspaces/:projectId/triggers/:slug/runs',
+      'POST /v1/workspaces/:projectId/triggers/:slug/fire',
     ],
   },
   async (ctx) => {
@@ -2881,7 +2903,7 @@ flow(
     const slugParams = { ...params, slug: 'loop-safe' };
     const secret = `ke2e-loop-safe-${crypto.randomUUID()}`;
     const listedFilter = async () => {
-      const t = (await owner.get('/v1/projects/:projectId/triggers', { params })).status(200)
+      const t = (await owner.get('/v1/workspaces/:projectId/triggers', { params })).status(200)
         .json<{ triggers: Array<{ slug: string; filter: unknown }> }>().triggers.find((row) => row.slug === 'loop-safe');
       if (!t) throw new Error('loop-safe is not listed');
       return t.filter;
@@ -2905,7 +2927,7 @@ flow(
 
     await ctx.step('an unknown operator, two operators on one path, and an empty list → 400 naming the path', async () => {
       const create = (filter: unknown) =>
-        owner.post('/v1/projects/:projectId/triggers', { name: 'Bad', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x', filter }, { params });
+        owner.post('/v1/workspaces/:projectId/triggers', { name: 'Bad', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x', filter }, { params });
       (await create({ 'body.ref': { nott: 'x' } })).status(400)
         .body().has('$.error', 'filter.body.ref has an unknown operator "nott"; use one of: not, in, exists, prefix, not_prefix');
       (await create({ 'body.ref': { in: ['a'], not: 'b' } })).status(400).body().has('$.error', 'filter.body.ref takes one operator, got 2: in, not');
@@ -2913,8 +2935,8 @@ flow(
     });
 
     await ctx.step('a webhook trigger with not_prefix and not → 201; the listing stores each operator as a list', async () => {
-      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
-      (await owner.post('/v1/projects/:projectId/triggers', {
+      (await owner.post('/v1/workspaces/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      (await owner.post('/v1/workspaces/:projectId/triggers', {
         name: 'loop-safe', slug: 'loop-safe', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'Lint {{ body.ref }}',
         filter: { 'body.ref': { not_prefix: 'refs/heads/kortix/' }, 'body.sender.login': { not: ['kortix-bot'] } },
       }, { params })).status(201);
@@ -2926,7 +2948,7 @@ flow(
     await ctx.step("the agent's own branch and the agent's own sender → 200 skipped, two skipped runs, no session", async () => {
       (await deliver(push('refs/heads/kortix/fix-lint', 'a-person'))).status(200).body().has('$.status', 'skipped').has('$.reason', unmatched);
       (await deliver(push('refs/heads/main', 'kortix-bot'))).status(200).body().has('$.status', 'skipped').has('$.reason', unmatched);
-      const runs = (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: slugParams })).status(200).json<RunList>().runs;
+      const runs = (await owner.get('/v1/workspaces/:projectId/triggers/:slug/runs', { params: slugParams })).status(200).json<RunList>().runs;
       const skipped = runs.filter((run) => run.status === 'skipped' && run.error === unmatched && run.session_id === null);
       if (skipped.length !== 2) throw new Error(`expected 2 skipped runs: ${JSON.stringify(runs)}`);
       const sessions = await withDb(ctx, async (db) =>
@@ -2937,7 +2959,7 @@ flow(
 
     await ctx.step("a dry run reports a person's push on main as a match and the agent's branch as no match", async () => {
       const dry = async (payload: Record<string, unknown>) =>
-        owner.post('/v1/projects/:projectId/triggers/:slug/fire', { dry_run: true, payload: { body: payload } }, { params: slugParams });
+        owner.post('/v1/workspaces/:projectId/triggers/:slug/fire', { dry_run: true, payload: { body: payload } }, { params: slugParams });
       (await dry(push('refs/heads/main', 'a-person'))).status(200).body().has('$.filter_matches', true);
       (await dry(push('refs/heads/kortix/fix-lint', 'a-person'))).status(200).body().has('$.filter_matches', false);
     });
@@ -2978,12 +3000,12 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/secrets',
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'POST /v1/workspaces/:projectId/secrets',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
       'POST /v1/webhooks/projects/:projectId/:slug',
-      'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'POST /v1/workspaces/:projectId/triggers/:slug/fire',
     ],
   },
   async (ctx) => {
@@ -2995,7 +3017,7 @@ flow(
     const secret = `ke2e-runaway-${crypto.randomUUID()}`;
     const paused = 'auto-paused: ran at max_runs_per_hour 1 for 2 hours in a row';
     const listed = async () => {
-      const t = (await owner.get('/v1/projects/:projectId/triggers', { params })).status(200)
+      const t = (await owner.get('/v1/workspaces/:projectId/triggers', { params })).status(200)
         .json<{ triggers: Array<{ slug: string; enabled: boolean; auto_paused_at?: string | null; auto_paused_reason?: string | null }> }>()
         .triggers.find((row) => row.slug === 'runaway');
       if (!t) throw new Error('runaway is not listed');
@@ -3017,8 +3039,8 @@ flow(
     };
 
     await ctx.step('a webhook trigger with max_runs_per_hour 1 → 201; it is not auto-paused', async () => {
-      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
-      (await owner.post('/v1/projects/:projectId/triggers', { name: 'runaway', slug: 'runaway', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'Run {{ body.action }}', max_runs_per_hour: 1 }, { params })).status(201);
+      (await owner.post('/v1/workspaces/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      (await owner.post('/v1/workspaces/:projectId/triggers', { name: 'runaway', slug: 'runaway', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'Run {{ body.action }}', max_runs_per_hour: 1 }, { params })).status(201);
       const t = await listed();
       if (t.auto_paused_at !== null || t.auto_paused_reason !== null) throw new Error(`expected auto_paused_at: null and auto_paused_reason: null, got ${JSON.stringify({ auto_paused_at: t.auto_paused_at, auto_paused_reason: t.auto_paused_reason })}`);
     });
@@ -3039,7 +3061,7 @@ flow(
 
     await ctx.step('while auto-paused another delivery is skipped with the same reason; a manual fire still reaches the fire path (402 locally)', async () => {
       (await deliver()).status(200).body().has('$.status', 'skipped').has('$.reason', paused);
-      (await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: slugParams })).status(402);
+      (await owner.post('/v1/workspaces/:projectId/triggers/:slug/fire', {}, { params: slugParams })).status(402);
     });
 
     await ctx.step('CLI: `kortix triggers ls` marks it auto-paused; `kortix triggers info runaway` prints the reason and the resume command', async () => {
@@ -3061,7 +3083,7 @@ flow(
     });
 
     await ctx.step('PATCH { enabled: true } resumes it; for 2 hours a held delivery is a plain throttle, not a new pause', async () => {
-      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { enabled: true }, { params: slugParams })).status(200);
+      (await owner.patch('/v1/workspaces/:projectId/triggers/:slug', { enabled: true }, { params: slugParams })).status(200);
       const resumed = await listed();
       if (resumed.auto_paused_at !== null || resumed.auto_paused_reason !== null) throw new Error(`still auto-paused after resume: ${JSON.stringify(resumed)}`);
       (await deliver()).status(200).body().has('$.status', 'skipped').has('$.reason', 'throttled: 1 runs in the last hour (max_runs_per_hour 1)');
@@ -3081,13 +3103,13 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'POST /v1/projects/:projectId/secrets',
-      'POST /v1/projects/:projectId/triggers',
-      'GET /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'POST /v1/workspaces/:projectId/secrets',
+      'POST /v1/workspaces/:projectId/triggers',
+      'GET /v1/workspaces/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
       'POST /v1/webhooks/projects/:projectId/:slug',
-      'GET /v1/projects/:projectId/triggers/:slug/runs',
-      'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'GET /v1/workspaces/:projectId/triggers/:slug/runs',
+      'POST /v1/workspaces/:projectId/triggers/:slug/fire',
     ],
   },
   async (ctx) => {
@@ -3098,7 +3120,7 @@ flow(
     const slugParams = { ...params, slug: 'one-at-a-time' };
     const secret = `ke2e-overlap-${crypto.randomUUID()}`;
     const overlapOf = async (slug: string) => {
-      const t = (await owner.get('/v1/projects/:projectId/triggers', { params })).status(200)
+      const t = (await owner.get('/v1/workspaces/:projectId/triggers', { params })).status(200)
         .json<{ triggers: Array<{ slug: string; overlap?: string | null }> }>().triggers.find((row) => row.slug === slug);
       if (!t) throw new Error(`${slug} is not listed`);
       return t.overlap;
@@ -3119,18 +3141,18 @@ flow(
     };
 
     await ctx.step('overlap other than skip or allow → 400; a cron trigger without it lists null (the skip default applies)', async () => {
-      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Bad', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x', overlap: 'queue' }, { params }))
+      (await owner.post('/v1/workspaces/:projectId/triggers', { name: 'Bad', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x', overlap: 'queue' }, { params }))
         .status(400).body().has('$.error', 'overlap must be "skip" or "allow"');
-      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Nightly', slug: 'nightly', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x' }, { params })).status(201);
+      (await owner.post('/v1/workspaces/:projectId/triggers', { name: 'Nightly', slug: 'nightly', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x' }, { params })).status(201);
       const listed = await overlapOf('nightly');
       if (listed !== null) throw new Error(`nightly overlap: ${JSON.stringify(listed)}, expected null`);
     });
 
     await ctx.step('a webhook trigger with overlap: skip → 201 and lists skip; a PATCH of only overlap writes it', async () => {
-      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
-      (await owner.post('/v1/projects/:projectId/triggers', { name: 'one-at-a-time', slug: 'one-at-a-time', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'Run {{ body.action }}', overlap: 'skip' }, { params })).status(201);
+      (await owner.post('/v1/workspaces/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      (await owner.post('/v1/workspaces/:projectId/triggers', { name: 'one-at-a-time', slug: 'one-at-a-time', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'Run {{ body.action }}', overlap: 'skip' }, { params })).status(201);
       if ((await overlapOf('one-at-a-time')) !== 'skip') throw new Error('one-at-a-time does not list overlap skip');
-      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { overlap: 'allow' }, { params: { ...params, slug: 'nightly' } })).status(200);
+      (await owner.patch('/v1/workspaces/:projectId/triggers/:slug', { overlap: 'allow' }, { params: { ...params, slug: 'nightly' } })).status(200);
       if ((await overlapOf('nightly')) !== 'allow') throw new Error('a PATCH of only overlap did not write it');
     });
 
@@ -3146,7 +3168,7 @@ flow(
       );
       const reason = `overlap: the previous run is still active (session ${sessionId})`;
       (await deliver()).status(200).body().has('$.status', 'skipped').has('$.reason', reason);
-      const runs = (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: slugParams })).status(200).json<RunList>().runs;
+      const runs = (await owner.get('/v1/workspaces/:projectId/triggers/:slug/runs', { params: slugParams })).status(200).json<RunList>().runs;
       if (!runs.some((run) => run.status === 'skipped' && run.error === reason && run.session_id === null)) throw new Error(`no skipped overlap run: ${JSON.stringify(runs)}`);
       const sessions = await withDb(ctx, async (db) =>
         Number((await db.query(`SELECT count(*) AS n FROM kortix.project_sessions WHERE project_id = $1 AND metadata->>'trigger_slug' = 'one-at-a-time'`, [p.id])).rows[0]?.n ?? 0),
@@ -3155,7 +3177,7 @@ flow(
     });
 
     await ctx.step('a manual fire is not held: it reaches the fire path (402 locally)', async () => {
-      (await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: slugParams })).status(402);
+      (await owner.post('/v1/workspaces/:projectId/triggers/:slug/fire', {}, { params: slugParams })).status(402);
     });
 
     await ctx.step('CLI: `--overlap default` resets it, info prints the effective value, `--overlap queue` exits 2', async () => {

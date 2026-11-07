@@ -66,7 +66,7 @@ test('readSessionWorkflowRuns uses the resolved runtime and never starts a stopp
   expect((await readSessionWorkflowRuns('p1', 's1')).runs).toHaveLength(1);
 
   clearSessionRuntime('p1', 's1');
-  routes['GET http://test.local/projects/p1/sessions/s1'] = { body: { session_id: 's1', status: 'stopped' } };
+  routes['GET http://test.local/workspaces/p1/sessions/s1'] = { body: { session_id: 's1', status: 'stopped' } };
   expect(await readSessionWorkflowRuns('p1', 's1')).toEqual({ runs: [] });
   expect(requests.some((r) => r.url.endsWith('/start'))).toBe(false);
 });
@@ -107,7 +107,7 @@ test('a control the parent box redirects to the runner session (409 run_in_runne
 });
 
 test('a control to a session that does not run fails with a plain sentence, and never starts it', async () => {
-  routes['GET http://test.local/projects/p1/sessions/s1'] = { body: { session_id: 's1', status: 'stopped' } };
+  routes['GET http://test.local/workspaces/p1/sessions/s1'] = { body: { session_id: 's1', status: 'stopped' } };
   await expect(controlSessionWorkflowRun('p1', 's1', 'run_1', { action: 'stop' })).rejects.toThrow('not running');
   expect(requests.some((r) => r.url.endsWith('/start'))).toBe(false);
 });

@@ -10,9 +10,6 @@
     "./my-kortix-agent": "./src/my-kortix-agent.ts",
     "./channel-descriptors": "./src/channel-descriptors.ts",
     "./artifact-doc": "./src/artifact-doc.ts",
-    "./artifact-comments": "./src/artifact-comments.ts",
-    "./artifact-annotations": "./src/artifact-annotations.ts",
-    "./artifact-live": "./src/artifact-live.ts",
     "./brand-css": "./src/brand-css.generated.ts",
     "./wordmark": "./src/wordmark.ts",
     "./pixel-mark": "./src/pixel-mark.ts",
@@ -46,7 +43,10 @@
     "./subprocessors": "./src/subprocessors.ts",
     "./terms": "./src/terms.ts",
     "./ssrf-guard": "./src/ssrf-guard.ts",
-    "./well-known": "./src/well-known.ts"
+    "./well-known": "./src/well-known.ts",
+    "./workspace-actions": "./src/workspace-actions.ts",
+    "./workspace-routes": "./src/workspace-routes.ts",
+    "./workspace-settings": "./src/workspace-settings.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",

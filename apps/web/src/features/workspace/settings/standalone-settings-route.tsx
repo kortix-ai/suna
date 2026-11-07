@@ -12,8 +12,8 @@
  * require a project.
  *
  * **Why it stopped bouncing.** This route used to set store state and
- * `router.replace(PROJECT_LANDING_PATH)` — landing on `/projects/start`, which
- * mounts the panel via `ProjectShell`. That works, but `/projects/start` is
+ * `router.replace(PROJECT_LANDING_PATH)` — landing on `/workspaces/start`, which
+ * mounts the panel via `ProjectShell`. That works, but `/workspaces/start` is
  * the door that PROVISIONS a first project when the account has none. The one
  * caller that most needs an account-scoped settings URL is the sign-in
  * redirect for a user with NO app access
@@ -59,15 +59,15 @@ export const STANDALONE_DEFAULT_SETTINGS_TAB: SettingsTab = 'profile';
  * Where closing the overlay goes.
  *
  * The remembered project when the browser has one — the user goes back to
- * exactly where they were, and nothing is created. Otherwise `/projects`,
- * which redirects to the `/projects/start` chooser. Neither path creates a
+ * exactly where they were, and nothing is created. Otherwise `/workspaces`,
+ * which redirects to the `/workspaces/start` chooser. Neither path creates a
  * project, so the no-app-access user this route exists for is never handed
  * one by pressing Escape.
  *
  * Pure and exported for its unit test.
  */
 export function resolveSettingsExitPath(lastProjectId: string | null | undefined): string {
-  return projectPathFromId(lastProjectId) ?? '/projects';
+  return projectPathFromId(lastProjectId) ?? '/workspaces';
 }
 
 /**
@@ -120,7 +120,10 @@ function StandaloneSettingsBody({ tab }: { tab: SettingsTab }) {
       return;
     }
     if (!wasOpened.current) return;
-    router.replace(resolveSettingsExitPath(readLastProjectId(user?.id)));
+    // A workspace row in the panel closed it on its way somewhere: go there,
+    // never back to the last workspace (which would overwrite the row's link).
+    const exitTo = useSettingsPanelStore.getState().exitTo;
+    router.replace(exitTo ?? resolveSettingsExitPath(readLastProjectId(user?.id)));
   }, [open, router, user?.id]);
 
   return <SettingsPanel />;

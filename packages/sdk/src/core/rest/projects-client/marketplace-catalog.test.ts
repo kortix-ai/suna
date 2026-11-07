@@ -96,7 +96,7 @@ test('marketplace sources: list/add/remove', async () => {
 test('createMarketplaceInstallSession starts a typed project install session', async () => {
   nextResponse = { status: 200, body: { session_id: 'session-1' } };
   const result = await createMarketplaceInstallSession('project-1', 'kortix:researcher');
-  expect(last().url).toContain('/projects/project-1/marketplace/install-session');
+  expect(last().url).toContain('/workspaces/project-1/marketplace/install-session');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ id: 'kortix:researcher' });
   expect(result.session_id).toBe('session-1');

@@ -1,8 +1,7 @@
 /** Fans one provider delivery or notice out to the event triggers subscribed to it. */
-import { connectorConnections, connectors, projectTriggerRuntime, projects } from '@kortix/db';
+import { connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { notificationsEnabled } from '../../notifications/enabled';
 import {
   fireGitTrigger,
   markGitTriggerAttemptFailed,
@@ -22,6 +21,7 @@ import { eventTriggersEnabled } from './flag';
 import { connectorEventApp } from './mcp-source';
 import { reconcileEventSubscriptionsFromCatalog } from './subscriptions';
 import type { EventDelivery, ProviderNotice } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 export interface DeliveryTally {
   fired: number;
@@ -124,7 +124,7 @@ async function deliverToRow(
   // Only a live subscription fires: an errored or parked row (revoked or narrowed
   // account) must not feed sessions while its provider instance winds down.
   if (row.status !== 'active') return 'skipped';
-  const [project] = await db.select().from(projects).where(eq(projects.projectId, row.projectId)).limit(1);
+  const [project] = await db.select().from(projectsView).where(eq(projectsView.projectId, row.projectId)).limit(1);
   if (!project || project.status !== 'active') return 'skipped';
   // The project's pause, or the account's Pause all triggers (KRTX-1721).
   if (await automaticFirePauseReason(project)) return 'skipped';
@@ -160,9 +160,6 @@ async function deliverToRow(
   if (!triggerFilterMatches(spec, payload)) return 'skipped';
 
   const idempotencyKey = eventIdempotencyKey(row.projectId, row.slug, delivery.eventId);
-  // Alerts need the project's notification_center flag; off, the failure
-  // count is not read either.
-  const alertsOn = notificationsEnabled(project.metadata);
   try {
     // A provider retry of an event whose run dead-lettered or lost its session
     // runs again instead of replaying that outcome (webhook-delivery.ts).
@@ -189,10 +186,9 @@ async function deliverToRow(
       // The provider retries on our 500. Only a failure no retry can fix, or
       // the third failed attempt of one event, alerts (KRTX-1742). A create
       // that went back to the queue alerts from the drain if it dead-letters.
-      const alerts =
-        alertsOn && !result.requeued && (!result.retryable || (await eventFailureAlerts(row.projectId, idempotencyKey)));
+      const alerts = !result.requeued && (!result.retryable || (await eventFailureAlerts(row.projectId, idempotencyKey)));
       if (alerts) {
-        await raiseTriggerAlert({ projectId: row.projectId, accountId: project.accountId, slug: row.slug, source: 'fire', error, notificationCenter: true });
+        await raiseTriggerAlert({ projectId: row.projectId, accountId: project.accountId, slug: row.slug, source: 'fire', error });
       }
       return 'failed';
     }
@@ -208,8 +204,8 @@ async function deliverToRow(
     await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'event', spec, payload, status: 'failed', error: message, now: new Date() });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, new Date(), message).catch(() => {});
     // The provider retries on our 500: the same rule as a retryable failure.
-    if (alertsOn && (await eventFailureAlerts(row.projectId, idempotencyKey))) {
-      await raiseTriggerAlert({ projectId: row.projectId, accountId: project.accountId, slug: row.slug, source: 'fire', error: message, notificationCenter: true });
+    if (await eventFailureAlerts(row.projectId, idempotencyKey)) {
+      await raiseTriggerAlert({ projectId: row.projectId, accountId: project.accountId, slug: row.slug, source: 'fire', error: message });
     }
     return 'failed';
   }

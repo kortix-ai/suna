@@ -16,7 +16,6 @@ async function run(args: string[], base: string) {
         PATH: process.env.PATH ?? '', HOME: home, CI: '1', KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         KORTIX_CONFIG_FILE: join(home, 'config.json'), KORTIX_DEFAULT_API_BASE: base,
         KORTIX_API_URL: `${base}/v1`, KORTIX_TOKEN: 'kortix_pat_synthetic', KORTIX_PROJECT_ID: pid,
-        KORTIX_FEATURE_FLAGS: 'artifacts,artifact_comments',
       },
     });
     const [exitCode, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
@@ -42,7 +41,9 @@ async function withApi(answer: (path: string) => unknown, body: (base: string) =
   }
 }
 
-const answer = (path: string) => {
+// The CLI calls the canonical /v1/workspaces names; /v1/projects is the permanent alias.
+const answer = (rawPath: string) => {
+  const path = rawPath.replace(/^\/v1\/workspaces\//, '/v1/projects/');
   if (path === `/v1/projects/${pid}/artifacts`) return { artifacts: [artifact({}), artifact({ artifact_id: '33333333-3333-4333-8333-333333333333', type: 'html', visibility: 'private', pinned: false, title: 'Old deck', path: '/Artifacts/deck', updated_at: ago(3 * 3600_000) }), artifact({ artifact_id: '44444444-4444-4444-8444-444444444444', title: 'Ancient', pinned: false, updated_at: ago(45 * 86_400_000) })] };
   if (path === `/v1/projects/${pid}/artifacts/${aid}/versions`) return { versions: [{ id: 'ver-b', number: 2, created_at: ago(2 * 86_400_000) }, { id: 'ver-a', number: 1, created_at: ago(10 * MINUTE) }] };
   if (path === `/v1/projects/${pid}/artifacts/${aid}`) return artifact({});
@@ -54,9 +55,9 @@ test('artifacts ls prints one row per artifact: short id, type, visibility, age,
     const result = await run(['ls'], base);
     expect(result.exitCode).toBe(0);
     expect(result.stdout.trimEnd().split('\n')).toEqual([
-      '22222222  doc   project  5m ago   ★ Q3 churn report  /Artifacts/q3.md',
-      '33333333  html  private  3h ago   Old deck  /Artifacts/deck',
-      '44444444  doc   project  45d ago  Ancient  /Artifacts/q3.md',
+      '22222222  doc   workspace  5m ago   ★ Q3 churn report  /Artifacts/q3.md',
+      '33333333  html  private    3h ago   Old deck  /Artifacts/deck',
+      '44444444  doc   workspace  45d ago  Ancient  /Artifacts/q3.md',
     ]);
   });
 });
@@ -67,7 +68,7 @@ test('artifacts info prints the title line, the facts line, entry_version, descr
     expect(result.exitCode).toBe(0);
     expect(result.stdout.trimEnd().split('\n')).toEqual([
       `Q3 churn report  ${aid}`,
-      '  doc · project + 2 people · by Ada · updated 5m ago',
+      '  doc · workspace + 2 people · by Ada · updated 5m ago',
       '  entry_version v-7',
       '  Churn by cohort',
       '  1234     index.md',

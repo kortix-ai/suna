@@ -116,7 +116,7 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
   bash: 'Run shell commands.',
   task: 'Start a subagent (the agent tool). A pattern names the subagent.',
   skill: 'Load a skill. A pattern names the skill.',
-  external_directory: 'Access paths outside this project workspace.',
+  external_directory: 'Access paths outside the workspace repository.',
   lsp: 'Use language-server tooling — go-to-definition, diagnostics.',
   todowrite: "Maintain the session's todo list.",
   question: 'Ask the user a clarifying question mid-run.',
@@ -137,16 +137,15 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
  * agent-editor.test.tsx's drift guard against the real
  * `GRANTABLE_KORTIX_PERMISSIONS` constant.
  *
- * Account-scoped admin actions (member.*, billing.*, token.*, project.create,
- * …) are ALSO absent — but that omission is a UX curation choice, not the
- * security boundary: every agent-session token is project-scoped, and
- * apps/api's IAM v2 engine refuses any account-scope action for a
- * project-bound token before an agent's grant is even consulted (see
- * `iam/engine-v2.ts`'s `computeTokenScope`).
+ * Workspace administration (members, groups, roles, billing read, audit,
+ * keys, Capture) is grantable since the workspaces model (design.md §3.2 K1):
+ * an agent with it administers its own workspace. HUMAN_ONLY actions
+ * (deleting the workspace, minting credentials, gateway keys, moving money)
+ * are never grantable, so the picker never offers them.
  */
 /** `featureFlag`: the group is offered only while that project flag is on. */
 export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[]; featureFlag?: FeatureFlagKey }[] = [
-  { group: 'Project', actions: ['project.read', 'project.write', 'project.delete'] },
+  { group: 'Workspace', actions: ['project.read', 'project.write', 'account.read', 'account.write', 'project.create'] },
   {
     group: 'Sessions',
     actions: [
@@ -157,6 +156,32 @@ export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[]; fea
     ],
   },
   { group: 'Members', actions: ['project.members.read', 'project.members.manage'] },
+  {
+    group: 'People',
+    actions: [
+      'member.read',
+      'member.invite',
+      'member.update',
+      'member.remove',
+      'member.super_admin.grant',
+      'group.read',
+      'group.create',
+      'group.update',
+      'group.delete',
+      'group.members.manage',
+      'policy.read',
+      'policy.create',
+      'policy.delete',
+      'role.read',
+      'role.create',
+      'role.update',
+      'role.delete',
+    ],
+  },
+  { group: 'Billing', actions: ['billing.read'] },
+  { group: 'Audit log', actions: ['audit.read'] },
+  { group: 'API keys', actions: ['token.read', 'token.revoke', 'token.personal.revoke'] },
+  { group: 'Capture', actions: ['capture.read_all', 'capture.manage'] },
   {
     group: 'Triggers',
     actions: [
@@ -173,7 +198,6 @@ export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[]; fea
       'project.gateway.logs.read',
       'project.gateway.spend.read',
       'project.gateway.budget.set',
-      'project.gateway.keys.manage',
     ],
   },
   { group: 'Usage', actions: ['project.usage.read'] },
@@ -215,11 +239,6 @@ export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[]; fea
     ],
   },
   { group: 'Secrets', actions: ['project.secret.read', 'project.secret.write'] },
-  // Minting a project credential (a project CLI token, or a project-scoped PAT).
-  // Its own leaf because a credential OUTLIVES the request that minted it; the
-  // two credential routes refuse an agent-session token outright, so granting it
-  // here is a manifest statement, not an escape hatch.
-  { group: 'Credentials', actions: ['project.credentials.issue'] },
   {
     group: 'Connectors',
     actions: [
@@ -240,10 +259,5 @@ export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[]; fea
     group: 'Artifacts',
     actions: ['project.artifact.read', 'project.artifact.write', 'project.artifact.manage', 'project.artifact.public'],
     featureFlag: 'artifacts',
-  },
-  {
-    group: 'Artifact comments',
-    actions: ['project.artifact.comment'],
-    featureFlag: 'artifact_comments',
   },
 ];

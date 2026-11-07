@@ -175,8 +175,73 @@ describe('the box copy', () => {
     expect(isSafeBoxPath('/home/kortix/.local/share/opencode/auth.json')).toBe(false);
     expect(isSafeBoxPath('/home/kortix/.local/share/kortix/attachments/../../opencode/auth.json')).toBe(false);
     expect(isSafeBoxPath('/etc/passwd')).toBe(false);
-    expect(parseCopyOutput('noise\nfound|/tmp/kortix-recover.Ab12|/home/kortix|ses_abc')).toEqual({ boxTemp: '/tmp/kortix-recover.Ab12', home: '/home/kortix', pinnedRoot: 'ses_abc' });
-    expect(parseCopyOutput('none')).toBeNull();
     expect(() => parseCopyOutput('found|/etc|/home/kortix|')).toThrow();
+  });
+
+  test('reads the parts of a split store and refuses a listing with a part missing', async () => {
+    const { PART_BYTES, parseCopyOutput } = await import('./box');
+    const big = PART_BYTES * 2 + 5;
+    const out = [
+      'noise',
+      `file|opencode.db|${big}`,
+      'file|opencode.db-wal|4120',
+      'part|opencode.db-wal.part.aaa',
+      'part|opencode.db.part.aac',
+      'part|opencode.db.part.aaa',
+      'part|opencode.db.part.aab',
+      'found|/tmp/kortix-recover.Ab12|/home/kortix|ses_abc',
+    ];
+    expect(parseCopyOutput(out.join('\n'))).toEqual({
+      kind: 'found',
+      boxTemp: '/tmp/kortix-recover.Ab12',
+      home: '/home/kortix',
+      pinnedRoot: 'ses_abc',
+      files: [
+        { name: 'opencode.db', bytes: big, parts: ['opencode.db.part.aaa', 'opencode.db.part.aab', 'opencode.db.part.aac'] },
+        { name: 'opencode.db-wal', bytes: 4120, parts: ['opencode.db-wal.part.aaa'] },
+      ],
+    });
+    // A WAL the box measured but whose part is not listed fails the copy: never a store without its WAL.
+    expect(() => parseCopyOutput(out.filter((l) => !l.includes('db-wal.part')).join('\n'))).toThrow('opencode.db-wal: 0 parts');
+    expect(parseCopyOutput('file|opencode.db|0\nfound|/tmp/kortix-recover.x|/root|').kind).toBe('found');
+    expect(parseCopyOutput('too_large|718274560')).toEqual({ kind: 'too_large', bytes: 718274560 });
+    expect(parseCopyOutput('none')).toEqual({ kind: 'none' });
+    expect(() => parseCopyOutput('found|/tmp/kortix-recover.x|/root|')).toThrow('lists no opencode.db');
+    expect(() => parseCopyOutput('file|opencode.db|0\nfound|/tmp/kortix-recover.x/../../etc|/root|')).toThrow('unexpected copy output');
+  });
+
+  test('assembles the parts in order and fails when a part comes back short', async () => {
+    const { assembleStore } = await import('./box');
+    const dir = mkdtempSync(join(tmpdir(), 'recover-assemble-'));
+    try {
+      const parts: Record<string, Uint8Array> = {
+        '/tmp/kortix-recover.x/opencode.db.part.aaa': new Uint8Array([1, 2, 3]),
+        '/tmp/kortix-recover.x/opencode.db.part.aab': new Uint8Array([4]),
+        '/tmp/kortix-recover.x/opencode.db-wal.part.aaa': new Uint8Array([9, 9]),
+      };
+      const found = {
+        kind: 'found' as const,
+        boxTemp: '/tmp/kortix-recover.x',
+        home: '/home/kortix',
+        pinnedRoot: null,
+        files: [
+          { name: 'opencode.db' as const, bytes: 4, parts: ['opencode.db.part.aaa', 'opencode.db.part.aab'] },
+          { name: 'opencode.db-wal' as const, bytes: 2, parts: ['opencode.db-wal.part.aaa'] },
+        ],
+      };
+      const copied = await assembleStore(found, join(dir, 'a'), 1024, async (p) => parts[p]!);
+      expect(copied.bytes).toBe(6);
+      expect([...(await Bun.file(copied.dbPath).bytes())]).toEqual([1, 2, 3, 4]);
+      expect([...(await Bun.file(`${copied.dbPath}-wal`).bytes())]).toEqual([9, 9]);
+      const short = { ...found, files: [{ ...found.files[0]!, bytes: 5 }] };
+      await expect(assembleStore(short, join(dir, 'b'), 1024, async (p) => parts[p]!)).rejects.toThrow('4 of 5 bytes arrived');
+      // The box reports 4 + 2 bytes, under a cap of 5 only if it lies: the received bytes decide, for good.
+      const lying = await assembleStore(found, join(dir, 'c'), 5, async (p) => parts[p]!).catch((err: unknown) => err);
+      expect(lying).toBeInstanceOf(Error);
+      expect((lying as Error).message).toContain('past the 5 B cap');
+      expect((lying as { retryable?: boolean }).retryable).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

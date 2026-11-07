@@ -3,6 +3,7 @@
 // byte-identical. The `unwrap` helper in `./shared` stays internal.
 
 export * from './accounts';
+export * from './workspaces';
 export * from './spaces';
 export * from './projects';
 export * from './skills';
@@ -54,8 +55,6 @@ export * from './runtime-triggers';
 export * from './rooms';
 export * from './multi-agent';
 export * from './artifacts';
-export * from './artifact-live';
-export * from './artifact-doc';
 export * from './tokens';
 export * from './audit';
 export * from './setup-links';
@@ -76,8 +75,8 @@ export type {
   AccountRole,
   ProjectRole,
   ConnectorSharing,
-  ProjectGitConnection,
-  ProjectFileEntry,
+  ProjectGitConnection, WorkspaceGitConnection,
+  ProjectFileEntry, WorkspaceFileEntry,
 } from './shared';
 
 export * from './model-access';

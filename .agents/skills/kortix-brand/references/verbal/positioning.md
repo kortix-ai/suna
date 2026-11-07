@@ -148,7 +148,7 @@ Each pitch runs: who, pain, promise, mechanism, sanctioned phrases, what not to 
 - **Who:** Firms that bring AI into their clients and need a platform to bet on.
 - **Pain:** The same AI plumbing rebuilt per client. No durable platform. Reselling someone else's locked box.
 - **Promise:** One horizontal platform, sold through verticalized partners with their own front ends and starter templates.
-- **Mechanism:** Partners handle distribution and clients. Kortix provides the technology, the training and the playbook. Importable projects, agents and skills through the marketplace.
+- **Mechanism:** Partners handle distribution and clients. Kortix provides the technology, the training and the playbook. Importable workspaces, agents and skills through the marketplace.
 - **Sanctioned phrases:** "one horizontal platform, verticalized partners", "the technology, the training, and the playbook".
 - **Do not say:** revenue-share or partner terms unless a person gives them as fact.
 
@@ -156,6 +156,6 @@ Each pitch runs: who, pain, promise, mechanism, sanctioned phrases, what not to 
 
 ## 6. Business model (context, not external copy)
 
-Open source and self-hostable underneath. A cloud that charges in credits: Free is $0 with 500 credits per month, managed models and 1 project; the paid plan runs in tiers from $50 to $50,000 a month at 100 credits per dollar, with unlimited members sharing one pool (`apps/web/src/features/billing/pricing-plans.ts`, verified 2026-10-17). Single-tenant deployments for teams that must self-run. A marketplace of agents, skills and importable projects. Platinum.dev, the compute floor (CPU/GPU sandboxes, inference, training). The platform proves itself by running Kortix's own companies in public.
+Open source and self-hostable underneath. A cloud that charges in credits: Free is $0 with 500 credits per month on a person's first workspace, on their own provider keys or ChatGPT subscription; the paid plan runs in tiers from $50 to $50,000 a month at 100 credits per dollar, adds the Kortix-managed models, and has unlimited members sharing one pool (`apps/web/src/features/billing/pricing-plans.ts`, verified 2026-11-06). Single-tenant deployments for teams that must self-run. A marketplace of agents, skills and importable projects. Platinum.dev, the compute floor (CPU/GPU sandboxes, inference, training). The platform proves itself by running Kortix's own companies in public.
 
 **Rule.** Quote no price, credit count, discount, trial length or usage rate that is not in `pricing-plans.ts`. — *Why:* A landing line once said $20 and was wrong by 2x. — *Where:* marketing | deck | store listing | email. — *When silent:* link to `/pricing` and state no number.

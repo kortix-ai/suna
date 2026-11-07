@@ -25,11 +25,22 @@ test('staged web artifacts: regenerate, stage, refuse partial inputs and preserv
     git('config', 'user.email', 'agent@kortix.ai');
     git('config', 'core.hooksPath', '/dev/null');
     git('config', 'core.attributesfile', '/dev/null');
-    for (const script of ['build-content-timestamps.mjs', 'generate-audit-http-routes.mjs']) {
+    for (const script of [
+      'build-content-timestamps.mjs',
+      'generate-audit-http-routes.mjs',
+      // generate-audit-http-routes.mjs imports repositoryRoot + runFileGenerator from here.
+      'docs-generated-region.mjs',
+    ]) {
       write(`apps/web/scripts/${script}`, '');
       copyFileSync(join(root, 'apps/web/scripts', script), join(dir, 'apps/web/scripts', script));
     }
     symlinkSync(join(root, 'apps/web/node_modules'), join(dir, 'apps/web/node_modules'), 'dir');
+    // docs-generated-region.mjs reads the feature-flag registry at module load.
+    write('apps/api/src/feature-flags/registry.ts', '');
+    copyFileSync(
+      join(root, 'apps/api/src/feature-flags/registry.ts'),
+      join(dir, 'apps/api/src/feature-flags/registry.ts'),
+    );
     write('apps/web/content/docs/old.mdx', '# Old');
     write('tests/spec/routes.generated.json', routes('/v1/old'));
     write(timestamps, '{}\n');
@@ -286,7 +297,13 @@ test('staged web artifacts: regenerate the audit-actions doc from staged audit l
       write(`apps/web/scripts/${script}`, '');
       copyFileSync(join(root, 'apps/web/scripts', script), join(dir, 'apps/web/scripts', script));
     }
-    for (const shared of ['audit-labels.ts', 'audit-route-labels.ts', 'audit-event-labels.ts']) {
+    for (const shared of [
+      'audit-labels.ts',
+      'audit-route-labels.ts',
+      'audit-event-labels.ts',
+      // audit-labels.ts renames legacy route keys to their workspace name.
+      'workspace-routes.ts',
+    ]) {
       write(`packages/shared/src/${shared}`, '');
       copyFileSync(
         join(root, 'packages/shared/src', shared),
@@ -298,6 +315,9 @@ test('staged web artifacts: regenerate the audit-actions doc from staged audit l
       join(root, 'apps/api/src/feature-flags/registry.ts'),
       join(dir, 'apps/api/src/feature-flags/registry.ts'),
     );
+    // The doc names each action's canonical /v1/workspaces route from the manifest.
+    write('tests/spec/routes.generated.json', '');
+    copyFileSync(join(root, 'tests/spec/routes.generated.json'), join(dir, 'tests/spec/routes.generated.json'));
     mkdirSync(join(dir, 'apps/web/content/docs'), { recursive: true });
     execFileSync('bun', ['apps/web/scripts/generate-audit-actions-doc.mjs'], {
       cwd: dir,

@@ -43,7 +43,7 @@ export async function connectorContext(
   const ctx = await resolveProjectContext({ projectArg: projectOverride, hostArg, envPin: true });
   if (!ctx) {
     throw new CliError(
-      'no project context — run `kortix login`, then `kortix projects link` (or pass --project / --host).',
+      'no workspace context — run `kortix login`, then `kortix workspaces link` (or pass --project / --host).',
       'NO_PROJECT_CONTEXT',
     );
   }
@@ -161,7 +161,7 @@ export async function mintConnectLink(opts: {
   const { client, projectId } = await connectorProjectContext(opts.projectOverride, opts.hostArg);
   try {
     const link = await client.post<{ url?: string; app?: string | null; expires_at?: string }>(
-      `/projects/${projectId}/connect-requests`,
+      `/workspaces/${projectId}/connect-requests`,
       {
         slug: opts.slug,
         ...(opts.expiresInMinutes ? { expires_in_minutes: opts.expiresInMinutes } : {}),
@@ -194,7 +194,7 @@ export async function mintConnectLink(opts: {
     sessionId?: string;
     connectionId?: string;
     requestId?: string;
-  }>(`/connectors/projects/${projectId}/connectors/${encodeURIComponent(opts.slug)}/connect`, {
+  }>(`/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(opts.slug)}/connect`, {
     ...(opts.owner ? { owner: opts.owner } : {}),
   });
   return {
@@ -222,7 +222,7 @@ export async function addConnector(
 ): Promise<{ ok: boolean; sync?: unknown }> {
   const { client, projectId } = await connectorProjectContext(projectOverride, hostArg);
   return client.post<{ ok: boolean; sync?: unknown }>(
-    `/connectors/projects/${projectId}/connectors`,
+    `/connectors/workspaces/${projectId}/connectors`,
     draft,
   );
 }
@@ -234,5 +234,5 @@ export async function removeConnector(
   hostArg?: string,
 ): Promise<void> {
   const { client, projectId } = await connectorProjectContext(projectOverride, hostArg);
-  await client.delete(`/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}`);
+  await client.delete(`/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}`);
 }

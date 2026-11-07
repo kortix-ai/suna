@@ -53,7 +53,7 @@ describe('account pane heading navigation', () => {
           />
         </QueryClientProvider>,
       );
-      expect(projects).toMatch(/<h1\b[^>]*>Projects<\/h1>/);
+      expect(projects).toMatch(/<h1\b[^>]*>Workspaces<\/h1>/);
       client.clear();
     });
   }

@@ -43,9 +43,9 @@ const FEATURE_COPY: Record<
   groups: {
     title: 'Groups are an Enterprise feature',
     blurb:
-      'Bundle members into groups and grant the whole group a role on a project — one grant instead of dozens, revoked just as easily.',
+      'Bundle members into groups and give the whole group a role: one grant instead of dozens, revoked just as easily.',
     points: [
-      'Attach a group to any project with a role',
+      'Attach a group to any workspace with a role',
       'Sync membership automatically from your identity provider',
       'Offboard someone everywhere by removing one membership',
     ],
@@ -53,7 +53,7 @@ const FEATURE_COPY: Record<
   audit: {
     title: 'Audit logs are an Enterprise feature',
     blurb:
-      'A complete, filterable trail of every admin and agent action in the account — who did what, where, and when.',
+      'A complete, filterable trail of every admin and agent action in this workspace: who did what, where, and when.',
     points: [
       'Filter by actor, action, resource, and time range',
       'Export as CSV or JSONL for your SIEM',
@@ -66,24 +66,24 @@ const FEATURE_COPY: Record<
       'Bring your identity provider — Okta, Microsoft Entra ID, or any SAML IdP — and let it drive who gets in and what they can touch.',
     points: [
       'Single sign-on with just-in-time member provisioning',
-      'IdP groups map to roles on your projects',
+      'IdP groups map to roles in this workspace',
       'SCIM keeps users and groups in sync, including offboarding',
     ],
   },
   roles: {
     title: 'Custom roles are an Enterprise feature',
     blurb:
-      'Define roles of your own — pick exactly what a member may view and change — and hand them out from Members and Projects like the built-in ones.',
+      'Define roles of your own: pick exactly what a member may view and change, then give them out from Members like the built-in ones.',
     points: [
       'Start from a built-in role and remove what you do not need',
-      'Assign a custom role on the account or on one project',
+      'Give a custom role to a person or a group',
       'See every capability a role grants before you assign it',
     ],
   },
   branding: {
     title: 'Branding is an Enterprise feature',
     blurb:
-      'Put your own logo, icon, favicon, and product name on the app for everyone in this account — Kortix becomes your tool.',
+      'Put your own logo, icon, favicon, and product name on the app for everyone in this workspace: Kortix becomes your tool.',
     points: [
       'Your brandmark in the header and on every loading screen',
       'Your favicon and product name in the browser tab, with dark-mode variants',

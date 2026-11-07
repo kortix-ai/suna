@@ -28,11 +28,12 @@
  */
 
 import { createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
-import { projectSigningKeys, projects } from '@kortix/db';
+import { projectSigningKeys } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { oauthIssuer } from '../oauth/discovery';
 import { db } from '../shared/db';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/surface';
+import { projectsView } from '../workspaces/rows';
 
 export const TOKEN_TTL_SECONDS = 15 * 60;
 
@@ -54,7 +55,7 @@ export function projectIssuer(projectId: string): string {
 
 /** Whether the project exists (the public issuer routes answer 404 otherwise). */
 export async function projectExists(projectId: string): Promise<boolean> {
-  const [row] = await db.select({ projectId: projects.projectId }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select({ projectId: projectsView.projectId }).from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   return Boolean(row);
 }
 

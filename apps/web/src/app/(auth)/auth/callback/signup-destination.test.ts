@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
  * actually makes it.
  */
 
-const FOREIGN_PROJECT = '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c';
+const FOREIGN_PROJECT = '/workspaces/319395c1-9c3f-41b4-ac6c-9539a12dbb7c';
 const NEW_USER_ID = '44444444-4444-4444-4444-444444444444';
 
 let userCreatedAt = new Date().toISOString();

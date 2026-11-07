@@ -98,10 +98,17 @@ const dbShim = {
   delete: (table: unknown) => ({
     where: () => ({ limit: async () => [] }),
   }),
-  execute: async () => ({ rows: [] }),
+  // postgres-js: `execute` resolves to the row array.
+  execute: async () => [],
 };
 
-mock.module('../shared/db', () => ({ hasDatabase: () => true, db: dbShim }));
+mock.module('../shared/db', () => ({
+  hasDatabase: () => true,
+  db: dbShim,
+  // workspaces/lifecycle.ts (in the graph through workspaces/surface) imports these.
+  withDbTransaction: async (fn: (tx: unknown) => unknown) => fn(dbShim),
+  afterDbCommit: (fn: () => unknown) => fn(),
+}));
 
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
@@ -124,7 +131,9 @@ mockIamReadModels({
 });
 mockIamAssignments({ onGrant: () => {} });
 
+const realAuthorize = await import('../iam/authorize');
 mock.module('../iam/authorize', () => ({
+  ...realAuthorize,
   authorize: async () => ({ allowed: true, reason: 'role' }),
   assertAuthorized: async () => {},
   listAccessible: async () => ({ mode: 'all' }),
@@ -137,6 +146,8 @@ mock.module('../iam/authorize', () => ({
   ssoRequiredFor: async () => false,
   // The access-MFA gate (KRTX-1742) reads this per request; out of scope.
   mfaGateBlocks: () => false,
+  // The canonical gate and GET /v1/workspaces read the role ladder (C3).
+  workspaceRoleFor: async () => 'owner',
 }));
 
 mock.module('../iam/email-trust', () => ({
@@ -175,7 +186,9 @@ mock.module('../shared/rate-limit', () => ({
   },
 }));
 
+const realResolveAccount = await import('../shared/resolve-account');
 mock.module('../shared/resolve-account', () => ({
+  ...realResolveAccount,
   resolveAccountId: async () => ACCOUNT_ID,
 }));
 
@@ -228,7 +241,7 @@ describe('accounts route uuid params (KRTX-211)', () => {
     const res = await createApp().request('/v1/accounts/tokens?account_id=directory');
     expect(res.status).toBe(403);
     const body = await res.json();
-    expect(body.error).toBe('not a member of the requested account');
+    expect(body.error).toBe('not a member of the requested workspace');
     expect(dbReads).toEqual([]);
   });
 

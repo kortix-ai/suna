@@ -9,7 +9,7 @@ import {
   type SessionListState,
 } from '../core/rest/projects-client/sessions';
 import { qk } from './query-keys';
-import { updateCachedProjectSessions } from './session-cache-write';
+import { updateCachedWorkspaceSessions } from './session-cache-write';
 
 type SessionListChange = { pinned: boolean } | { archived: boolean };
 
@@ -31,7 +31,7 @@ function changedState(session: ProjectSession, change: SessionListChange, now: s
 export function useSessionListState(projectId: string) {
   const client = useQueryClient();
   const write = (sessionId: string, state: (session: ProjectSession) => SessionListState) =>
-    updateCachedProjectSessions(client, projectId, (sessions) =>
+    updateCachedWorkspaceSessions(client, projectId, (sessions) =>
       sessions.map((session) => (session.session_id === sessionId ? { ...session, ...state(session) } : session)),
     );
   const mutation = useMutation({

@@ -8,8 +8,8 @@ import { join } from 'node:path';
  * Measured on a production build (`next build` + `next start`, 20 sessions in
  * the sidebar, one session open, Playwright request counter):
  *
- *   before  221 requests, 21 RSC fetches of /projects/[id]/sessions/[sessionId]
- *   after   192 requests,  1 RSC fetch  of /projects/[id]/sessions/[sessionId]
+ *   before  221 requests, 21 RSC fetches of /workspaces/[id]/sessions/[sessionId]
+ *   after   192 requests,  1 RSC fetch  of /workspaces/[id]/sessions/[sessionId]
  *
  * Twenty of those 21 were `<Link>`'s automatic viewport prefetch firing for
  * every OTHER session row — each one a dynamic server render of a full session

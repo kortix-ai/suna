@@ -4,6 +4,24 @@
 // project-scoped: `kortix.permissions.resource_type` accepts only those two.
 //
 // Secrets / env-vars are intentionally absent — handled separately later.
+//
+// WORKSPACE NAMES. Every action below also has one `workspace.*` name
+// (`@kortix/shared/workspace-actions`, the one alias map). The constants here
+// keep the LEGACY spelling because that is what `kortix.permissions` and
+// `kortix.role_permissions` store and what old pods check. Inputs accept both
+// names (`toLegacyAction` before any comparison); outputs carry the workspace
+// name next to the legacy one (`toWorkspaceAction`).
+
+import { toLegacyAction, toWorkspaceAction } from '@kortix/shared/workspace-actions';
+
+export {
+  isLegacyAction,
+  isWorkspaceAction,
+  LEGACY_ACTION_BY_WORKSPACE,
+  toLegacyAction,
+  toWorkspaceAction,
+  WORKSPACE_ACTION_BY_LEGACY,
+} from '@kortix/shared/workspace-actions';
 
 export const RESOURCE_TYPES = ['account', 'project'] as const;
 export type ResourceType = (typeof RESOURCE_TYPES)[number];
@@ -164,14 +182,13 @@ export const PROJECT_ACTIONS = {
   PROJECT_REVIEW_SUBMIT: 'project.review.submit',
   PROJECT_REVIEW_ACT: 'project.review.act',
 
-  // Artifacts (`artifacts` flag): Files folders shared as docs and pages.
+  // Artifacts: Files folders shared as docs and pages.
   // `read` = the gallery, open an artifact, its versions and files. `write` =
   // publish, share a folder, save, restore, and rename / share / unshare your
   // own. `manage` = change how anyone's artifact is shared. `public` = give an
   // artifact a public link: the one outward step, so a custom role or an
   // agent's `kortix_permissions` can withhold it on its own.
   PROJECT_ARTIFACT_READ: 'project.artifact.read',
-  PROJECT_ARTIFACT_COMMENT: 'project.artifact.comment',
   PROJECT_ARTIFACT_WRITE: 'project.artifact.write',
   PROJECT_ARTIFACT_MANAGE: 'project.artifact.manage',
   PROJECT_ARTIFACT_PUBLIC: 'project.artifact.public',
@@ -214,12 +231,20 @@ export const VALID_ACTIONS: ReadonlySet<string> = new Set([
   ...Object.values(PROJECT_ACTIONS),
 ]);
 
+/** A real action under EITHER name (`project.read` or `workspace.read`). */
+export function isKnownAction(action: string): boolean {
+  return VALID_ACTIONS.has(toLegacyAction(action));
+}
+
 /**
  * Catalog grouped for the UI's action picker. Each item carries a human
  * label so the frontend doesn't have to title-case dotted strings.
  */
 export interface ActionCatalogEntry {
+  /** The stored (legacy) name, e.g. `project.read`. */
   action: string;
+  /** The same action's workspace name, e.g. `workspace.read`. */
+  workspaceAction: string;
   label: string;
   resourceType: ResourceType;
 }
@@ -234,11 +259,13 @@ function label(action: string): string {
 export const ACTION_CATALOG: ActionCatalogEntry[] = [
   ...Object.values(ACCOUNT_ACTIONS).map((a) => ({
     action: a,
+    workspaceAction: toWorkspaceAction(a),
     label: label(a),
     resourceType: resourceTypeForAction(a),
   })),
   ...Object.values(PROJECT_ACTIONS).map((a) => ({
     action: a,
+    workspaceAction: toWorkspaceAction(a),
     label: label(a),
     resourceType: resourceTypeForAction(a),
   })),
@@ -251,7 +278,9 @@ export const ACTION_CATALOG: ActionCatalogEntry[] = [
  * project.session.stop   → 'project'
  * member.invite          → 'account'  (account-level member admin)
  */
-export function resourceTypeForAction(action: string): ResourceType {
+export function resourceTypeForAction(rawAction: string): ResourceType {
+  // A workspace name classifies exactly as its legacy name: the rename is 1:1.
+  const action = toLegacyAction(rawAction);
   const prefix = action.split('.', 1)[0] as ResourceType;
   // Member / group / role / policy / token / billing / audit / account_*
   // are all account-scoped admin actions.

@@ -18,8 +18,6 @@ import { kickStartupPreBuild } from '../../snapshots/builder';
 import type { Job } from '../runtime/job';
 import { startAccountDeletionSchedule, stopAccountDeletionSchedule } from './account-deletion';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './active-turn-renewal';
-import { startArtifactDocCompaction, stopArtifactDocCompaction } from './artifact-doc-compaction';
-import { startArtifactDocGc, stopArtifactDocGc } from './artifact-doc-gc';
 import { startAppDeploymentWorker, stopAppDeploymentWorker } from './app-deployment';
 import { startAppIdleReaper, stopAppIdleReaper } from './app-idle-reaper';
 import { startApprovalExpirySweeper, stopApprovalExpirySweeper } from './approval-expiry';
@@ -52,6 +50,8 @@ import { startTeamsTurnGc, stopTeamsTurnGc } from './teams-turn-gc';
 import { startProjectTriggerScheduler, stopProjectTriggerScheduler, triggerSweepStalled } from './trigger-scheduler';
 import { startTunnelCleanup, stopTunnelCleanup } from './tunnel-cleanup';
 import { startTunnelForwardExpiry, stopTunnelForwardExpiry } from './tunnel-forward-expiry';
+import { startWorkspaceIdFillWorker, stopWorkspaceIdFillWorker } from './workspace-id-fill';
+import { startWorkspaceSplitWorker, stopWorkspaceSplitWorker } from './workspace-split';
 
 import { startSalesOutbox, stopSalesOutbox } from './sales-outbox';
 
@@ -114,10 +114,6 @@ export const JOBS: readonly Job[] = [
   // Close Slack/Teams live cards whose run ended without a reply.
   { ticks: { 'slack-turn-gc': 20 * MIN }, start: startSlackTurnGc, stop: stopSlackTurnGc },
   { ticks: { 'teams-turn-gc': 20 * MIN }, start: startTeamsTurnGc, stop: stopTeamsTurnGc },
-  // Live states of co-edited doc Artifacts idle 10 min and fully flushed (KRTX-3670).
-  { ticks: { 'artifact-doc-gc': 20 * MIN }, start: startArtifactDocGc, stop: stopArtifactDocGc },
-  // Live docs past the row threshold, one small window at a time, inside a time budget (KRTX-3670).
-  { ticks: { 'artifact-doc-compaction': 10 * MIN }, start: startArtifactDocCompaction, stop: stopArtifactDocCompaction },
   // The Discord Gateway: the one connection that delivers the bot's messages (channels/discord/gateway.ts).
   { ticks: { 'discord-gateway': 10 * MIN }, start: startDiscordGateway, stop: stopDiscordGateway },
   // Scheduled account deletions past their 14-day grace; the first tick drains the backlog.
@@ -147,4 +143,8 @@ export const JOBS: readonly Job[] = [
   // Database-wide tunnel sweeps; every API process ran them before the worker split.
   { ticks: { 'tunnel-cleanup': 20 * MIN }, start: startTunnelCleanup, stop: stopTunnelCleanup },
   { ticks: { 'tunnel-forward-expiry': 10 * MIN }, start: startTunnelForwardExpiry, stop: stopTunnelForwardExpiry },
+  // Legacy multi-project accounts → one workspace per project. Dry-run plans every 6 h.
+  { ticks: { 'workspace-split': 8 * HOUR }, start: startWorkspaceSplitWorker, stop: stopWorkspaceSplitWorker },
+  // The Release 1 workspace_id fill, batch by batch after the deploy (never the migrate job). Hourly while paused or done.
+  { ticks: { 'workspace-id-fill': 3 * HOUR }, start: startWorkspaceIdFillWorker, stop: stopWorkspaceIdFillWorker },
 ];

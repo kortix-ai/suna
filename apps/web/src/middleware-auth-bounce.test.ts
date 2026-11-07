@@ -21,7 +21,7 @@ import { middleware } from './middleware';
  * matters is the one actually written to `Set-Cookie`.
  */
 
-const FOREIGN_PROJECT = '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c';
+const FOREIGN_PROJECT = '/workspaces/319395c1-9c3f-41b4-ac6c-9539a12dbb7c';
 const USER_A = '11111111-1111-1111-1111-111111111111';
 
 /** A logged-out browser asking for a private path. */
@@ -91,7 +91,7 @@ describe('middleware bounce attribution', () => {
     // survive one, and the owner half must still parse out of it.
     const response = await middleware(
       bounceRequest(
-        '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c?tab=a,b',
+        '/workspaces/319395c1-9c3f-41b4-ac6c-9539a12dbb7c?tab=a,b',
         `${USER_A}:319395c1-9c3f-41b4-ac6c-9539a12dbb7c`,
       ),
     );
@@ -101,7 +101,7 @@ describe('middleware bounce attribution', () => {
     expect(value.includes(';')).toBe(false);
     expect(parseAuthBounceOwner(value)).toBe(USER_A);
     expect(decodeURIComponent(value.slice(value.indexOf(':') + 1))).toBe(
-      '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c?tab=a,b',
+      '/workspaces/319395c1-9c3f-41b4-ac6c-9539a12dbb7c?tab=a,b',
     );
   });
 

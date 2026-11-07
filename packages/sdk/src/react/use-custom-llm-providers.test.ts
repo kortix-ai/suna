@@ -54,13 +54,13 @@ test('lists, saves and removes; every write refreshes the provider list and the 
   ].map((key) => JSON.stringify(key));
 
   await act(async () => { expect(await value.save('my-llm', input)).toEqual(row); });
-  expect(calls).toContain('PUT http://test.local/v1/projects/p1/custom-providers/my-llm');
+  expect(calls).toContain('PUT http://test.local/v1/workspaces/p1/custom-providers/my-llm');
   for (const key of refreshed) expect(invalidate.mock.calls.some(([args]) => keyOf(args) === key)).toBe(true);
 
   invalidate.mockClear();
   await act(async () => { await value.remove('my-llm'); });
-  expect(calls).toContain('DELETE http://test.local/v1/projects/p1/custom-providers/my-llm');
-  expect(calls).toContain('DELETE http://test.local/v1/projects/p1/secrets/CUSTOM_MY_LLM_API_KEY');
+  expect(calls).toContain('DELETE http://test.local/v1/workspaces/p1/custom-providers/my-llm');
+  expect(calls).toContain('DELETE http://test.local/v1/workspaces/p1/secrets/CUSTOM_MY_LLM_API_KEY');
   for (const key of [...refreshed, JSON.stringify(qk.project.secrets('p1'))]) {
     expect(invalidate.mock.calls.some(([args]) => keyOf(args) === key)).toBe(true);
   }

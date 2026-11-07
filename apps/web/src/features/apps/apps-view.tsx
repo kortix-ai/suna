@@ -78,7 +78,7 @@ function AppsControls({
  * The Apps screen in two variants (the agent editor's resource-page contract,
  * `packages/ui/src/customize/shared/agent-resource-scope.tsx`):
  *
- *  - `global` (default): `/projects/<id>/apps`, every App in the project.
+ *  - `global` (default): `/workspaces/<id>/apps`, every App in the project.
  *  - `agent`: the same screen on one agent's page, inside the agent editor's
  *    pane. Every App carries a checkbox that grants it to the agent
  *    (`agents.<name>.apps`, by slug), driven by `grant`; the page's All ·

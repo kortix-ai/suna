@@ -5,7 +5,7 @@ date: "2026-10-18"
 canonical: "https://kortix.com/blog/kortix-vs-copilot-studio"
 author: "team"
 tags: ["Comparisons"]
-updated: "2026-10-21"
+updated: "2026-11-06"
 slug: "/kortix-vs-copilot-studio"
 ---
 Microsoft Copilot Studio is a capable low-code studio for building agents inside a Microsoft 365 tenant, and Kortix CompanyOS asks a different question about the same work: where is the agent defined, versioned and run? In Copilot Studio the answer is Microsoft's cloud at every step. The agent is built in the studio, stored in a Power Platform solution, published into Microsoft's surfaces and billed to the tenant in Copilot Credits. In Kortix the answer is a file in a repo your team owns.
@@ -38,25 +38,32 @@ That is what software sold to a tenant looks like, and it puts the real question
 
 ## The agent as a file you own
 
-Kortix answers that question with a different object. A Kortix project is a git repo with `kortix.yaml` at its root, and the agents, skills, memory, tools, triggers and connectors are files inside it ([Kortix docs](https://kortix.com/docs)). The starter project every new deployment begins with shows the shape, and its header states the division of labour:
+Kortix answers that question with a different object. A Kortix workspace is backed by a git repo with `kortix.yaml` at its root, and the agents, skills, memory, tools, triggers and connectors are files inside it ([Kortix docs](https://kortix.com/docs)). The starter project every new deployment begins with shows the shape, header first:
 
 ```yaml
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.schema.json
 #
-# Kortix project manifest. Source of truth for project-wide config that
-# lives in git alongside the code. `kortix_version` pins the schema so
-# the platform can evolve safely. v2 manifests are YAML-only, with one
-# `agents:` map per project — GOVERNANCE ONLY (connectors/secrets/
-# kortix_permissions/skills/workspace/enabled), plus `file`, the path of the
-# agent's `.md`. Agent BEHAVIOR (description, model, mode, temperature,
-# permission, the prompt itself, …) lives entirely in that `.md`'s
-# frontmatter + body — a stock OpenCode agent file works as-is.
+# {{projectName}}: the Kortix project manifest. Agents, what each may use,
+# triggers and sandboxes live here, committed beside your files.
+
+agents:
+  worker:
+    description: "General-purpose worker: coding, research, writing, ops and data work, done end to end in its own sandbox."
+    mode: primary
+    permission: allow
+    prompt_file: agents/worker.md
+    tools: "*"
+    skills: "*"
+    connectors: "*"
+    secrets: "*"
+    kortix_permissions: "*"
+    workspace: { project_repository: true }
 ```
 
-Nothing in the manifest says what an agent is for, what model it runs or how it is prompted. It names the file and grants the access. The front-door agent lives beside it as a markdown file, in the starter's own text:
+The block is the whole agent: what it is for, how much it may do without asking, and every grant. Its prompt lives beside it as a markdown file, in the starter's own text:
 
 ```markdown
-You are a **Kortix general knowledge worker** for **{{projectName}}**.
+You are **Worker**, the general-purpose agent of **{{projectName}}**.
 
 You are hands-on: you read, edit, run, search, fetch, and ship. The
 session you're in is an isolated sandbox — an ephemeral branch of
@@ -64,11 +71,11 @@ this repo, your own `/workspace` — so you can install, experiment,
 and recover freely. Only what you commit + push survives.
 ```
 
-An agent is `agents/<name>.md` for behavior plus an `agents.<name>` block in `kortix.yaml` for governance. That pair is the whole definition. The block is short: `file` names the markdown, then the grants, then `workspace`, the git boundary a session gets. Everything you would argue about in review sits in the file the review can diff. The v2 manifest is deny by default, so an omitted grant resolves to none, and the starter's own agent carries `all` on connectors, secrets, permissions and skills so a fresh project works before you narrow it. The versioning story follows: a session is a branch of the repo, so the agent's history is the repo's git history.
+An agent is an `agents.<name>` block in `kortix.yaml` plus its prompt in `agents/<name>.md`. That pair is the whole definition. The block names the prompt file, then the grants, then `workspace`, the git boundary a session gets. Everything you would argue about in review sits in a file the review can diff. An omitted grant resolves to none, and the starter's worker carries `"*"` on tools, skills, connectors, secrets and permissions so a fresh project works before you narrow it. The versioning story follows: a session is a branch of the repo, so the agent's history is the repo's git history.
 
 Kortix is open source. Read it, fork it, audit it ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)). Run it on Kortix Cloud, in your VPC or on-prem, and self-hosting is free. The work comes back reviewable: nothing merges itself, because work reaches `main` through a change request a person approves unless an admin grants the merge capability. That capability is `project.gitops.merge`, and the starter's `all` includes it, so a project that needs a person at every merge narrows `kortix_permissions`.
 
-The bill follows the same ownership story. Free is $0 with 500 credits per month, every feature and 1 project, on your own provider keys or your ChatGPT subscription. Managed models are on the Credits plan only. Paid plans start at $50 a month for 5,000 credits, with unlimited and free members sharing one credit pool, and unused monthly credits roll over one month ([Kortix pricing](https://kortix.com/pricing)).
+The bill follows the same ownership story. Free is $0 with 500 credits per month on your first workspace and every feature, on your own provider keys or your ChatGPT subscription. Managed models are on the Credits plan only. Paid plans start at $50 a month for 5,000 credits, with unlimited and free members sharing one credit pool, and unused monthly credits roll over one month ([Kortix pricing](https://kortix.com/pricing)).
 
 ## What moves and what gets rebuilt
 

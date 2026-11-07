@@ -4,7 +4,7 @@
  * The one left-rail recipe: Project admin and the agent page. A rail is
  * vertical `Tabs` whose rows are real links (the section is URL state),
  * grouped under muted labels in the account hub's dialect
- * (`account-settings-sidebar.tsx`).
+ * (Workspace settings, `project-admin-dashboard.tsx`).
  */
 
 import type { ReactNode } from 'react';
@@ -39,3 +39,6 @@ export const RAIL_ROW_CLASS = cn(
 
 /** The same row on the narrow-screen horizontal strip. */
 export const RAIL_HORIZONTAL_ROW_CLASS = 'w-auto shrink-0 gap-2.5 px-3 py-0.75 whitespace-nowrap';
+
+/** The settings rail's width: Workspace settings and the personal Settings panel share it. */
+export const SETTINGS_SIDEBAR_WIDTH_PX = 300;

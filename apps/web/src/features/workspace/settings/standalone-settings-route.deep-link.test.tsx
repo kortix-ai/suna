@@ -147,6 +147,6 @@ test('explicit route tabs override an existing selection and follow navigation',
   await act(async () => {
     useSettingsPanelStore.getState().close();
   });
-  expect(replacements).toEqual(['/projects']);
+  expect(replacements).toEqual(['/workspaces']);
   await act(async () => { root.unmount(); });
 });

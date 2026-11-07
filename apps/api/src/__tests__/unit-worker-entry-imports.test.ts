@@ -20,10 +20,12 @@ const KNOWN_LEAKS: Record<string, string> = {
   'src/iam/index.ts': 'service modules import authorize helpers from the iam barrel',
   'src/middleware/actor.ts': 'iam/actor.ts and projects/lib/http-approval-caller.ts build actors with it',
   'src/middleware/agent-scope.ts': 'iam/agent-scope.ts re-exports it',
+  'src/middleware/auth-audit.ts': 'reached through middleware/session-gate.ts (its first-sight audit row)',
   'src/middleware/caller-session.ts': 'projects/lib/http-approval-caller.ts',
   'src/middleware/client-ip.ts': 'reached through middleware/request-audit.ts',
   'src/middleware/on-behalf-of.ts': 'projects/lib/on-behalf-of.ts and http-personal-resources.ts',
   'src/middleware/request-audit.ts': 'projects/lib/serializers.ts',
+  'src/middleware/session-gate.ts': 'middleware/actor.ts enforces the workspace session policy on every actor build (design.md C4, finding 12)',
   'src/middleware/upstream-timing.ts': 'sandbox-proxy/backend.ts and forward/upstream.ts',
   'src/openapi/index.ts': 'domain app.ts modules that services import build their Hono app with it',
 };

@@ -42,6 +42,7 @@ import { planSkillRemoval } from '../lib/skill-removal';
 import { logger } from '../../lib/logger';
 import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { workspaceIdParam } from '../../shared/route-params';
 
 /** Longest name/description the route accepts. Bounds one line of YAML. */
 const SKILL_NAME_MAX = 100;
@@ -100,15 +101,15 @@ function hasCause(error: unknown, predicate: (candidate: unknown) => boolean): b
 
 export function registerProjectSkillsRoutes(): void {
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/skills/remove', tags: ['projects'],
+    method: 'post', path: '/{workspaceId}/skills/remove', tags: ['projects'],
     summary: 'Remove a selected project skill folder, including edits', ...auth,
     request: {
-      params: z.object({ projectId: z.string() }),
+      params: z.object({ workspaceId: z.string() }),
       body: { content: { 'application/json': { schema: RemoveSkillSchema } } },
     },
     responses: { 200: json(z.object({ ok: z.literal(true), commitSha: z.string(), removed: z.array(z.string()) }), 'Removed skill'), ...errors(400, 403, 404, 409, 502) },
   }), async (c: Context<AppEnv>) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     if (!projectId) return c.json({ error: 'Not found' }, 404);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -167,12 +168,12 @@ export function registerProjectSkillsRoutes(): void {
   projectsApp.openapi(
   createRoute({
     method: 'post',
-    path: '/{projectId}/skills',
+    path: '/{workspaceId}/skills',
     tags: ['projects'],
     summary: 'Create a skill on the default branch',
     ...auth,
     request: {
-      params: z.object({ projectId: z.string() }),
+      params: z.object({ workspaceId: z.string() }),
       body: { content: { 'application/json': { schema: CreateSkillSchema } } },
     },
     responses: {
@@ -188,7 +189,7 @@ export function registerProjectSkillsRoutes(): void {
     },
   }),
   async (c: Context<AppEnv>) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     if (!projectId) return c.json({ error: 'Not found' }, 404);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -231,7 +232,7 @@ export function registerProjectSkillsRoutes(): void {
       if (!isRepoFileNotFoundError(err)) {
         return c.json(
           {
-            error: `Failed to read the project repo: ${(err as Error).message || String(err)}`,
+            error: `Failed to read the workspace repo: ${(err as Error).message || String(err)}`,
             code: 'repo_read',
           },
           502,

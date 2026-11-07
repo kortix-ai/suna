@@ -108,7 +108,7 @@ export async function downloadSlackFile(
     return { ok: false, error: 'url must be a Slack file URL (url_private or url_private_download)', status: 400 };
   }
   const token = await loadSlackTokenForProject(projectId);
-  if (!token) return { ok: false, error: 'Slack not connected for this project', status: 404 };
+  if (!token) return { ok: false, error: 'Slack not connected for this workspace', status: 404 };
 
   const info = await getFileInfo(token, fileId);
   if (!info.ok) return { ok: false, error: `Slack file ${fileId}: ${info.error ?? 'not found'}`, status: 404 };
@@ -151,7 +151,7 @@ export async function uploadSlackFile(
     return { ok: false, error: 'channel, filename and content_base64 are required', status: 400 };
   }
   const token = await loadSlackTokenForProject(projectId);
-  if (!token) return { ok: false, error: 'Slack not connected for this project', status: 404 };
+  if (!token) return { ok: false, error: 'Slack not connected for this workspace', status: 404 };
 
   const bytes = Buffer.from(args.contentBase64, 'base64');
 

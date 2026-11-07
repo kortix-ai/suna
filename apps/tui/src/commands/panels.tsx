@@ -1,16 +1,15 @@
 /**
- * The lists a slash command opens above the input: `/sessions`, `/projects`,
- * `/accounts`, `/agents`, `/workflows`, `/tasks`, and the y/N confirm a
- * destructive command asks.
+ * The lists a slash command opens above the input: `/sessions`, `/workspaces`,
+ * `/agents`, `/workflows`, `/tasks`, and the y/N confirm a destructive command
+ * asks.
  *
  * They are in-flow `InlinePicker`s, like the model picker, so they sit right
  * where the user is typing and never cover the transcript. Each one reads the
- * SAME SDK hook the sidebar and the switcher read (`useProjectSessions`,
- * `useProjects`, `useAccounts`), so opening one costs no request on a warm
- * cache.
+ * SAME SDK reads the sidebar and the switcher read (`useProjectSessions`,
+ * `useWorkspaces`), so opening one costs no request on a warm cache.
  */
 
-import { useAccounts, useProjectSessions, useProjects } from '@kortix/sdk/react';
+import { useProjectSessions } from '@kortix/sdk/react';
 import { useKeyboard } from '@opentui/react';
 import { useMemo } from 'react';
 
@@ -23,12 +22,13 @@ import { matchesBinding } from '../keymap.ts';
 import { glyph, theme } from '../theme.ts';
 import type { ListItem } from '../ui/index.ts';
 import { printable } from '../lib/printable.ts';
+import { NO_WORKSPACE_TEXT, useWorkspaces } from '../lib/workspaces.ts';
 
 /** What the panel slot holds. Null = nothing above the input. */
 export type CommandPanel =
   | { kind: 'sessions'; query: string }
-  | { kind: 'projects'; query: string }
-  | { kind: 'accounts'; query: string }
+  /** `/workspaces`: every workspace, one flat list. */
+  | { kind: 'workspaces'; query: string }
   | { kind: 'confirm'; title: string; yes: string; action: ConfirmAction }
   | { kind: 'status'; lines: readonly { label: string; value: string }[] }
   /** `/agents`: this session's agents, workflow runs and held messages. */
@@ -87,16 +87,15 @@ export interface PanelProps {
   sessionId: string | null;
   onClose(): void;
   onOpenSession(sessionId: string): void;
-  onPickProject(projectId: string, accountId: string | null): void;
-  onPickAccount(accountId: string): void;
+  /** A workspace row: its `project_id` and the account that owns it. */
+  onPickWorkspace(projectId: string, accountId: string): void;
   onConfirm(action: ConfirmAction): void;
 }
 
 export function CommandPanelView(props: PanelProps) {
   const { panel } = props;
   if (panel.kind === 'sessions') return <SessionsPanel {...props} query={panel.query} />;
-  if (panel.kind === 'projects') return <ProjectsPanel {...props} query={panel.query} />;
-  if (panel.kind === 'accounts') return <AccountsPanel {...props} query={panel.query} />;
+  if (panel.kind === 'workspaces') return <WorkspacesPanel {...props} query={panel.query} />;
   if (panel.kind === 'status')
     return <StatusPanel lines={panel.lines} width={props.width} onClose={props.onClose} />;
   if (panel.kind === 'agents' || panel.kind === 'workflows')
@@ -173,74 +172,37 @@ function SessionsPanel({
   );
 }
 
-function ProjectsPanel({
+function WorkspacesPanel({
   width,
   projectId,
-  accountId,
   query,
   onClose,
-  onPickProject,
+  onPickWorkspace,
 }: PanelProps & { query: string }) {
-  const projectsQuery = useProjects(accountId ?? undefined);
-  const projects = projectsQuery.data ?? [];
+  const workspaces = useWorkspaces();
   const items = useMemo<ListItem[]>(
     () =>
-      projects.map((project) => ({
-        id: project.project_id,
-        label: project.name,
-        right: project.project_id === projectId ? 'open' : '',
+      workspaces.rows.map((row) => ({
+        id: row.id,
+        label: row.name,
+        right: row.id === projectId ? 'open' : '',
       })),
-    [projects, projectId],
+    [workspaces.rows, projectId],
   );
+  const empty = !workspaces.isLoading && !workspaces.isError && items.length === 0;
   return (
     <InlinePicker
-      title={projectsQuery.isLoading ? 'Projects · loading…' : `Projects · ${items.length}`}
+      title={workspaces.isLoading ? 'Workspaces · loading…' : `Workspaces · ${items.length}`}
       items={items}
       initialId={projectId}
       initialQuery={query}
       width={width}
-      hint="Enter open · Esc close"
+      hint={empty ? NO_WORKSPACE_TEXT : 'Enter open · Esc close'}
       onClose={onClose}
       onPick={(item) => {
         onClose();
-        const picked = projects.find((project) => project.project_id === item.id) as
-          | { account_id?: string | null }
-          | undefined;
-        onPickProject(item.id, picked?.account_id ?? accountId);
-      }}
-    />
-  );
-}
-
-function AccountsPanel({
-  width,
-  accountId,
-  query,
-  onClose,
-  onPickAccount,
-}: PanelProps & { query: string }) {
-  const accountsQuery = useAccounts();
-  const items = useMemo<ListItem[]>(
-    () =>
-      (accountsQuery.data ?? []).map((account) => ({
-        id: account.account_id,
-        label: account.name,
-        right: account.account_id === accountId ? 'open' : '',
-      })),
-    [accountsQuery.data, accountId],
-  );
-  return (
-    <InlinePicker
-      title={accountsQuery.isLoading ? 'Accounts · loading…' : `Accounts · ${items.length}`}
-      items={items}
-      initialId={accountId}
-      initialQuery={query}
-      width={width}
-      hint="Enter open · Esc close"
-      onClose={onClose}
-      onPick={(item) => {
-        onClose();
-        onPickAccount(item.id);
+        const picked = workspaces.rows.find((row) => row.id === item.id);
+        if (picked) onPickWorkspace(picked.id, picked.accountId);
       }}
     />
   );

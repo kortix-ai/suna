@@ -4,7 +4,7 @@
  * In the picker (emoji-picker.tsx) a cell takes a pale fill and a stronger 1px
  * inset ring while it is hovered or keyboard-active. That treatment is what a
  * project's icon now wears AT REST everywhere it appears: the card tile in
- * /projects, the switcher row in the sidebar, and the picker's own trigger
+ * /workspaces, the switcher row in the sidebar, and the picker's own trigger
  * button in the create/edit modals.
  *
  * WHERE THE HUE COMES FROM. The picker rotates its six hues by GRID POSITION —

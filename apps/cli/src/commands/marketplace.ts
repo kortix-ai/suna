@@ -53,13 +53,13 @@ interface MarketplaceFlags {
 
 const HELP = help`Usage: kortix marketplace <subcommand> [options]
 
-Browse the Kortix marketplace; remove installed project skills by folder.
+Browse the Kortix marketplace; remove installed workspace skills by folder.
 
 Subcommands:
   search [query]       Search marketplace items.
   list                 List marketplace items.
   show <id|name>       Show one marketplace item.
-  uninstall <folder>  Remove a project skill folder (including edits); requires --yes.
+  uninstall <folder>  Remove a workspace skill folder (including edits); requires --yes.
   install <id|name>    Wait for an agent import and verify default-branch files.
 
 Options:
@@ -67,13 +67,13 @@ Options:
   --type <type>        Filter by item type, e.g. skill.
   --source <source>    Filter by marketplace/source, e.g. kortix.
   --host <name>        Use a configured Kortix host.
-  --project <id>       Use this project id (default: linked).
+  --workspace <id>     Use this workspace id (default: linked).
   --timeout <seconds>  Install deadline (default: 300).
   --yes                Confirm deletion of the selected whole skill folder, including edits.
   --json               Machine-readable output.
   -h, --help           Show this help.
 
-Install is agent-driven. It starts a project session that clones, reads, merges
+Install is agent-driven. It starts a workspace session that clones, reads, merges
 what fits, and opens a change request.
 `;
 
@@ -81,7 +81,7 @@ function parseFlags(argv: string[]): MarketplaceFlags {
   return {
     timeout: takeFlagValue(argv, ['--timeout']),
     host: takeFlagValue(argv, ['--host']),
-    project: takeFlagValue(argv, ['--project']),
+    project: takeFlagValue(argv, ['--project', '--workspace']),
     query: takeFlagValue(argv, ['--query', '-q']),
     type: takeFlagValue(argv, ['--type']),
     source: takeFlagValue(argv, ['--source']),
@@ -145,11 +145,11 @@ async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Prom
       itemId = item.id;
     }
     const result = await client.post<{ session_id: string }>(
-      `/projects/${ctx.projectId}/marketplace/install-session`,
+      `/workspaces/${ctx.projectId}/marketplace/install-session`,
       { id: itemId },
     );
     sessionId = result.session_id;
-    const base = `/projects/${ctx.projectId}/sessions/${sessionId}`;
+    const base = `/workspaces/${ctx.projectId}/sessions/${sessionId}`;
     while (!controller.signal.aborted) {
       const session = await client.get<{ status: string; error: string | null }>(base);
       if (session.status === 'failed' || session.status === 'error')
@@ -303,7 +303,7 @@ function printItems(items: CatalogItem[], flags: MarketplaceFlags): void {
     `\n  ${C.dim}Show details:${C.reset} ${C.cyan}kortix marketplace show <name>${C.reset}\n`,
   );
   process.stdout.write(
-    `  ${C.dim}Add to a project:${C.reset} ${C.dim}start a session and ask the agent to import it${C.reset}\n`,
+    `  ${C.dim}Add to a workspace:${C.reset} ${C.dim}start a session and ask the agent to import it${C.reset}\n`,
   );
 }
 
@@ -394,7 +394,7 @@ async function marketplaceShow(argv: string[], flags: MarketplaceFlags): Promise
   if (item.managedBy === 'kortix')
     process.stdout.write(`  ${C.dim}Managed by:${C.reset} Kortix (${item.updatePolicy})\n`);
   process.stdout.write(
-    `\n  ${C.dim}Add to a project:${C.reset} ${C.dim}start a session and ask the agent to import "${item.name}"${C.reset}\n`,
+    `\n  ${C.dim}Add to a workspace:${C.reset} ${C.dim}start a session and ask the agent to import "${item.name}"${C.reset}\n`,
   );
   return 0;
 }

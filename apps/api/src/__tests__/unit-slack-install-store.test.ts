@@ -65,7 +65,7 @@ describe('saveSlackInstall', () => {
 
     expect(insertedValues[0]).toEqual({
       platform: 'slack',
-      workspaceId: 'T1',
+      platformTeamId: 'T1',
       projectId: 'proj-1',
     });
     expect(insertedValues).toContainEqual(

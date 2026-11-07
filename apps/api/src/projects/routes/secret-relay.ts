@@ -47,12 +47,13 @@ import { requestEgressIp, verifySandboxEgressIp } from '../../platform/services/
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { prepareRelayRequest, refuse, runRelayHops } from '../secrets/http-relay-hop';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerSecretRelayRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/secrets/{identifier}/relay',
+      path: '/{workspaceId}/secrets/{identifier}/relay',
       tags: ['secrets'],
       summary: 'Stream one policy-bound HTTPS request without exposing the secret',
       description:
@@ -65,7 +66,7 @@ export function registerSecretRelayRoutes(): void {
         // NO body schema, deliberately. A zod request body buffers and LOCKS the
         // stream before this handler runs — measured — which is exactly why the
         // buffered /broker route cannot be upgraded in place.
-        params: z.object({ projectId: z.string(), identifier: z.string() }),
+        params: z.object({ workspaceId: z.string(), identifier: z.string() }),
       },
       responses: {
         200: {
@@ -83,7 +84,7 @@ export function registerSecretRelayRoutes(): void {
         return refuse(c, 'relay_disabled', 'The streaming secret relay is disabled', 503);
       }
 
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const identifier = c.req.param('identifier')?.trim();
       if (!identifier) {
         return refuse(c, 'invalid_request', 'Invalid relay request', 400);

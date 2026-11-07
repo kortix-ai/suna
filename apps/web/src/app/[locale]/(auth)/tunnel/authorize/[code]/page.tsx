@@ -58,7 +58,7 @@ function DeviceAuthorize() {
   const { data: info, isLoading, error } = useDeviceAuthInfo(code);
   const approve = useApproveDeviceAuth();
   const deny = useDenyDeviceAuth();
-  const { sections } = useProjectSelectorData();
+  const { openable: workspaces } = useProjectSelectorData();
 
   // `null` until the user types: a machine already paired to the caller keeps
   // its name, a new one starts from its hostname.
@@ -70,11 +70,8 @@ function DeviceAuthorize() {
   // the caller's project list (absent while it loads, or without access).
   const projectId = info?.projectId ?? undefined;
   const project = useMemo(
-    () =>
-      sections
-        .flatMap((section) => section.projects)
-        .find((candidate) => candidate.project_id === projectId),
-    [sections, projectId],
+    () => workspaces.map((row) => row.project).find((candidate) => candidate.project_id === projectId),
+    [workspaces, projectId],
   );
   const canShare =
     useProjectCan(project ? projectId : undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE)

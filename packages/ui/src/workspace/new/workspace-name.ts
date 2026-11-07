@@ -66,7 +66,7 @@ const NAME_NOUNS = [
 ] as const;
 
 /**
- * A ready-to-use project name ("Amber Falcon"), so `/new` opens with a valid,
+ * A ready-to-use project name ("Amber Falcon"), so `/workspaces/new` opens with a valid,
  * friendly name instead of an empty required field. Always passes
  * `validateWorkspaceName` — letters and one space only. `random` is injectable
  * for tests.

@@ -14,24 +14,22 @@
 // runs in the background, so a scheduler tick or a route never waits on it.
 // Nothing here throws.
 //
-// Alerts are behind the project's `notification_center` flag. Off, a raise
-// writes no edge, so a project that turns the flag on starts clean, and a
-// clear ends an edge left from an on period without a word.
-//
-// One exception: an auto-pause (`alertTriggerAutoPaused`) is sent with the
-// flag off too. The trigger stopped running and stays stopped until a person
-// resumes it; with the flag off nobody would ever hear (2026-11-02: one
-// project's triggers failed ~1,250 times a day for a month, unseen).
+// Every project sends them (the notification center graduated, 2026-11-06).
+// Email is opt-in for the alerts that went out only with the center on, a
+// failure streak and a run-cap day: they pass `emailDefault: false`. The ones
+// that always went out, a health streak (silence, crash) and an auto-pause,
+// keep the kind's email default (2026-11-02: one project's triggers failed
+// ~1,250 times a day for a month, unseen).
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { projectTriggerRuntime, projects } from '@kortix/db';
+import { projectTriggerRuntime } from '@kortix/db';
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { logger } from '../../lib/logger';
 import { clip, INBOX_BODY_MAX_CHARS } from '../../notifications/inbox-store';
-import { projectNotificationsEnabled } from '../../notifications/enabled';
 import { deliver, liveNotifierDeps, type NotifierDeps } from '../../notifications/notifier';
 import { db } from '../../shared/db';
 import { resolveTriggerWatchers } from './trigger-watchers';
+import { projectsView } from '../../workspaces/rows';
 
 /**
  * 'fire' and 'run' as below; 'silence': an app trigger heard no App event
@@ -41,9 +39,6 @@ import { resolveTriggerWatchers } from './trigger-watchers';
  * (app-health-alerts.ts); the next pass that finds it running clears it.
  */
 export type TriggerAlertSource = 'fire' | 'run' | 'silence' | 'crash';
-
-/** App health alerts go out whatever the `notification_center` flag says: a dead watcher is invisible otherwise. */
-const HEALTH_SOURCES: readonly TriggerAlertSource[] = ['silence', 'crash'];
 
 export interface TriggerAlertInput {
   projectId: string;
@@ -86,23 +81,16 @@ function reason(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/**
- * Start a failure streak and alert the watchers. True when this call started
- * it. `notificationCenter`: the project's flag when the caller already read
- * it; absent, one primary-key read.
- */
-export async function raiseTriggerAlert(
-  input: TriggerAlertInput & { error: string; notificationCenter?: boolean },
-): Promise<boolean> {
+/** Start a failure streak and alert the watchers. True when this call started it. */
+export async function raiseTriggerAlert(input: TriggerAlertInput & { error: string }): Promise<boolean> {
   try {
-    if (!(input.notificationCenter ?? (await projectNotificationsEnabled(input.projectId)))) return false;
     const [row] = await db
       .update(projectTriggerRuntime)
       .set({ alertFailingSince: sql`now()`, alertSource: input.source })
       .where(and(runtimeRow(input), isNull(projectTriggerRuntime.alertFailingSince)))
       .returning({ since: projectTriggerRuntime.alertFailingSince, name: triggerName, reminder: isReminder });
     if (!row?.since) return false;
-    announce('automation_failed', input, alertTitle(input.slug, row), `automation:${input.projectId}:${input.slug}:${row.since.getTime()}`, input.error, true);
+    announce('automation_failed', input, alertTitle(input.slug, row), `automation:${input.projectId}:${input.slug}:${row.since.getTime()}`, input.error, { emailDefault: false });
     return true;
   } catch (err) {
     logger.warn('[trigger-alerts] raise failed', { projectId: input.projectId, slug: input.slug, error: reason(err) });
@@ -129,8 +117,7 @@ export async function clearTriggerAlert(input: TriggerAlertInput): Promise<boole
       ))
       .returning({ since: previous.alertFailingSince, name: triggerName, reminder: isReminder });
     if (!row?.since) return false;
-    // A health alert went out whatever the flag says, so its recovery does too.
-    announce('automation_recovered', input, alertTitle(input.slug, row), `recovered:${input.projectId}:${input.slug}:${row.since.getTime()}`, '', HEALTH_SOURCES.includes(input.source));
+    announce('automation_recovered', input, alertTitle(input.slug, row), `recovered:${input.projectId}:${input.slug}:${row.since.getTime()}`, '', {});
     return true;
   } catch (err) {
     logger.warn('[trigger-alerts] clear failed', { projectId: input.projectId, slug: input.slug, error: reason(err) });
@@ -140,19 +127,19 @@ export async function clearTriggerAlert(input: TriggerAlertInput): Promise<boole
 
 /**
  * An app trigger heard no App event within its `expect_event_within`: start a
- * silence streak and tell the watchers once. Sent whatever the
- * `notification_center` flag says, like an auto-pause: a watcher App that
- * stopped posting is invisible otherwise. True when this call started it;
- * a streak of another source already open wins (one alert at a time).
+ * silence streak and tell the watchers once, by email too unless they turned
+ * it off: a watcher App that stopped posting is invisible otherwise. True
+ * when this call started it; a streak of another source already open wins
+ * (one alert at a time).
  */
 export async function raiseTriggerSilenceAlert(input: { projectId: string; slug: string; accountId?: string | null; error: string }): Promise<boolean> {
   return raiseTriggerHealthAlert({ ...input, source: 'silence' });
 }
 
 /**
- * A health streak (`silence` or `crash`) on one trigger, announced once,
- * whatever the `notification_center` flag says. True when this call started
- * it; a streak of another source already open wins (one alert at a time).
+ * A health streak (`silence` or `crash`) on one trigger, announced once with
+ * the kind's email default. True when this call started it; a streak of
+ * another source already open wins (one alert at a time).
  */
 export async function raiseTriggerHealthAlert(input: { projectId: string; slug: string; accountId?: string | null; error: string; source: 'silence' | 'crash' }): Promise<boolean> {
   const alertInput: TriggerAlertInput = { projectId: input.projectId, slug: input.slug, source: input.source, accountId: input.accountId };
@@ -163,7 +150,7 @@ export async function raiseTriggerHealthAlert(input: { projectId: string; slug: 
       .where(and(runtimeRow(alertInput), isNull(projectTriggerRuntime.alertFailingSince)))
       .returning({ since: projectTriggerRuntime.alertFailingSince, name: triggerName, reminder: isReminder });
     if (!row?.since) return false;
-    announce('automation_failed', alertInput, alertTitle(input.slug, row), `${input.source}:${input.projectId}:${input.slug}:${row.since.getTime()}`, input.error, true);
+    announce('automation_failed', alertInput, alertTitle(input.slug, row), `${input.source}:${input.projectId}:${input.slug}:${row.since.getTime()}`, input.error, {});
     return true;
   } catch (err) {
     logger.warn('[trigger-alerts] health raise failed', { projectId: input.projectId, slug: input.slug, source: input.source, error: reason(err) });
@@ -196,7 +183,7 @@ export function alertTriggerThrottled(input: { projectId: string; accountId?: st
       .from(projectTriggerRuntime)
       .where(runtimeRow(alertInput))
       .limit(1);
-    announce('automation_failed', alertInput, alertTitle(input.slug, row ?? { name: null, reminder: false }), dedupeKey, input.reason, false);
+    announce('automation_failed', alertInput, alertTitle(input.slug, row ?? { name: null, reminder: false }), dedupeKey, input.reason, { emailDefault: false });
   })().catch((err) => {
     logger.warn('[trigger-alerts] throttle alert failed', { projectId: input.projectId, slug: input.slug, error: reason(err) });
   });
@@ -207,7 +194,7 @@ export function alertTriggerThrottled(input: { projectId: string; accountId?: st
 /**
  * A trigger that paused itself (a sustained run-limit breach, KRTX-1721, or
  * 24 hours of runs only its owner can fix, trigger-failure-pause.ts) tells its
- * watchers once per pause, whatever the `notification_center` flag says. The
+ * watchers once per pause, with the kind's email default. The
  * caller calls this only from the update that set `auto_paused_at`, and the
  * inbox dedupe key carries that time, so a later pause after a resume is a
  * new alert. Never throws.
@@ -221,7 +208,7 @@ export function alertTriggerAutoPaused(input: { projectId: string; accountId?: s
       .from(projectTriggerRuntime)
       .where(runtimeRow(alertInput))
       .limit(1);
-    announce('automation_failed', alertInput, alertTitle(input.slug, row ?? { name: null, reminder: false }), dedupeKey, input.reason, true);
+    announce('automation_failed', alertInput, alertTitle(input.slug, row ?? { name: null, reminder: false }), dedupeKey, input.reason, {});
   })().catch((err) => {
     logger.warn('[trigger-alerts] auto-pause alert failed', { projectId: input.projectId, slug: input.slug, error: reason(err) });
   });
@@ -229,17 +216,16 @@ export function alertTriggerAutoPaused(input: { projectId: string; accountId?: s
   void run.finally(() => inFlight.delete(run));
 }
 
-/** `flagChecked`: no flag read. The caller read it as on (a raise), or the alert goes out regardless (an auto-pause). */
+/** `email.emailDefault`: the delivery's email default (`DeliverInput.emailDefault`); absent, the kind's. */
 function announce(
   kind: NotificationKindName,
   input: TriggerAlertInput,
   title: string,
   dedupeKey: string,
   body: string,
-  flagChecked: boolean,
+  email: { emailDefault?: boolean },
 ): void {
   const run = (async () => {
-    if (!flagChecked && !(await projectNotificationsEnabled(input.projectId))) return;
     const accountId = input.accountId ?? (await accountOf(input.projectId));
     if (!accountId) return;
     const recipients = await resolveTriggerWatchers({ accountId, projectId: input.projectId, slug: input.slug });
@@ -253,6 +239,7 @@ function announce(
         body: clip(body, INBOX_BODY_MAX_CHARS),
         dedupeKey,
         recipients,
+        emailDefault: email.emailDefault,
       },
       liveNotifierDeps(notifierOverrides ?? {}),
     );
@@ -280,9 +267,9 @@ export function commandTriggerSlug(row: { commandType: string; source: string; p
 
 async function accountOf(projectId: string): Promise<string | null> {
   const [row] = await db
-    .select({ accountId: projects.accountId })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ accountId: projectsView.accountId })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   return row?.accountId ?? null;
 }

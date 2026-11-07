@@ -1,9 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-
-const workflows = resolve(import.meta.dirname, '../../.github/workflows');
-const read = (name: string) => readFileSync(resolve(workflows, name), 'utf8');
+import { readWorkflow as read } from '../src/fixtures/repo';
 
 /** Split a workflow into `{ jobId: text }` using the 2-space job keys under `jobs:`. */
 function jobs(source: string): Record<string, string> {

@@ -5,10 +5,11 @@ staged=$(git diff --cached --name-only --no-renames --diff-filter=ACMD)
 content='^apps/web/(content/|src/app/|src/features/marketing/|scripts/build-content-timestamps\.mjs$)'
 routes='^(tests/spec/routes\.generated\.json|apps/web/scripts/generate-audit-http-routes\.mjs)$'
 # Every input of the audit-actions reference doc: the label catalog it renders,
-# the generator, and the feature-flag defaults that hide flagged actions. A
+# the generator, the feature-flag defaults that hide flagged actions, and the
+# workspace route map that names each action's canonical route. A
 # labels change that lands without the regenerated doc is the recurring
 # KRTX-3743/KRTX-3758 defect (the doc's guard test only fails after the merge).
-audit='^(packages/shared/src/audit-(labels|route-labels|event-labels)\.ts|apps/web/scripts/(generate-audit-actions-doc|docs-generated-region)\.mjs|apps/api/src/feature-flags/registry\.ts)$'
+audit='^(packages/shared/src/(audit-(labels|route-labels|event-labels)|workspace-routes)\.ts|apps/web/scripts/(generate-audit-actions-doc|docs-generated-region)\.mjs|apps/api/src/feature-flags/registry\.ts)$'
 # Every input of the kortix.yaml reference region in developers.mdx: the JSON
 # Schema and its generator, the published schema file, the region generators,
 # and the feature-flag defaults that hide flagged keys (docs-generated-region

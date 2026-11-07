@@ -2,7 +2,6 @@
 
 import {
   PROJECT_WIDE_SPACE,
-  getArtifactCommentContext,
   type Artifact,
   type ArtifactListScope,
   type ManifestSpace,
@@ -11,13 +10,11 @@ import {
   prefetchArtifact,
   useArtifactMutations,
   useArtifacts,
-  useFeatureFlag,
   useProjectConfig,
 } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@kortix/ui/button';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
-import { CountBadge } from '@kortix/ui/count-badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,7 +47,6 @@ import {
 } from '@kortix/ui/workspace';
 import {
   ArrowSquareOutIcon,
-  ChatCircleIcon,
   DotsThreeIcon,
   MagnifyingGlassIcon,
   PlusIcon,
@@ -75,7 +71,6 @@ import {
   relativeTime,
 } from './artifact-meta';
 import { ShareArtifactDialog } from './share-artifact-dialog';
-import { useArtifactUnshare } from './use-artifact-unshare';
 
 const SCOPES: ArtifactListScope[] = ['all', 'mine', 'shared', 'pinned'];
 
@@ -91,7 +86,7 @@ function matches(a: Artifact, scope: ArtifactListScope, q: string, viewerId: str
 }
 
 /**
- * /projects/[id]/artifacts — every artifact the viewer may see, as live
+ * /workspaces/[id]/artifacts — every artifact the viewer may see, as live
  * previews, and a New doc button after the search (the Skills page's pair).
  * A new doc joins the grid where you are; its toast opens it.
  */
@@ -319,15 +314,7 @@ const ArtifactCard = memo(function ArtifactCard({
   const locale = useLocale();
   const mutations = useArtifactMutations(projectId);
   const [sharing, setSharing] = useState(false);
-  // Stop sharing deletes the artifact's comments: the confirm counts them first, as the viewer's does.
-  const commentsFlag = useFeatureFlag(projectId, 'artifact_comments').enabled;
-  const artifactsFlag = useFeatureFlag(projectId, 'artifacts').enabled;
-  const commentsOn = commentsFlag && artifactsFlag;
-  const removal = useArtifactUnshare(
-    commentsOn
-      ? async () => (await getArtifactCommentContext(projectId, artifact.artifact_id)).comment_count
-      : undefined,
-  );
+  const [removing, setRemoving] = useState(false);
   const VisIcon = VISIBILITY_ICON[artifact.visibility];
   const href = artifactHref(projectId, artifact.artifact_id);
   const queryClient = useQueryClient();
@@ -389,16 +376,6 @@ const ArtifactCard = memo(function ArtifactCard({
               </span>
             </Hint>
             {artifact.pinned ? <PushPinIcon weight="fill" className="size-3.5 shrink-0" aria-label={t('pinned')} /> : null}
-            {/* Below the card link on purpose: a click opens the Artifact, and the viewer opens its comments while threads are open. */}
-            {artifact.open_thread_count ? (
-              <CountBadge
-                count={artifact.open_thread_count}
-                tone="waiting"
-                icon={<ChatCircleIcon aria-hidden />}
-                role="img"
-                aria-label={t('openComments', { count: artifact.open_thread_count })}
-              />
-            ) : null}
           </span>
         </span>
         <DropdownMenu>
@@ -443,7 +420,7 @@ const ArtifactCard = memo(function ArtifactCard({
                   </DropdownMenuSub>
                 ) : null}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" onSelect={() => void removal.prepare()}>
+                <DropdownMenuItem variant="destructive" onSelect={() => setRemoving(true)}>
                   <XCircleIcon /> {t('remove')}
                 </DropdownMenuItem>
               </>
@@ -453,38 +430,16 @@ const ArtifactCard = memo(function ArtifactCard({
       </div>
       {sharing ? <ShareArtifactDialog projectId={projectId} artifact={artifact} open onOpenChange={setSharing} /> : null}
       <ConfirmDialog
-        open={removal.open}
-        onOpenChange={(open) => {
-          if (!open) removal.close();
-        }}
+        open={removing}
+        onOpenChange={setRemoving}
         title={t('removeTitle')}
-        description={
-          <div className="space-y-3">
-            <p>{t('removeHint')}</p>
-            {removal.status === 'loading' ? <Loading className="size-4" /> : null}
-            {removal.status === 'error' ? (
-              <ErrorState
-                size="sm"
-                title={t('discussion.commentsLoadError')}
-                action={
-                  <Button size="sm" variant="outline" onClick={() => void removal.prepare()}>
-                    {t('discussion.retry')}
-                  </Button>
-                }
-              />
-            ) : null}
-            {removal.status === 'ready' && removal.count > 0 ? (
-              <p>{t('discussion.unshareComments', { count: removal.count })}</p>
-            ) : null}
-          </div>
-        }
+        description={t('removeHint')}
         confirmLabel={t('remove')}
         confirmVariant="destructive"
         isPending={mutations.remove.isPending}
-        confirmDisabled={removal.status !== 'ready'}
         onConfirm={async () => {
           await mutations.remove.mutateAsync(artifact.artifact_id);
-          removal.close();
+          setRemoving(false);
           successToast(t('removed'));
         }}
       />

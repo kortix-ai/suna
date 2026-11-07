@@ -1132,11 +1132,6 @@ function resolveSessionIdentity(params: {
         sessionId,
         actorUserId: userId,
         authorSessionId: input.callerSessionId ?? null,
-        ...(input.metadata?.source === 'system:artifact-comment' ? {
-          source: 'system:artifact-comment' as const,
-          artifactId: input.artifactId,
-          artifactCommentDelivery: input.metadata.artifactCommentDelivery as { job_id: string; target_key: string } | undefined,
-        } : {}),
       })
     : null;
   if (pendingPromptConversion?.error) {
@@ -1708,7 +1703,6 @@ async function provisionCreatedSession(params: {
 }
 
 export async function createProjectSession(input: {
-  artifactId?: string;
   attachmentSourceCommandId?: string;
   /** The `create_session` command to link the new session to, atomically. */
   createCommandId?: string;

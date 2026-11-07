@@ -1,12 +1,12 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { REPO_ROOT as root, readWorkflow } from '../src/fixtures/repo';
 
 // The desktop installer bundles the computer agent, which
 // apps/desktop-electron/scripts/ensure-runtime.js builds with bun. A job that
 // builds the app without bun fails only after the merge (learnings ledger,
 // 2026-09-29: "When a build step gains a tool dependency…").
-const root = resolve(import.meta.dirname, '../..');
 const dir = resolve(root, '.github/workflows');
 
 /** Job bodies: from `  <id>:` under `jobs:` to the next job at the same indent. */
@@ -25,7 +25,7 @@ describe('desktop builds set up bun', () => {
   const builders = readdirSync(dir)
     .filter((file) => /\.ya?ml$/.test(file))
     .flatMap((file) =>
-      jobs(readFileSync(resolve(dir, file), 'utf8'))
+      jobs(readWorkflow(file))
         .filter((job) => /ensure-runtime\.js|electron-builder/.test(job.body))
         .map((job) => ({ where: `${file} → ${job.id}`, body: job.body })),
     );

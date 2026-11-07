@@ -13,7 +13,7 @@ export {
   webUrlOf,
   withoutNotificationParam,
 } from './inbox-model.ts';
-export { INBOX_LIMIT, useInbox, useInboxEnabled, useInboxUnread } from './use-inbox.ts';
+export { INBOX_LIMIT, useInbox, useInboxUnread } from './use-inbox.ts';
 export {
   INBOX_KEYS,
   type ScreenBinding,

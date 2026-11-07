@@ -85,7 +85,6 @@ export const PROJECT_ACTIONS = {
    */
   PROJECT_ROOM_WRITE: 'project.room.write',
   PROJECT_ARTIFACT_READ: 'project.artifact.read',
-  PROJECT_ARTIFACT_COMMENT: 'project.artifact.comment',
   PROJECT_ARTIFACT_WRITE: 'project.artifact.write',
   PROJECT_ARTIFACT_MANAGE: 'project.artifact.manage',
   PROJECT_ARTIFACT_PUBLIC: 'project.artifact.public',
@@ -93,6 +92,135 @@ export const PROJECT_ACTIONS = {
   /** Minting a project CLI token or a project-scoped PAT. */
   PROJECT_CREDENTIALS_ISSUE: 'project.credentials.issue',
 } as const;
+
+/**
+ * The workspace name of every IAM action (Workspaces: one scope, PR #11857).
+ * `project.session.start` is `workspace.session.start`, `billing.read` is
+ * `workspace.billing.read`, `project.create` is `workspace.create`. The rename
+ * is 1:1, so a verdict for one name is the verdict for the other.
+ *
+ * The API accepts both names on every input, forever, and answers with both
+ * (`action` plus `workspace_action`). Ask `useCan` / `useCans` with either.
+ *
+ * A copy of `@kortix/shared/workspace-actions`, which this published package
+ * cannot import; `iam-actions.test.ts` holds the two equal.
+ */
+export const WORKSPACE_ACTION_BY_LEGACY = {
+  // ── account-scoped (31) ────────────────────────────────────────────────
+  'account.read': 'workspace.account.read',
+  'account.write': 'workspace.account.write',
+  'account.delete': 'workspace.account.delete',
+  'billing.read': 'workspace.billing.read',
+  'billing.write': 'workspace.billing.write',
+  'audit.read': 'workspace.audit.read',
+  'member.read': 'workspace.member.read',
+  'member.invite': 'workspace.member.invite',
+  'member.update': 'workspace.member.update',
+  'member.remove': 'workspace.member.remove',
+  'member.super_admin.grant': 'workspace.member.super_admin.grant',
+  'group.read': 'workspace.group.read',
+  'group.create': 'workspace.group.create',
+  'group.update': 'workspace.group.update',
+  'group.delete': 'workspace.group.delete',
+  'group.members.manage': 'workspace.group.members.manage',
+  'policy.read': 'workspace.policy.read',
+  'policy.create': 'workspace.policy.create',
+  'policy.delete': 'workspace.policy.delete',
+  'role.read': 'workspace.role.read',
+  'role.create': 'workspace.role.create',
+  'role.update': 'workspace.role.update',
+  'role.delete': 'workspace.role.delete',
+  'token.read': 'workspace.token.read',
+  'token.create': 'workspace.token.create',
+  'token.revoke': 'workspace.token.revoke',
+  'token.personal.create': 'workspace.token.personal.create',
+  'token.personal.revoke': 'workspace.token.personal.revoke',
+  'project.create': 'workspace.create',
+  'capture.read_all': 'workspace.capture.read_all',
+  'capture.manage': 'workspace.capture.manage',
+
+  // ── project-scoped (54) ────────────────────────────────────────────────
+  'project.read': 'workspace.read',
+  'project.write': 'workspace.write',
+  'project.delete': 'workspace.delete',
+  'project.session.read': 'workspace.session.read',
+  'project.session.start': 'workspace.session.start',
+  'project.session.stop': 'workspace.session.stop',
+  'project.session.bindings.write': 'workspace.session.bindings.write',
+  'project.members.read': 'workspace.members.read',
+  'project.members.manage': 'workspace.members.manage',
+  'project.trigger.read': 'workspace.trigger.read',
+  'project.trigger.create': 'workspace.trigger.create',
+  'project.trigger.update': 'workspace.trigger.update',
+  'project.trigger.delete': 'workspace.trigger.delete',
+  'project.trigger.fire': 'workspace.trigger.fire',
+  'project.gateway.logs.read': 'workspace.gateway.logs.read',
+  'project.gateway.spend.read': 'workspace.gateway.spend.read',
+  'project.usage.read': 'workspace.usage.read',
+  'project.gateway.budget.set': 'workspace.gateway.budget.set',
+  'project.gateway.keys.manage': 'workspace.gateway.keys.manage',
+  'project.agent.read': 'workspace.agent.read',
+  'project.agent.write': 'workspace.agent.write',
+  'project.skill.read': 'workspace.skill.read',
+  'project.skill.write': 'workspace.skill.write',
+  'project.command.read': 'workspace.command.read',
+  'project.command.write': 'workspace.command.write',
+  'project.file.read': 'workspace.file.read',
+  'project.file.write': 'workspace.file.write',
+  'project.settings.write': 'workspace.settings.write',
+  'project.sandbox.write': 'workspace.sandbox.write',
+  'project.model.read': 'workspace.model.read',
+  'project.model.write': 'workspace.model.write',
+  'project.gitops.read': 'workspace.gitops.read',
+  'project.gitops.push': 'workspace.gitops.push',
+  'project.gitops.merge': 'workspace.gitops.merge',
+  'project.gitops.ref.any': 'workspace.gitops.ref.any',
+  'project.gitops.ref.delete': 'workspace.gitops.ref.delete',
+  'project.secret.read': 'workspace.secret.read',
+  'project.secret.write': 'workspace.secret.write',
+  'project.connector.read': 'workspace.connector.read',
+  'project.connector.connections.manage': 'workspace.connector.connections.manage',
+  'project.connector.write': 'workspace.connector.write',
+  'project.app.read': 'workspace.app.read',
+  'project.app.write': 'workspace.app.write',
+  'project.app.deploy': 'workspace.app.deploy',
+  'project.app.admin': 'workspace.app.admin',
+  'project.review.read': 'workspace.review.read',
+  'project.review.submit': 'workspace.review.submit',
+  'project.review.act': 'workspace.review.act',
+  'project.artifact.read': 'workspace.artifact.read',
+  'project.artifact.write': 'workspace.artifact.write',
+  'project.artifact.manage': 'workspace.artifact.manage',
+  'project.artifact.public': 'workspace.artifact.public',
+  'project.credentials.issue': 'workspace.credentials.issue',
+} as const;
+
+/** A legacy IAM action name, e.g. `'project.read'`. */
+export type LegacyIamAction = keyof typeof WORKSPACE_ACTION_BY_LEGACY;
+/** The workspace name of one IAM action, e.g. `'workspace.read'`. */
+export type WorkspaceAction = (typeof WORKSPACE_ACTION_BY_LEGACY)[LegacyIamAction];
+
+const LEGACY_BY_WORKSPACE: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries(Object.entries(WORKSPACE_ACTION_BY_LEGACY).map(([legacy, workspace]) => [workspace, legacy])),
+);
+
+/**
+ * The workspace name of `action` (`'project.read'` → `'workspace.read'`). A
+ * workspace name, a retired name or an unknown string is returned unchanged.
+ */
+export function toWorkspaceAction(action: string): string {
+  return Object.hasOwn(WORKSPACE_ACTION_BY_LEGACY, action)
+    ? WORKSPACE_ACTION_BY_LEGACY[action as LegacyIamAction]
+    : action;
+}
+
+/**
+ * The legacy name of `action` (`'workspace.read'` → `'project.read'`). A
+ * legacy name, a retired name or an unknown string is returned unchanged.
+ */
+export function toLegacyAction(action: string): string {
+  return Object.hasOwn(LEGACY_BY_WORKSPACE, action) ? LEGACY_BY_WORKSPACE[action]! : action;
+}
 
 /** One project leaf action, e.g. `'project.trigger.fire'`. */
 export type ProjectAction = (typeof PROJECT_ACTIONS)[keyof typeof PROJECT_ACTIONS];

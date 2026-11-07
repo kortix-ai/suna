@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { buildProjectEditPatch, summarizeProjectEdit } from './project-edit-patch';
+import { buildProjectEditPatch } from './project-edit-patch';
 
 /** A project as the modal receives it: named, with an emoji already saved. */
 const ICONED = { name: 'Atlas', icon: '🚀' };
@@ -281,55 +281,5 @@ describe('changing both', () => {
       name: 'Atlas 2',
       icon_glyph: { name: 'Star', color: 'red' },
     });
-  });
-});
-
-describe('summarizeProjectEdit', () => {
-  test('a rename names the SERVER-returned name, not the draft', () => {
-    // The server owns normalisation; telling the user what they typed would be
-    // a lie the moment those two differ.
-    expect(summarizeProjectEdit({ name: 'typed' }, 'Stored Name')).toBe('Renamed to "Stored Name"');
-  });
-
-  test('a rename is the headline when the icon moved too', () => {
-    expect(summarizeProjectEdit({ name: 'Atlas 2', icon: '🎯' }, 'Atlas 2')).toBe(
-      'Renamed to "Atlas 2"',
-    );
-  });
-
-  test('an icon-only change says so, and does not claim a rename', () => {
-    const message = summarizeProjectEdit({ icon: '🎯' }, 'Atlas');
-
-    expect(message).toBe('Project icon updated');
-    expect(message).not.toContain('Renamed');
-  });
-
-  test('a glyph-only change says so too', () => {
-    const message = summarizeProjectEdit(
-      { icon_glyph: { name: 'Rocket', color: 'blue' } },
-      'Atlas',
-    );
-
-    expect(message).toBe('Project icon updated');
-  });
-
-  test('a removal is reported as a removal, not as an update', () => {
-    // The distinction the whole tri-state exists for. `!patch.icon` would
-    // collapse these two branches and report a removal as an update.
-    expect(summarizeProjectEdit({ icon: null }, 'Atlas')).toBe('Project icon removed');
-  });
-
-  test('a glyph removal is reported as a removal too', () => {
-    expect(summarizeProjectEdit({ icon_glyph: null }, 'Atlas')).toBe('Project icon removed');
-  });
-
-  test('an absent icon key is not treated as a removal', () => {
-    // A rename-only patch has no `icon` member at all. Reading it as a removal
-    // would tell the user their icon is gone while it is still on the card.
-    expect(summarizeProjectEdit({ name: 'Atlas 2' }, 'Atlas 2')).not.toContain('removed');
-  });
-
-  test('an empty patch still says something', () => {
-    expect(summarizeProjectEdit({}, 'Atlas')).toBe('Project updated');
   });
 });

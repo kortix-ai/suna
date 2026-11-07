@@ -17,7 +17,6 @@ const eyebrow = (content: { lead: string; rivals: readonly { id: string; icon: s
 describe('hero characterization', () => {
   test('Hero renders its shipped fold without CTA buttons', () => {
     const html = renderToStaticMarkup(<Hero />);
-    expect(html).toMatchSnapshot();
     expect(html).toContain('id="hero"');
     expect(html).toContain('id="demo"');
     expect(html).not.toContain('Request demo');

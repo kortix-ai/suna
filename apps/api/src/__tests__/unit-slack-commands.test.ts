@@ -14,6 +14,7 @@ function makeChain(): any {
 }
 let deletes = 0;
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: {
     select: () => makeChain(),
     update: () => makeChain(),
@@ -272,7 +273,7 @@ describe('/kortix agent <name>', () => {
   test('no binding → prompts to switch', async () => {
     setAgentResult = { ok: false, reason: 'no_binding' };
     const resp = await handleSlashCommand('agent', 'reviewer', ctx);
-    expect(resp.text).toContain('Bind a project first');
+    expect(resp.text).toContain('Bind a Kortix workspace first');
   });
 });
 
@@ -294,7 +295,7 @@ describe('/kortix session (singular)', () => {
     const ids = actionIds(resp);
     expect(ids).toContain('session_open');
     const txt = allText(resp);
-    expect(txt).toContain('/projects/p1/sessions/sess-9');
+    expect(txt).toContain('/workspaces/p1/sessions/sess-9');
     expect(txt).toContain('running');
   });
   test('no sessions yet → empty state', async () => {
@@ -305,7 +306,7 @@ describe('/kortix session (singular)', () => {
   test('unbound channel → prompts to switch', async () => {
     selection = null;
     const resp = await handleSlashCommand('session', '', ctx);
-    expect(allText(resp)).toContain('No project bound');
+    expect(allText(resp)).toContain('No Kortix workspace bound');
   });
 });
 
@@ -338,14 +339,14 @@ describe('channel settings need a linked project manager', () => {
   test('a caller without the capability cannot change the session policy', async () => {
     settingsActor = { reason: 'not_member' };
     const resp = await handleSlashCommand('policy', 'owner_only', ctx);
-    expect(resp.text).toContain('Only a project manager');
+    expect(resp.text).toContain('Only a workspace manager');
     expect(setPolicyCalls).toEqual([]);
   });
 
   test('a caller without the capability cannot unbind the channel; nothing is deleted', async () => {
     settingsActor = { reason: 'not_member' };
     const resp = await handleSlashCommand('unbind', '', ctx);
-    expect(resp.text).toContain('Only a project manager');
+    expect(resp.text).toContain('Only a workspace manager');
     expect(deletes).toBe(0);
   });
 

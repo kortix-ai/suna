@@ -6,7 +6,7 @@ import { platformConfig } from '../../http/config';
 import { type AuthenticatedRequest, authenticatedRequest } from '../../http/authenticated-request';
 import { unwrap, type ProjectFileEntry } from './shared';
 
-export async function listProjectFiles(
+export async function listWorkspaceFiles(
   projectId: string,
   options?: { ref?: string; path?: string },
 ) {
@@ -16,7 +16,7 @@ export async function listProjectFiles(
   const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(
     await backendApi.get<ProjectFileEntry[]>(
-      `/projects/${projectId}/files${query}`,
+      `/workspaces/${projectId}/files${query}`,
       // project.file.read is manager-tier — a member deep-linking to the files
       // page legitimately 403s. The files view renders its own error state.
       { showErrors: false },
@@ -24,7 +24,14 @@ export async function listProjectFiles(
   );
 }
 
-/** One entry of a folder listing: a file, or a folder to open with another call. */
+/** @deprecated Use `listWorkspaceFiles`. Kept permanently. */
+export const listProjectFiles = listWorkspaceFiles;
+
+/**
+ * One entry of a folder listing: a file, or a folder to open with another call.
+ *
+ * @deprecated Use `WorkspaceDirectoryEntry`. Kept permanently.
+ */
 export interface ProjectDirectoryEntry {
   /** Repository-relative path. */
   path: string;
@@ -33,6 +40,10 @@ export interface ProjectDirectoryEntry {
   size?: number;
 }
 
+/** The workspace name of {@link ProjectDirectoryEntry}: the same type. */
+export type WorkspaceDirectoryEntry = ProjectDirectoryEntry;
+
+/** @deprecated Use `WorkspaceDirectoryListing`. Kept permanently. */
 export interface ProjectDirectoryListing {
   entries: ProjectDirectoryEntry[];
   /** The folder has more entries than one response carries. */
@@ -46,6 +57,9 @@ export interface ProjectDirectoryListing {
   next_cursor?: string | null;
 }
 
+/** The workspace name of {@link ProjectDirectoryListing}: the same type. */
+export type WorkspaceDirectoryListing = ProjectDirectoryListing;
+
 /**
  * The immediate children of one folder (`path`, or the repository root).
  * Unlike `listProjectFiles`, which returns a recursive list cut at 1,000
@@ -56,7 +70,7 @@ export interface ProjectDirectoryListing {
  * 500), and `next_cursor` while entries remain. Every page reads the commit
  * the first page read, so a push between pages skips or repeats nothing.
  */
-export async function listProjectDirectory(
+export async function listWorkspaceDirectory(
   projectId: string,
   options?: { ref?: string; path?: string; cursor?: string; limit?: number },
 ) {
@@ -68,13 +82,17 @@ export async function listProjectDirectory(
   if (options?.limit !== undefined) params.set('limit', String(options.limit));
   return unwrap(
     await backendApi.get<ProjectDirectoryListing>(
-      `/projects/${projectId}/files?${params.toString()}`,
+      `/workspaces/${projectId}/files?${params.toString()}`,
       // Same manager-tier gate as listProjectFiles: the view renders its own error state.
       { showErrors: false },
     ),
   );
 }
 
+/** @deprecated Use `listWorkspaceDirectory`. Kept permanently. */
+export const listProjectDirectory = listWorkspaceDirectory;
+
+/** @deprecated Use `WorkspaceFileSearchMatch`. Kept permanently. */
 export interface ProjectFileSearchMatch {
   path: string;
   /** Present for content search (git grep). */
@@ -82,6 +100,10 @@ export interface ProjectFileSearchMatch {
   line_text?: string;
 }
 
+/** The workspace name of {@link ProjectFileSearchMatch}: the same type. */
+export type WorkspaceFileSearchMatch = ProjectFileSearchMatch;
+
+/** @deprecated Use `WorkspaceFileSearchResponse`. Kept permanently. */
 export interface ProjectFileSearchResponse {
   query: string;
   ref: string;
@@ -89,9 +111,12 @@ export interface ProjectFileSearchResponse {
   results: ProjectFileSearchMatch[];
 }
 
+/** The workspace name of {@link ProjectFileSearchResponse}: the same type. */
+export type WorkspaceFileSearchResponse = ProjectFileSearchResponse;
+
 /** Search the project's git repo — filenames by default, contents when
  *  `content` is true (server-side `git grep`). */
-export async function searchProjectFiles(
+export async function searchWorkspaceFiles(
   projectId: string,
   query: string,
   options?: { content?: boolean; ref?: string; limit?: number },
@@ -102,12 +127,15 @@ export async function searchProjectFiles(
   if (options?.limit) params.set('limit', String(options.limit));
   return unwrap(
     await backendApi.get<ProjectFileSearchResponse>(
-      `/projects/${projectId}/files/search?${params.toString()}`,
+      `/workspaces/${projectId}/files/search?${params.toString()}`,
     ),
   );
 }
 
-export async function readProjectFile(
+/** @deprecated Use `searchWorkspaceFiles`. Kept permanently. */
+export const searchProjectFiles = searchWorkspaceFiles;
+
+export async function readWorkspaceFile(
   projectId: string,
   path: string,
   ref?: string,
@@ -116,7 +144,7 @@ export async function readProjectFile(
   if (ref) params.set('ref', ref);
   return unwrap(
     await backendApi.get<{ path: string; ref: string; content: string; revision?: string }>(
-      `/projects/${projectId}/files/content?${params.toString()}`,
+      `/workspaces/${projectId}/files/content?${params.toString()}`,
       // Same manager-tier gate as listProjectFiles above: project.file.read
       // legitimately 403s for a plain member reading one file (e.g. a
       // skill/command detail modal, or the git-ref file explorer). Every
@@ -127,6 +155,9 @@ export async function readProjectFile(
   );
 }
 
+/** @deprecated Use `readWorkspaceFile`. Kept permanently. */
+export const readProjectFile = readWorkspaceFile;
+
 /** A large archive streams for minutes: the deadline is a hang detector, not a throughput cap. */
 const ARCHIVE_TIMEOUT_MS = 10 * 60_000;
 
@@ -136,7 +167,7 @@ const ARCHIVE_TIMEOUT_MS = 10 * 60_000;
  * Uses the same auth as `backendApi` but bypasses its JSON-only unwrap so we
  * can stream `application/zip` directly.
  */
-export async function fetchProjectArchive(
+export async function fetchWorkspaceArchive(
   projectId: string,
   ref: string,
   path?: string,
@@ -146,17 +177,20 @@ export async function fetchProjectArchive(
   if (path) params.set('path', path);
   const query = params.toString() ? `?${params.toString()}` : '';
 
-  const url = `${platformConfig().backendUrl || ''}/projects/${projectId}/files/archive${query}`;
+  const url = `${platformConfig().backendUrl || ''}/workspaces/${projectId}/files/archive${query}`;
   const res = await sendChecked(url, { method: 'GET' }, { timeoutMs: ARCHIVE_TIMEOUT_MS }, 'Failed to download');
   return await res.blob();
 }
 
+/** @deprecated Use `fetchWorkspaceArchive`. Kept permanently. */
+export const fetchProjectArchive = fetchWorkspaceArchive;
+
 /**
- * The archive download of {@link fetchProjectArchive} as a request the host
+ * The archive download of {@link fetchWorkspaceArchive} as a request the host
  * sends itself, for a host that streams the zip to disk (React Native's
  * `FileSystem.downloadAsync`) instead of reading it into a Blob.
  */
-export async function projectArchiveRequest(
+export async function workspaceArchiveRequest(
   projectId: string,
   ref: string,
   path?: string,
@@ -166,9 +200,12 @@ export async function projectArchiveRequest(
   if (path) params.set('path', path);
   const query = params.toString() ? `?${params.toString()}` : '';
   return authenticatedRequest(
-    `${platformConfig().backendUrl}/projects/${encodeURIComponent(projectId)}/files/archive${query}`,
+    `${platformConfig().backendUrl}/workspaces/${encodeURIComponent(projectId)}/files/archive${query}`,
   );
 }
+
+/** @deprecated Use `workspaceArchiveRequest`. Kept permanently. */
+export const projectArchiveRequest = workspaceArchiveRequest;
 
 /**
  * Fetch one project file's exact bytes at a ref.
@@ -179,7 +216,7 @@ export async function projectArchiveRequest(
  * always bytes; classifying text vs binary is the caller's job (the web does
  * it with the same NUL-byte heuristic the sandbox daemon uses).
  */
-export async function fetchProjectFileRaw(
+export async function fetchWorkspaceFileRaw(
   projectId: string,
   path: string,
   ref?: string,
@@ -189,7 +226,7 @@ export async function fetchProjectFileRaw(
   if (ref) params.set('ref', ref);
   const query = params.toString() ? `?${params.toString()}` : '';
 
-  const url = `${platformConfig().backendUrl || ''}/projects/${projectId}/files/raw${query}`;
+  const url = `${platformConfig().backendUrl || ''}/workspaces/${projectId}/files/raw${query}`;
   const res = await sendChecked(
     url,
     { method: 'GET', ...(options?.signal ? { signal: options.signal } : {}) },
@@ -199,12 +236,18 @@ export async function fetchProjectFileRaw(
   return await res.blob();
 }
 
+/** @deprecated Use `fetchWorkspaceFileRaw`. Kept permanently. */
+export const fetchProjectFileRaw = fetchWorkspaceFileRaw;
+
 /** Commit an edited text file only if its viewed blob revision is unchanged. */
-export async function writeProjectFile(
+export async function writeWorkspaceFile(
   projectId: string,
   input: { path: string; ref: string; content: string; expected_revision: string },
 ) {
   return unwrap(await backendApi.put<{ commit_sha: string }>(
-    `/projects/${projectId}/files/content`, input, { showErrors: false },
+    `/workspaces/${projectId}/files/content`, input, { showErrors: false },
   ));
 }
+
+/** @deprecated Use `writeWorkspaceFile`. Kept permanently. */
+export const writeProjectFile = writeWorkspaceFile;

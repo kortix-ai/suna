@@ -11,7 +11,7 @@ ai:
 
 Kortix in Chrome is a Chrome extension that connects your own browser to Kortix. You add the extension and sign in once. After that, any of your sessions can drive that browser, including the sites you are already signed in to. This page is for members who connect a browser, decide what agents may reach, and stop an agent that uses it.
 
-Kortix in Chrome is experimental. A project can turn it off under **Project admin** → **Feature flags**; when it is off, a session cannot attach a browser and the sidebar row and the **Kortix in Chrome** settings page are hidden.
+Kortix in Chrome is experimental. A workspace can turn it off under **Workspace admin** → **Feature flags**; when it is off, a session cannot attach a browser and the sidebar row and the **Kortix in Chrome** settings page are hidden.
 
 The extension is not a sandbox browser and not [a computer](/docs/guide#computers). Pages open in your real browser, as you. It runs in Chrome 125 or later, and in Edge, Brave and Arc. Safari, Firefox, the Kortix desktop app and phones cannot run it.
 
@@ -73,7 +73,7 @@ You always see when a session uses your browser:
 - **Take over** pauses the agent on that tab, so you can use it yourself. The agent's input commands fail until you select **Resume**.
 - **Stop** ends the session's access at once. The Chrome notice's **Cancel** does the same. `Alt+Shift+K` stops every agent in the browser.
 
-With **Ask first**, Chrome asks "Let Kortix use this browser?" before a session attaches. Choose **Allow for this session**, **Always for this project** or **Deny**. With **Without asking**, a session attaches without a prompt, unless it asks for one.
+With **Ask first**, Chrome asks "Let Kortix use this browser?" before a session attaches. Choose **Allow for this session**, **Always for this workspace** or **Deny**. With **Without asking**, a session attaches without a prompt, unless it asks for one.
 
 After you select **Stop** or **Deny**, that session cannot attach again unless it asks again. The next attach then shows a fresh prompt in Chrome. If nobody answers a prompt within 90 seconds, the attach fails.
 
@@ -81,14 +81,14 @@ After you select **Stop** or **Deny**, that session cannot attach again unless i
 
 Select the Kortix icon in the toolbar, or press `Alt+K`, to open the side panel. It opens on a new session every time:
 
-1. Pick the project at the top. The panel remembers your choice.
+1. Pick the workspace at the top. The panel remembers your choice.
 2. The tab you look at rides along as a chip, and the chip follows you when you switch tabs. Remove a chip to leave its tab out, or select **Tab** to add more tabs, for example to compare two pages. Select **Screenshot** to also send an image of what the tab shows, for charts and pictures that page text misses. A model that cannot read images keeps the message in the box and says so.
 3. Type your message, or select a page action: **Summarize this page**, **Extract the tables**, **Compare with another tab** or **Draft an email about this**.
 4. Choose how Kortix uses the tab, then send:
    - **Read** (the default) sends the text of each tab in the chips as a Markdown file with the message. Kortix reads a tab only when you send.
    - **Act** puts the tab in the session's **Kortix** tab group, so the agent can click and type there. The usual consent, glow and **Stop** apply.
 
-The session opens in the panel and appears in your project like any other session.
+The session opens in the panel and appears in your workspace like any other session.
 
 To ask about part of a page, select the text, right-click, and choose **Ask Kortix about this selection**. The panel opens with the text as a quote. Kortix gets only the quote, the page title and the address. Select **Whole page** to send the page text too. **Ask Kortix about this page** opens a new session with that tab.
 
@@ -134,6 +134,6 @@ Ask the agent in plain words, for example "Use my browser to check the invoices 
 | `chrome_consent_timeout` | Nobody answered the prompt in Chrome within 90 seconds. | Run `kortix chrome use --ask` and answer in Chrome. |
 | `chrome_not_found` | No connected browser has that name. | Run `kortix chrome ls` and pass a listed name. |
 | `chrome_dial_failed` | The extension could not open the connection to the session. | Check that Chrome is open and the extension is signed in, then run `kortix chrome use` again. |
-| `feature_disabled` | The project has **Kortix in Chrome** turned off. | Turn it on under **Project admin** → **Feature flags**. |
+| `feature_disabled` | The workspace has **Kortix in Chrome** turned off. | Turn it on under **Workspace admin** → **Feature flags**. |
 
 If the dialog does not show the extension as added, finish in the Kortix tab Chrome opened, or reload the Kortix page. If you leave the sign-in page without **Allow**, select **Connect to Kortix** again. A server that does not offer the Chrome extension yet is named on the Kortix tab before any sign-in.

@@ -64,7 +64,9 @@ export function createRpcRouter() {
       const outcome = await executeTunnelRpc({
         tunnelId,
         tunnelOwnerAccountId: tunnel.accountId,
-        accountId,
+        // No workspace: the caller reached only a machine they own, so it
+        // acts in that machine's account.
+        accountId: accountId ?? tunnel.accountId,
         actorUserId: c.get('userId') as string | undefined,
         method,
         params,

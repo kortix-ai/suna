@@ -53,14 +53,14 @@ bulk field update above a set threshold stops for a person before it writes.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the hygiene skill and the nightly trigger, and
 opens a change request for you to review. Prefer clicks? Choose **Use this
 template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a nightly CRM hygiene agent in this project.
+  code={`Set up a nightly CRM hygiene agent in this workspace.
 
 1. Create the agent agents/crm-hygiene.md. Its job is to keep HubSpot clean. It may use the HubSpot, Clearbit and Slack connectors.
 
@@ -81,7 +81,7 @@ template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect your CRM, an enrichment
+Open **Connectors** in your workspace and connect your CRM, an enrichment
 provider and Slack. Credentials are brokered server-side and never enter the
 agent's machine.
 
@@ -120,7 +120,7 @@ schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every night at 02:00, each run in a new session on its own cloud computer.
-To change the time, edit the cron line, or open **Triggers** in the project.
+To change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

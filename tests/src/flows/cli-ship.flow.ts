@@ -77,8 +77,8 @@ flow('SHIP-DEFAULT', {
   domain: 'cli',
   timeoutMs: 300_000,
   requires: ['database'],
-  routes: ['POST /v1/accounts/tokens', 'GET /v1/accounts/me', 'GET /v1/projects/:projectId',
-    'POST /v1/connectors/projects/:projectId/connectors/sync'],
+  routes: ['POST /v1/accounts/tokens', 'GET /v1/me', 'GET /v1/workspaces/:projectId',
+    'POST /v1/connectors/workspaces/:projectId/connectors/sync'],
 }, async (ctx) => {
   const project = await ctx.fixtures.project({ managedGit: true });
   const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('ship-default') });
@@ -117,7 +117,7 @@ flow('SHIP-DEFAULT', {
 
 // ─────────────────────── SHIP-7 — dry-run (runnable now) ─────────────────────
 
-flow('SHIP-7', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) => {
+flow('SHIP-7', { domain: 'cli', routes: ['GET /v1/me'] }, async (ctx) => {
   const pat = await ctx.fixtures.pat({
     name: ctx.fixtures.name('cli-ship7'),
   });
@@ -187,8 +187,8 @@ flow('SHIP-8', { domain: 'cli', routes: [] }, async (ctx) => {
       const r = await sb.run(['ship']);
       check('exit 1', r.exitCode === 1, 1, r.exitCode);
       check(
-        'says not a Kortix project',
-        /not a kortix project/i.test(r.all),
+        'says not a Kortix workspace',
+        /not a kortix workspace/i.test(r.all),
         true,
         r.stderr.slice(0, 200),
       );
@@ -248,9 +248,9 @@ flow(
     // retryable, so it fails the gate outright rather than flaking.
     timeoutMs: 300_000,
     routes: [
-      'GET /v1/accounts/me',
+      'GET /v1/me',
       'POST /v1/projects/provision',
-      'POST /v1/projects/:projectId/git-token',
+      'POST /v1/workspaces/:projectId/git-token',
     ],
   },
   async (ctx) => {
@@ -304,7 +304,7 @@ flow(
   'SHIP-2',
   {
     domain: 'cli',
-    routes: ['GET /v1/accounts/me'],
+    routes: ['GET /v1/me'],
   },
   async (ctx) => {
     const pat = await ctx.fixtures.pat({
@@ -363,7 +363,7 @@ flow(
   'SHIP-3',
   {
     domain: 'cli',
-    routes: ['GET /v1/accounts/me'],
+    routes: ['GET /v1/me'],
   },
   async (ctx) => {
     const pat = await ctx.fixtures.pat({
@@ -422,9 +422,9 @@ flow(
     // retryable, so it fails the gate outright rather than flaking.
     timeoutMs: 300_000,
     routes: [
-      'GET /v1/accounts/me',
+      'GET /v1/me',
       'POST /v1/projects/provision',
-      'POST /v1/projects/:projectId/git-token',
+      'POST /v1/workspaces/:projectId/git-token',
     ],
   },
   async (ctx) => {
@@ -484,7 +484,7 @@ flow(
 
 // ─────────────── SHIP-5 — account selection (--account mismatch) ─────────────
 
-flow('SHIP-5', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) => {
+flow('SHIP-5', { domain: 'cli', routes: ['GET /v1/me'] }, async (ctx) => {
   const pat = await ctx.fixtures.pat({
     name: ctx.fixtures.name('cli-ship5'),
   });
@@ -537,10 +537,10 @@ flow(
     // retryable, so it fails the gate outright rather than flaking.
     timeoutMs: 600_000,
     routes: [
-      'GET /v1/accounts/me',
+      'GET /v1/me',
       'POST /v1/projects/provision',
-      'GET /v1/projects/:projectId',
-      'POST /v1/projects/:projectId/git-token',
+      'GET /v1/workspaces/:projectId',
+      'POST /v1/workspaces/:projectId/git-token',
     ],
   },
   async (ctx) => {
@@ -605,10 +605,10 @@ flow(
     // retryable, so it fails the gate outright rather than flaking.
     timeoutMs: 900_000,
     routes: [
-      'GET /v1/accounts/me',
+      'GET /v1/me',
       'POST /v1/projects/provision',
-      'GET /v1/projects/:projectId',
-      'POST /v1/projects/:projectId/git-token',
+      'GET /v1/workspaces/:projectId',
+      'POST /v1/workspaces/:projectId/git-token',
     ],
   },
   async (ctx) => {
@@ -680,18 +680,18 @@ flow(
     serial: true,
     timeoutMs: 1_200_000,
     routes: [
-      'GET /v1/accounts/me',
+      'GET /v1/me',
       'POST /v1/projects/provision',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'POST /v1/projects/:projectId/sessions/:sessionId/commit-push',
-      'POST /v1/projects/:projectId/change-requests',
-      'GET /v1/projects/:projectId/change-requests',
-      'GET /v1/projects/:projectId/change-requests/:crId',
-      'GET /v1/projects/:projectId/change-requests/:crId/merge-preview',
-      'POST /v1/projects/:projectId/change-requests/:crId/merge',
-      'POST /v1/projects/:projectId/change-requests/:crId/close',
-      'POST /v1/projects/:projectId/change-requests/:crId/reopen',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/commit-push',
+      'POST /v1/workspaces/:projectId/change-requests',
+      'GET /v1/workspaces/:projectId/change-requests',
+      'GET /v1/workspaces/:projectId/change-requests/:crId',
+      'GET /v1/workspaces/:projectId/change-requests/:crId/merge-preview',
+      'POST /v1/workspaces/:projectId/change-requests/:crId/merge',
+      'POST /v1/workspaces/:projectId/change-requests/:crId/close',
+      'POST /v1/workspaces/:projectId/change-requests/:crId/reopen',
     ],
   },
   async (ctx) => {
@@ -712,7 +712,7 @@ flow(
     const started = await waitFor(
       async () => {
         const r = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/projects/:projectId/sessions/:sessionId/start',
+          '/v1/workspaces/:projectId/sessions/:sessionId/start',
           {},
           {
             params: { projectId: project.id, sessionId: session.id },
@@ -753,7 +753,7 @@ flow(
     const committed = await ctx.client
       .as(ctx.P.OWNER)
       .post(
-        '/v1/projects/:projectId/sessions/:sessionId/commit-push',
+        '/v1/workspaces/:projectId/sessions/:sessionId/commit-push',
         { message: 'Add change request fixture' },
         { params: { projectId: project.id, sessionId: session.id } },
       );

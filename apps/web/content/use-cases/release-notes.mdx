@@ -53,14 +53,14 @@ human reviews and merges.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the changelog-sync skill and the hourly
 trigger, and opens a change request for you to review. Prefer clicks? Choose
 **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a release-notes agent in this project.
+  code={`Set up a release-notes agent in this workspace.
 
 1. Create the agent agents/release-notes.md. Its job is to turn each new release of owner/repo into changelog notes and open a pull request against CHANGELOG.md. It may use the GitHub connector and the gh CLI with the GH_TOKEN secret.
 
@@ -82,7 +82,7 @@ trigger, and opens a change request for you to review. Prefer clicks? Choose
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect GitHub. Credentials are
+Open **Connectors** in your workspace and connect GitHub. Credentials are
 brokered server-side and never enter the agent's machine. Then add a GitHub
 token as the `GH_TOKEN` secret for the gh CLI. It is injected at runtime and
 scoped to this agent.
@@ -117,7 +117,7 @@ changelog PR it opens before you let the schedule take over.
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every hour, on the hour, each run on its own cloud computer. It reads its
 checkpoint first, so it opens a PR only when a new release has shipped. To
-change the time, edit the cron line, or open **Triggers** in the project.
+change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

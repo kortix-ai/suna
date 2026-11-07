@@ -1,22 +1,7 @@
 'use client';
 
-import {
-  readArtifactCommentSnapshot,
-  type ArtifactCommentAnchor,
-  type ArtifactLivePosition,
-  type ArtifactVersion,
-} from '@kortix/sdk';
-import {
-  useArtifact,
-  useArtifactCommentContext,
-  useArtifactComments,
-  useArtifactLive,
-  useArtifactMutations,
-  useArtifactVersions,
-  useFeatureFlag,
-  useInfiniteArtifactActivity,
-} from '@kortix/sdk/react';
-import { ARTIFACT_TEXT_QUOTE_MAX } from '@kortix/shared/artifact-comments';
+import type { ArtifactVersion } from '@kortix/sdk';
+import { useArtifact, useArtifactMutations, useArtifactVersions } from '@kortix/sdk/react';
 import { cn } from '@kortix/ui';
 import { reloadFrame } from '@kortix/ui/apps';
 import {
@@ -29,10 +14,8 @@ import {
 import { Button } from '@kortix/ui/button';
 import { ButtonGroup } from '@kortix/ui/button-group';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
-import { BellMark } from '@kortix/ui/internal/notifications/notification-bell';
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
@@ -42,7 +25,6 @@ import {
 } from '@kortix/ui/dropdown-menu';
 import { ErrorState } from '@kortix/ui/error-state';
 import Hint from '@kortix/ui/hint';
-import { InfoBanner } from '@kortix/ui/info-banner';
 import Loading from '@kortix/ui/loading';
 import {
   SessionParticipantStack,
@@ -59,122 +41,36 @@ import {
   ArrowSquareOutIcon,
   ArrowsOutSimpleIcon,
   CaretRightIcon,
-  ChatCircleIcon,
   ClockCounterClockwiseIcon,
   CornersOutIcon,
   DotsThreeIcon,
   FilePdfIcon,
   FolderOpenIcon,
-  MapPinIcon,
   PencilSimpleIcon,
   PushPinIcon,
   PushPinSlashIcon,
-  ScribbleIcon,
   ShareNetworkIcon,
   SparkleIcon,
-  WarningIcon,
   XCircleIcon,
   XIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { drivePathToParam } from '@kortix/ui/files';
-import { useAuth } from '@/features/providers/auth-provider';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { ArtifactFrame, artifactFrameKey, printArtifact } from '@kortix/ui/artifacts';
-import { ArtifactDiscussionLayout } from './artifact-discussion-layout';
-import { threadDeleted } from './artifact-discussion-logic';
-import {
-  ArtifactDiscussionSidebar,
-  useArtifactDiscussionState,
-} from './artifact-discussion-sidebar';
-import { artifactDiscussionStorage } from './artifact-discussion-storage';
-import type { DrawingStroke } from './artifact-drawing';
-import { ArtifactDrawingCanvas } from './artifact-drawing-canvas';
-import { prepareDrawingDraft, type ArtifactDrawingDraft } from './artifact-drawing-draft';
-import { ArtifactDrawingLayer } from './artifact-drawing-layer';
-import { ArtifactLiveAvatars } from './artifact-live-avatars';
-import {
-  createPacedSender,
-  createTypingOwner,
-  groupLiveMembers,
-  remotePeers,
-} from './artifact-live-logic';
-import {
-  ArtifactLiveContext,
-  useLiveStatusLabel,
-  type ArtifactLiveContextValue,
-} from './artifact-live-presence';
 import { VISIBILITY_ICON, relativeTime } from './artifact-meta';
-import { ArtifactPageCursors } from './artifact-page-cursors';
-import {
-  ArtifactSelectionChip,
-  isCommentShortcut,
-  nextSelectionOffer,
-  selectionOfferKey,
-} from './artifact-selection-chip';
 import { AskAgentSheet } from './ask-agent-sheet';
-import { createDocPings } from './doc-coedit';
-import { DocEditor, type DocLiveBinding, type DocSaveStatus } from './doc-editor';
+import { DocEditor, type DocSaveStatus } from './doc-editor';
 import { ShareArtifactDialog } from './share-artifact-dialog';
-import {
-  useArtifactAnnotations,
-  type ArtifactAnnotationSelection,
-  type ArtifactAnnotationViewport,
-} from './use-artifact-annotations';
-import { useArtifactSelectionCapture } from './use-artifact-selection-capture';
-import { useArtifactUnshare } from './use-artifact-unshare';
 import { rootRem, useElementWidth } from './use-element-width';
-
-/** A pressed mode toggle (pin, draw) in the header's secondary group: inverted ink, so the mode reads at a glance. */
-const MODE_TOGGLE =
-  'aria-pressed:bg-foreground aria-pressed:text-background aria-pressed:hover:bg-foreground/90';
 
 /** A small status mark beside the title (visibility, pinned): focusable for its hint. */
 const HEADER_MARK =
   'text-muted-foreground focus-visible:ring-ring flex shrink-0 rounded-sm outline-none focus-visible:ring-2';
-
-/** An anchor's identity: it equals the key of an offer of the same selection. */
-const anchorKey = (anchor: ArtifactCommentAnchor | null | undefined) =>
-  anchor ? JSON.stringify(anchor) : '';
-
-/** A keyboard target that owns Escape itself: a field, or an open dialog, menu or list. */
-function ownsEscape(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  return (
-    target.matches('input, textarea, select, [contenteditable=""], [contenteditable="true"]') ||
-    !!target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')
-  );
-}
-
-/** The page's key reached the parent only with a real keypress: `userActivation` proves one. */
-function userActivated(): boolean {
-  const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } })
-    .userActivation;
-  return activation ? activation.isActive : true;
-}
-
-/** The tab is in the background: live presence hides this viewer's cursor meanwhile. */
-const subscribeVisibility = (onChange: () => void) => {
-  document.addEventListener('visibilitychange', onChange);
-  return () => document.removeEventListener('visibilitychange', onChange);
-};
-const tabHiddenNow = () => document.visibilityState === 'hidden';
-const tabHiddenOnServer = () => false;
-/** "Hide my cursor", per viewer, in this browser. */
-const HIDE_CURSOR_KEY = 'live-hide-cursor';
 
 /** Saves closer than this show as one row of the history: an editing burst. */
 const BURST_MS = 5 * 60_000;
@@ -216,7 +112,7 @@ function historyRows(versions: ArtifactVersion[]): Array<ArtifactVersion & { sav
 }
 
 /**
- * /projects/[id]/artifacts/[artifactId] — one artifact, full height. A doc is
+ * /workspaces/[id]/artifacts/[artifactId] — one artifact, full height. A doc is
  * its Markdown file in the doc editor (read-only without write access in
  * Files); an HTML page runs in a sandboxed frame. The history is the Files
  * commit log of its path.
@@ -237,11 +133,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const t = useTranslations('artifacts');
   const locale = useLocale();
   const router = useRouter();
-  const search = useSearchParams();
-  const viewerId = useAuth().user?.id;
   const [version, setVersion] = useState<string | undefined>(undefined);
-  const selection = useArtifactSelectionCapture();
-  const clearSelection = selection.clear;
   const query = useArtifact(projectId, artifactId, version);
   const artifact = query.data;
   useLayoutEffect(() => {
@@ -258,45 +150,15 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   }, [embedded, artifact?.title]);
   const mutations = useArtifactMutations(projectId);
   const frame = useRef<HTMLDivElement>(null);
-  const [claimedFrame, setClaimedFrame] = useState<HTMLIFrameElement | null>(null);
-  const [annotationMode, setAnnotationMode] = useState<'text' | 'comment'>('text');
-  const [drawingOpen, setDrawingOpen] = useState(false);
-  const [drawingBusy, setDrawingBusy] = useState(false);
-  const [drawingError, setDrawingError] = useState(false);
-  const [drawingViewport, setDrawingViewport] = useState<ArtifactAnnotationViewport | null>(null);
-  const [pendingDrawing, setPendingDrawing] = useState<ArtifactDrawingDraft | null>(null);
-  // The canvas has a stroke: from then on the drawing keeps its viewport and a layout change is stale.
-  const [drawingDirty, setDrawingDirty] = useState(false);
-  // A text selection the page offers: the Comment chip. Selecting text never opens the panel.
-  const [offer, setOffer] = useState<ArtifactAnnotationSelection | null>(null);
-  // The offer the person dismissed (Escape, a click elsewhere): the page sends it again after a
-  // layout, and it stays hidden until the page reports a new gesture (`nextSelectionOffer`).
-  const dismissedOffer = useRef('');
-  // The passage the page itself sent to the composer (its ⌘⌥M). Its composer shows without
-  // keyboard focus: the page can forge the key, and the person may be typing in a page form.
-  const [pageOpenedAnchor, setPageOpenedAnchor] = useState<ArtifactCommentAnchor | null>(null);
-  const chip = useRef<HTMLDivElement>(null);
   const header = useRef<HTMLElement>(null);
-  const pinButton = useRef<HTMLButtonElement>(null);
-  const drawButton = useRef<HTMLButtonElement>(null);
-  const actionsButton = useRef<HTMLButtonElement>(null);
-  const commentsButton = useRef<HTMLButtonElement>(null);
-  const panelId = useId();
   const headerWidth = useElementWidth(header);
   const rem = headerWidth === null ? 16 : rootRem();
-  // Below `sm` (40rem) the header has room for its essentials only: Pin and Draw move into ⋯.
+  // Below `sm` (40rem) the header has room for its essentials only: Ask AI moves into ⋯ and Share is an icon.
   const compact = headerWidth !== null && headerWidth < 40 * rem;
-  // Below 48rem the discussion covers the page (ArtifactDiscussionLayout `cover`) instead of narrowing it.
-  const coverLayout = headerWidth !== null && headerWidth < 48 * rem;
-  const drawingRequest = useRef(0);
-  const invalidateDrawingRequest = useCallback(() => {
-    drawingRequest.current++;
-  }, []);
   const [docStatus, setDocStatus] = useState<DocSaveStatus>('saved');
   // Bumped by a conflict's Reload: the editor opens again on the version now in Files.
   const [reloads, setReloads] = useState(0);
   const reloadDoc = () => {
-    selection.clear();
     setDocStatus('saved');
     void query.refetch().then(() => setReloads((n) => n + 1));
   };
@@ -326,6 +188,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     printArtifact(exportUrl);
   }, [exporting, exportUrl, docStatus, exportToast, t]);
   const [sharing, setSharing] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [asking, setAsking] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const titleButton = useRef<HTMLButtonElement>(null);
@@ -369,16 +232,9 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
   const viewingOld = !!artifact?.version.id;
   const canEdit = !!artifact?.can_edit && !viewingOld;
   const isDoc = artifact?.type === 'doc';
-  const commentsFlag = useFeatureFlag(projectId, 'artifact_comments').enabled;
-  const artifactsFlag = useFeatureFlag(projectId, 'artifacts').enabled;
-  const discussionEnabled = commentsFlag && artifactsFlag;
-  // Live co-editing (KRTX-3670) of the current version: `changed doc` pings reach the editor.
-  const [docPings] = useState(createDocPings);
-  const coedit = discussionEnabled && !version ? docPings : undefined;
-  // A read-only doc opens a new editor per file version, unless it may be co-edited: that editor
-  // shows new text in place.
+  // A read-only doc opens a new editor per file version: an editable one takes new text in place.
   const docKey = artifact
-    ? `${artifact.artifact_id}:${artifact.version.id ?? 'now'}:${reloads}${canEdit || viewingOld || coedit ? '' : `:${artifact.entry_version}`}`
+    ? `${artifact.artifact_id}:${artifact.version.id ?? 'now'}:${reloads}${canEdit || viewingOld ? '' : `:${artifact.entry_version}`}`
     : '';
   // A new editor (a read-only doc's new version, a Reload) opens where the person was reading.
   // The scroll position is kept only while an editor shows its text: the empty editor's collapse
@@ -394,466 +250,9 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     docScroll.current.ready = true;
   }, []);
   const sidebar = useOptionalSidebar();
-  const comments = useArtifactComments(projectId, artifactId, {
-    status: 'all',
-    version,
-    enabled: discussionEnabled,
-  });
-  const context = useArtifactCommentContext(projectId, artifactId, {
-    version,
-    enabled: discussionEnabled,
-  });
-  const annotationVersion =
-    discussionEnabled && artifact && !isDoc ? context.data?.version.commit_id : null;
-  const annotated = useArtifact(
-    annotationVersion ? projectId : null,
-    annotationVersion ? artifactId : null,
-    annotationVersion ?? undefined,
-  );
-  const annotationEnabled = !!annotationVersion;
-  const annotatedUrl = annotationEnabled ? annotated.data?.version.view_url : null;
-  const viewUrl = annotatedUrl
-    ? (() => {
-        const url = new URL(annotatedUrl);
-        url.searchParams.set('annotate', '1');
-        return url.toString();
-      })()
-    : annotationEnabled
-      ? null
-      : artifact?.version.view_url;
-  const frameKey = artifact
-    ? artifactFrameKey(
-        artifact,
-        annotationEnabled ? annotationVersion : artifact.version.id,
-        annotationEnabled,
-      )
-    : null;
-  const removal = useArtifactUnshare(
-    discussionEnabled
-      ? async () => {
-          const fresh = await context.refetch();
-          if (fresh.isError || !fresh.data) throw new Error('Comment count unavailable');
-          return fresh.data.comment_count;
-        }
-      : undefined,
-  );
-  const activity = useInfiniteArtifactActivity(projectId, artifactId, {
-    enabled: discussionEnabled,
-  });
-  const discussionState = useArtifactDiscussionState();
-  const [discussionOpen, setDiscussionOpen] = useState(false);
-  const [focusedThreadId, setFocusedThreadId] = useState<string | null>(null);
-  const [focusRevision, setFocusRevision] = useState(0);
-  const defaultPanel = useRef('');
-  const scope = `${projectId}:${artifactId}`;
-  const pendingAnchor = selection.anchor;
-  const openVersion = (next: string | undefined) => {
-    selection.clear();
-    setAnnotationMode('text');
-    setVersion(next);
-  };
-  const openComments = (comments.data ?? []).filter(
-    (thread) => thread.status === 'open' && !threadDeleted(thread),
-  ).length;
-  useEffect(() => {
-    if (!discussionEnabled || !comments.data || defaultPanel.current === scope) return;
-    defaultPanel.current = scope;
-    setDiscussionOpen(openComments > 0);
-  }, [discussionEnabled, comments.data, scope, openComments]);
-  const focusThread = useCallback(
-    (threadId: string) => {
-      defaultPanel.current = scope;
-      if (version && !comments.data?.some((thread) => thread.thread_id === threadId)) {
-        clearSelection();
-        setVersion(undefined);
-      }
-      setFocusedThreadId(threadId);
-      setFocusRevision((revision) => revision + 1);
-      setDiscussionOpen(true);
-    },
-    [scope, version, comments.data, clearSelection],
-  );
-  /**
-   * Open the composer on an anchor the person chose: a pin, a region, or the Comment chip.
-   * `fromPage`: the page's shortcut chose it, so the composer does not take keyboard focus.
-   */
-  const commentOn = (anchor: ArtifactCommentAnchor, fromPage = false) => {
-    setOffer(null);
-    setPendingDrawing(null);
-    selection.begin();
-    if (!selection.publish(anchor)) return;
-    setPageOpenedAnchor(fromPage ? anchor : null);
-    defaultPanel.current = scope;
-    setDiscussionOpen(true);
-  };
-  const dismissOffer = () => {
-    if (!offer) return false;
-    dismissedOffer.current = selectionOfferKey(offer);
-    setOffer(null);
-    return true;
-  };
-  const focusSoon = (target: HTMLElement | null) =>
-    requestAnimationFrame(() => target?.focus({ preventScroll: true }));
-
-  // Live presence (KRTX-3669): who is here, their cursors and typing, and a refetch when
-  // comments, activity or content change. This viewer renders only inside the signed-in app; a
-  // public link is the server page /share/artifact/[id], which opens no live connection. An old
-  // version is read-only history: no presence there.
-  const storedCursorHidden = useMemo(
-    () => artifactDiscussionStorage(viewerId).getItem(HIDE_CURSOR_KEY) === '1',
-    [viewerId],
-  );
-  const [cursorHiddenChoice, setCursorHiddenChoice] = useState<boolean | null>(null);
-  const cursorHidden = cursorHiddenChoice ?? storedCursorHidden;
-  const changeCursorHidden = (next: boolean) => {
-    setCursorHiddenChoice(next);
-    artifactDiscussionStorage(viewerId).setItem(HIDE_CURSOR_KEY, next ? '1' : '0');
-  };
-  const tabHidden = useSyncExternalStore(subscribeVisibility, tabHiddenNow, tabHiddenOnServer);
-  const liveHidden = cursorHidden || tabHidden;
-  const liveEnabled = discussionEnabled && !!artifact && !version;
-  const live = useArtifactLive(projectId, artifactId, {
-    enabled: liveEnabled,
-    view: isDoc ? 'doc' : 'page',
-    version: artifact?.entry_version ?? null,
-    hidden: liveHidden,
-    onDoc: docPings.emit,
-  });
-  const liveOn = liveEnabled && live.status !== 'closed' && live.status !== 'access_lost';
-  const { setTyping: liveSetTyping, setCursor: liveSetCursor, setSelection: liveSetSelection, setFocus: liveSetFocus } = live;
-  const setLiveTyping = useMemo(() => createTypingOwner(liveSetTyping), [liveSetTyping]);
-  const liveMembers = groupLiveMembers(live.participants, live.you, viewerId);
-  const liveContext = useMemo<ArtifactLiveContextValue | null>(
-    () =>
-      liveOn
-        ? {
-            participants: live.participants,
-            you: live.you,
-            viewerId: viewerId ?? null,
-            setTyping: setLiveTyping,
-          }
-        : null,
-    [liveOn, live.participants, live.you, viewerId, setLiveTyping],
-  );
-  const liveStatusLabel = useLiveStatusLabel();
-  const docPeers = useMemo(
-    () => remotePeers(live.participants, live.you, viewerId, 'doc'),
-    [live.participants, live.you, viewerId],
-  );
-  const pagePeers = useMemo(
-    () => remotePeers(live.participants, live.you, viewerId, 'page'),
-    [live.participants, live.you, viewerId],
-  );
-  const docLive: DocLiveBinding | undefined =
-    liveOn && isDoc
-      ? {
-          peers: docPeers,
-          statusLabel: liveStatusLabel,
-          hidden: liveHidden,
-          setCursor: liveSetCursor,
-          setSelection: liveSetSelection,
-          setTyping: (active) => setLiveTyping('doc', active),
-        }
-      : undefined;
-  // The page reports this viewer's pointer; it goes out paced, as a selector and fractions.
-  const pagePointer = useMemo(
-    () => createPacedSender<ArtifactLivePosition | null>((at) => liveSetCursor(at)),
-    [liveSetCursor],
-  );
-  useEffect(() => () => pagePointer.dispose(), [pagePointer]);
-  // The thread this viewer has open. The connection replays it after a reconnect.
-  const openThread = discussionOpen ? focusedThreadId : null;
-  useEffect(() => {
-    if (live.status === 'live') liveSetFocus(openThread);
-  }, [openThread, live.status, liveSetFocus]);
-
-  const htmlAnnotations = useArtifactAnnotations({
-    enabled: annotationEnabled,
-    frame: claimedFrame,
-    slot: frame,
-    version: annotationVersion,
-    canComment: context.data?.can_comment === true && !version,
-    mode: annotationMode,
-    drawing: drawingOpen,
-    threads: comments.data,
-    focusedThreadId,
-    focusRevision,
-    // Comment mode: a pin or a region is an explicit request to comment there.
-    onCandidate: (anchor) => {
-      if (!drawingOpen) commentOn(anchor);
-    },
-    // Text mode: a selection only offers the Comment chip. The panel opens on the chip or ⌘⌥M.
-    onSelection: (next, moved) => {
-      const result = nextSelectionOffer(
-        next,
-        moved === true,
-        dismissedOffer.current,
-        (key) => drawingOpen || key === anchorKey(selection.anchor),
-      );
-      dismissedOffer.current = result.dismissed;
-      setOffer(result.offer);
-    },
-    // Anything in the page can post these keys. Escape only leaves the chip or pin mode, and a
-    // composer the shortcut opens shows without keyboard focus.
-    onKey: (key) => {
-      if (key === 'escape') escapeAnnotation(true);
-      else if (offer?.state === 'candidate' && userActivated()) commentOn(offer.anchor, true);
-    },
-    onFocus: focusThread,
-    // The page hears "Comment 3": one UI word and the number, never the comment.
-    pinLabel: (n) => t('discussion.pagePinLabel', { number: String(n) }),
-    // Live: the page reports this viewer's pointer while others can see it.
-    trackPointer: liveOn && !isDoc && !liveHidden,
-    onPointer: (at) => pagePointer.push(at ? { kind: 'page', ...at } : null),
-  });
-  // A save (an agent, another person) moved the page: the annotated frame follows the comment
-  // context's commit, so read it again and the frame reloads on the new version.
-  const entryVersion = artifact?.entry_version;
-  const seenEntryVersion = useRef(entryVersion);
-  const refetchContext = context.refetch;
-  useEffect(() => {
-    const previous = seenEntryVersion.current;
-    seenEntryVersion.current = entryVersion;
-    if (previous && entryVersion && previous !== entryVersion && annotationEnabled && !version)
-      void refetchContext();
-  }, [entryVersion, annotationEnabled, version, refetchContext]);
-  const clearCommentSelection = (expected?: ArtifactCommentAnchor) => {
-    selection.clear(expected);
-    setPendingDrawing((current) => (!expected || current?.anchor === expected ? null : current));
-  };
-  const cancelDrawing = () => {
-    drawingRequest.current++;
-    htmlAnnotations.cancelCapture();
-    setDrawingOpen(false);
-    setDrawingBusy(false);
-    setDrawingError(false);
-    setDrawingViewport(null);
-    setDrawingDirty(false);
-    selection.clear();
-  };
-  // Leaving draw mode with strokes on the canvas asks first: one key or click never throws a drawing away.
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const leaveDrawing = () => {
-    cancelDrawing();
-    focusSoon(compact ? actionsButton.current : drawButton.current);
-  };
-  const requestLeaveDrawing = () => {
-    if (drawingDirty) setConfirmDiscard(true);
-    else leaveDrawing();
-  };
-  /** Draw mode docks the panel first: a panel opened after the drawing would narrow the page and hide it. */
-  const startDrawing = () => {
-    clearCommentSelection();
-    setOffer(null);
-    setAnnotationMode('text');
-    setDrawingError(false);
-    setDrawingDirty(false);
-    setDrawingViewport(null);
-    setDrawingOpen(true);
-    defaultPanel.current = scope;
-    // Beside the page the panel opens now; over the page (`cover`) it closes, so the page is in reach.
-    if (coverLayout) setDiscussionOpen(false);
-    else if (!discussionOpen) setDiscussionOpen(true);
-  };
-  const togglePinMode = () => {
-    setOffer(null);
-    if (annotationMode === 'text' && coverLayout) {
-      defaultPanel.current = scope;
-      setDiscussionOpen(false);
-    }
-    setAnnotationMode((mode) => (mode === 'comment' ? 'text' : 'comment'));
-  };
-  /**
-   * Escape, from the parent or the page: the chip, then draw mode, then pin mode. Focus returns to
-   * the mode's button. `fromPage`: the drawing layer covers the page and handles its own Escape,
-   * so an Escape from the page is forged there and the strokes stay.
-   */
-  const escapeAnnotation = (fromPage = false): boolean => {
-    if (dismissOffer()) return true;
-    if (drawingOpen) {
-      if (fromPage) return false;
-      requestLeaveDrawing();
-      return true;
-    }
-    if (annotationMode === 'comment') {
-      setAnnotationMode('text');
-      focusSoon(compact ? actionsButton.current : pinButton.current);
-      return true;
-    }
-    return false;
-  };
-  // Until the first stroke the drawing follows the page: it takes the layout the page reports at
-  // the frame's current size, so docking the panel never leaves a stale canvas.
-  const annotationViewport = htmlAnnotations.viewport;
-  useEffect(() => {
-    if (!drawingOpen || drawingDirty || !annotationViewport || !claimedFrame) return;
-    if (annotationViewport === drawingViewport) return;
-    if (
-      Math.abs(claimedFrame.clientWidth - annotationViewport.width) > 1 ||
-      Math.abs(claimedFrame.clientHeight - annotationViewport.height) > 1
-    )
-      return;
-    setDrawingViewport(annotationViewport);
-  }, [drawingOpen, drawingDirty, annotationViewport, drawingViewport, claimedFrame]);
-  // The parent's own keys: ⌘⌥M comments on the offered selection; Escape leaves the chip, draw
-  // mode and pin mode. A field, dialog or menu keeps its own Escape.
-  const onKeys = (event: KeyboardEvent) => {
-    if (event.defaultPrevented) return;
-    if (isCommentShortcut(event) && offer?.state === 'candidate') {
-      event.preventDefault();
-      commentOn(offer.anchor);
-    } else if (event.key === 'Escape' && !ownsEscape(event.target) && escapeAnnotation()) {
-      event.preventDefault();
-    }
-  };
-  const keys = useRef(onKeys);
-  const dismiss = useRef(dismissOffer);
-  useLayoutEffect(() => {
-    keys.current = onKeys;
-    dismiss.current = dismissOffer;
-  });
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => keys.current(event);
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
-  // A press anywhere in the app outside the chip dismisses it. A press in the page reaches the
-  // bridge instead, which reports the selection gone or changed.
-  const hasOffer = !!offer;
-  useEffect(() => {
-    if (!hasOffer) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (!chip.current?.contains(event.target as Node)) dismiss.current();
-    };
-    document.addEventListener('pointerdown', onPointerDown, true);
-    return () => document.removeEventListener('pointerdown', onPointerDown, true);
-  }, [hasOffer]);
-  const cancelCapture = htmlAnnotations.cancelCapture;
-  // Another version, or the right to comment changed: every drawing and selection starts over.
-  useLayoutEffect(() => {
-    invalidateDrawingRequest();
-    cancelCapture();
-    setDrawingOpen(false);
-    setDrawingBusy(false);
-    setDrawingError(false);
-    setDrawingViewport(null);
-    setDrawingDirty(false);
-    setPendingDrawing(null);
-    setOffer(null);
-    dismissedOffer.current = '';
-    clearSelection();
-    return invalidateDrawingRequest;
-  }, [version, context.data?.can_comment, cancelCapture, clearSelection, invalidateDrawingRequest]);
-  // A save moved the page (an agent, another person): the frame loads the new version. The
-  // person's drawing stays. Strokes in progress stay on a canvas that says the page changed; a
-  // finished drawing keeps its screenshot and posts on the version it was drawn on.
-  const keepsDrawing = useRef(false);
-  const keepsSelection = useRef(false);
-  // Before the effect below, in the same commit: it reads what the drawing held before the save.
-  useLayoutEffect(() => {
-    keepsDrawing.current = drawingDirty || !!pendingDrawing;
-    keepsSelection.current = !!pendingDrawing;
-  });
-  useLayoutEffect(() => {
-    invalidateDrawingRequest();
-    cancelCapture();
-    setDrawingBusy(false);
-    setOffer(null);
-    dismissedOffer.current = '';
-    if (!keepsSelection.current) clearSelection();
-    if (keepsDrawing.current) return invalidateDrawingRequest;
-    setDrawingOpen(false);
-    setDrawingError(false);
-    setDrawingViewport(null);
-    setDrawingDirty(false);
-    setPendingDrawing(null);
-    return invalidateDrawingRequest;
-  }, [annotationVersion, claimedFrame, cancelCapture, clearSelection, invalidateDrawingRequest]);
-  const finishDrawing = async (strokes: DrawingStroke[]) => {
-    if (drawingBusy || !drawingViewport) return;
-    if (!htmlAnnotations.isCurrentViewport(drawingViewport)) {
-      setDrawingError(true);
-      return;
-    }
-    const request = ++drawingRequest.current;
-    setDrawingBusy(true);
-    setDrawingError(false);
-    selection.begin();
-    const drawing = await prepareDrawingDraft(strokes, drawingViewport, htmlAnnotations);
-    if (drawingRequest.current !== request) return;
-    setDrawingBusy(false);
-    if (!drawing || !htmlAnnotations.isCurrentViewport(drawingViewport)) {
-      selection.clear();
-      setDrawingError(true);
-      return;
-    }
-    if (!selection.publish(drawing.anchor)) return;
-    setPendingDrawing(drawing);
-    setDrawingOpen(false);
-    defaultPanel.current = scope;
-    setDiscussionOpen(true);
-  };
-  const requestedThread = search.get('thread');
-  const requestedFocus = useRef('');
-  useEffect(() => {
-    const key = `${scope}:${requestedThread ?? ''}`;
-    if (!discussionEnabled || !requestedThread || requestedFocus.current === key) return;
-    requestedFocus.current = key;
-    focusThread(requestedThread);
-  }, [discussionEnabled, scope, requestedThread, focusThread]);
-  const readCommentSnapshot = useCallback(
-    () => readArtifactCommentSnapshot(projectId, artifactId),
-    [projectId, artifactId],
-  );
-  const changeDiscussionOpen = (open: boolean) => {
-    defaultPanel.current = scope;
-    if (!open && selection.status === 'pending') selection.clear();
-    // The panel closes from inside (its close button, Escape): the keyboard returns to the toggle.
-    if (!open && discussionOpen) {
-      const focused = document.activeElement;
-      const inside = !!focused && !!document.getElementById(panelId)?.contains(focused);
-      if (inside || !focused || focused === document.body) focusSoon(commentsButton.current);
-    }
-    setDiscussionOpen(open);
-  };
-  const discussion =
-    artifact && discussionEnabled ? (
-      // The panel's id: the header toggle's `aria-controls`.
-      <div id={panelId} className="flex h-full min-h-0 flex-1 flex-col">
-        <ArtifactDiscussionSidebar
-          projectId={projectId}
-          artifact={artifact}
-          comments={comments}
-          displayThreads={annotationEnabled ? htmlAnnotations.threads : undefined}
-          pinNumbers={annotationEnabled ? htmlAnnotations.pinNumbers : undefined}
-          context={context.data}
-          contextLoading={context.isLoading}
-          contextError={context.isError}
-          onRetryContext={() => void context.refetch()}
-          activity={{
-            items: activity.items,
-            isLoading: activity.isLoading,
-            isError: activity.isError,
-            hasNextPage: activity.hasNextPage,
-            isFetchingNextPage: activity.isFetchingNextPage,
-            olderVersions: activity.olderVersions,
-            onLoadMore: () => void activity.fetchNextPage(),
-            onRetry: () => void activity.refetch(),
-          }}
-          focusedThreadId={focusedThreadId}
-          focusRevision={focusRevision}
-          onFocusThread={focusThread}
-          pendingAnchor={pendingAnchor}
-          pageOpenedAnchor={pageOpenedAnchor}
-          pendingDrawing={pendingDrawing}
-          onClearAnchor={clearCommentSelection}
-          selectionCapture={selection.status}
-          readOnly={!!version}
-          onOpenVersion={openVersion}
-          state={discussionState}
-        />
-      </div>
-    ) : null;
+  const viewUrl = artifact?.version.view_url;
+  const frameKey = artifact ? artifactFrameKey(artifact, artifact.version.id) : null;
+  const openVersion = (next: string | undefined) => setVersion(next);
 
   // A failed read with nothing to show. Only 403 and 404 mean the artifact is gone for this
   // viewer; anything else (a 5xx, the network) is worth another try.
@@ -889,7 +288,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 </Button>
               ) : embedded ? undefined : (
                 <Button size="sm" variant="outline" asChild>
-                  <Link href={`/projects/${projectId}/artifacts`}>{t('back')}</Link>
+                  <Link href={`/workspaces/${projectId}/artifacts`}>{t('back')}</Link>
                 </Button>
               )
             }
@@ -913,33 +312,8 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     ? versions.data?.find((entry) => entry.id === version)?.created_at
     : undefined;
   const people = artifact?.participants;
-  // Pin and Draw: an HTML page the person may comment on, at its current version.
-  const annotationControls = annotationEnabled && context.data?.can_comment === true && !version;
-  const annotationReady = htmlAnnotations.status === 'ready';
-  const pinMode = annotationMode === 'comment' && annotationReady;
-  const notReadyHint =
-    htmlAnnotations.status === 'loading'
-      ? t('discussion.annotationLoading')
-      : t('discussion.annotationUnavailable', { refresh: t('refresh'), actions: t('actions') });
-  const pinHint = annotationReady ? t('discussion.annotationModeHint') : notReadyHint;
-  const drawHint = annotationReady || drawingOpen ? t('discussion.draw') : notReadyHint;
-  const commentsLabel =
-    openComments > 0
-      ? t(discussionOpen ? 'discussion.hidePanelCount' : 'discussion.showPanelCount', {
-          count: openComments,
-        })
-      : t(discussionOpen ? 'discussion.hidePanel' : 'discussion.showPanel');
-  const selectionChip =
-    offer &&
-    annotationReady &&
-    annotationMode === 'text' &&
-    !drawingOpen &&
-    htmlAnnotations.viewport
-      ? offer
-      : null;
 
   return (
-    <ArtifactLiveContext.Provider value={liveContext}>
     <div
       className={
         embedded
@@ -970,7 +344,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
               <>
                 <BreadcrumbItem className="shrink-0">
                   <BreadcrumbLink asChild>
-                    <Link href={`/projects/${projectId}/artifacts`}>{t('title')}</Link>
+                    <Link href={`/workspaces/${projectId}/artifacts`}>{t('title')}</Link>
                   </BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator>
@@ -1060,24 +434,13 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
         ) : null}
         {artifact ? (
           <div className="flex shrink-0 items-center gap-2">
-            {/* Who can open it, for every viewer, as the session header shows its people. While
-                others are here live, the live faces take this place: one row of faces, not two. */}
-            {people && !(liveOn && liveMembers.others.length > 0) ? (
+            {/* Who can open it, for every viewer, as the session header shows its people. */}
+            {people ? (
               <SessionParticipantStack
                 participants={people}
                 label={t('peopleWithAccess', {
                   names: people.participants.map(participantLabel).filter(Boolean).join(', '),
                 })}
-              />
-            ) : null}
-            {/* Who is here now, people and agents, in their live colors. */}
-            {liveOn ? (
-              <ArtifactLiveAvatars
-                members={liveMembers}
-                status={live.status}
-                compact={compact}
-                cursorHidden={cursorHidden}
-                onCursorHiddenChange={changeCursorHidden}
               />
             ) : null}
             {/* Two groups: the artifact's history and Ask AI; then Share and More. */}
@@ -1150,67 +513,6 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 </Button>
               ) : null}
             </ButtonGroup>
-            {/* The discussion group: pin, draw (wide header only), and the comments panel. Pin and
-                Draw stay focusable while the page loads (aria-disabled), so their hint explains why. */}
-            {discussionEnabled ? (
-              <ButtonGroup>
-                {annotationControls && !compact ? (
-                  <Hint label={pinHint} side="bottom">
-                    <Button
-                      ref={pinButton}
-                      size="icon-sm"
-                      variant="secondary"
-                      aria-label={t('discussion.annotationMode')}
-                      aria-pressed={pinMode}
-                      aria-busy={htmlAnnotations.status === 'loading'}
-                      aria-disabled={!annotationReady || undefined}
-                      className={cn(MODE_TOGGLE, 'aria-disabled:opacity-50')}
-                      onClick={() => {
-                        if (annotationReady) togglePinMode();
-                      }}
-                    >
-                      {htmlAnnotations.status === 'loading' ? (
-                        <Loading className="size-3.5" />
-                      ) : (
-                        <MapPinIcon className="size-3.5" aria-hidden />
-                      )}
-                    </Button>
-                  </Hint>
-                ) : null}
-                {annotationControls && !compact ? (
-                  <Hint label={drawHint} side="bottom">
-                    <Button
-                      ref={drawButton}
-                      size="icon-sm"
-                      variant="secondary"
-                      aria-label={t('discussion.draw')}
-                      aria-pressed={drawingOpen}
-                      aria-disabled={(!annotationReady && !drawingOpen) || undefined}
-                      className={cn(MODE_TOGGLE, 'aria-disabled:opacity-50')}
-                      onClick={() => {
-                        if (drawingOpen) requestLeaveDrawing();
-                        else if (annotationReady) startDrawing();
-                      }}
-                    >
-                      <ScribbleIcon className="size-3.5" aria-hidden />
-                    </Button>
-                  </Hint>
-                ) : null}
-                <Hint label={commentsLabel} side="bottom">
-                  <Button
-                    ref={commentsButton}
-                    size="icon-sm"
-                    variant="secondary"
-                    aria-label={commentsLabel}
-                    aria-expanded={discussionOpen}
-                    aria-controls={discussionOpen ? panelId : undefined}
-                    onClick={() => changeDiscussionOpen(!discussionOpen)}
-                  >
-                    <BellMark count={openComments} needsYou={false} icon={ChatCircleIcon} />
-                  </Button>
-                </Hint>
-              </ButtonGroup>
-            ) : null}
             <ButtonGroup>
               {artifact.can_manage ? (
                 compact ? (
@@ -1236,12 +538,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
               ) : null}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button
-                    ref={actionsButton}
-                    size="icon-sm"
-                    variant="secondary"
-                    aria-label={t('actions')}
-                  >
+                  <Button size="icon-sm" variant="secondary" aria-label={t('actions')}>
                     <DotsThreeIcon className="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -1254,27 +551,6 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     focusRename();
                   }}
                 >
-                  {annotationControls && compact ? (
-                    <>
-                      <DropdownMenuCheckboxItem
-                        reverse
-                        checked={pinMode}
-                        disabled={!annotationReady}
-                        onCheckedChange={togglePinMode}
-                      >
-                        <MapPinIcon /> {t('discussion.annotationMode')}
-                      </DropdownMenuCheckboxItem>
-                      <DropdownMenuCheckboxItem
-                        reverse
-                        checked={drawingOpen}
-                        disabled={!annotationReady && !drawingOpen}
-                        onCheckedChange={() => (drawingOpen ? requestLeaveDrawing() : startDrawing())}
-                      >
-                        <ScribbleIcon /> {t('discussion.draw')}
-                      </DropdownMenuCheckboxItem>
-                      <DropdownMenuSeparator />
-                    </>
-                  ) : null}
                   {canEdit && compact ? (
                     <DropdownMenuItem onSelect={() => setAsking(true)}>
                       <SparkleIcon weight="fill" /> {t('askAgent')}
@@ -1290,12 +566,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     </DropdownMenuItem>
                   )}
                   {!isDoc && viewUrl && frameKey ? (
-                    <DropdownMenuItem
-                      onSelect={() => {
-                        htmlAnnotations.reset();
-                        reloadFrame(frameKey, viewUrl);
-                      }}
-                    >
+                    <DropdownMenuItem onSelect={() => reloadFrame(frameKey, viewUrl)}>
                       <ArrowClockwiseIcon /> {t('refresh')}
                     </DropdownMenuItem>
                   ) : null}
@@ -1306,7 +577,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link
-                      href={`/projects/${projectId}/drive?path=${encodeURIComponent(drivePathToParam(folder, null))}`}
+                      href={`/workspaces/${projectId}/drive?path=${encodeURIComponent(drivePathToParam(folder, null))}`}
                     >
                       <FolderOpenIcon /> {t('openInFiles')}
                     </Link>
@@ -1333,10 +604,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                         <PencilSimpleIcon /> {t('rename')}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onSelect={() => void removal.prepare()}
-                      >
+                      <DropdownMenuItem variant="destructive" onSelect={() => setRemoving(true)}>
                         <XCircleIcon /> {t('remove')}
                       </DropdownMenuItem>
                     </>
@@ -1351,7 +619,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
             {/* `data-no-panel`: the session's link interceptor would reopen it in this panel. */}
             <Hint label={t('openFullPage')} side="bottom">
               <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} asChild>
-                <Link href={`/projects/${projectId}/artifacts/${artifactId}`} data-no-panel>
+                <Link href={`/workspaces/${projectId}/artifacts/${artifactId}`} data-no-panel>
                   <ArrowsOutSimpleIcon className="size-3.5" />
                 </Link>
               </Button>
@@ -1413,16 +681,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
         className="h-auto min-h-0 flex-1"
       >
         <SplitSheetMain className="flex">
-          <ArtifactDiscussionLayout
-            open={discussionEnabled && discussionOpen}
-            onOpenChange={changeDiscussionOpen}
-            embedded={embedded}
-            viewerId={viewerId}
-            title={t('discussion.panelTitle')}
-            closeLabel={t('close')}
-            resizeLabel={t('discussion.resizePanel')}
-            discussion={discussion}
-          >
+          <div className="flex min-h-0 min-w-0 flex-1">
             {!artifact ? (
               <div className="grid flex-1 place-items-center">
                 <Loading className="size-4" />
@@ -1443,49 +702,14 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                   editable={canEdit}
                   onStatus={setDocStatus}
                   onReload={reloadDoc}
-                  comments={discussionEnabled ? comments.data : undefined}
-                  commentEntryVersion={context.data?.version.entry_version}
-                  focusedThreadId={focusedThreadId}
-                  focusRevision={focusRevision}
-                  onFocusThread={discussionEnabled ? focusThread : undefined}
-                  canComment={discussionEnabled && context.data?.can_comment === true && !version}
-                  historical={!!version}
-                  onCommentStart={() => {
-                    const finish = selection.begin();
-                    changeDiscussionOpen(true);
-                    return finish;
-                  }}
-                  onComment={(anchor) => {
-                    if (!selection.publish(anchor)) return;
-                    changeDiscussionOpen(true);
-                  }}
-                  readCommentSnapshot={discussionEnabled ? readCommentSnapshot : undefined}
-                  live={docLive}
                   onReady={restoreDocScroll}
-                  coedit={coedit}
                 />
               </div>
             ) : (
               <div className="bg-muted relative min-w-0 flex-1">
-                {annotationEnabled && annotated.isError ? (
-                  <div className="grid h-full place-items-center p-4">
-                    <ErrorState
-                      title={t('discussion.contextLoadError')}
-                      action={
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => void annotated.refetch()}
-                        >
-                          {t('discussion.retry')}
-                        </Button>
-                      }
-                    />
-                  </div>
-                ) : viewUrl ? (
+                {viewUrl ? (
                   <ArtifactFrame
                     ref={frame}
-                    onFrame={setClaimedFrame}
                     frameKey={frameKey!}
                     src={viewUrl}
                     title={artifact.title}
@@ -1496,76 +720,9 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     <Loading className="size-4" />
                   </div>
                 )}
-                {annotationEnabled ? (
-                  <ArtifactDrawingLayer
-                    viewport={htmlAnnotations.viewport}
-                    regions={htmlAnnotations.regions}
-                    threads={htmlAnnotations.threads}
-                    focusedThreadId={focusedThreadId}
-                  />
-                ) : null}
-                {liveOn && annotationEnabled ? (
-                  <ArtifactPageCursors
-                    peers={pagePeers}
-                    viewport={htmlAnnotations.viewport}
-                    pagePoint={htmlAnnotations.pagePoint}
-                  />
-                ) : null}
-                {drawingOpen && drawingViewport ? (
-                  <ArtifactDrawingCanvas
-                    viewport={htmlAnnotations.viewport ?? drawingViewport}
-                    busy={drawingBusy}
-                    stale={htmlAnnotations.viewport !== drawingViewport}
-                    labels={{
-                      canvas: t('discussion.draw'),
-                      pen: t('discussion.drawPen'),
-                      arrow: t('discussion.drawArrow'),
-                      rectangle: t('discussion.drawRectangle'),
-                      black: t('discussion.drawBlack'),
-                      red: t('discussion.drawRed'),
-                      blue: t('discussion.drawBlue'),
-                      undo: t('discussion.drawUndo'),
-                      finish: t('discussion.postComment'),
-                      cancel: t('discussion.cancel'),
-                      pageChanged: t('discussion.drawPageChanged'),
-                      limit: t('discussion.drawLimit'),
-                    }}
-                    onFinish={(strokes) => void finishDrawing(strokes)}
-                    onDraftChange={setDrawingDirty}
-                    onCancel={requestLeaveDrawing}
-                  />
-                ) : null}
-                {drawingOpen && drawingError ? (
-                  // A floating surface over the page: the banner's tint needs an opaque ground.
-                  <div className="bg-popover absolute inset-x-3 top-3 rounded-md shadow-md">
-                    <InfoBanner
-                      tone="warning"
-                      icon={WarningIcon}
-                      title={t('discussion.drawPageChanged')}
-                    />
-                  </div>
-                ) : null}
-                {selectionChip ? (
-                  <ArtifactSelectionChip
-                    ref={chip}
-                    rect={selectionChip.rect}
-                    frame={htmlAnnotations.viewport!}
-                    label={
-                      selectionChip.state === 'candidate'
-                        ? t('discussion.commentSelection')
-                        : t('discussion.selectionTooLong', { max: ARTIFACT_TEXT_QUOTE_MAX })
-                    }
-                    hint={t('discussion.commentSelectionHint')}
-                    onComment={
-                      selectionChip.state === 'candidate'
-                        ? () => commentOn(selectionChip.anchor)
-                        : undefined
-                    }
-                  />
-                ) : null}
               </div>
             )}
-          </ArtifactDiscussionLayout>
+          </div>
         </SplitSheetMain>
         {artifact ? (
           <AskAgentSheet
@@ -1585,56 +742,20 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
         />
       ) : null}
       <ConfirmDialog
-        open={confirmDiscard && drawingOpen}
-        onOpenChange={setConfirmDiscard}
-        title={t('discussion.discardDrawingTitle')}
-        description={t('discussion.discardDrawingHint')}
-        confirmLabel={t('discussion.discardDrawing')}
-        cancelLabel={t('discussion.keepDrawing')}
-        confirmVariant="destructive"
-        onConfirm={() => {
-          setConfirmDiscard(false);
-          leaveDrawing();
-        }}
-      />
-      <ConfirmDialog
-        open={removal.open}
-        onOpenChange={(open) => {
-          if (!open) removal.close();
-        }}
+        open={removing}
+        onOpenChange={setRemoving}
         title={t('removeTitle')}
-        description={
-          <div className="space-y-3">
-            <p>{t('removeHint')}</p>
-            {removal.status === 'loading' ? <Loading className="size-4" /> : null}
-            {removal.status === 'error' ? (
-              <ErrorState
-                size="sm"
-                title={t('discussion.commentsLoadError')}
-                action={
-                  <Button size="sm" variant="outline" onClick={() => void removal.prepare()}>
-                    {t('discussion.retry')}
-                  </Button>
-                }
-              />
-            ) : null}
-            {discussionEnabled && removal.status === 'ready' && removal.count > 0 ? (
-              <p>{t('discussion.unshareComments', { count: removal.count })}</p>
-            ) : null}
-          </div>
-        }
+        description={t('removeHint')}
         confirmLabel={t('remove')}
         confirmVariant="destructive"
         isPending={mutations.remove.isPending}
-        confirmDisabled={removal.status !== 'ready'}
         onConfirm={async () => {
           await mutations.remove.mutateAsync(artifactId);
           successToast(t('removed'));
           if (onClose) onClose();
-          else router.push(`/projects/${projectId}/artifacts`);
+          else router.push(`/workspaces/${projectId}/artifacts`);
         }}
       />
     </div>
-    </ArtifactLiveContext.Provider>
   );
 }

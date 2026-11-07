@@ -3,8 +3,8 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
+import { REPO_ROOT as root, readWorkflow } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const script = resolve(root, 'scripts/ci/announce-dev-live.sh');
 
 const SHA = 'a'.repeat(40);
@@ -258,7 +258,7 @@ describe('announce-dev-live.sh', () => {
   });
 
   it('is wired as the last Deploy Dev job with pull-request write access only', () => {
-    const workflow = readFileSync(resolve(root, '.github/workflows/deploy-dev.yml'), 'utf8');
+    const workflow = readWorkflow('deploy-dev.yml');
     const start = workflow.indexOf('\n  announce-live:\n');
     expect(start).toBeGreaterThan(0);
     const job = workflow.slice(start);

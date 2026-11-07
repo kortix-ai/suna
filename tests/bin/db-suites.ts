@@ -28,21 +28,19 @@ import {
   withDatabase,
   withUser,
 } from '../src/core/db-suites';
+import { parseFlags } from '../src/core/flags';
 import { ensureLocalSupabase, resolveLocalTopology } from '../src/core/local-stack';
 
 const root = resolve(import.meta.dir, '../..');
 const SUITE_TIMEOUT_MS = Number(process.env.KORTIX_DB_SUITE_TIMEOUT_MS || 240_000);
 const TEST_TIMEOUT_MS = process.env.KORTIX_DB_TEST_TIMEOUT_MS || '30000';
 
-function parseArgs(argv: string[]): { filters: string[]; workers: number } {
-  const filters: string[] = [];
-  let workers = Number(process.env.KORTIX_DB_SUITE_WORKERS || 6);
-  for (let index = 0; index < argv.length; index++) {
-    const arg = argv[index]!;
-    if (arg === '--workers') workers = Number(argv[++index]);
-    else if (arg.startsWith('--workers=')) workers = Number(arg.slice('--workers='.length));
-    else filters.push(arg);
-  }
+/** `[path-filter ...] [--workers N]`; any other flag is refused, never read as a filter. */
+function dbSuiteArgs(argv: string[]): { filters: string[]; workers: number } {
+  const { positional: filters, flags, value } = parseFlags(argv);
+  const unknown = Object.keys(flags).filter((name) => name !== 'workers');
+  if (unknown.length > 0) throw new Error(`unknown flag --${unknown.join(', --')}`);
+  const workers = Number(value('workers') ?? (process.env.KORTIX_DB_SUITE_WORKERS || 6));
   if (!Number.isSafeInteger(workers) || workers < 1) {
     throw new Error('--workers must be a positive integer');
   }
@@ -331,7 +329,7 @@ async function runSuite(
 
 async function main(): Promise<number> {
   const startedAt = performance.now();
-  const { filters, workers } = parseArgs(process.argv.slice(2));
+  const { filters, workers } = dbSuiteArgs(process.argv.slice(2));
   const discovered = discoverDbSuites(root);
   const suites = selectDbSuites(discovered, filters);
 

@@ -1,10 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { runtimeSupports } from '@kortix/sdk';
 
-import {
-  LEGACY_PALETTE_HIDDEN,
-  paletteRowPermitted,
-} from '@/features/workspace/command-palette-visibility';
+import { paletteRowPermitted } from '@/features/workspace/command-palette-visibility';
 import { menuRegistry } from '@/lib/menu-registry';
 
 describe('session maintenance command palette actions', () => {
@@ -14,7 +11,6 @@ describe('session maintenance command palette actions', () => {
 
       expect(item?.showIn).toContain('commandPalette');
       expect(item?.requiresSession).toBe(true);
-      expect(LEGACY_PALETTE_HIDDEN.has(id)).toBe(false);
     }
   });
 });
@@ -58,6 +54,6 @@ describe('paletteRowPermitted', () => {
       expect(paletteRowPermitted(byId(id), { ...member, rows: { [id]: true } })).toBe(true);
     }
     expect(paletteRowPermitted(byId('proj-sessions'), member)).toBe(true);
-    expect(paletteRowPermitted(byId('nav-accounts'), member)).toBe(true);
+    expect(paletteRowPermitted(byId('nav-workspace-settings'), member)).toBe(true);
   });
 });

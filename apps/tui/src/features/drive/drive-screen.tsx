@@ -1,5 +1,5 @@
 /**
- * The Drive screen: the project's shared folders, the web's `/projects/:id/drive`.
+ * The Drive screen: the project's shared folders, the web's `/workspaces/:id/drive`.
  *
  * This file is the data half — every read is a `@kortix/sdk/react` hook, every
  * write is a standalone `@kortix/sdk` Drive function (there is no
@@ -10,7 +10,7 @@
  *
  * The page exists only with the project's `drives` flag on, which the web
  * derives from the Volumes switch in Feature flags
- * (`apps/web/src/app/[locale]/(app)/projects/[id]/drive/page.tsx`). Off, this
+ * (`apps/web/src/app/[locale]/(app)/workspaces/[id]/drive/page.tsx`). Off, this
  * screen says so in one line and `o` opens that switch.
  */
 
@@ -358,12 +358,12 @@ export function DriveScreen({
   );
 
   const notice = useMemo<DriveNotice | null>(() => {
-    if (!projectId) return { tone: 'info', message: 'No project selected.', hint: 'Esc back' };
+    if (!projectId) return { tone: 'info', message: 'No workspace open.', hint: 'Esc back' };
     if (availability.isLoading) return { tone: 'loading', message: 'checking Drive' };
     if (!availability.enabled) {
       return {
         tone: 'info',
-        message: 'Drive is off for this project. Turn on Volumes in Feature flags.',
+        message: 'Drive is off for this workspace. Turn on Volumes in Feature flags.',
         hint: 'o open Feature flags in the web app · Esc back',
       };
     }

@@ -126,6 +126,7 @@ export function buildProjectsLevelExportFilters(sort: ProjectCostSort): { sort: 
 
 const UNASSIGNED_LABEL = 'Unassigned';
 const UNASSIGNED_TOOLTIP_COPY = 'Spend recorded against sessions that no longer exist.';
+const MOVED_TOOLTIP_COPY = 'This project moved to another workspace. Its spend from before the move stays here.';
 
 // Rounding-noise guard: half a hundredth of a cent. Anything at or below
 // this is treated as "fully attributed" and never surfaced as a row.
@@ -141,6 +142,8 @@ export interface ProjectTableRow {
   storage_cost?: number;
   total_cost: number;
   last_activity_at: string | null;
+  /** The project now lives in another workspace: its spend from before the move stays here. */
+  moved?: boolean;
 }
 
 /**
@@ -224,7 +227,8 @@ export function buildProjectTableRows(
 export function isProjectRowClickable(
   row: ProjectTableRow,
 ): row is ProjectTableRow & { project_id: string } {
-  return row.project_id !== null;
+  // A moved project is another workspace's now: there is nothing to open here.
+  return row.project_id !== null && !row.moved;
 }
 
 /**
@@ -483,6 +487,8 @@ function ProjectRow({
   onSelectProject: (projectId: string) => void;
 }) {
   const clickable = isProjectRowClickable(row);
+  // A moved project keeps its breakdown: the money was spent here.
+  const hasBreakdown = row.project_id !== null;
 
   // The unassigned row has no session/LLM/compute breakdown to show — the
   // API folds it into the account total without a split (see the SDK
@@ -525,16 +531,16 @@ function ProjectRow({
         </p>
       </TableCell>
       <TableCell className="text-right font-mono tabular-nums">
-        {clickable ? row.session_count.toLocaleString('en-US') : '—'}
+        {hasBreakdown ? row.session_count.toLocaleString('en-US') : '—'}
       </TableCell>
       <TableCell className="text-right font-mono tabular-nums">
-        {clickable ? formatSessionCostCredits(row.llm_cost) : '—'}
+        {hasBreakdown ? formatSessionCostCredits(row.llm_cost) : '—'}
       </TableCell>
       <TableCell className="text-right font-mono tabular-nums">
-        {clickable ? formatSessionCostCredits(row.compute_cost) : '—'}
+        {hasBreakdown ? formatSessionCostCredits(row.compute_cost) : '—'}
       </TableCell>
       <TableCell className="text-right font-mono tabular-nums">
-        {clickable ? formatSessionCostCredits(row.storage_cost ?? 0) : '—'}
+        {hasBreakdown ? formatSessionCostCredits(row.storage_cost ?? 0) : '—'}
       </TableCell>
       <TableCell className="text-right font-mono font-medium tabular-nums">
         {formatSessionCostCredits(row.total_cost)}
@@ -543,9 +549,10 @@ function ProjectRow({
   );
 
   if (!clickable) {
+    const tooltip = row.moved ? MOVED_TOOLTIP_COPY : UNASSIGNED_TOOLTIP_COPY;
     return (
-      <Hint label={UNASSIGNED_TOOLTIP_COPY} side="top">
-        <TableRow aria-label={UNASSIGNED_TOOLTIP_COPY} className="text-muted-foreground">
+      <Hint label={tooltip} side="top">
+        <TableRow aria-label={tooltip} className="text-muted-foreground">
           {cells}
         </TableRow>
       </Hint>

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { Children, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { resolveSessionDriveFile } from '../files/session-drive-files';
 import { ClickablePath, resolveOpenablePath, wrapChildrenWithPaths } from './clickable-path';
 
 // ─── Agents write workspace-relative paths far more often than absolute ones.
@@ -35,6 +36,16 @@ describe('resolveOpenablePath', () => {
   it('returns null for an empty or whitespace-only path rather than /workspace', () => {
     expect(resolveOpenablePath('')).toBeNull();
     expect(resolveOpenablePath('   ')).toBeNull();
+  });
+
+  // A drive mount lives at `/drives/<mount>` in the box, outside /workspace.
+  // Anchored as `/workspace/drives/…`, the click missed the drive reader and
+  // the viewer asked the sandbox for a file that is not there.
+  it('keeps a session drive path, so the drive reader finds its mount', () => {
+    const mounts = [{ driveId: 'drv_1', mountPath: '/drives/me', subdir: '/Users/u1' }];
+    const resolved = resolveOpenablePath('/drives/me/Team photos/avatar.jpg');
+    expect(resolved).toBe('/drives/me/Team photos/avatar.jpg');
+    expect(resolveSessionDriveFile(resolved, mounts)).toEqual({ driveId: 'drv_1', path: '/Users/u1/Team photos/avatar.jpg' });
   });
 });
 

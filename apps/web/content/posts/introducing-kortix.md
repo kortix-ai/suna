@@ -27,7 +27,7 @@ In Kortix, a **project** is one git repository. The repo \*is\* the project: its
 
 ## kortix.yaml: the single source of truth
 
-At the root of every project sits one file: `kortix.yaml`. Any repo with a valid manifest at its root \*is\* a Kortix project: that file defines what the project is, what it’s allowed to do, and how it runs. Here’s a real one:
+At the root of every project sits one file: `kortix.yaml`. Any repo with a valid manifest at its root \*is\* a Kortix workspace: that file defines what the project is, what it’s allowed to do, and how it runs. Here’s a real one:
 
 ```
 # kortix.yaml — the one file that defines this project.

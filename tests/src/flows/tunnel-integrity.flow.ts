@@ -15,7 +15,7 @@ flow('TUN-6', {
     'POST /v1/tunnel/device-auth', 'GET /v1/tunnel/device-auth/:code/status',
     'POST /v1/tunnel/device-auth/:code/approve', 'GET /v1/tunnel/connections/:tunnelId',
     'DELETE /v1/tunnel/connections/:tunnelId', 'POST /v1/tunnel/rpc/:tunnelId',
-    'POST /v1/connectors/projects/:projectId/call',
+    'POST /v1/connectors/workspaces/:projectId/call',
   ],
 }, async ctx => {
   const root = await mkdtemp(join(tmpdir(), 'ke2e-tunnel-integrity-'));
@@ -79,7 +79,7 @@ flow('TUN-6', {
       assert.deepEqual(await readFile(path), bytes);
     });
     await ctx.step("the project's computer account preserves the XLSX payload and returns its persisted digest", async () => {
-      const result = await client.post('/v1/connectors/projects/:projectId/call', {
+      const result = await client.post('/v1/connectors/workspaces/:projectId/call', {
         connector: 'computer', action: 'fs.write', args: { path, content: bytes.toString('base64'), encoding: 'base64', sha256 },
       }, { params: { projectId: project.id } });
       result.status(200).body().has('$.ok', true).has('$.data.sha256', sha256).has('$.data.size', bytes.length);

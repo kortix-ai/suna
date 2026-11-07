@@ -28,9 +28,10 @@ describe('turn stop strings', () => {
   test('English reads as the turn and the toast show it', async () => {
     const en = await instanceFor('en');
     expect(en.t('sessions.stoppedBy', { name: 'Ada' })).toBe('Stopped by Ada');
-    // The API's 403 `not_turn_prompter` message, word for word.
+    // The API's 403 `not_turn_prompter` message, with "workspace" for the
+    // container (Workspaces: "project" leaves the UI).
     expect(en.t('sessions.stopNotAllowed')).toBe(
-      'Only the member who started this run, the session owner or a project manager can stop it.',
+      'Only the member who started this run, the session owner or a workspace manager can stop it.',
     );
   });
 

@@ -2,7 +2,7 @@ export interface Command {
   name: string;
   args?: string;
   blurb: string;
-  /** The project feature flag the command exists behind (see feature-flags.ts). */
+  /** The workspace feature flag the command exists behind (see feature-flags.ts). */
   featureFlag?: string;
 }
 
@@ -17,11 +17,13 @@ export interface CommandTier {
   sections: readonly CommandSection[];
 }
 
-// The help layout leads with the navigable hierarchy — Host › Account ›
-// Project › Session, top-down, each with its `use` selection verb — then the
-// feature bands that operate ON the linked project, then the CLI tool itself.
-// You sign into a HOST, pick an ACCOUNT within it, pick a PROJECT within that,
-// and open SESSIONS in the project. Order + membership here IS the layout.
+// The help layout leads with the navigable hierarchy — Host › Workspace ›
+// Session, top-down, each with its `use` selection verb — then the feature
+// bands that operate ON the linked workspace, then the CLI tool itself. You
+// sign into a HOST, pick a WORKSPACE within it, and open SESSIONS in the
+// workspace. A workspace is one company's Kortix: its people, billing, agents
+// and config repo (one account + its project on the wire). `projects` and
+// `accounts` stay routed for scripts. Order + membership here IS the layout.
 export const TIERS: readonly CommandTier[] = [
   // Deliberately the first band on the screen. An agent in any harness that
   // holds only this binary and a token has to be able to find, unprompted, the
@@ -44,7 +46,7 @@ export const TIERS: readonly CommandTier[] = [
     ],
   },
   {
-    label: 'Where you are  (host › account › project › session)',
+    label: 'Where you are  (host › workspace › session)',
     sections: [
       {
         title: 'Sign in — per host',
@@ -56,10 +58,10 @@ export const TIERS: readonly CommandTier[] = [
           },
           { name: 'login', blurb: 'Sign in to the active host (shortcut for `hosts login`)' },
           { name: 'logout', blurb: 'Sign out of the active host (shortcut for `hosts logout`)' },
-          { name: 'whoami', blurb: 'Inspect the active host — signed-in user + account' },
+          { name: 'whoami', blurb: 'Inspect the active host — signed-in user + workspace' },
           {
             name: 'token',
-            blurb: 'Inspect the active token context (project/session/agent grants)',
+            blurb: 'Inspect the active token context (workspace/session/agent grants)',
           },
           {
             name: 'self-host',
@@ -69,17 +71,17 @@ export const TIERS: readonly CommandTier[] = [
         ],
       },
       {
-        title: 'Account — within the host',
+        title: 'Workspace — within the host',
         commands: [
           {
-            name: 'accounts',
+            name: 'workspaces',
             args: '<subcommand>',
-            blurb: 'Switch the active account (use / ls / current)',
+            blurb: 'Create, list, switch, link, open, rename and configure workspaces',
           },
           {
             name: 'members',
             args: '<subcommand>',
-            blurb: 'Invite, remove and re-role the people in the account',
+            blurb: 'Invite, remove and re-role the people in the workspace',
           },
           {
             name: 'groups',
@@ -87,39 +89,34 @@ export const TIERS: readonly CommandTier[] = [
             blurb: 'Group people so a role follows a team, not a person',
           },
           {
+            name: 'keys',
+            args: '<subcommand>',
+            blurb: 'API keys that act as you, an agent or a bot',
+          },
+          {
             name: 'tokens',
             args: '<subcommand>',
-            blurb: 'Mint and revoke API keys + service accounts for this account',
+            blurb: 'Older key commands: personal keys, service accounts, connected apps',
           },
           {
             name: 'billing',
             args: '<subcommand>',
-            blurb: 'Read plan, credits, transactions and per-project/session costs',
+            blurb: 'Read plan, credits, transactions and per-session costs',
           },
-        ],
-      },
-      {
-        title: 'Project — within the account',
-        commands: [
           {
             name: 'init',
-            args: '[project-name]',
-            blurb: 'Start a new Kortix project (a fresh standalone directory)',
-          },
-          {
-            name: 'projects',
-            args: '<subcommand>',
-            blurb: 'List, link, use, open, rename and configure projects (features, cli-tokens)',
+            args: '[name]',
+            blurb: "Scaffold a workspace's config repo in a fresh directory",
           },
         ],
       },
       {
-        title: 'Session — within the project',
+        title: 'Session — within the workspace',
         commands: [
           {
             name: 'sessions',
             args: '<subcommand>',
-            blurb: 'Run, share, queue, inspect, stop and delete project sessions',
+            blurb: 'Run, share, queue, inspect, stop and delete workspace sessions',
           },
           {
             name: 'chat',
@@ -142,17 +139,17 @@ export const TIERS: readonly CommandTier[] = [
     ],
   },
   {
-    label: 'The linked project',
+    label: 'The linked workspace',
     sections: [
       {
         title: 'Author & ship',
         commands: [
-          { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
-          { name: 'validate', blurb: "Statically validate this project's kortix.yaml" },
+          { name: 'ship', blurb: 'Create the cloud workspace (first run) + push your code' },
+          { name: 'validate', blurb: "Statically validate this workspace's kortix.yaml" },
           {
             name: 'doctor',
             args: '[--no-session]',
-            blurb: 'End-to-end health check: auth, project, session, agent reply',
+            blurb: 'End-to-end health check: auth, workspace, session, agent reply',
           },
           { name: 'schema', args: '[--url]', blurb: 'Print the canonical kortix.yaml JSON Schema' },
         ],
@@ -168,12 +165,12 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'tools',
             args: '<subcommand>',
-            blurb: "List the project's tools (ls); copy a Kortix tool to change it (eject)",
+            blurb: "List the workspace's tools (ls); copy a Kortix tool to change it (eject)",
           },
           {
             name: 'models',
             args: '<subcommand>',
-            blurb: 'Choose which models this project offers, and its default model',
+            blurb: 'Choose which models this workspace offers, and its default model',
           },
           {
             name: 'gateway',
@@ -188,17 +185,17 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'secrets',
             args: '<subcommand>',
-            blurb: 'Manage project secrets (project-scoped)',
+            blurb: 'Manage workspace secrets',
           },
           {
             name: 'providers',
             args: '<subcommand>',
-            blurb: 'Connect LLM providers (API key or OAuth) for this project',
+            blurb: 'Connect LLM providers (API key or OAuth) for this workspace',
           },
           {
             name: 'env',
             args: '<subcommand>',
-            blurb: 'Pull/push project secrets as a dotenv file',
+            blurb: 'Pull/push workspace secrets as a dotenv file',
           },
           {
             name: 'channels',
@@ -218,7 +215,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'marketplace',
             args: '<subcommand>',
-            blurb: 'Search, show, install, and uninstall project marketplace skills',
+            blurb: 'Search, show, install, and uninstall workspace marketplace skills',
           },
         ],
       },
@@ -233,18 +230,18 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'drive',
             args: '<subcommand>',
-            blurb: "The project's Files: list, read, upload, move, delete, share folders",
+            blurb: "The workspace's Files: list, read, upload, move, delete, share folders",
           },
           {
             name: 'search',
             args: '<query>',
-            blurb: "Search the project's Files by name and text, beyond your session's mounts",
+            blurb: "Search the workspace's Files by name and text, beyond your session's mounts",
           },
           { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
           {
             name: 'review',
             args: '<subcommand>',
-            blurb: "The project's review inbox: approve, reject, request changes",
+            blurb: "The workspace's review inbox: approve, reject, request changes",
           },
           {
             name: 'triggers',
@@ -271,8 +268,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'artifacts',
             args: '<subcommand>',
-            blurb: 'Share and review docs and pages: publish, comments, reply, activity',
-            featureFlag: 'artifacts',
+            blurb: 'Share docs and pages: publish, ls, share, versions, pull',
           },
           {
             name: 'spaces',
@@ -308,7 +304,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'audit',
             args: '<subcommand>',
-            blurb: 'Read the account audit trail (who did what, when)',
+            blurb: 'Read the workspace audit trail (who did what, when)',
           },
           {
             name: 'grants',

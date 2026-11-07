@@ -51,6 +51,8 @@ export function ModelsTabRow({
   const tAccess = useTranslations('modelAccess');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tList = useTranslations('modelsList');
+  // The workspace default is the project default (Workspaces, PR 1).
+  const tDefault = useTranslations('workspaces.models');
   const isManaged =
     group.providerID === 'kortix' && !model.modelID.includes('/');
   const enabled = !!model.enabled;
@@ -113,7 +115,7 @@ export function ModelsTabRow({
           {isProjectDefault && (
             <Hint label={tI18nComplete.raw('text68cde35131cf')} side="bottom">
               <Badge variant="info" size="sm" className={STATUS_PILL}>
-                {tI18nComplete.raw('text5e06ae1125b5')}
+                {tDefault('yourDefault')}
               </Badge>
             </Hint>
           )}
@@ -203,19 +205,9 @@ export function ModelsTabRow({
                 void defaults.setProjectDefault(wireToModelKey(wireId))
               }
             >
-              <Folder className="size-3.5" />
-              {tI18nComplete.raw('text246d55bd2682')}
-              {isProjectDefault && <Check className="ml-auto size-3.5" />}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!enabled || isAccountDefault || defaults.isUpdating}
-              onSelect={() =>
-                void defaults.setAccountDefault(wireToModelKey(wireId))
-              }
-            >
               <Star className="size-3.5" />
-              {tI18nComplete.raw('textc74a21a56d79')}
-              {isAccountDefault && <Check className="ml-auto size-3.5" />}
+              {tDefault('setWorkspaceDefault')}
+              {isProjectDefault && <Check className="ml-auto size-3.5" />}
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => void navigator.clipboard?.writeText(wireId)}

@@ -227,7 +227,7 @@ export default function AccountDeletionScreen() {
         <SettingsGroup title={t('accountDeletion.whatWillBeDeleted', 'What gets deleted')}>
           <SettingsRow
             icon={FolderClosed}
-            label={t('accountDeletion.projectsAndSessions', 'Projects and sessions')}
+            label={t('accountDeletion.workspacesAndSessions', 'Workspaces and sessions')}
           />
           <SettingsRow
             icon={KeyRound}
@@ -338,11 +338,11 @@ export default function AccountDeletionScreen() {
                     (immediate
                       ? t(
                           'accountDeletion.finalDescriptionNow',
-                          'Your projects, sessions, and credentials are deleted now. Billing records are kept as long as the law requires. This cannot be undone.'
+                          'Your workspaces, sessions, and credentials are deleted now. Billing records are kept as long as the law requires. This cannot be undone.'
                         )
                       : t(
                           'accountDeletion.finalDescriptionScheduled',
-                          'Your projects, sessions, and credentials are deleted in 14 days. Billing records are kept as long as the law requires. You can cancel before then.'
+                          'Your workspaces, sessions, and credentials are deleted in 14 days. Billing records are kept as long as the law requires. You can cancel before then.'
                         ))}
                 </AlertDialogDescription>
               </AlertDialogHeader>

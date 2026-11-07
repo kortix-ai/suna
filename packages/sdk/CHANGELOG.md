@@ -5,6 +5,55 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added: the Workspace surface (additive; nothing removed)
+A workspace is one account and its one project, like a Slack workspace. `workspace_id` is the
+project id. New names:
+- Types `Workspace`, `WorkspaceSummary`, `WorkspaceRole` (`owner | admin | manager | member`),
+  `WorkspaceSettings`, `WorkspaceUpdateInput`, `WorkspaceMember`, `WorkspaceInvitation`,
+  `InviteWorkspaceMemberInput`, `CreateWorkspaceTokenInput`, `WorkspaceProjectList`,
+  `WorkspaceHandle`.
+- `listWorkspaces`, `getWorkspace`, `updateWorkspace`; members (`listWorkspaceMembers`,
+  `inviteWorkspaceMember`, `updateWorkspaceMemberRole`, `removeWorkspaceMember`,
+  `listWorkspaceInvites`, `cancelWorkspaceInvite`, `resendWorkspaceInvite`, `leaveWorkspace`);
+  tokens (`listWorkspaceTokens`, `createWorkspaceToken`, `revokeWorkspaceToken`); billing
+  (`getWorkspaceBillingState`); IAM (`listWorkspaceAssignments`, `createWorkspaceAssignment`,
+  `revokeWorkspaceAssignment`, `listWorkspaceRoles`, `listWorkspaceGroups`,
+  `probeWorkspacePermission`, `probeWorkspacePermissions`); `resolveWorkspaceAccountId`; pure
+  helpers `buildWorkspaceSummaries`, `compareWorkspacesByRecent`, `workspaceFromProject`,
+  `workspaceRole`.
+- Facade `kortix.workspaces.{list,get,update,create}` and `kortix.workspace(id)`.
+- `@kortix/sdk/react`: `useWorkspaces`, `useWorkspace`, `workspacesState`,
+  `workspaceQueryOptions`; key `qk.project.workspace(id)`.
+- Optional `workspace_id` on `KortixProject`, `ProjectSession`, `KortixAccount`,
+  `AccountDetail`, `MyAccountInvite`.
+- Every `Workspace*` function calls the canonical `/v1/workspaces/:workspaceId/*` route with
+  the workspace id: one request per call, no account lookup first. `getWorkspace` reads the
+  `workspace` settings block and the caller's `account_role` from `GET /v1/workspaces/:id`.
+  `getWorkspaceBillingState` passes the workspace id as `account_id`. These functions need an
+  API that serves `/v1/workspaces` (this release); the older `Project*`/`Account*` functions
+  keep calling `/v1/projects` and `/v1/accounts`, which stay permanently.
+
+### Deprecated (kept permanently)
+`updateProject`, `updateAccountName`, `listAccountMembers`, `inviteAccountMember`,
+`removeAccountMember`, `updateAccountMemberRole`, `listAccountInvites`, `cancelAccountInvite`,
+`resendAccountInvite`, `leaveAccount`, `listAccountTokens`, `createAccountToken` and
+`revokeAccountToken` name their workspace equivalent. They are never removed.
+
+### Changed (notifications are on for every project)
+- The `notification_center` project flag graduated (2026-11-06): every project has the
+  notification inbox, push, session watch and alerts. `FeatureFlagKey` keeps
+  `notification_center`, marked `@deprecated`; `FEATURE_FLAG_KEYS` no longer lists it, and
+  `useFeatureFlag(projectId, 'notification_center')` reports `enabled: true`.
+  `KortixProject.experimental.notification_center` is optional now, like `meta_agent`.
+  Removed in the next major.
+- `useSession({ presencePageExit })` defaults to `true`: a closing tab ends its presence lease
+  at once, so a notification that arrives a second later reaches the person. Pass `false` to
+  keep the lease until it expires.
+- `DEFAULT_NOTIFICATION_PREFERENCES`: email is off by default for `turn_done`, `turn_error`,
+  `question`, `permission`, `shared`, `automation_recovered` and `capture_device_recovered`;
+  a person turns it on per kind. `automation_failed`, `capture_device_down` and
+  `artifact_comment` keep email on.
+
 ### Added (harness-neutral name)
 - `harnessVersion` on the runtime connection store (`useSandboxConnectionStore`,
   `useRuntimeConnectionStore`): the session runtime's harness version from `/kortix/health`,

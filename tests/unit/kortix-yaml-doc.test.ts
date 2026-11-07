@@ -1,9 +1,10 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cell } from '../../apps/web/scripts/docs-generated-region.mjs';
+import { REPO_ROOT, readRepoFile } from '../src/fixtures/repo';
 
 // The kortix.yaml key tables in apps/web/content/docs/developers.mdx (the
 // generated:kortix-yaml region) are generated from the JSON Schema. A key or
@@ -12,7 +13,6 @@ import { cell } from '../../apps/web/scripts/docs-generated-region.mjs';
 //   (cd packages/manifest-schema && bun run generate:schema)
 //   bun apps/web/scripts/generate-kortix-yaml-doc.mjs
 
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const DOC = 'apps/web/content/docs/developers.mdx';
 const SCRIPT = 'apps/web/scripts/generate-kortix-yaml-doc.mjs';
 
@@ -34,7 +34,7 @@ describe('kortix.yaml reference doc', () => {
     const dir = mkdtempSync(join(tmpdir(), 'kortix-yaml-doc-'));
     try {
       const page = join(dir, 'developers.mdx');
-      const fresh = readFileSync(join(REPO_ROOT, DOC), 'utf8');
+      const fresh = readRepoFile(DOC);
       writeFileSync(page, fresh);
       expect(checkDoc(page).status).toBe(0);
 

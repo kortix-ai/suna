@@ -159,7 +159,7 @@ export function TriggersTabView({
         <Field label="Type" value={current.type} />
         <Field label="When" value={current.when} />
         <Field label="Agent" value={current.agent} />
-        <Field label="Model" value={current.model ?? 'project default'} />
+        <Field label="Model" value={current.model ?? 'workspace default'} />
         <Field label="Sessions" value={current.sessionMode} />
         <Field
           label="Last run"
@@ -190,7 +190,7 @@ export function TriggersTabView({
   return (
     <box flexDirection="column" width={width}>
       {paused ? (
-        <text fg={theme.busy}>Triggers are paused for this project — nothing runs on its own.</text>
+        <text fg={theme.busy}>Triggers are paused for this workspace. Nothing runs on its own.</text>
       ) : null}
       {parseErrors.map((entry) => (
         <text key={entry.slug} fg={theme.danger}>{`${entry.slug}: ${entry.error}`}</text>

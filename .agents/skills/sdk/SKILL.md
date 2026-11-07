@@ -203,15 +203,26 @@ that come out the other side are unchanged.
 
 ### If you must rename, alias — never replace
 
-Keep the old name working, mark it, and delete it only on a major:
+Keep the old name working and mark it. The old name stays **permanently**
+(Marko, 2026-11-05: "all compatibility & backwards comp should stay"). A rename
+never schedules a deletion:
 
 ```ts
-// core/rest/projects.ts
-export interface Project { /* … */ }
+// core/rest/projects-client/workspaces.ts
+export async function listWorkspaceMembers(workspaceId: string) { /* … */ }
 
-/** @deprecated Renamed to `Project`. Removed in the next major. */
-export type KortixProject = Project;
+// core/rest/projects-client/accounts.ts
+/** @deprecated Use `listWorkspaceMembers(workspaceId)`. Kept permanently. */
+export async function listAccountMembers(accountId: string) { /* … */ }
 ```
+
+- The tag names the replacement and ends with `Kept permanently.`
+- Deprecate only where the new name is an exact equivalent. `getProject` stays
+  current: it is one database read, and `getWorkspace` also reads the settings.
+- `src/deprecated-exports.test.ts` (`WORKSPACE_EQUIVALENTS`) asserts each tag.
+- `Removed in the next major.` survives only on the older removal list in that
+  test (`TRANSCRIPT_SHARE_EXPORTS`, the retired billing routes): names whose
+  server route no longer exists. Never write it on a new tag.
 
 A rename without an alias is not a refactor, it is a breaking change wearing a
 refactor's clothes.
@@ -249,6 +260,16 @@ Renames are expensive, so front-load the thinking. Conventions for this package:
 > `KortixMasterProject`, with `export type KortixProject = KortixMasterProject`
 > retained as a `@deprecated` alias in `core/runtime/kortix-master.ts` so no
 > importer breaks. This is the alias-never-replace rule applied to itself.
+
+> **`Workspace` means two things in this package. Keep them apart.**
+>
+> | Name | Means |
+> |---|---|
+> | `Workspace`, `WorkspaceSummary`, `WorkspaceRole`, `listWorkspaces`, `getWorkspace`, `updateWorkspace`, `kortix.workspace(id)`, `useWorkspaces`, `useWorkspace`, `*Workspace{Members,Invites,Tokens,Assignments,…}` | the Kortix workspace: one account and its one project. `workspace_id` = `project_id`. Module: `core/rest/projects-client/workspaces.ts` |
+> | `RuntimeWorkspace*`, `useRuntimeWorkspace`, `./workspace-search`, `toWorkspaceRelative`, `normalizeWorkspacePath`, `core/files` | the session sandbox's `/workspace` directory |
+> | `CaptureWorkspace`, `getCaptureWorkspace` | a Kortix Capture tenant |
+>
+> A new entity name never reuses a sandbox-file name, and the reverse.
 
 ### The guardrail that actually enforces this
 

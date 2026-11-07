@@ -67,13 +67,13 @@ const fakeFetch: KortixFetch = async (input, init) => {
     delete identityFor[form!.token.replace('kortix_ort_', 'kortix_oat_')];
     return Response.json({ revoked: true });
   }
-  if (url.pathname === '/v1/accounts/me') {
+  if (url.pathname === '/v1/me') {
     const token = req.headers.get('authorization')?.slice(7) ?? '';
     const id = identityFor[token];
     if (!id) return Response.json({ error: 'Invalid OAuth access token' }, { status: 401 });
     return Response.json({ ...id, token_context: { auth_type: 'oauth' }, accounts: [{ account_id: 'acct-1', slug: 'acct1', name: 'Acme', role: 'member' }] });
   }
-  if (url.pathname === '/v1/projects') {
+  if (url.pathname === '/v1/projects' || url.pathname === '/v1/workspaces') {
     const token = req.headers.get('authorization')?.slice(7) ?? '';
     if (!identityFor[token]) return Response.json({ error: 'unauthenticated' }, { status: 401 });
     return Response.json([{ project_id: 'p-1', name: 'Dashboards' }]);
@@ -213,11 +213,11 @@ describe('createKortixAuth — the sign-in flow', () => {
     expect(projects as unknown).toEqual([{ project_id: 'p-1', name: 'Dashboards' }]);
     expect(calls.at(-1)!.auth).toBe('Bearer kortix_oat_1');
 
-    const proxied = await auth.handler(req('/api/kortix/auth/proxy/projects?limit=5', { headers: { authorization: 'Bearer kortix-session' } }));
+    const proxied = await auth.handler(req('/api/kortix/auth/proxy/workspaces?limit=5', { headers: { authorization: 'Bearer kortix-session' } }));
     expect(proxied.status).toBe(200);
     expect(await proxied.json()).toEqual([{ project_id: 'p-1', name: 'Dashboards' }]);
     const forwarded = calls.at(-1)!;
-    expect(forwarded.url).toBe(`${BACKEND}/projects?limit=5`);
+    expect(forwarded.url).toBe(`${BACKEND}/workspaces?limit=5`);
     expect(forwarded.auth).toBe('Bearer kortix_oat_1');
   });
 
@@ -226,7 +226,7 @@ describe('createKortixAuth — the sign-in flow', () => {
     const req = new Request(`${APP}/reports/weekly?x=1`);
     expect(await auth.viewer(req)).toBeNull();
     expect((await auth.handler(new Request(`${APP}/api/kortix/auth/me`))).status).toBe(401);
-    expect((await auth.handler(new Request(`${APP}/api/kortix/auth/proxy/projects`))).status).toBe(401);
+    expect((await auth.handler(new Request(`${APP}/api/kortix/auth/proxy/workspaces`))).status).toBe(401);
     await expect(auth.kortix(req)).rejects.toBeInstanceOf(KortixAuthError);
     const gate = await auth.requireViewer(req);
     expect(gate.viewer).toBeUndefined();

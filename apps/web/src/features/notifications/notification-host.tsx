@@ -2,27 +2,19 @@
 
 /**
  * Notification behavior that does not depend on the page (KRTX-1742). Mounted
- * once by `RootQueryHosts`; does nothing while signed out.
- *
- * Always, while signed in. None of it sends a request for a browser that
- * never subscribed:
- *
- * - When "Enable notifications" is off, or the browser blocks it, this
- *   browser's Web Push subscription is removed. A subscription made on one
- *   project must end on any page once the person says no.
- * - When it is on, this tab reads whether the browser holds a subscription, so
- *   its copy of a flag-on project's notification goes to the service worker.
- * - The MFA step-up registers an existing subscription again, at aal2.
- * - Sign-out or a change of person clears the Push mirror (2. below).
- *
- * Only while notification_center or both Artifact comment flags are on in the project in the URL
- * (`useNotificationHostGate`; on a page without one: for any cached project):
+ * once by `RootQueryHosts`; does nothing while signed out. While signed in,
+ * on every page:
  *
  * 1. Web Push: this browser subscribes while "Enable notifications" is on and
  *    the browser allows it, once per person and page load. The switch never
- *    waits for it.
+ *    waits for it. When the switch is off, or the browser blocks it, the
+ *    subscription is removed. Until the subscription answers, this tab reads
+ *    from the browser whether one exists, so its copy of a notification goes
+ *    to the service worker. The MFA step-up registers an existing
+ *    subscription again, at aal2.
  * 2. The Push choice per kind, mirrored into `web-notifications.ts`, so an
- *    in-page OS notification obeys the same choice as the phone.
+ *    in-page OS notification obeys the same choice as the phone. Sign-out or
+ *    a change of person clears the mirror.
  * 3. Arrivals: a new unread row toasts, unless it is about the session on screen
  *    or another project. It becomes an OS notification instead where nothing
  *    else would deliver it (the desktop app, a browser without Web Push).
@@ -30,9 +22,8 @@
  * 4. `?notification=<id>` on any page, or the service worker's message for a
  *    clicked notification, marks that row read.
  *
- * Leaving a flag-on project for a flag-off one unmounts that part and keeps
- * the subscription and the Push mirror: the other project's pushes and
- * relayed completions still arrive and obey the person's choice.
+ * The inbox this host polls is the one the sidebar's Inbox row and the Inbox
+ * page read: one cache entry, one poll.
  */
 
 import { useAuth } from '@/features/providers/auth-provider';
@@ -45,12 +36,12 @@ import {
   setServerPushPreferences,
   showInAppNotification,
 } from '@kortix/ui/internal/lib/web-notifications';
-import { projectIdFromPathname } from '@kortix/ui/internal/stores/project-switch-store';
+import { canonicalAppPath } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { useTurnAttentionStore } from '@kortix/ui/internal/stores/turn-attention-store';
 import { useWebNotificationStore } from '@kortix/ui/internal/stores/web-notification-store';
 import type { InboxNotification } from '@kortix/sdk';
 import { useNotificationInbox, useNotificationPreferences } from '@kortix/sdk/react';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 import {
   NOTIFICATION_PARAM,
@@ -64,7 +55,6 @@ import {
   webNotificationType,
   withoutNotificationParam,
 } from '@kortix/ui/internal/notifications/notification-rows';
-import { useNotificationHostGate } from '@kortix/ui/internal/hooks/use-notification-center';
 import {
   detectWebPush,
   ensureWebPush,
@@ -79,7 +69,6 @@ import {
 const HIDDEN_POLL_MS = 60_000;
 
 const ARRIVAL_LABEL = {
-  artifact: 'arrival.openArtifact',
   session: 'arrival.openSession',
   reminders: 'arrival.openReminders',
   triggers: 'arrival.openTriggers',
@@ -93,20 +82,32 @@ export function NotificationHost() {
 
 function SignedInNotificationHost({ userId }: { userId: string }) {
   const { supabase } = useAuth();
-  const notificationCenter = useNotificationHostGate(projectIdFromPathname(usePathname()));
+  const t = useTranslations('notifications');
   const enabled = useWebNotificationStore((s) => s.preferences.enabled);
   const permission = useWebNotificationStore((s) => s.permission);
   const search = useSearchParams();
+  const inbox = useNotificationInbox({ userId });
+  const { data: preferences } = useNotificationPreferences({ userId });
+  // The latest `markRead`, for callbacks that outlive this render.
+  const markRead = useRef(inbox.markRead);
+  useEffect(() => {
+    markRead.current = inbox.markRead;
+  });
 
-  // `?thread=` opens a session with no pathname change. This part mounts with
-  // every project flag off, so the session on screen loses its toast there too.
+  // `?thread=` opens a session with no pathname change: the session on screen
+  // loses its toast there too.
   useEffect(() => {
     dismissStaleNotificationToasts();
   }, [search]);
 
   useEffect(() => {
     if (!webPushSupported()) return;
-    void (wantsWebPush({ supported: true, enabled, permission }) ? detectWebPush() : syncWebPush(false));
+    if (!wantsWebPush({ supported: true, enabled, permission })) {
+      void syncWebPush(false);
+      return;
+    }
+    void detectWebPush();
+    void ensureWebPush(userId);
   }, [enabled, permission, userId]);
 
   // The MFA step-up upgrades this sign-in to aal2 in place, with no reload.
@@ -125,30 +126,6 @@ function SignedInNotificationHost({ userId }: { userId: string }) {
     });
     return () => data.subscription.unsubscribe();
   }, [supabase]);
-
-  // The Push mirror belongs to this person.
-  useEffect(() => () => setServerPushPreferences(undefined), []);
-
-  return notificationCenter ? <NotificationCenterHost userId={userId} /> : null;
-}
-
-/** Everything else. Unmounting it never removes the Web Push subscription. */
-function NotificationCenterHost({ userId }: { userId: string }) {
-  const t = useTranslations('notifications');
-  const enabled = useWebNotificationStore((s) => s.preferences.enabled);
-  const permission = useWebNotificationStore((s) => s.permission);
-  const inbox = useNotificationInbox({ userId });
-  const { data: preferences } = useNotificationPreferences({ userId });
-  // The latest `markRead`, for callbacks that outlive this render.
-  const markRead = useRef(inbox.markRead);
-  useEffect(() => {
-    markRead.current = inbox.markRead;
-  });
-
-  useEffect(() => {
-    if (!webPushSupported()) return;
-    if (wantsWebPush({ supported: true, enabled, permission })) void ensureWebPush(userId);
-  }, [enabled, permission, userId]);
 
   // The SDK poll stops while the page is hidden. Where Web Push does not
   // reach this renderer, a hidden window keeps checking, so its OS
@@ -185,11 +162,11 @@ function NotificationCenterHost({ userId }: { userId: string }) {
     return () => container.removeEventListener('message', onMessage);
   }, []);
 
-  // Read only for a notification-center payload. It outlives this part: a
-  // relayed completion of a flag-on project can reach a tab on a flag-off page.
+  // The Push mirror belongs to this person: cleared on sign-out or a change of person.
   useEffect(() => {
     if (preferences) setServerPushPreferences(preferences.kinds);
   }, [preferences]);
+  useEffect(() => () => setServerPushPreferences(undefined), []);
 
   const seen = useRef<Set<string> | null>(null);
   const rows = inbox.data?.notifications;
@@ -229,20 +206,18 @@ function NotificationCenterHost({ userId }: { userId: string }) {
       tag: notificationTag(row),
       sessionId: row.session_id ?? undefined,
       projectId: row.project_id,
-      href: row.session_id ? undefined : withoutNotificationParam(row.url),
+      href: row.session_id ? undefined : canonicalAppPath(withoutNotificationParam(row.url)),
       actionLabel: label(row),
       onClick: () => {
         markRead.current([row.id]).catch(() => {});
       },
-      fromInbox: true,
     });
     for (const row of plan.toast) showInAppNotification(payloadOf(row));
     // The OS path applies the channel policy itself (`sendWebNotification`).
     for (const row of plan.os) sendWebNotification(payloadOf(row));
   }, [rows, t]);
 
-  const params = useSearchParams();
-  const fromUrl = params?.get(NOTIFICATION_PARAM) ?? null;
+  const fromUrl = search?.get(NOTIFICATION_PARAM) ?? null;
   const handled = useRef<string | null>(null);
   useEffect(() => {
     if (!fromUrl || handled.current === fromUrl) return;
@@ -250,8 +225,8 @@ function NotificationCenterHost({ userId }: { userId: string }) {
     if (isNotificationId(fromUrl)) markRead.current([fromUrl]).catch(() => {});
     // `history.replaceState`, not `router.replace`: dropping a query key needs
     // no server render, and Next keeps `useSearchParams` in step with it.
-    const { pathname, search, hash } = window.location;
-    window.history.replaceState(null, '', withoutNotificationParam(`${pathname}${search}${hash}`));
+    const { pathname, search: query, hash } = window.location;
+    window.history.replaceState(null, '', withoutNotificationParam(`${pathname}${query}${hash}`));
   }, [fromUrl]);
 
   return null;

@@ -51,7 +51,7 @@ describe('buildDenialError', () => {
       code: string;
     };
     expect(human.code).toBe('agent_human_only_action');
-    expect(human.message).toMatch(/human/i);
+    expect(human.message).toMatch(/reserved for people/i);
   });
 
   test('unknown action still yields the generic phrase with the action code', async () => {

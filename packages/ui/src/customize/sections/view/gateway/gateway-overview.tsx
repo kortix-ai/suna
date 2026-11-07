@@ -191,7 +191,7 @@ export function GatewayOverview({
 
   return (
     // No scroller and no padding of its own: this is a tab of
-    // `/projects/[id]/models`, and `CapabilityPageShell` owns the page's one
+    // `/workspaces/[id]/models`, and `CapabilityPageShell` owns the page's one
     // scroll container and its column.
     <div className="flex flex-col">
       <div className="w-full space-y-12">

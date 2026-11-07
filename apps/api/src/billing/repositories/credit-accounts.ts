@@ -152,6 +152,8 @@ export async function getFreeAccountsDueForRotation(afterAccountId?: string) {
       and(
         afterAccountId ? gt(creditAccounts.accountId, afterAccountId) : undefined,
         eq(creditAccounts.tier, 'free'),
+        // One free grant per person: a further workspace never rotates.
+        eq(creditAccounts.freeCreditsEligible, true),
         or(isNull(creditAccounts.nextCreditGrant), lte(creditAccounts.nextCreditGrant, now)),
       ),
     )

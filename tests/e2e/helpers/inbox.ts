@@ -6,7 +6,7 @@ export type AuthEmailAction =
   | { kind: "link"; value: string }
   | { kind: "code"; value: string };
 
-export interface DisposableInbox {
+interface DisposableInbox {
   email: string;
   waitForAuthAction(after: Date): Promise<AuthEmailAction>;
   waitForInviteLink(after: Date): Promise<string>;
@@ -245,7 +245,7 @@ export async function createDisposableInbox(): Promise<DisposableInbox> {
   );
 }
 
-export interface EmailProviderStatus {
+interface EmailProviderStatus {
   available: boolean;
   reason: string;
 }

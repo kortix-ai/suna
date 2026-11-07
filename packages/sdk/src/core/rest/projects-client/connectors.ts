@@ -170,7 +170,7 @@ export interface ConnectorAttachmentUploadResult {
 
 function connectorGatewayPath(projectId: string | undefined, suffix: string): string {
   return projectId
-    ? `/connectors/projects/${encodeURIComponent(projectId)}/${suffix}`
+    ? `/connectors/workspaces/${encodeURIComponent(projectId)}/${suffix}`
     : `/connectors/${suffix}`;
 }
 
@@ -865,7 +865,7 @@ export type ConnectionCredentialInput =
 
 export async function listConnections(projectId: string) {
   return unwrap(
-    await backendApi.get<{ connections: Connection[] }>(`/projects/${projectId}/connections`),
+    await backendApi.get<{ connections: Connection[] }>(`/workspaces/${projectId}/connections`),
   );
 }
 
@@ -892,7 +892,7 @@ export interface ConnectionRoster {
 export async function listAllConnections(projectId: string) {
   return unwrap(
     await backendApi.get<{ connections: ConnectionRoster[] }>(
-      `/projects/${projectId}/connections/all`,
+      `/workspaces/${projectId}/connections/all`,
     ),
   );
 }
@@ -901,7 +901,7 @@ export async function reconcileConnection(
   projectId: string,
   input: ReconcileConnectionInput,
 ) {
-  return unwrap(await backendApi.post<Connection>(`/projects/${projectId}/connections`, input));
+  return unwrap(await backendApi.post<Connection>(`/workspaces/${projectId}/connections`, input));
 }
 
 export async function reconcileMemberConnection(
@@ -909,7 +909,7 @@ export async function reconcileMemberConnection(
   input: ReconcileMemberConnectionInput,
 ) {
   return unwrap(
-    await backendApi.post<Connection>(`/projects/${projectId}/connections/me`, input),
+    await backendApi.post<Connection>(`/workspaces/${projectId}/connections/me`, input),
   );
 }
 
@@ -920,7 +920,7 @@ export async function updateConnectionCredential(
 ) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
-      `/projects/${projectId}/connections/${connectionId}/credential`,
+      `/workspaces/${projectId}/connections/${connectionId}/credential`,
       input,
     ),
   );
@@ -931,17 +931,20 @@ function connectionOAuth2Path(
   connectionId: string,
   suffix: string,
 ): string {
-  return `/projects/${projectId}/connections/${connectionId}/oauth2/${suffix}`;
+  return `/workspaces/${projectId}/connections/${connectionId}/oauth2/${suffix}`;
 }
 
-export async function ensureProjectConnectorConnection(projectId: string, slug: string) {
+export async function ensureWorkspaceConnectorConnection(projectId: string, slug: string) {
   return unwrap(
     await backendApi.post<{ connection_id: string }>(
-      `/projects/${projectId}/connectors/${encodeURIComponent(slug)}/oauth2/connection`,
+      `/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/oauth2/connection`,
       {},
     ),
   );
 }
+
+/** @deprecated Use `ensureWorkspaceConnectorConnection`. Kept permanently. */
+export const ensureProjectConnectorConnection = ensureWorkspaceConnectorConnection;
 
 export async function putConnectionOAuth2Application(
   projectId: string,
@@ -1074,7 +1077,7 @@ export async function getConnectionOAuth2Status(
 export async function revokeConnection(projectId: string, connectionId: string) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
-      `/projects/${projectId}/connections/${connectionId}/revoke`,
+      `/workspaces/${projectId}/connections/${connectionId}/revoke`,
       {},
     ),
   );
@@ -1083,7 +1086,7 @@ export async function revokeConnection(projectId: string, connectionId: string) 
 export async function activateConnection(projectId: string, connectionId: string) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
-      `/projects/${projectId}/connections/${connectionId}/activate`,
+      `/workspaces/${projectId}/connections/${connectionId}/activate`,
       {},
     ),
   );
@@ -1098,7 +1101,7 @@ export async function activateConnection(projectId: string, connectionId: string
 export async function setDefaultConnection(projectId: string, connectionId: string) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
-      `/projects/${projectId}/connections/${connectionId}/default`,
+      `/workspaces/${projectId}/connections/${connectionId}/default`,
       {},
     ),
   );
@@ -1113,7 +1116,7 @@ export async function setDefaultConnection(projectId: string, connectionId: stri
  */
 export async function renameConnection(projectId: string, connectionId: string, label: string) {
   return unwrap(
-    await backendApi.put<Connection>(`/projects/${projectId}/connections/${connectionId}/label`, {
+    await backendApi.put<Connection>(`/workspaces/${projectId}/connections/${connectionId}/label`, {
       label,
     }),
   );
@@ -1128,17 +1131,20 @@ export async function renameConnection(projectId: string, connectionId: string, 
  * owner returns the existing account. `409` when the machine cannot join this
  * project's account.
  */
-export async function addComputerToProject(
+export async function addComputerToWorkspace(
   projectId: string,
   input: { tunnelId: string; share?: ConnectorConnectOwner },
 ) {
   return unwrap(
-    await backendApi.post<Connection>(`/projects/${projectId}/computers`, {
+    await backendApi.post<Connection>(`/workspaces/${projectId}/computers`, {
       tunnel_id: input.tunnelId,
       ...(input.share ? { share: input.share } : {}),
     }),
   );
 }
+
+/** @deprecated Use `addComputerToWorkspace`. Kept permanently. */
+export const addComputerToProject = addComputerToWorkspace;
 
 /** Who may use a shared account: a person, a group, or everyone in the project. */
 export interface ConnectionSharePrincipal {
@@ -1158,7 +1164,7 @@ export async function shareConnection(
   principals: ConnectionSharePrincipal[] = [],
 ) {
   return unwrap(
-    await backendApi.post<Connection>(`/projects/${projectId}/connections/${connectionId}/share`, {
+    await backendApi.post<Connection>(`/workspaces/${projectId}/connections/${connectionId}/share`, {
       principals,
     }),
   );
@@ -1219,7 +1225,7 @@ export async function pipedreamConnectConnection(
 ) {
   return unwrap(
     await backendApi.post<ConnectorConnectResult>(
-      `/projects/${projectId}/connections/${connectionId}/connect`,
+      `/workspaces/${projectId}/connections/${connectionId}/connect`,
       input,
     ),
   );
@@ -1231,7 +1237,7 @@ export async function pipedreamFinalizeConnection(
 ) {
   return unwrap(
     await backendApi.post<ConnectorFinalizeResult>(
-      `/projects/${projectId}/connections/${connectionId}/connect/finalize`,
+      `/workspaces/${projectId}/connections/${connectionId}/connect/finalize`,
       {},
     ),
   );
@@ -1254,7 +1260,7 @@ export async function listConnectors(projectId: string, options?: ListConnectors
     // Background read fired at workspace mount (project-home tiles, sidebar
     // setup checklist) — never global-toast; callers render their own state.
     await backendApi.get<ConnectorsResponse>(
-      `/connectors/projects/${projectId}/connectors${query}`,
+      `/connectors/workspaces/${projectId}/connectors${query}`,
       { showErrors: false },
     ),
   );
@@ -1263,7 +1269,7 @@ export async function listConnectors(projectId: string, options?: ListConnectors
 export async function syncConnectors(projectId: string) {
   return unwrap(
     await backendApi.post<ConnectorSyncResult>(
-      `/connectors/projects/${projectId}/connectors/sync`,
+      `/connectors/workspaces/${projectId}/connectors/sync`,
       {},
     ),
   );
@@ -1274,7 +1280,7 @@ export async function syncConnectors(projectId: string) {
 export async function setConnectorCredentialMode(projectId: string, slug: string, mode: 'shared') {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential-mode`,
+      `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/credential-mode`,
       { mode },
     ),
   );
@@ -1293,7 +1299,7 @@ export async function setConnectorAuthorizationStrategy(
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/authorization-strategy`,
+      `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/authorization-strategy`,
       { authorization_strategy: authorizationStrategy },
     ),
   );
@@ -1304,7 +1310,7 @@ export async function setConnectorAuthorizationStrategy(
 export async function setConnectorSensitive(projectId: string, slug: string, sensitive: boolean) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sensitive`,
+      `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/sensitive`,
       { sensitive },
     ),
   );
@@ -1349,7 +1355,7 @@ export interface ConnectorPolicySetOptions {
 }
 
 function connectorPoliciesPath(projectId: string, slug: string, options?: ConnectorPolicySetOptions) {
-  const base = `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`;
+  const base = `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/policies`;
   return options?.policySet ? `${base}?policy_set=${encodeURIComponent(options.policySet)}` : base;
 }
 
@@ -1417,7 +1423,7 @@ export interface ConnectorPolicySet {
 }
 
 function connectorPolicySetsPath(projectId: string, slug: string) {
-  return `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policy-sets`;
+  return `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/policy-sets`;
 }
 
 function connectorPolicySetPath(projectId: string, slug: string, name: string) {
@@ -1481,7 +1487,7 @@ export interface ConnectorAgentRow {
 export async function listConnectorAgents(projectId: string, slug: string) {
   return unwrap(
     await backendApi.get<{ slug: string; policy_sets: string[]; agents: ConnectorAgentRow[] }>(
-      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/agents`,
+      `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/agents`,
     ),
   );
 }
@@ -1494,7 +1500,7 @@ export interface ConnectorRulesMatrix {
 
 /** Who uses which connector under which rule set, in one request. */
 export async function getConnectorRulesMatrix(projectId: string) {
-  return unwrap(await backendApi.get<ConnectorRulesMatrix>(`/connectors/projects/${projectId}/rules-matrix`));
+  return unwrap(await backendApi.get<ConnectorRulesMatrix>(`/connectors/workspaces/${projectId}/rules-matrix`));
 }
 
 /** OAuth2 client credentials for a connector's shared account. `token_endpoint_auth_method` defaults to `client_secret_basic`. */
@@ -1516,7 +1522,7 @@ export async function setConnectorOAuth2ClientCredentials(
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; slug: string; account: string | null; expires_at: string | null }>(
-      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/oauth2/connection`,
+      `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/oauth2/connection`,
       input,
     ),
   );
@@ -1611,7 +1617,7 @@ export interface ConnectorConfig {
 export async function getConnectorConfig(projectId: string, slug: string) {
   return unwrap(
     await backendApi.get<ConnectorConfig>(
-      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/config`,
+      `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/config`,
     ),
   );
 }
@@ -1619,7 +1625,7 @@ export async function getConnectorConfig(projectId: string, slug: string) {
 export async function setConnectorName(projectId: string, slug: string, name: string) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/name`,
+      `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/name`,
       { name },
     ),
   );
@@ -1657,7 +1663,7 @@ export async function connectorConnect(
 ) {
   return unwrap(
     await backendApi.post<ConnectorConnectResult>(
-      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`,
+      `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/connect`,
       // Omitted rather than null when unset: the API reads the key's presence
       // to apply its own default, and an old client sends no key at all.
       {
@@ -1694,7 +1700,7 @@ export async function listSessionConnectRequests(
 ): Promise<SessionConnectRequest[]> {
   const result = unwrap(
     await backendApi.get<{ connectors?: SessionConnectRequest[] }>(
-      `/connectors/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/connect-requests`,
+      `/connectors/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/connect-requests`,
     ),
   );
   return result.connectors ?? [];
@@ -1744,14 +1750,14 @@ export async function createConnector(projectId: string, draft: ConnectorDraftIn
       ok: boolean;
       sync?: ConnectorSyncResult;
       authDiscovery?: ConnectorAuthDiscovery;
-    }>(`/connectors/projects/${projectId}/connectors`, draft),
+    }>(`/connectors/workspaces/${projectId}/connectors`, draft),
   );
 }
 
 export async function discoverConnectorAuth(projectId: string, draft: ConnectorDraftInput) {
   return unwrap(
     await backendApi.post<ConnectorAuthDiscovery>(
-      `/connectors/projects/${projectId}/connectors/auth-discovery`,
+      `/connectors/workspaces/${projectId}/connectors/auth-discovery`,
       draft,
     ),
   );
@@ -1767,7 +1773,7 @@ export interface McpServerSignInCheck {
 export async function checkMcpServerSignIn(projectId: string, url: string) {
   return unwrap(
     await backendApi.post<McpServerSignInCheck>(
-      `/connectors/projects/${projectId}/connectors/mcp-sign-in-check`,
+      `/connectors/workspaces/${projectId}/connectors/mcp-sign-in-check`,
       { url },
     ),
   );
@@ -1801,7 +1807,7 @@ export interface ConnectorMoveResult {
 
 /** The project's Pipedream and Composio connectors and the Kortix app each moves to. */
 export async function listConnectorMoves(projectId: string): Promise<ConnectorMove[]> {
-  return unwrap(await backendApi.get<{ moves: ConnectorMove[] }>(`/projects/${projectId}/connector-moves`)).moves;
+  return unwrap(await backendApi.get<{ moves: ConnectorMove[] }>(`/workspaces/${projectId}/connector-moves`)).moves;
 }
 
 /**
@@ -1816,7 +1822,7 @@ export async function moveConnector(
 ): Promise<ConnectorMoveResult> {
   return unwrap(
     await backendApi.post<ConnectorMoveResult>(
-      `/projects/${projectId}/connectors/${encodeURIComponent(slug)}/move`,
+      `/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/move`,
       options.connectionId ? { connection_id: options.connectionId } : {},
     ),
   );
@@ -1825,7 +1831,7 @@ export async function moveConnector(
 export async function deleteConnector(projectId: string, slug: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}`,
+      `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}`,
     ),
   );
 }
@@ -1926,7 +1932,7 @@ export async function listPipedreamApps(
   const qs = params.toString();
   return unwrap(
     await backendApi.get<PipedreamCatalogPage>(
-      `/connectors/projects/${projectId}/pipedream/apps${qs ? `?${qs}` : ''}`,
+      `/connectors/workspaces/${projectId}/pipedream/apps${qs ? `?${qs}` : ''}`,
     ),
   );
 }
@@ -1960,7 +1966,7 @@ export async function listPipedreamSections(
       sections: PipedreamSection[];
       categories: PipedreamCategory[];
       indexReady?: boolean;
-    }>(`/connectors/projects/${projectId}/pipedream/sections${qs ? `?${qs}` : ''}`),
+    }>(`/connectors/workspaces/${projectId}/pipedream/sections${qs ? `?${qs}` : ''}`),
   );
 }
 
@@ -2015,7 +2021,7 @@ export async function listConnectToolkits(
   const qs = params.toString();
   const page = unwrap(
     await backendApi.get<ConnectToolkitsWirePage | ConnectToolkitsPage>(
-      `/connectors/projects/${projectId}/connect/toolkits${qs ? `?${qs}` : ''}`,
+      `/connectors/workspaces/${projectId}/connect/toolkits${qs ? `?${qs}` : ''}`,
     ),
   );
   // The provider returns its native `items` / `cursor` page. Keep accepting the
@@ -2074,7 +2080,7 @@ export async function listConnectSections(
   const qs = params.toString();
   return unwrap(
     await backendApi.get<ConnectSectionsPage>(
-      `/connectors/projects/${projectId}/connect/sections${qs ? `?${qs}` : ''}`,
+      `/connectors/workspaces/${projectId}/connect/sections${qs ? `?${qs}` : ''}`,
     ),
   );
 }
@@ -2223,7 +2229,7 @@ export async function listDiscoverConnectors(
   const qs = params.toString();
   return unwrap(
     await backendApi.get<DiscoverConnectorsPage>(
-      `/connectors/projects/${projectId}/discover/connectors${qs ? `?${qs}` : ''}`,
+      `/connectors/workspaces/${projectId}/discover/connectors${qs ? `?${qs}` : ''}`,
     ),
   );
 }
@@ -2277,7 +2283,7 @@ export async function listDiscoverSections(
   const qs = params.toString();
   return unwrap(
     await backendApi.get<DiscoverSectionsPage>(
-      `/connectors/projects/${projectId}/discover/sections${qs ? `?${qs}` : ''}`,
+      `/connectors/workspaces/${projectId}/discover/sections${qs ? `?${qs}` : ''}`,
     ),
   );
 }
@@ -2286,7 +2292,7 @@ export async function getDiscoverConnector(projectId: string, id: string) {
   const params = new URLSearchParams({ id });
   return unwrap(
     await backendApi.get<DiscoverConnectorDetail>(
-      `/connectors/projects/${projectId}/discover/connectors/detail?${params.toString()}`,
+      `/connectors/workspaces/${projectId}/discover/connectors/detail?${params.toString()}`,
     ),
   );
 }
@@ -2315,7 +2321,7 @@ export async function getDiscoverConnectorTools(projectId: string, id: string, w
   if (way) params.set('way', way);
   return unwrap(
     await backendApi.get<DiscoverConnectorTools>(
-      `/connectors/projects/${projectId}/discover/connectors/tools?${params.toString()}`,
+      `/connectors/workspaces/${projectId}/discover/connectors/tools?${params.toString()}`,
     ),
   );
 }
@@ -2353,7 +2359,7 @@ export async function installDiscoverConnector(
 ) {
   return unwrap(
     await backendApi.post<DiscoverInstallResult>(
-      `/connectors/projects/${projectId}/discover/install`,
+      `/connectors/workspaces/${projectId}/discover/install`,
       input,
     ),
   );
@@ -2389,7 +2395,7 @@ export async function setConnectorCredential(
   const input = typeof credential === 'string' ? { value: credential } : credential;
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
+      `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
       input,
     ),
   );
@@ -2399,7 +2405,7 @@ export async function setConnectorCredential(
 export async function deleteConnectorCredential(projectId: string, slug: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
+      `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
     ),
   );
 }
@@ -2411,7 +2417,7 @@ export async function setConnectorSecretBinding(
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean }>(
-      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/secret-binding`,
+      `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/secret-binding`,
       { secret_identifier: secretIdentifier },
     ),
   );
@@ -2452,7 +2458,7 @@ export async function connectorFinalize(
   if (options.connectionId) body.connection_id = options.connectionId;
   return unwrap(
     await backendApi.post<ConnectorFinalizeResult>(
-      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
+      `/connectors/workspaces/${projectId}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
       body,
     ),
   );

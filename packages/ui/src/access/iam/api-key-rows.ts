@@ -93,6 +93,12 @@ export interface ApiKeyRow {
   expiresAt: string | null;
   /** What the key can reach. `null` = everything in this workspace. */
   scopeLabel: string | null;
+  /** What the key may do inside its creator's role. Absent on service accounts and older APIs. */
+  access?: 'full' | 'read' | 'custom';
+  /** A `custom` key's permissions, workspace spelling. */
+  permissions?: string[];
+  /** True when each use moves the expiry out again (the CLI login). */
+  expiryRenews?: boolean;
 }
 
 /**
@@ -164,6 +170,9 @@ export function buildApiKeyRows({
       lastUsedAt: t.last_used_at,
       expiresAt: t.expires_at,
       scopeLabel: t.project_id ? (projectName.get(t.project_id) ?? shortId(t.project_id)) : null,
+      access: t.scope ?? 'full',
+      ...(t.workspace_permissions ? { permissions: t.workspace_permissions } : {}),
+      ...(t.expiry_renews ? { expiryRenews: true } : {}),
     });
   }
 

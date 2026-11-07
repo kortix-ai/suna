@@ -30,7 +30,7 @@ function row(overrides: Partial<InboxNotification> = {}): InboxNotification {
     session_id: 'ses-b',
     trigger_slug: null,
     actor_user_id: null,
-    url: `/projects/p1/sessions/ses-b?notification=n${next}`,
+    url: `/workspaces/p1/sessions/ses-b?notification=n${next}`,
     read: false,
     created_at: '2026-10-09T10:00:00.000Z',
     ...overrides,
@@ -39,14 +39,14 @@ function row(overrides: Partial<InboxNotification> = {}): InboxNotification {
 
 describe('withoutNotificationParam', () => {
   test('drops only the notification key', () => {
-    expect(withoutNotificationParam('/projects/p1/sessions/s?notification=n1')).toBe(
-      '/projects/p1/sessions/s',
+    expect(withoutNotificationParam('/workspaces/p1/sessions/s?notification=n1')).toBe(
+      '/workspaces/p1/sessions/s',
     );
-    expect(withoutNotificationParam('/projects/p1?a=1&notification=n1&b=2#top')).toBe(
-      '/projects/p1?a=1&b=2#top',
+    expect(withoutNotificationParam('/workspaces/p1?a=1&notification=n1&b=2#top')).toBe(
+      '/workspaces/p1?a=1&b=2#top',
     );
-    expect(withoutNotificationParam('/projects/p1/admin/triggers')).toBe(
-      '/projects/p1/admin/triggers',
+    expect(withoutNotificationParam('/workspaces/p1/admin/triggers')).toBe(
+      '/workspaces/p1/admin/triggers',
     );
   });
 });
@@ -217,14 +217,14 @@ describe('tags and types', () => {
     expect(rowDestination(row({ session_id: 'ses-b' }))).toBe('session');
     const alert = { kind: 'automation_failed', session_id: null } as const;
     expect(
-      rowDestination(row({ ...alert, trigger_slug: 'reminder.0a1b2c3d4e5f', url: '/projects/p1/admin/loops?notification=n1' })),
+      rowDestination(row({ ...alert, trigger_slug: 'reminder.0a1b2c3d4e5f', url: '/workspaces/p1/admin/loops?notification=n1' })),
     ).toBe('reminders');
     // A row stored before 2026-10-28 carries the old path.
     expect(
-      rowDestination(row({ ...alert, trigger_slug: 'reminder.0a1b2c3d4e5f', url: '/projects/p1/reminders?notification=n1' })),
+      rowDestination(row({ ...alert, trigger_slug: 'reminder.0a1b2c3d4e5f', url: '/workspaces/p1/reminders?notification=n1' })),
     ).toBe('reminders');
     expect(
-      rowDestination(row({ ...alert, trigger_slug: 'nightly', url: '/projects/p1/admin/triggers?notification=n1' })),
+      rowDestination(row({ ...alert, trigger_slug: 'nightly', url: '/workspaces/p1/admin/triggers?notification=n1' })),
     ).toBe('triggers');
   });
 
@@ -233,17 +233,11 @@ describe('tags and types', () => {
     expect(badgeCount(99)).toBe('99');
     expect(badgeCount(100)).toBe('99+');
   });
-
-  test('an Artifact comment opens its Artifact and keeps the thread query when marking read', () => {
-    const notification = row({ kind: 'artifact_comment', artifact_id: 'a1', artifact_thread_id: 't1', session_id: null, url: '/projects/p1/artifacts/a1?thread=t1&notification=n1' });
-    expect(rowDestination(notification)).toBe('artifact');
-    expect(withoutNotificationParam(notification.url)).toBe('/projects/p1/artifacts/a1?thread=t1');
-  });
 });
 
 describe('openedNotificationId', () => {
   const id = '0192f0c4-0000-7000-8000-000000000009';
-  const message = { type: 'kortix:notification-open', url: `https://app.example.test/projects/p1/sessions/s?notification=${id}` };
+  const message = { type: 'kortix:notification-open', url: `https://app.example.test/workspaces/p1/sessions/s?notification=${id}` };
 
   test('reads the id from the service worker message', () => {
     expect(openedNotificationId(message)).toBe(id);
@@ -251,8 +245,8 @@ describe('openedNotificationId', () => {
 
   test('ignores another message, a url without an id, and a non-uuid id', () => {
     expect(openedNotificationId({ ...message, type: 'other' })).toBeNull();
-    expect(openedNotificationId({ ...message, url: 'https://app.example.test/projects/p1' })).toBeNull();
-    expect(openedNotificationId({ ...message, url: '/projects/p1?notification=n1' })).toBeNull();
+    expect(openedNotificationId({ ...message, url: 'https://app.example.test/workspaces/p1' })).toBeNull();
+    expect(openedNotificationId({ ...message, url: '/workspaces/p1?notification=n1' })).toBeNull();
     expect(openedNotificationId({ type: message.type })).toBeNull();
     expect(openedNotificationId(null)).toBeNull();
   });

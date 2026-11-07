@@ -16,7 +16,7 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { PROJECT_ACTIONS } from '../iam';
@@ -42,6 +42,8 @@ import { notePublishedTip } from './publish';
 import { ownerMayUseAgent, repointSessionAgentToDeclaredDefault } from './repoint';
 import { serveConfigArchive } from './serve-archive';
 import { configReleaseSnapshot } from './snapshot';
+import { workspaceIdParam } from '../shared/route-params';
+import { projectsView } from '../workspaces/rows';
 
 const HEX40 = /^[0-9a-f]{40}$/;
 
@@ -123,12 +125,12 @@ async function sandboxSession(
       agentName: projectSessions.agentName,
       metadata: projectSessions.metadata,
       createdBy: projectSessions.createdBy,
-      projectId: projects.projectId,
-      accountId: projects.accountId,
-      repoUrl: projects.repoUrl,
-      defaultBranch: projects.defaultBranch,
-      manifestPath: projects.manifestPath,
-      projectStatus: projects.status,
+      projectId: projectsView.projectId,
+      accountId: projectsView.accountId,
+      repoUrl: projectsView.repoUrl,
+      defaultBranch: projectsView.defaultBranch,
+      manifestPath: projectsView.manifestPath,
+      projectStatus: projectsView.status,
     })
     .from(sessionSandboxes)
     .innerJoin(
@@ -139,7 +141,7 @@ async function sandboxSession(
         eq(projectSessions.sessionId, sessionSandboxes.sessionId),
       ),
     )
-    .innerJoin(projects, eq(projects.projectId, sessionSandboxes.projectId))
+    .innerJoin(projectsView, eq(projectsView.projectId, sessionSandboxes.projectId))
     .where(
       and(
         eq(sessionSandboxes.sandboxId, sandboxId),
@@ -150,7 +152,7 @@ async function sandboxSession(
     )
     .limit(1);
   if (!row || (row.sessionId ?? sandboxId) !== (sessionId ?? sandboxId)) {
-    return { ok: false, status: 403, error: 'sandbox token is not scoped to this project and session' };
+    return { ok: false, status: 403, error: 'sandbox token is not scoped to this workspace and session' };
   }
   if (row.projectStatus === 'archived') return { ok: false, status: 404, error: 'Not found' };
   return {
@@ -173,15 +175,15 @@ export function registerConfigReleaseRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/config-release',
+      path: '/{workspaceId}/sessions/{sessionId}/config-release',
       tags: ['sessions'],
       summary: "A session's desired config release descriptor",
       ...auth,
-      request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), sessionId: z.string() }) },
       responses: { 200: json(z.any(), 'Release descriptor'), ...errors(400, 403, 404, 409) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(projectId) || !isUuid(sessionId)) {
         return c.json({ error: 'Invalid project or session id' }, 400);
@@ -291,12 +293,12 @@ export function registerConfigReleaseRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/config-archives/{configTreeId}',
+      path: '/{workspaceId}/config-archives/{configTreeId}',
       tags: ['sessions'],
       summary: 'Download a config archive',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), configTreeId: z.string() }),
+        params: z.object({ workspaceId: z.string(), configTreeId: z.string() }),
         // Set on a composed release tree (an agent variant's plugin selection):
         // the commit it is rebuilt from when the store cannot serve it.
         query: z.object({ commit: z.string().optional() }),
@@ -308,7 +310,7 @@ export function registerConfigReleaseRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const configTreeId = c.req.param('configTreeId');
       if (!isUuid(projectId)) return c.json({ error: 'Not found' }, 404);
       if (!HEX40.test(configTreeId)) return c.json({ error: 'Not found' }, 404);

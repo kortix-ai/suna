@@ -31,11 +31,15 @@ const throwingDb = {
   },
 };
 
-mock.module('../shared/db', () => ({ hasDatabase: () => true, db: throwingDb }));
+mock.module('../shared/db', () => ({
+  hasDatabase: () => true,
+  db: throwingDb,
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
+}));
 
-// The identity tables the engine's baseline read joins. `mock.module` replaces
-// @kortix/db WHOLESALE, so every name on the import graph has to exist even
-// where this suite never reads it.
+// The identity tables the engine's baseline read joins, as stubs over the real
+// module: `mock.module` replaces @kortix/db WHOLESALE, so every other name on
+// the import graph comes from the real one.
 const tables = [
   'accounts',
   'accountMembers',
@@ -57,7 +61,9 @@ const tables = [
 ] as const;
 const tableStubs = Object.fromEntries(tables.map((name) => [name, { __table: name }]));
 
+const realKortixDb = await import('@kortix/db');
 mock.module('@kortix/db', () => ({
+  ...realKortixDb,
   ...tableStubs,
   readStoredAgentGrant: (raw: unknown) => raw ?? null,
   // Imported by shared/pg-broadcast.ts (#10934); a stub without it breaks a later file in the same process.

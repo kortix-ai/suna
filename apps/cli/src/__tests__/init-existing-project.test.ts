@@ -43,7 +43,7 @@ describe("init in an existing cloned project", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      `Configured this Kortix project in ${realpathSync(repo)}`,
+      `Configured this Kortix workspace in ${realpathSync(repo)}`,
     );
     // A .kortix/opencode folder is not read: every link points at the root folders.
     expect(readlinkSync(resolve(repo, ".agents", "skills"))).toBe("../skills");

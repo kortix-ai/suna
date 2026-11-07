@@ -15,8 +15,11 @@ import {
 import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
 import { openInBrowser } from '../browser.ts';
 import {
+  NO_WORKSPACE_LINE,
   emitJson,
+  isNoWorkspaceError,
   locateProjectAnywhere,
+  noWorkspace,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -34,10 +37,12 @@ import {
   resolveProjectId,
   saveLink,
 } from '../project-link.ts';
+import { listWorkspaceRowsReport, type WorkspaceListFailure, type WorkspaceRow } from '../project-bind.ts';
 import { confirm } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
 import { projectWebUrl } from '../web-url.ts';
+import { settingsWhere } from '../settings-path.ts';
 
 /** Back-compat alias — the helper moved to ../project-git.ts so `ship` can use
  *  it without an import cycle through this command module. */
@@ -46,50 +51,73 @@ export {
   currentGitCredentialHelperCommand,
 } from '../project-git.ts';
 
-const HELP = help`Usage: kortix projects <subcommand>
+const HELP = help`Usage: kortix workspaces <subcommand> [options]
+
+A workspace is one company's Kortix: its people, agents, sessions, secrets,
+connectors, billing and config repo. You can belong to several workspaces;
+one is the default, and a linked directory (.kortix/link.json) overrides it.
 
 Subcommands:
-  create <name>       Create a managed project; prints its id (--json).
-                       --host <name> and --account <id> select the destination.
-                       Then run projects use <id> to select it.
-  ls [--all]           List projects in the active account (--all spans every
-                       account, grouped). --query <text> filters by name, id
-                       or repo. (--json)
-  info [<id>]          Show one project (defaults to the linked/default) (--json)
+  create <name>        Create a workspace; prints its id (--json).
+                       --host <name> selects the host. Then run
+                       workspaces use <id> to select it.
+                       --account <id>: Deprecated. Adds a second project to
+                       that account instead of creating a workspace.
+  ls                   List every workspace you belong to. --query <text>
+                       filters by name, id or repo. (--json)
+                       --account <id>: Deprecated. Lists one account's.
+                       --all: Deprecated. The older view, grouped by account.
+  info [<id>]          Show one workspace (defaults to the linked/default) (--json)
   set [<id>]           Update name, branch, manifest path or icon.
-  rename [<id>] <name> Alias for \`projects set --name <name>\`.
-  cli-tokens ls|new|rm Project-scoped CLI tokens (kortix_pat_…).
-  use [<id>]           Set the global DEFAULT project (interactive if omitted).
-                       Switches the active account to the project's account.
+  rename [<id>] <name> Alias for \`workspaces set --name <name>\`.
+  cli-tokens ls|new|rm Workspace CLI tokens (kortix_pat_…).
+  use [<id>]           Set the global DEFAULT workspace (interactive if omitted).
                        --host <name> binds that logged-in host's default
                        instead of the active one.
-  unset                Clear the global default project. --host <name> clears
+  unset                Clear the global default workspace. --host <name> clears
                        that host's instead.
-  link [<id>]          Bind cwd to a remote project (writes .kortix/link.json).
-                       --host <name> binds a project on that logged-in host,
+  link [<id>]          Bind cwd to a workspace (writes .kortix/link.json).
+                       --host <name> binds a workspace on that logged-in host,
                        authenticating with its stored key.
   unlink               Remove .kortix/link.json from cwd
-  open [<id>]          Open the dashboard URL for one project
-  clone [<id>] [dir]   Clone through the authenticated Kortix git proxy. Falls
-                       back to your local Git credentials for direct BYO repos.
-  rm [<id>]            Delete a project and its Kortix-managed git repo
+  open [<id>]          Open one workspace in the browser
+  clone [<id>] [dir]   Clone the workspace's config repo through the
+                       authenticated Kortix git proxy. Falls back to your local
+                       Git credentials for direct BYO repos.
+  rm [<id>]            Delete a workspace and its Kortix-managed git repo
                        (defaults to the linked one). Repositories you
                        connected yourself are never touched.
                        -y / --yes skips the confirmation.
   features [ls]        List every feature flag with its effective state for the
-                       project (Settings → Feature flags). (--json)
-  features enable <flag>   Turn a flag on for the project.
-  features disable <flag>  Turn a flag off for the project.
-  features reset <flag>    Clear the project's override (follow the default).
-                       features takes --project <id>; defaults to linked/default.
+                       workspace (${settingsWhere('feature-flags')}). (--json)
+  features enable <flag>   Turn a flag on for the workspace.
+  features disable <flag>  Turn a flag off for the workspace.
+  features reset <flag>    Clear the workspace's override (follow the default).
+                       features takes --workspace <id>; defaults to linked/default.
 
 An explicit <id> on info/open/rm resolves on its own: tries the active host
 first, then — unless you pass --host — scans every other logged-in host for
 it. A directory link (.kortix/link.json) always wins over the default; the
 default is what commands use anywhere else on your machine.
+
+The workspace id is the project_id field of --json output. kortix projects
+is the older name of this command and still works. So do --project <id> and
+KORTIX_PROJECT_ID (KORTIX_WORKSPACE_ID wins when both are set).
+
+Examples:
+  kortix workspaces create "Acme"
+  kortix workspaces ls
+  kortix workspaces use 3f2a9c1e-…
 `;
 
-export async function runProjects(argv: string[]): Promise<number> {
+export interface RunProjectsOptions {
+  /** Invoked as `kortix projects` / `project`, the older name. `ls` then
+   *  prints exactly what it printed before Workspaces: the active account's
+   *  projects. Scripts parse that output. */
+  olderName?: boolean;
+}
+
+export async function runProjects(argv: string[], options: RunProjectsOptions = {}): Promise<number> {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
     process.stdout.write(HELP);
     return argv.length === 0 ? 2 : 0;
@@ -136,6 +164,7 @@ export async function runProjects(argv: string[]): Promise<number> {
         process.stderr.write(`${status.err((err as Error).message)}\n`);
         return 2;
       }
+      if (options.olderName) return projectsLsOlder(json, all, query, hostArg, accountArg);
       return projectsLs(json, all, query, hostArg, accountArg);
     }
     case 'set':
@@ -150,13 +179,18 @@ export async function runProjects(argv: string[]): Promise<number> {
       const restCopy = [...rest];
       const json = takeFlagBool(restCopy, ['--json']);
       let hostArg: string | undefined;
+      let idFlag: string | undefined;
       try {
         hostArg = takeFlagValue(restCopy, ['--host']);
+        // `info --workspace <id>` (and the older `--project <id>`) name the
+        // same id the positional does; without this the flag itself was
+        // read as the id.
+        idFlag = takeFlagValue(restCopy, ['--project']);
       } catch (err) {
         process.stderr.write(`${status.err((err as Error).message)}\n`);
         return 2;
       }
-      return projectsInfo(restCopy[0], json, hostArg);
+      return projectsInfo(idFlag ?? restCopy[0], json, hostArg);
     }
     case 'use':
     case 'default': {
@@ -232,27 +266,28 @@ export async function runProjects(argv: string[]): Promise<number> {
   }
 }
 
-// ── Feature flags (Settings → Feature flags) ───────────────────────────────
+// ── Feature flags (Workspace settings → Feature flags) ───────────────────────────────
 
-const FEATURES_HELP = help`Usage: kortix projects features [ls | enable | disable | reset] [<flag>]
+const FEATURES_HELP = help`Usage: kortix workspaces features [ls | enable | disable | reset] [<flag>]
 
-Per-project feature flags — the same switches as Settings → Feature flags.
+Workspace feature flags — the same switches as ${settingsWhere('feature-flags')}.
 A flag is a stable key (e.g. monitors, event_triggers). State is
-stored on the project row, never in kortix.yaml.
+stored on the workspace, never in kortix.yaml.
 
 Subcommands:
   ls                    List every flag: key, state, origin. (--json)
-  enable <flag>         Set the project override to ON.
-  disable <flag>        Set the project override to OFF.
+  enable <flag>         Set the workspace override to ON.
+  disable <flag>        Set the workspace override to OFF.
   reset <flag>          Remove the override; the flag follows the platform default.
 
 Options:
-  --project <id>        Act on this project (default: linked/default project).
+  --workspace <id>      Act on this workspace (default: linked/default).
+                        --project <id> is the older name.
   --host <name>         Use this logged-in host.
   --json                Machine-readable output.
 
 Requires project.settings.write. A flag the platform marks unavailable stays
-off regardless of the project override.
+off regardless of the workspace override.
 
 Internal-only flags are listed only while they are on, with origin "kortix".
 Only Kortix changes them: enable, disable and reset are refused. Contact
@@ -302,7 +337,7 @@ function printFeatureTable(rows: FeatureFlagRow[]): void {
     process.stdout.write(`  ${pad(r.key, keyW)}  ${state}  ${pad(origin, 10)}  ${r.name}\n`);
   }
   if (rows.some((r) => r.operator_only)) {
-    process.stdout.write(`\n  ${C.dim}origin kortix: enabled by Kortix for this project. Contact Kortix to change it.${C.reset}\n`);
+    process.stdout.write(`\n  ${C.dim}origin kortix: enabled by Kortix for this workspace. Contact Kortix to change it.${C.reset}\n`);
   }
   process.stdout.write('\n');
 }
@@ -332,7 +367,7 @@ async function projectsFeatures(argv: string[]): Promise<number> {
 
   if (sub === 'ls' || sub === 'list') {
     try {
-      const project = await client.get<Record<string, unknown>>(`/projects/${projectId}`);
+      const project = await client.get<Record<string, unknown>>(`/workspaces/${projectId}`);
       const rows = featureRows(project);
       if (json) {
         emitJson(rows);
@@ -363,7 +398,7 @@ async function projectsFeatures(argv: string[]): Promise<number> {
       sub === 'enable' || sub === 'on' ? true : sub === 'disable' || sub === 'off' ? false : null;
     try {
       const project = await client.patch<Record<string, unknown>>(
-        `/projects/${projectId}/features`,
+        `/workspaces/${projectId}/features`,
         {
           feature: flag,
           enabled,
@@ -418,27 +453,28 @@ interface ProjectWithIcon extends ProjectSummary {
 
 // ── Settings → General (name / branch / manifest / icon) ───────────────────
 
-const SET_HELP = help`Usage: kortix projects set [<id>] [options]
+const SET_HELP = help`Usage: kortix workspaces set [<id>] [options]
 
-Update one project's settings — the dashboard's Project admin → General →
-General (PATCH /projects/:id). Only the fields you pass are written.
+Update one workspace's settings — the dashboard's ${settingsWhere('general')}
+(PATCH /workspaces/:id). Only the fields you pass are written.
 
 Options:
   --name <name>          Display name.
   --branch <branch>      Default branch.
   --manifest <path>      Manifest path, e.g. kortix.yaml.
-  --icon <emoji>         Set the per-project emoji.
+  --icon <emoji>         Set the workspace emoji.
   --no-icon              Remove the emoji.
-  --glyph <name>:<color> Set the per-project glyph, e.g. Rocket:blue.
+  --glyph <name>:<color> Set the workspace glyph, e.g. Rocket:blue.
                          Colors: ${PROJECT_GLYPH_COLORS.join(', ')}, or #rrggbb.
   --no-glyph             Remove the glyph.
-  --project <id>         Act on this project (default: linked/default).
+  --workspace <id>       Act on this workspace (default: linked/default).
+                         --project <id> is the older name.
   --host <name>          Use this logged-in host.
-  --json                 Emit the updated project as JSON.
+  --json                 Emit the updated workspace as JSON.
   -h, --help             Show this help.
 
 Requires project.settings.write. The icon fields are three-state: omit to
-leave as-is, --no-icon / --no-glyph to remove. A project shows ONE icon, so
+leave as-is, --no-icon / --no-glyph to remove. A workspace shows ONE icon, so
 writing either clears the other; --icon with --glyph is refused. Passing no
 field at all exits 2 rather than issuing a no-op write.
 `;
@@ -455,7 +491,7 @@ async function applyProjectPatch(req: ProjectPatchRequest): Promise<number> {
   if (!ctx) return 1;
   let project: ProjectWithIcon;
   try {
-    project = await ctx.client.patch<ProjectWithIcon>(`/projects/${ctx.projectId}`, req.body);
+    project = await ctx.client.patch<ProjectWithIcon>(`/workspaces/${ctx.projectId}`, req.body);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -512,7 +548,7 @@ async function projectsSet(argv: string[]): Promise<number> {
   }
   if (iconArg && glyphArg) {
     process.stderr.write(
-      `${status.err('Pass --icon or --glyph, not both — a project shows one icon.')}\n`,
+      `${status.err('Pass --icon or --glyph, not both — a workspace shows one icon.')}\n`,
     );
     return 2;
   }
@@ -572,7 +608,7 @@ async function projectsRename(argv: string[]): Promise<number> {
   return applyProjectPatch({ projectArg: id, hostArg, json, body: { name: newName } });
 }
 
-// ── Project-scoped CLI tokens ──────────────────────────────────────────────
+// ── Workspace CLI tokens ──────────────────────────────────────────────
 
 /** The API hides session-bound tokens from the CLI token list (they are the
  *  runtime's per-session KORTIX_TOKEN, minted and revoked with the session —
@@ -585,31 +621,32 @@ function writeSessionTokenNote(count: number): void {
   );
 }
 
-const CLI_TOKENS_HELP = help`Usage: kortix projects cli-tokens [ls | new | rm <token-id>] [options]
+const CLI_TOKENS_HELP = help`Usage: kortix workspaces cli-tokens [ls | new | rm <token-id>] [options]
 
-Project-scoped CLI tokens (kortix_pat_…). A token is bound to ONE project —
-the API rejects it on every other project. Session sandboxes use their
+Workspace CLI tokens (kortix_pat_…). A token is bound to ONE workspace —
+the API rejects it on every other workspace. Session sandboxes use their
 session-bound KORTIX_TOKEN instead.
 
 Subcommands:
-  ls                   List this project's CLI tokens. Session tokens are not
+  ls                   List this workspace's CLI tokens. Session tokens are not
                        listed (the count below the table). (--json)
   new                  Mint one. The secret is printed ONCE and never again.
   rm <token-id>        Revoke one.
 
 Options:
-  --name <name>        new: label (default: "cli · <project name>").
-  --expires-at <iso>   new: expiry (ISO-8601). Required when the account's PAT
-                       policy requires an expiry.
-  --project <id>       Act on this project (default: linked/default).
+  --name <name>        new: label (default: "cli · <workspace name>").
+  --expires-at <iso>   new: expiry (ISO-8601). Required when the workspace's
+                       PAT policy requires an expiry.
+  --workspace <id>     Act on this workspace (default: linked/default).
+                       --project <id> is the older name.
   --host <name>        Use this logged-in host.
   --json               Machine-readable output.
   -y, --yes            rm: skip the confirmation.
   -h, --help           Show this help.
 
 ls, new and rm need project.credentials.issue: the list names every member's
-project tokens. A session-bound token can neither mint nor revoke project
-tokens (403). The account's PAT policy (require expiry, maximum lifetime)
+workspace tokens. A session-bound token can neither mint nor revoke workspace
+tokens (403). The workspace's PAT policy (require expiry, maximum lifetime)
 applies to new tokens.
 `;
 
@@ -663,7 +700,7 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
 
   const ctx = await resolveProjectContext({ projectArg, hostArg });
   if (!ctx) return 1;
-  const path = `/projects/${ctx.projectId}/cli-token`;
+  const path = `/workspaces/${ctx.projectId}/cli-token`;
 
   if (sub === 'ls' || sub === 'list') {
     try {
@@ -673,7 +710,7 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
         return 0;
       }
       if (items.length === 0) {
-        process.stdout.write(`${status.info('No CLI tokens on this project.')}\n`);
+        process.stdout.write(`${status.info('No CLI tokens in this workspace.')}\n`);
         writeSessionTokenNote(sessionTokens);
         return 0;
       }
@@ -714,7 +751,7 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
     }
     process.stdout.write(`${status.ok(`Minted ${C.bold}${created.name}${C.reset}`)}\n`);
     process.stdout.write(`  ${C.dim}token_id ${C.reset}${created.token_id}\n`);
-    process.stdout.write(`  ${C.dim}project  ${C.reset}${created.project_id}\n`);
+    process.stdout.write(`  ${C.dim}workspace ${C.reset}${created.project_id}\n`);
     process.stdout.write(`\n  ${created.secret_key}\n\n`);
     process.stdout.write(
       `${status.warn('Copy the secret now — it is shown once and never stored in readable form.')}\n`,
@@ -791,7 +828,7 @@ export function saveClonedProjectLink(
     );
   }
 
-  appendGitExcludeEntries(repoRoot, ['/.kortix/link.json'], 'Kortix local project binding');
+  appendGitExcludeEntries(repoRoot, ['/.kortix/link.json'], 'Kortix local workspace binding');
 }
 
 /** Resolve clone auth without ever placing a credential in the remote URL.
@@ -818,7 +855,7 @@ async function projectsClone(
   const id = resolveProjectId(arg, { hostScoped: !hostArg, hostArg });
   if (!id) {
     process.stderr.write(
-      `${status.err('No project selected. Run `kortix projects use`, link a directory, or pass an id.')}\n`,
+      `${status.err('No workspace selected. Run `kortix workspaces use`, link a directory, or pass an id.')}\n`,
     );
     return 1;
   }
@@ -826,7 +863,7 @@ async function projectsClone(
   const located = await locateProjectAnywhere(
     id,
     { hostArg },
-    (host) => `kortix projects clone ${id} --host ${host}`,
+    (host) => `kortix workspaces clone ${id} --host ${host}`,
   );
   if (!located) return 1;
 
@@ -837,7 +874,7 @@ async function projectsClone(
       const credential = await client.post<{
         push_token: string;
         git_username?: string;
-      }>(`/projects/${project.project_id}/git-token`);
+      }>(`/workspaces/${project.project_id}/git-token`);
       target.token = credential.push_token;
       target.username = credential.git_username || target.username;
     } catch (err) {
@@ -909,6 +946,14 @@ function filterProjects(projects: ProjectSummary[], query?: string): ProjectSumm
   );
 }
 
+/**
+ * `workspaces create <name>`: one call creates a whole workspace (decision D1,
+ * "1 account = 1 workspace"). The body carries `new_workspace: true` and no
+ * account: the API reuses the newest account the caller owns that has no
+ * project yet (so a plan or credits it holds stay), else creates one, then
+ * provisions its project. `--account <id>` is the older behavior, kept for
+ * scripts: it adds a project to that existing account.
+ */
 async function projectsCreate(argv: string[]): Promise<number> {
   const rest = [...argv];
   const json = takeFlagBool(rest, ['--json']);
@@ -923,7 +968,7 @@ async function projectsCreate(argv: string[]): Promise<number> {
   }
   const name = rest[0]?.trim();
   if (rest.length !== 1 || !name || name.startsWith('-') || hostArg === '' || accountArg === '') {
-    process.stderr.write('Usage: kortix projects create <name> [--host <name>] [--account <id>] [--json]\n');
+    process.stderr.write('Usage: kortix workspaces create <name> [--host <name>] [--json]\n');
     return 2;
   }
   const auth = hostArg ? loadAuthForHost(hostArg) : requireAuth();
@@ -931,12 +976,16 @@ async function projectsCreate(argv: string[]): Promise<number> {
     if (hostArg) process.stderr.write(`${status.err(`Host "${hostArg}" is not logged in.`)}\n`);
     return 1;
   }
-  const accountId = accountArg || (hostArg ? auth.account_id || undefined : scopeAccountId(auth));
+  const body: Record<string, unknown> = accountArg
+    ? { name, account_id: accountArg }
+    : { name, new_workspace: true };
   try {
-    const project = await clientFromAuth(auth, { accountId }).post<ProjectSummary>('/projects/provision', {
-      name,
-      account_id: accountId,
-    });
+    // Legacy-only route: provision and link-repository have no /v1/workspaces name
+    // (WORKSPACE_LEGACY_ONLY_ROUTES); POST /v1/workspaces is the new-workspace create.
+    const project = await clientFromAuth(auth, { accountId: accountArg }).post<ProjectSummary>(
+      '/projects/provision',
+      body,
+    );
     if (!isDefaultProjectResponse(project)) return invalidDefaultProjectResponse(project);
     // Provisioning also returns a one-time push credential. Never print it.
     if (json) emitJson({ project_id: project.project_id, name: project.name, account_id: project.account_id });
@@ -947,7 +996,129 @@ async function projectsCreate(argv: string[]): Promise<number> {
   }
 }
 
+/** Every workspace on one host, flat (see listWorkspaceRowsReport). Returns
+ *  the exit code when the read fails. */
+async function listWorkspaces(
+  auth: Auth,
+  accountId?: string,
+): Promise<{ rows: WorkspaceRow[]; failed: WorkspaceListFailure[] } | number> {
+  try {
+    return await listWorkspaceRowsReport(auth, accountId);
+  } catch (err) {
+    return surface(err);
+  }
+}
+
+/** Name each account whose list failed (stderr). The caller exits 1: a
+ *  failed read never looks like an account with no workspace. */
+function writeListFailures(failed: WorkspaceListFailure[]): void {
+  for (const { account, error } of failed) {
+    const reason = error instanceof ApiError ? `HTTP ${error.status}: ${error.message}` : String((error as Error)?.message ?? error);
+    process.stderr.write(
+      `${status.err(`Could not list the workspaces of account ${account.name || account.slug} (${account.slug}): ${reason}`)}\n`,
+    );
+  }
+}
+
+/** The line every empty workspace list prints (stdout, exit 0). */
+function writeNoWorkspaceYet(): void {
+  process.stdout.write(`  ${C.dim}${NO_WORKSPACE_LINE}${C.reset}\n\n`);
+}
+
 async function projectsLs(
+  json = false,
+  all = false,
+  query?: string,
+  hostArg?: string,
+  accountArg?: string,
+): Promise<number> {
+  // --host names a logged-in host other than the active one.
+  const auth = hostArg ? loadAuthForHost(hostArg) : requireAuth();
+  if (!auth?.token) {
+    if (hostArg) {
+      process.stderr.write(
+        `${status.err(`Host "${hostArg}" is not logged in.`)} Run ${C.cyan}kortix login --host ${hostArg}${C.reset}.\n`,
+      );
+    }
+    return 1;
+  }
+  // Deprecated: the older grouped-by-account view and its JSON shape.
+  if (all) return projectsLsAll(auth, json, query);
+
+  const report = await listWorkspaces(auth, accountArg || undefined);
+  if (typeof report === 'number') return report;
+  const { rows: listed, failed } = report;
+  writeListFailures(failed);
+  const exitCode = failed.length > 0 ? 1 : 0;
+  const q = query?.trim().toLowerCase();
+  const rows = q
+    ? listed.filter(({ project: p }) =>
+        [p.name, p.project_id, p.repo_url].some((f) => (f ?? '').toLowerCase().includes(q)),
+      )
+    : listed;
+
+  if (json) {
+    // The API's own rows, flat — the same element shape `projects ls --json`
+    // always printed.
+    emitJson(rows.map((r) => r.project));
+    return exitCode;
+  }
+
+  process.stdout.write('\n');
+  if (rows.length === 0) {
+    if (query && listed.length > 0) {
+      process.stdout.write(`  ${C.dim}No workspace matches "${query}".${C.reset}\n\n`);
+    } else if (failed.length === 0) {
+      // Only a complete read may say none exists.
+      writeNoWorkspaceYet();
+    }
+    return exitCode;
+  }
+
+  renderWorkspaceTable(rows, { linked: loadLink()?.project_id, def: defaultProject()?.project_id });
+  process.stdout.write(
+    `\n  ${C.dim}${rows.length} workspace${rows.length === 1 ? '' : 's'} · ` +
+      `switch with ${C.reset}${C.cyan}kortix workspaces use <id>${C.reset}\n\n`,
+  );
+  return exitCode;
+}
+
+/** Render the flat workspace table. `●` marks the global default, `◆` the
+ *  cwd's directory link; a trailing tag spells it out. */
+function renderWorkspaceTable(rows: WorkspaceRow[], marks: { linked?: string; def?: string }): void {
+  const nameW = Math.max(...rows.map((r) => r.project.name.length), 4);
+  const roleW = Math.max(...rows.map((r) => r.account.role.length), 4);
+  process.stdout.write(
+    `  ${C.dim}${pad('NAME', nameW)}   ${pad('ID', 36)}   ${pad('ROLE', roleW)}   UPDATED${C.reset}\n`,
+  );
+  for (const { project: p, account } of rows) {
+    const isDefault = p.project_id === marks.def;
+    const isLinked = p.project_id === marks.linked;
+    const marker = isDefault ? `${C.green}● ${C.reset}` : isLinked ? `${C.cyan}◆ ${C.reset}` : '  ';
+    const state =
+      p.state === 'setup_required'
+        ? `   ${C.yellow}set up needed${C.reset}`
+        : p.state === 'deleting'
+          ? `   ${C.yellow}deleting${C.reset}`
+          : '';
+    const tag =
+      (isDefault
+        ? `   ${C.green}default${C.reset}`
+        : isLinked
+          ? `   ${C.cyan}linked${C.reset}`
+          : '') + state;
+    process.stdout.write(
+      `${marker}${pad(p.name, nameW)}   ${pad(p.project_id, 36)}   ${C.faded}${pad(account.role, roleW)}${C.reset}   ${C.faded}${formatRelative(p.updated_at)}${C.reset}${tag}\n`,
+    );
+  }
+}
+
+/**
+ * `kortix projects ls`, the older name: the code and output as they were
+ * before Workspaces, unchanged. Scripts parse it. `kortix workspaces ls` is
+ * the flat list across accounts.
+ */
+async function projectsLsOlder(
   json = false,
   all = false,
   query?: string,
@@ -965,7 +1136,7 @@ async function projectsLs(
     }
     return 1;
   }
-  if (all) return projectsLsAll(auth, json, query);
+  if (all) return projectsLsAll(auth, json, query, true);
 
   // Scope to the active account so this lists exactly that account's projects
   // (not the server's earliest-joined-account default).
@@ -974,7 +1145,10 @@ async function projectsLs(
   const client = clientFromAuth(auth, { accountId });
   let projects: ProjectSummary[];
   try {
-    projects = filterProjects(await client.get<ProjectSummary[]>('/projects'), query);
+    // GET /workspaces lists every workspace of the caller: keep the active
+    // account's, which is what this older command has always listed.
+    const every = await client.get<ProjectSummary[]>('/workspaces');
+    projects = filterProjects(accountId ? every.filter((p) => p.account_id === accountId) : every, query);
   } catch (err) {
     return surface(err);
   }
@@ -1014,10 +1188,10 @@ async function projectsLs(
   return 0;
 }
 
-async function projectsLsAll(auth: Auth, json = false, query?: string): Promise<number> {
+async function projectsLsAll(auth: Auth, json = false, query?: string, olderName = false): Promise<number> {
   let me: MeResponse;
   try {
-    me = await clientFromAuth(auth).get<MeResponse>('/accounts/me');
+    me = await clientFromAuth(auth).get<MeResponse>('/me');
   } catch (err) {
     return surface(err);
   }
@@ -1026,18 +1200,19 @@ async function projectsLsAll(auth: Auth, json = false, query?: string): Promise<
   const linked = loadLink()?.project_id;
   const def = defaultProject()?.project_id;
 
-  const sections: { account: AccountMembership; projects: ProjectSummary[] }[] = [];
-  for (const a of me.accounts) {
-    let projects: ProjectSummary[] = [];
-    try {
-      projects = await clientFromAuth(auth, { accountId: a.account_id }).get<ProjectSummary[]>(
-        '/projects',
-      );
-    } catch {
-      /* skip accounts we can't read; leave the section empty */
-    }
-    sections.push({ account: a, projects: filterProjects(projects, query) });
+  // One read on a server that lists every workspace of the caller (an older
+  // server: one read per account); each account section shows its own. An
+  // account whose read failed keeps an empty section, as before.
+  let rows: WorkspaceRow[] = [];
+  try {
+    rows = (await listWorkspaceRowsReport(auth, undefined, me)).rows;
+  } catch (err) {
+    return surface(err);
   }
+  const sections: { account: AccountMembership; projects: ProjectSummary[] }[] = me.accounts.map((a) => ({
+    account: a,
+    projects: filterProjects(rows.filter((r) => r.project.account_id === a.account_id).map((r) => r.project), query),
+  }));
 
   if (json) {
     emitJson(
@@ -1063,21 +1238,21 @@ async function projectsLsAll(auth: Auth, json = false, query?: string): Promise<
       `  ${C.bold}${s.account.name || s.account.slug}${C.reset} ${C.faded}(${s.account.slug}, ${s.account.role})${C.reset}${activeMark}\n`,
     );
     if (s.projects.length === 0) {
-      process.stdout.write(`  ${C.dim}— no projects${C.reset}\n`);
+      process.stdout.write(`  ${C.dim}— no ${olderName ? 'projects' : 'workspace'}${C.reset}\n`);
       continue;
     }
     renderProjectTable(s.projects, { linked, def });
     total += s.projects.length;
   }
   process.stdout.write(
-    `\n  ${C.dim}${total} project${total === 1 ? '' : 's'} across ${me.accounts.length} ` +
+    `\n  ${C.dim}${total} ${olderName ? 'project' : 'workspace'}${total === 1 ? '' : 's'} across ${me.accounts.length} ` +
       `account${me.accounts.length === 1 ? '' : 's'}${C.reset}\n\n`,
   );
   return 0;
 }
 
-/** Render a project table. `●` marks the global default, `◆` the cwd's
- *  directory link; a trailing tag spells it out. */
+/** The deprecated `ls --all` table, one account section at a time. `●` marks
+ *  the global default, `◆` the cwd's directory link. */
 function renderProjectTable(
   projects: ProjectSummary[],
   marks: { linked?: string; def?: string },
@@ -1090,11 +1265,18 @@ function renderProjectTable(
     const isDefault = p.project_id === marks.def;
     const isLinked = p.project_id === marks.linked;
     const marker = isDefault ? `${C.green}● ${C.reset}` : isLinked ? `${C.cyan}◆ ${C.reset}` : '  ';
-    const tag = isDefault
-      ? `   ${C.green}default${C.reset}`
-      : isLinked
-        ? `   ${C.cyan}linked${C.reset}`
-        : '';
+    const state =
+      p.state === 'setup_required'
+        ? `   ${C.yellow}set up needed${C.reset}`
+        : p.state === 'deleting'
+          ? `   ${C.yellow}deleting${C.reset}`
+          : '';
+    const tag =
+      (isDefault
+        ? `   ${C.green}default${C.reset}`
+        : isLinked
+          ? `   ${C.cyan}linked${C.reset}`
+          : '') + state;
     const repo = trimMid(p.repo_url, 40);
     const updated = formatRelative(p.updated_at);
     process.stdout.write(
@@ -1127,21 +1309,21 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   const id = resolveProjectId(arg, { hostScoped: !hostArg, hostArg });
   if (!id) {
     process.stderr.write(
-      `${status.err('No project linked. Run `kortix projects link` or pass an id.')}\n`,
+      `${status.err('No workspace selected. Run `kortix workspaces link` or pass an id.')}\n`,
     );
     return 1;
   }
   const located = await locateProjectAnywhere(
     id,
     { hostArg },
-    (host) => `kortix projects info ${id} --host ${host}`,
+    (host) => `kortix workspaces info ${id} --host ${host}`,
   );
   if (!located) return 1;
   const p = located.located.project;
   // Whether Kortix can reach the repository (KRTX-2955). Best effort: an
   // older server without the route prints no git line.
   const git = await located.located.client
-    .get<GitConnectionState>(`/projects/${p.project_id}/git/connection`)
+    .get<GitConnectionState>(`/workspaces/${p.project_id}/git/connection`)
     .catch(() => null);
   if (json) {
     // The API's wire name for the id is `project_id`; scripts read `.id`.
@@ -1180,7 +1362,23 @@ function isDefaultProjectResponse(value: unknown): boolean {
 function invalidDefaultProjectResponse(value: unknown): number {
   const detail = value !== null && typeof value === 'object'
     && 'error' in value && typeof value.error === 'string' ? `: ${value.error}` : '';
-  process.stderr.write(`${status.err(`Invalid project response${detail}. Expected project_id, account_id and name.`)}\n`);
+  process.stderr.write(`${status.err(`Invalid workspace response${detail}. Expected project_id, account_id and name.`)}\n`);
+  return 1;
+}
+
+/**
+ * The caller's one workspace named `name` (case-insensitive), null when none
+ * has it, or an exit code after printing why (several share it, or the list
+ * failed).
+ */
+async function workspaceNamed(auth: Auth, name: string): Promise<ProjectSummary | null | number> {
+  const report = await listWorkspaces(auth);
+  if (typeof report === 'number') return report;
+  const matches = report.rows.map((r) => r.project).filter((p) => p.name.toLowerCase() === name.toLowerCase());
+  if (matches.length <= 1) return matches[0] ?? null;
+  process.stderr.write(
+    `${status.err(`${matches.length} workspaces are named "${name}".`)} Pass one id: ${matches.map((p) => p.project_id).join(', ')}\n`,
+  );
   return 1;
 }
 
@@ -1202,33 +1400,37 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
 
   let target: ProjectSummary | null = null;
   if (arg) {
-    // An explicit id may live in any account — resolve it unscoped.
+    // An explicit id may live in any account — resolve it unscoped. A 404 on
+    // the id tries it as a name: the one workspace of the caller with that
+    // name (case-insensitive).
     try {
-      target = await clientFromAuth(auth).get<ProjectSummary>(`/projects/${arg}`);
+      target = await clientFromAuth(auth).get<ProjectSummary>(`/workspaces/${encodeURIComponent(arg)}`);
     } catch (err) {
-      return surface(err);
+      if (!(err instanceof ApiError && err.status === 404)) return surface(err);
+      const byName = await workspaceNamed(auth, arg);
+      if (typeof byName === 'number') return byName;
+      if (!byName) return surface(err);
+      target = byName;
     }
   } else {
-    // Pick from the target host's stored account (--host) or the active one.
-    let list: ProjectSummary[];
-    try {
-      const accountId = hostArg ? auth.account_id || undefined : scopeAccountId(auth);
-      list = await clientFromAuth(auth, { accountId }).get<ProjectSummary[]>('/projects');
-    } catch (err) {
-      return surface(err);
-    }
-    if (!Array.isArray(list) || !list.every(isDefaultProjectResponse)) {
-      return invalidDefaultProjectResponse(list);
-    }
-    if (list.length === 0) {
-      process.stderr.write(
-        `${status.err(hostArg ? `No projects in host "${hostArg}"'s account.` : 'No projects in the active account.')} Switch with \`kortix accounts use\`.\n`,
-      );
-      return 1;
-    }
+    // Pick from every workspace on the target host, flat.
+    const report = await listWorkspaces(auth);
+    if (typeof report === 'number') return report;
+    // The picker offers the readable workspaces and names the unreadable.
+    writeListFailures(report.failed);
+    const rows = report.rows;
+    const list = rows.map((r) => r.project);
+    if (!list.every(isDefaultProjectResponse)) return invalidDefaultProjectResponse(list);
+    if (list.length === 0) return noWorkspace();
+    const currentId = (hostArg ? getHost(hostArg)?.default_project : defaultProject())?.project_id;
     const picked = await selectFromList<ProjectSummary>({
-      title: 'Set the global default project',
-      items: list.map((p) => ({ value: p, label: p.name, sublabel: p.project_id })),
+      title: 'Switch workspace',
+      items: rows.map(({ project: p, account }) => ({
+        value: p,
+        label: p.project_id === currentId ? `${p.name}  ${C.green}●${C.reset}` : p.name,
+        sublabel: account.role ? `${account.role} · ${p.project_id}` : p.project_id,
+      })),
+      initialIndex: Math.max(0, list.findIndex((p) => p.project_id === currentId)),
     });
     if (!picked) {
       process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
@@ -1246,12 +1448,11 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
   // stored account, not the ambient active one.
   const priorAccountId = hostArg ? auth.account_id : (activeAccount()?.id ?? auth.account_id);
   const switched = target.account_id !== priorAccountId;
-  let accountLabel = target.account_id.slice(0, 8);
   if (switched) {
     let slug = target.account_id.slice(0, 8);
     let name: string | undefined;
     try {
-      const me = await clientFromAuth(auth).get<MeResponse>('/accounts/me');
+      const me = await clientFromAuth(auth).get<MeResponse>('/me');
       const m = me.accounts.find((a) => a.account_id === target!.account_id);
       if (m) {
         slug = m.slug;
@@ -1261,7 +1462,6 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
       /* fall back to the truncated id */
     }
     setActiveAccount({ id: target.account_id, slug, name }, hostArg);
-    accountLabel = name ? `${name} (${slug})` : slug;
   }
   setDefaultProject(
     {
@@ -1272,17 +1472,12 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
     hostArg,
   );
 
-  process.stdout.write(`${status.ok(`Default project: ${C.bold}${target.name}${C.reset}`)}\n`);
+  process.stdout.write(`${status.ok(`Default workspace: ${C.bold}${target.name}${C.reset}`)}\n`);
   if (hostArg) {
     process.stdout.write(`  ${C.dim}host      ${C.reset}${hostArg}\n`);
   }
-  if (switched) {
-    process.stdout.write(
-      `  ${C.dim}account → ${C.reset}${accountLabel} ${C.dim}(now active${hostArg ? ` on ${hostArg}` : ''})${C.reset}\n`,
-    );
-  }
   process.stdout.write(
-    `  ${C.dim}Used by connectors/connections/sessions when a directory isn't linked.${C.reset}\n`,
+    `  ${C.dim}Commands use it anywhere a directory is not linked.${C.reset}\n`,
   );
   return 0;
 }
@@ -1293,10 +1488,10 @@ async function projectsUnset(hostArg?: string): Promise<number> {
   const existing = hostArg ? (getHost(hostArg)?.default_project ?? null) : defaultProject();
   if (clearDefaultProject(hostArg)) {
     process.stdout.write(
-      `${status.ok(`Cleared the default project${existing?.name ? ` ${C.dim}(was ${existing.name})${C.reset}` : ''}`)}\n`,
+      `${status.ok(`Cleared the default workspace${existing?.name ? ` ${C.dim}(was ${existing.name})${C.reset}` : ''}`)}\n`,
     );
   } else {
-    process.stdout.write(`${C.dim}No default project set. Nothing to do.${C.reset}\n`);
+    process.stdout.write(`${C.dim}No default workspace set. Nothing to do.${C.reset}\n`);
   }
   return 0;
 }
@@ -1322,7 +1517,7 @@ async function projectsLink(arg?: string, hostArg?: string): Promise<number> {
   // dir (from `kortix init`) or a `kortix.yaml` at the root.
   if (!isKortixProject()) {
     process.stderr.write(
-      `${status.err(`Not a Kortix project — no .kortix/ or kortix.yaml in ${process.cwd()}.`)}\n`,
+      `${status.err(`Not a Kortix config repo — no .kortix/ or kortix.yaml in ${process.cwd()}.`)}\n`,
     );
     process.stderr.write(
       `  ${C.dim}Run ${C.reset}${C.cyan}kortix init${C.reset}${C.dim} here first to scaffold one.${C.reset}\n`,
@@ -1335,23 +1530,20 @@ async function projectsLink(arg?: string, hostArg?: string): Promise<number> {
   let target: ProjectSummary | null = null;
   if (arg) {
     try {
-      target = await client.get<ProjectSummary>(`/projects/${arg}`);
+      target = await client.get<ProjectSummary>(`/workspaces/${arg}`);
     } catch (err) {
       return surface(err);
     }
   } else {
-    let list: ProjectSummary[];
-    try {
-      list = await client.get<ProjectSummary[]>('/projects');
-    } catch (err) {
-      return surface(err);
-    }
-    if (list.length === 0) {
-      process.stderr.write(`${status.err('No projects in this account to link to.')}\n`);
-      return 1;
-    }
+    const report = await listWorkspaces(auth);
+    if (typeof report === 'number') return report;
+    // The picker offers the readable workspaces and names the unreadable.
+    writeListFailures(report.failed);
+    const rows = report.rows;
+    const list = rows.map((r) => r.project);
+    if (list.length === 0) return noWorkspace();
     const picked = await selectFromList<ProjectSummary>({
-      title: `Pick a project to link to ${process.cwd()}`,
+      title: `Pick a workspace to link to ${process.cwd()}`,
       items: list.map((p) => ({
         value: p,
         label: p.name,
@@ -1366,7 +1558,7 @@ async function projectsLink(arg?: string, hostArg?: string): Promise<number> {
   }
 
   if (!target) {
-    process.stderr.write(`${status.err('Could not resolve a project.')}\n`);
+    process.stderr.write(`${status.err('Could not resolve a workspace.')}\n`);
     return 1;
   }
 
@@ -1386,7 +1578,7 @@ async function projectsLink(arg?: string, hostArg?: string): Promise<number> {
   process.stdout.write(
     `  ${C.dim}host:       ${C.reset}${hostName} ${C.faded}(${auth.api_base})${C.reset}\n`,
   );
-  process.stdout.write(`  ${C.dim}project_id: ${C.reset}${target.project_id}\n`);
+  process.stdout.write(`  ${C.dim}workspace:  ${C.reset}${target.project_id}\n`);
   return 0;
 }
 
@@ -1406,13 +1598,13 @@ async function projectsUnlink(): Promise<number> {
 async function projectsOpen(arg?: string, hostArg?: string): Promise<number> {
   const id = resolveProjectId(arg, { hostScoped: !hostArg, hostArg });
   if (!id) {
-    process.stderr.write(`${status.err('No project linked. Pass an id or link first.')}\n`);
+    process.stderr.write(`${status.err('No workspace selected. Pass an id or link first.')}\n`);
     return 1;
   }
   const located = await locateProjectAnywhere(
     id,
     { hostArg },
-    (host) => `kortix projects open ${id} --host ${host}`,
+    (host) => `kortix workspaces open ${id} --host ${host}`,
   );
   if (!located) return 1;
   const url = projectWebUrl(located.located.auth.api_base, id);
@@ -1425,6 +1617,8 @@ interface RmResult {
   ok: boolean;
   archived: boolean;
   repo_deleted: boolean;
+  /** Set when the delete closed the workspace (K2): owners can restore it until then. */
+  deletion_scheduled_for?: string | null;
 }
 
 async function projectsRm(args: string[]): Promise<number> {
@@ -1440,7 +1634,7 @@ async function projectsRm(args: string[]): Promise<number> {
   const id = rest.find((a) => !a.startsWith('-')) ?? resolveProjectId(undefined, { hostScoped: !hostArg, hostArg });
   if (!id) {
     process.stderr.write(
-      `${status.err('No project to remove.')} Pass an id or run inside a linked project.\n`,
+      `${status.err('No workspace to remove.')} Pass an id or run inside a linked directory.\n`,
     );
     return 1;
   }
@@ -1448,13 +1642,13 @@ async function projectsRm(args: string[]): Promise<number> {
   const located = await locateProjectAnywhere(
     id,
     { hostArg },
-    (host) => `kortix projects rm ${id} --host ${host}`,
+    (host) => `kortix workspaces rm ${id} --host ${host}`,
   );
   if (!located) return 1;
   const { client, project } = located.located;
 
   if (!yes) {
-    const msg = `Delete ${C.bold}${project.name}${C.reset} and its Kortix-managed git repo? ${C.red}This cannot be undone.${C.reset}`;
+    const msg = `Delete ${C.bold}${project.name}${C.reset} for every member? Its owners can restore it for 14 days; after that its Kortix-managed git repo, sessions and credits are erased.`;
     const ok = await confirm(msg, false);
     if (!ok) {
       process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
@@ -1464,19 +1658,21 @@ async function projectsRm(args: string[]): Promise<number> {
 
   let result: RmResult;
   try {
-    result = await client.delete<RmResult>(`/projects/${id}`);
+    result = await client.delete<RmResult>(`/workspaces/${id}`);
   } catch (err) {
     return surface(err);
   }
 
-  // Drop the local binding if we just removed the linked project.
+  // Drop the local binding if we just removed the linked workspace.
   if (loadLink()?.project_id === id) clearLink();
 
   process.stdout.write(
     `${status.ok(`Deleted ${C.bold}${project.name}${C.reset}`)}\n` +
-      (result.repo_deleted
-        ? `  ${C.dim}managed git repo deleted${C.reset}\n`
-        : `  ${C.dim}no managed repo to delete (bring-your-own repos are left untouched)${C.reset}\n`),
+      (result.deletion_scheduled_for
+        ? `  ${C.dim}an owner can restore it until ${result.deletion_scheduled_for} (POST /v1/workspaces/${id}/restore)${C.reset}\n`
+        : result.repo_deleted
+          ? `  ${C.dim}managed git repo deleted${C.reset}\n`
+          : `  ${C.dim}no managed repo to delete (bring-your-own repos are left untouched)${C.reset}\n`),
   );
   return 0;
 }
@@ -1484,6 +1680,7 @@ async function projectsRm(args: string[]): Promise<number> {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 function surface(err: unknown): number {
+  if (isNoWorkspaceError(err)) return noWorkspace();
   // A denial goes through the shared formatter so the CLI's tail names the
   // refused identity and the right remedy.
   if (err instanceof ApiError && err.status === 403) return surfaceApiError(err);

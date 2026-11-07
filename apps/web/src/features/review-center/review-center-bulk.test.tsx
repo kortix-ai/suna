@@ -45,14 +45,14 @@ for (const key of [
 let search = '';
 mock.module('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(search),
-  usePathname: () => '/projects/p/review',
+  usePathname: () => '/workspaces/p/review',
   useRouter: () => ({ push() {}, replace() {}, prefetch() {} }),
 }));
 const realUiProvider = { ...(await import('@kortix/ui/providers/ui-provider')) };
 mock.module('@kortix/ui/providers/ui-provider', () => ({
   ...realUiProvider,
   useUiSearchParams: () => new URLSearchParams(search),
-  useUiPathname: () => '/projects/p/review',
+  useUiPathname: () => '/workspaces/p/review',
   useUiRouter: () => ({ push() {}, replace() {}, prefetch() {}, back() {} }),
 }));
 

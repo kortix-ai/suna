@@ -19,9 +19,8 @@ afterEach(() => {
 });
 
 describe('session notification preferences', () => {
-  test('a fresh profile enables completion notifications without granting browser permission', () => {
+  test('a fresh profile enables notifications without granting browser permission', () => {
     expect(initial.preferences.enabled).toBe(true);
-    expect(initial.preferences.onCompletion).toBe(true);
     expect(initial.permission).toBe('default');
   });
 

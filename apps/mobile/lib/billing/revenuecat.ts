@@ -281,10 +281,32 @@ export async function getOfferingById(
   }
 }
 
+/**
+ * The subscriber attribute that names the workspace a purchase is for. The
+ * API's RevenueCat webhook reads it (`REVENUECAT_WORKSPACE_ATTRIBUTE` in
+ * apps/api/src/billing/services/revenuecat-webhooks.ts) to credit that
+ * workspace when the person is its member; a person holds several.
+ */
+export const REVENUECAT_WORKSPACE_ATTRIBUTE = 'kortix_workspace_id';
+
+/**
+ * Name the workspace the next purchase buys for. With no workspace the value
+ * is empty, which deletes the attribute (RevenueCat's rule): a value left from
+ * an earlier purchase must never credit another workspace, so the webhook
+ * falls back to the person's default one.
+ * A failure blocks the purchase: buying for the wrong workspace is worse than
+ * not buying.
+ */
+async function setPurchaseWorkspace(workspaceId: string | null | undefined): Promise<void> {
+  await Purchases.setAttributes({ [REVENUECAT_WORKSPACE_ATTRIBUTE]: workspaceId || '' });
+}
+
 export async function purchasePackage(
   pkg: PurchasesPackage,
   email?: string,
-  expectedUserId?: string
+  expectedUserId?: string,
+  /** The current workspace (`kortix_workspace_id`): the webhook credits it. */
+  workspaceId?: string | null
 ): Promise<CustomerInfo> {
   try {
 
@@ -339,6 +361,8 @@ export async function purchasePackage(
         log.rcWarn('Could not set email before purchase:', emailError);
       }
     }
+
+    await setPurchaseWorkspace(workspaceId);
 
     let customerInfo: CustomerInfo;
     try {
@@ -425,10 +449,12 @@ export function getSubscriptionInfo(customerInfo: CustomerInfo): RevenueCatSubsc
 }
 
 export async function presentPaywall(
-  paywallName?: string
+  paywallName?: string,
+  /** The current workspace (`kortix_workspace_id`): the webhook credits it. */
+  workspaceId?: string | null
 ): Promise<{ purchased: boolean; cancelled: boolean }> {
   try {
-    
+
     let offering: PurchasesOffering | null = null;
 
     // Don't use forceRefresh - the logout/login cycle disrupts SDK state
@@ -450,8 +476,9 @@ export async function presentPaywall(
       throw error;
     }
     
+    await setPurchaseWorkspace(workspaceId);
     log.rc('Presenting paywall:', offering.identifier);
-    
+
     const result = await RevenueCatUI.presentPaywall({ 
       offering,
       displayCloseButton: true,

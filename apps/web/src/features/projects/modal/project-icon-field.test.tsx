@@ -135,12 +135,12 @@ describe('ProjectIconField trigger', () => {
   test('names the control for assistive tech in all three states', () => {
     // frimousse/the glyph grid give the trigger no visible text, so the
     // aria-label is the control's only accessible name.
-    expect(render({ value: null })).toContain('aria-label="Choose project icon"');
+    expect(render({ value: null })).toContain('aria-label="Choose workspace icon"');
     expect(render({ value: { emoji: '🚀' } })).toContain(
-      'aria-label="Project icon: 🚀. Change it"',
+      'aria-label="Workspace icon: 🚀. Change it"',
     );
     expect(render({ value: { glyph: ROCKET_BLUE } })).toContain(
-      'aria-label="Project icon: Rocket. Change it"',
+      'aria-label="Workspace icon: Rocket. Change it"',
     );
   });
 
@@ -367,7 +367,7 @@ describe('ProjectIconField popover geometry', () => {
   });
 
   test('the popover defaults to hanging off the trigger’s leading edge', () => {
-    // Default is `start` — `/new` and the create modal put the trigger on the
+    // Default is `start` — `/workspaces/new` and the create modal put the trigger on the
     // leading edge of its row, so `center`/`end` would push a ~278px popover
     // past the edge. Hosts that need the other side (Settings' trailing Icon
     // row) pass `align` through; the prop is forwarded, not hardcoded.

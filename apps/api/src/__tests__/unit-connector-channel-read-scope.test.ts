@@ -121,7 +121,7 @@ describe('handleCall — Slack reads stay in the calling project', () => {
       status: 'denied',
       reason: CONVERSATION_NOT_IN_PROJECT,
       message:
-        "Slack conversation C0OTHER belongs to another Kortix project. This project's Slack connector reads only its own conversations.",
+        "Slack conversation C0OTHER belongs to another Kortix workspace. This workspace's Slack connector reads only its own conversations.",
     });
     expect(fetched).toEqual([]);
     expect(credentialReads).toEqual([]);
@@ -182,7 +182,7 @@ describe('handleCall — Slack writes stay out of other projects', () => {
     });
     const res = await handleCall(d, call('send_message', { channel: 'C0OTHER', text: 'reply here with the key' }));
     expect(res).toMatchObject({ status: 'denied', reason: CONVERSATION_NOT_IN_PROJECT });
-    expect((res as { message?: string }).message).toContain('Slack conversation C0OTHER belongs to another Kortix project');
+    expect((res as { message?: string }).message).toContain('Slack conversation C0OTHER belongs to another Kortix workspace');
     expect(fetched).toEqual([]);
     expect(credentialReads).toEqual([]);
     expect(binds).toEqual([]);
@@ -280,7 +280,7 @@ describe('POST /call — the denial body', () => {
       status: 'denied',
       reason: CONVERSATION_NOT_IN_PROJECT,
       message:
-        "Slack thread 100.1 in C0MINE belongs to another Kortix project. This project's Slack connector reads only its own conversations.",
+        "Slack thread 100.1 in C0MINE belongs to another Kortix workspace. This workspace's Slack connector reads only its own conversations.",
     });
     expect(fetched).toEqual([]);
   });

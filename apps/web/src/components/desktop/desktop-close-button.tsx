@@ -9,7 +9,7 @@ import { useTranslations } from '@/i18n/use-translations';
 /**
  * Close, for a full-screen frame that the desktop shell cannot otherwise leave.
  *
- * The shell has no browser toolbar. On `/new` the only exit was Log out.
+ * The shell has no browser toolbar. On `/workspaces/new` the only exit was Log out.
  * This is the missing way out, drawn at the frame's top-right corner.
  *
  * Icon-only, unlike `DesktopBackControl`: it sits beside a labelled control
@@ -18,7 +18,7 @@ import { useTranslations } from '@/i18n/use-translations';
  *
  * Desktop only. `.kx-desktop-back` in globals.css shows it under
  * `html[data-desktop='true']`, so the web keeps the browser's own Back. The
- * host passes `onClose`, because only the host knows what closing means: `/new`
+ * host passes `onClose`, because only the host knows what closing means: `/workspaces/new`
  * returns to the landing door.
  */
 export function DesktopCloseButton({ onClose }: { onClose: () => void }) {

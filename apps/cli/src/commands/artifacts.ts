@@ -1,10 +1,9 @@
-// `kortix artifacts` (flag `artifacts`): share paths of the project's Files as
+// `kortix artifacts`: share paths of the workspace's Files as
 // docs (Markdown) and pages (HTML), and list, read, save, version and unshare
 // them. The API is the contract; this file only maps flags to it.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
-  ApiError as SdkApiError,
   deleteArtifact,
   getArtifact,
   listAccountMembers,
@@ -19,17 +18,15 @@ import {
 } from '@kortix/sdk';
 import { formatRelative } from '@kortix/shared';
 import { withKortixScope } from '../api/sdk.ts';
-import { ApiError as CliApiError } from '../api/client.ts';
-import { splitHelp } from '../command-argv.ts';
+import { splitHelp, fromWorkspaceAlias, toWorkspaceAlias } from '../command-argv.ts';
 import { emitJson, fail, missing, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue, takeFlagValues } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
-import { artifactsComments } from './artifacts-comments.ts';
-import { artifactsFocus } from './artifacts-focus.ts';
 import { artifactsPublish } from './artifacts-publish.ts';
+import { artifactsTypes } from './artifacts-types.ts';
 import { TYPES, short, type ArtifactsFlags, type ArtifactsRun } from './artifacts-run.ts';
 const HELP = help`Usage: kortix artifacts <subcommand> [options]
 
-An artifact is a path in the project's Files shared as one of two types:
+An artifact is a path in the workspace's Files shared as one of two types:
   doc    a Markdown file people read and edit in place (export as PDF)
   html   an HTML page, or a folder with index.html and its assets: a deck,
          a dashboard, a mockup, a tool
@@ -47,10 +44,10 @@ Subcommands:
                              goes up in several saves. Prints the link.
                              --title "<title>" (default: the doc's # heading or
                              the page's <title>), --description "<sentence>",
-                             --visibility private|project|public (default private),
+                             --visibility private|workspace|public (default private),
                              --space <slug>, --agent <name> (where it is grouped;
                              default agent: this session's agent; spaces are
-                             Work in progress, shown only with the project flag
+                             Work in progress, shown only with the workspace flag
                              \`chat\` on)
   add <path>                 Share a folder already in Files (it holds an
                              index.md or index.html; an index file stands for
@@ -70,46 +67,28 @@ Subcommands:
                              --version <id> reads an old version.
   pull <artifact> <dir>      Download its files, to edit and publish again.
   open <artifact>            Print its links (app, view, public).
-  share <artifact>           --visibility private|project|public
+  share <artifact>           --visibility private|workspace|public
                              --with <email|user-id> (repeat) shares a private
                              artifact with those people; --with "" clears.
   rename <artifact> "<title>"
   bind <artifact>            Group it: --space <slug>, --agent <name>, or
-                             --clear (project-wide). Grouping only: it grants
+                             --clear (workspace-wide). Grouping only: it grants
                              nothing.
   versions <artifact>        Every save, newest first (from the Files history).
   restore <artifact> <version-id>
                              Write that version back, as a new save.
-  comments <artifact>        Open threads. --all includes resolved threads;
-                             --resolved shows only resolved threads.
-  comment <artifact> "<text>" [--quote "<text>" | --selector "<css>"]
-                             Open a thread on the whole artifact, an exact
-                             quote (up to 500 characters), or an HTML selector.
-                             A missing quote exits nonzero without posting.
-                             Selector defaults: centered point (0.5, 0.5),
-                             viewport width 1280, scroll (0, 0), empty snippet.
-  reply <thread-id> "<text>"  Reply to a thread by its full id.
-  resolve <thread-id> / reopen <thread-id>
-                             Resolve a thread or open it again.
-  activity <artifact>        Events and saves, newest first. --limit 1–100.
-  focus <artifact>           Agent sessions only: show the people viewing the
-                             artifact where you work. --thread <thread-id> (a
-                             thread you answer) or --quote "<text>" (a passage
-                             you change, up to 500 characters).
-                             --status reading|editing|writing|idle
-                             (default editing; idle removes you).
   pin <artifact> / unpin <artifact>
   rm <artifact>              Stop sharing it. Its files stay in Files.
 
 <artifact> is an artifact id (or its first 8 characters from \`ls\`).
 
 Visibility:
-  private   you, and the people you --with (default)
-  project   every member of the project
-  public    anyone with the link (the "public" link from \`open\`)
+  private    you, and the people you --with (default)
+  workspace  every member of the workspace
+  public     anyone with the link (the "public" link from \`open\`)
 
 Options:
-  --project <id>     Project (default: linked, or this session's project).
+  --workspace <id>   Workspace (default: linked, or this session's workspace).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -118,15 +97,13 @@ Exit codes: 0 ok, 1 API error, 2 usage error, 3 version conflict.
 
 Examples:
   kortix artifacts publish report.md --title "Q3 churn report"
-  kortix artifacts publish ./deck --visibility project
-  kortix artifacts add /Company/Plans/roadmap.md --visibility project
+  kortix artifacts publish ./deck --visibility workspace
+  kortix artifacts add /Company/Plans/roadmap.md --visibility workspace
   kortix artifacts share 3f2a1b9c --visibility public
 `;
 
 const VISIBILITIES = ['private', 'project', 'public'];
-const KNOWN = ['types', 'publish', 'add', 'ls', 'list', 'info', 'cat', 'pull', 'open', 'share', 'rename', 'bind', 'versions', 'restore', 'comments', 'comment', 'reply', 'resolve', 'reopen', 'activity', 'focus', 'pin', 'unpin', 'rm', 'delete'];
-const FOCUS_STATUSES = ['reading', 'editing', 'writing', 'idle'];
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const KNOWN = ['types', 'publish', 'add', 'ls', 'list', 'info', 'cat', 'pull', 'open', 'share', 'rename', 'bind', 'versions', 'restore', 'pin', 'unpin', 'rm', 'delete'];
 
 function printLinks(a: Artifact) {
   process.stdout.write(`  ${C.dim}files${C.reset}   ${a.path}\n`);
@@ -145,7 +122,7 @@ async function artifactsRead(sub: string, { pid, client, f, a0, a1, resolve, out
       if (f.json) return out(list, '');
       if (!list.length) return out(null, 'No artifacts yet. Publish one with `kortix artifacts publish <file>`.');
       for (const a of list) {
-        process.stdout.write(`${C.dim}${short(a.artifact_id)}${C.reset}  ${pad(a.type, 6)}${pad(a.visibility, 9)}${pad(formatRelative(a.updated_at, { maxRelativeDays: null }) ?? '—', 9)}${a.pinned ? '★ ' : ''}${a.title}  ${C.dim}${a.path}${C.reset}\n`);
+        process.stdout.write(`${C.dim}${short(a.artifact_id)}${C.reset}  ${pad(a.type, 6)}${pad(toWorkspaceAlias(a.visibility), 11)}${pad(formatRelative(a.updated_at, { maxRelativeDays: null }) ?? '—', 9)}${a.pinned ? '★ ' : ''}${a.title}  ${C.dim}${a.path}${C.reset}\n`);
       }
       return 0;
     }
@@ -157,7 +134,7 @@ async function artifactsRead(sub: string, { pid, client, f, a0, a1, resolve, out
       if (f.json) return out(a, '');
       process.stdout.write(`${C.bold}${a.title}${C.reset}  ${C.dim}${a.artifact_id}${C.reset}\n`);
       if (sub === 'info') {
-        process.stdout.write(`  ${a.type} · ${a.visibility}${a.shared_with_user_ids.length ? ` + ${a.shared_with_user_ids.length} people` : ''} · by ${a.created_by.name ?? a.created_by.email ?? a.created_by.user_id} · updated ${formatRelative(a.updated_at, { maxRelativeDays: null }) ?? '—'}${a.can_edit ? '' : ' · view only'}\n`);
+        process.stdout.write(`  ${a.type} · ${toWorkspaceAlias(a.visibility)}${a.shared_with_user_ids.length ? ` + ${a.shared_with_user_ids.length} people` : ''} · by ${a.created_by.name ?? a.created_by.email ?? a.created_by.user_id} · updated ${formatRelative(a.updated_at, { maxRelativeDays: null }) ?? '—'}${a.can_edit ? '' : ' · view only'}\n`);
         process.stdout.write(`  ${C.dim}entry_version${C.reset} ${a.entry_version ?? '-'}\n`);
         if (a.description) process.stdout.write(`  ${a.description}\n`);
         for (const file of a.version.files) process.stdout.write(`  ${C.dim}${pad(String(file.size), 9)}${C.reset}${file.path}\n`);
@@ -197,11 +174,11 @@ async function artifactsRead(sub: string, { pid, client, f, a0, a1, resolve, out
         const emails = wanted.filter((w) => w.includes('@'));
         people = wanted.filter((w) => !w.includes('@'));
         if (emails.length) {
-          const project = await client.get<{ account_id: string }>(`/projects/${pid}`);
+          const project = await client.get<{ account_id: string }>(`/workspaces/${pid}`);
           const members = await listAccountMembers(project.account_id);
           for (const email of emails) {
             const m = members.find((x) => x.email?.toLowerCase() === email.toLowerCase());
-            if (!m) return fail(`${email} is not a member of this account.`);
+            if (!m) return fail(`${email} is not a member of this workspace.`);
             people.push(m.user_id);
           }
         }
@@ -211,7 +188,7 @@ async function artifactsRead(sub: string, { pid, client, f, a0, a1, resolve, out
         ...(people ? { shared_with_user_ids: people } : {}),
       });
       if (f.json) return out(a, '');
-      process.stdout.write(`${status.ok(`"${a.title}" is ${a.visibility}${a.shared_with_user_ids.length ? `, shared with ${a.shared_with_user_ids.length} people` : ''}`)}\n`);
+      process.stdout.write(`${status.ok(`"${a.title}" is ${toWorkspaceAlias(a.visibility)}${a.shared_with_user_ids.length ? `, shared with ${a.shared_with_user_ids.length} people` : ''}`)}\n`);
       printLinks(a);
       return 0;
     }
@@ -227,7 +204,7 @@ async function artifactsRead(sub: string, { pid, client, f, a0, a1, resolve, out
       if (!id) return a0 ? 1 : missing('an artifact id');
       if (!f.clear && f.space === undefined && f.agent === undefined) return missing('--space <slug>, --agent <name> or --clear');
       const a = await updateArtifact(pid, id, f.clear ? { space: null, agent: null } : { ...(f.space ? { space: f.space } : {}), ...(f.agent ? { agent: f.agent } : {}) });
-      return out(a, status.ok(`"${a.title}" is in ${a.space ?? (a.agent ? `${a.agent}'s space` : 'no space (project-wide)')}`));
+      return out(a, status.ok(`"${a.title}" is in ${a.space ?? (a.agent ? `${a.agent}'s space` : 'no space (workspace-wide)')}`));
     }
     case 'pin':
     case 'unpin': {
@@ -248,12 +225,12 @@ async function artifactsRead(sub: string, { pid, client, f, a0, a1, resolve, out
 function parseFlags(rest: string[]): ArtifactsFlags {
   return {
     json: takeFlagBool(rest, ['--json']),
-    projectArg: takeFlagValue(rest, ['--project']),
+    projectArg: takeFlagValue(rest, ['--project', '--workspace']),
     hostArg: takeFlagValue(rest, ['--host']),
     type: takeFlagValue(rest, ['--type']),
     title: takeFlagValue(rest, ['--title']),
     description: takeFlagValue(rest, ['--description']),
-    visibility: takeFlagValue(rest, ['--visibility']),
+    visibility: fromWorkspaceAlias(takeFlagValue(rest, ['--visibility'])),
     id: takeFlagValue(rest, ['--id']),
     baseVersion: takeFlagValue(rest, ['--base-version']),
     version: takeFlagValue(rest, ['--version']),
@@ -266,13 +243,6 @@ function parseFlags(rest: string[]): ArtifactsFlags {
     space: takeFlagValue(rest, ['--space']),
     agent: takeFlagValue(rest, ['--agent']),
     clear: takeFlagBool(rest, ['--clear']),
-    quote: takeFlagValue(rest, ['--quote']),
-    selector: takeFlagValue(rest, ['--selector']),
-    all: takeFlagBool(rest, ['--all']),
-    resolved: takeFlagBool(rest, ['--resolved']),
-    limit: takeFlagValue(rest, ['--limit']),
-    thread: takeFlagValue(rest, ['--thread']),
-    focusStatus: takeFlagValue(rest, ['--status']),
   };
 }
 
@@ -291,19 +261,9 @@ export async function runArtifacts(argv: string[]): Promise<number> {
   if (unknown) return fail(`unknown option "${unknown}". Run \`kortix artifacts --help\`.`);
   if (!KNOWN.includes(sub)) return fail(`unknown subcommand "${sub}". Run \`kortix artifacts --help\`.`);
   if (f.type && !TYPES.includes(f.type)) return fail(`--type must be doc or html.`);
-  if (f.visibility && !VISIBILITIES.includes(f.visibility)) return fail(`--visibility must be private, project or public.`);
+  if (f.visibility && !VISIBILITIES.includes(f.visibility)) return fail(`--visibility must be private, workspace or public.`);
   if (f.space !== undefined && !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(f.space)) return fail(`--space "${f.space}" is not a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).`);
   if (f.agent !== undefined && !/^[a-z0-9][a-z0-9_-]{0,127}$/.test(f.agent)) return fail(`--agent "${f.agent}" is not an agent name.`);
-  if (f.all && f.resolved) return fail('Use --all or --resolved, not both.');
-  if (f.quote !== undefined && f.selector !== undefined) return fail('Use --quote or --selector, not both.');
-  if (f.limit !== undefined && (!/^\d+$/.test(f.limit) || Number(f.limit) < 1 || Number(f.limit) > 100)) return fail('--limit must be an integer from 1 to 100.');
-  if (sub === 'focus') {
-    if (f.focusStatus !== undefined && !FOCUS_STATUSES.includes(f.focusStatus)) return fail('--status must be reading, editing, writing or idle.');
-    if (f.thread !== undefined && !UUID.test(f.thread)) return fail(`--thread "${f.thread}" is not a thread id. Pass the full id from \`kortix artifacts comments\`.`);
-    if (f.thread !== undefined && f.quote !== undefined) return fail('Use --thread or --quote, not both.');
-    if (f.quote !== undefined && (f.quote.length > 500 || f.quote.includes('\u0000'))) return fail('--quote takes 1 to 500 characters.');
-  }
-
   const ctx = await resolveProjectContext({ projectArg: f.projectArg, hostArg: f.hostArg });
   if (!ctx) return 1;
   const pid = ctx.projectId;
@@ -334,23 +294,15 @@ export async function runArtifacts(argv: string[]): Promise<number> {
       const [a0, a1] = rest;
       const shared = (a: Artifact, verb: string) => {
         if (f.json) return out(a, '');
-        process.stdout.write(`${status.ok(`${verb} "${a.title}" (${a.type}, ${a.visibility})`)} ${C.dim}${short(a.artifact_id)}${C.reset}\n`);
+        process.stdout.write(`${status.ok(`${verb} "${a.title}" (${a.type}, ${toWorkspaceAlias(a.visibility)})`)} ${C.dim}${short(a.artifact_id)}${C.reset}\n`);
         printLinks(a);
         return 0;
       };
 
       const run: ArtifactsRun = { pid, client: ctx.client, f, a0, a1, meta, resolve, out, shared };
       switch (sub) {
-        case 'comments':
-        case 'comment':
-        case 'reply':
-        case 'resolve':
-        case 'reopen':
-        case 'activity':
-          return artifactsComments(sub, run);
-        case 'focus':
         case 'types':
-          return artifactsFocus(sub, run);
+          return artifactsTypes(run);
         case 'publish':
         case 'add':
         case 'versions':
@@ -365,10 +317,6 @@ export async function runArtifacts(argv: string[]): Promise<number> {
     if (code === 'version_conflict') {
       process.stderr.write(`${status.err((err as Error).message)}\n`);
       return 3;
-    }
-    if (err instanceof SdkApiError && typeof err.status === 'number' && ['comments', 'comment', 'reply', 'resolve', 'reopen', 'activity', 'focus'].includes(sub)) {
-      const message = err.status === 403 ? `HTTP 403: ${err.message}` : err.message;
-      return surfaceApiError(new CliApiError(err.status, message, err.details));
     }
     return surfaceApiError(err);
   }

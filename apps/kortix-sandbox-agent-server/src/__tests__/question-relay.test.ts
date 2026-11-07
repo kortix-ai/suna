@@ -92,7 +92,7 @@ describe('shared relay (pi calls it directly): relayQuestion', () => {
     const relayed = await relayQuestion(REQUEST, { parkable: true })
     const answers = relayed?.answers ?? null
 
-    const reported = requests.filter((r) => r.path === '/v1/projects/proj-1/turn-question')
+    const reported = requests.filter((r) => r.path === '/v1/workspaces/proj-1/turn-question')
     expect(reported).toHaveLength(1)
     expect(reported[0]!.auth).toBe('Bearer sandbox-token')
     expect(reported[0]!.body).toMatchObject({ session_id: 'sess-1', request_id: 'que_1', runtime_session_id: 'ses_root', parkable: true })

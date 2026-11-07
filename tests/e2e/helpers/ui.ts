@@ -66,7 +66,7 @@ export async function dismissOnboarding(page: Page): Promise<void> {
       }
       const primary = onboarding
         .getByRole("button", {
-          name: /^(Continue|Done|Open project|Start building|Get started)$/i,
+          name: /^(Continue|Done|Open workspace|Open project|Start building|Get started)$/i,
         })
         .last();
       if (await primary.isEnabled().catch(() => false)) {

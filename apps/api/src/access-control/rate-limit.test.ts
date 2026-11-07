@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test';
 const submissions: Array<Record<string, unknown>> = [];
 mock.module('../config', () => ({ config: {} }));
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: { insert: () => ({ values: async (row: Record<string, unknown>) => { submissions.push(row); } }) },
 }));
 mock.module('../shared/audit', () => ({ recordAuditEvent: async () => {} }));

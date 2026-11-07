@@ -1,6 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readRepoFile } from '../src/fixtures/repo';
 
 // CodeMirror checks extensions with `instanceof`. Two copies of
 // `@codemirror/state`, `@codemirror/view` or `@lezer/common` in one bundle make
@@ -9,11 +8,10 @@ import { describe, expect, it } from 'vitest';
 // hono bump) re-resolved the lockfile into two copies and broke yaml/json
 // previews on dev and prod. The root `pnpm.overrides` pin one version of each.
 
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const SINGLETONS = ['@codemirror/state', '@codemirror/view', '@lezer/common'];
 
 describe('the CodeMirror singletons', () => {
-  const lockfile = readFileSync(join(REPO_ROOT, 'pnpm-lock.yaml'), 'utf8');
+  const lockfile = readRepoFile('pnpm-lock.yaml');
 
   for (const name of SINGLETONS) {
     it(`resolves ${name} to exactly one version`, () => {

@@ -14,7 +14,7 @@
  * only as `hashSecretKey(token)`.
  */
 import { timingSafeEqual } from 'crypto';
-import { accounts, captureDevices, captureEnrollments, captureEnrollmentTokens } from '@kortix/db';
+import { captureDevices, captureEnrollments, captureEnrollmentTokens } from '@kortix/db';
 import { and, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { lookupEmailsByUserIds } from '../accounts/core/owner-emails';
 import { emailTrustedSql } from '../iam/email-trust';
@@ -27,6 +27,7 @@ import { accountPrefix, deviceFields } from './format';
 import { ensurePolicyObject } from './policy';
 import { captureEnabled, isAccountMember } from './workspace';
 import { enqueueLink } from './workers';
+import { accountsView } from '../workspaces/rows';
 
 export const ENROLLMENT_TOKEN_PREFIX = 'kortix_enr_';
 /** How long a pending computer waits between two enroll calls. */
@@ -424,7 +425,7 @@ async function mintDeviceToken(
   if (linkNow && userId) await enqueueLink(token.accountId, deviceId, userId);
   await ensurePolicyObject(token.accountId);
   const [[account], emails] = await Promise.all([
-    db.select({ name: accounts.name }).from(accounts).where(eq(accounts.accountId, token.accountId)).limit(1),
+    db.select({ name: accountsView.name }).from(accountsView).where(eq(accountsView.accountId, token.accountId)).limit(1),
     owner ? lookupEmailsByUserIds([owner]) : Promise.resolve(new Map<string, string | null>()),
   ]);
   return {

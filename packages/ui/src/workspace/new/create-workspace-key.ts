@@ -1,6 +1,6 @@
 import { randomUUID } from '../../internal/lib/utils/random-uuid';
 /**
- * A stable `idempotency_key` for one create attempt on `/new`.
+ * A stable `idempotency_key` for one create attempt on `/workspaces/new`.
  *
  * `POST /v1/projects/provision` mints a brand-new managed repo per call, so a
  * reload, a second tab, or a retry after a lost response used to create a real

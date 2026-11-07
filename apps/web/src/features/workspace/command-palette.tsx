@@ -62,10 +62,7 @@ import {
   useProjectCan,
   useProjectPageCans,
 } from '@kortix/ui/workspace';
-import {
-  LEGACY_PALETTE_HIDDEN,
-  paletteRowPermitted,
-} from '@/features/workspace/command-palette-visibility';
+import { paletteRowPermitted } from '@/features/workspace/command-palette-visibility';
 import { useAppsRowVisible } from '@kortix/ui/workspace/sidebar/footer/project-apps-nav';
 import { ChannelGlyph, useMemoryPageHref } from '@kortix/ui/workspace';
 import { ModelCapabilityIcons } from '@kortix/ui/customize/sections/llm-provider/model-capability-icons';
@@ -85,11 +82,9 @@ import {
   type SettingsTab,
   resolveSettingsOverlayHref,
 } from '@kortix/ui/customize/settings/settings-tabs';
-import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
 import {
   type WorkspacePaletteRow,
   buildWorkspacePaletteRows,
-  groupWorkspacePaletteRows,
   recentWorkspaceRows,
   rootWorkspaceResults,
   workspacePageResults,
@@ -103,20 +98,23 @@ import { useTranslations } from '@/i18n/use-translations';
 import { copyToClipboard } from '@kortix/ui/internal/lib/utils/clipboard';
 import { isDesktop } from '@kortix/ui/internal/lib/desktop';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { isBillingEnabled } from '@/lib/config';
+import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
+import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
+import {
+  canCreateWorkspace,
+} from '@kortix/ui/workspace/project-selector/project-selector-model';
 import type { InterfaceThemeId } from '@/lib/interface-themes';
 import {
   type MenuItemDef,
-  type SettingsTabId,
   getItemsForSurface,
   translateMenuItem,
 } from '@/lib/menu-registry';
-import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { track } from '@/lib/track';
 import { useProjectFeatureFlags } from '@kortix/ui/internal/lib/use-project-feature-flags';
 import { cn, uiRoutes } from '@kortix/ui';
 import { DEFAULT_WALLPAPER_ID } from '@kortix/ui/theme';
 import { hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
+import { workspaceSettingsPath } from '@kortix/shared/workspace-settings';
 import { useChatSendStore } from '@kortix/ui/internal/stores/chat-send-store';
 import { firstChatHref, useFirstChatPending } from '@kortix/ui/internal/stores/first-chat-store';
 import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
@@ -128,13 +126,11 @@ import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog
 import { type ConversationDensity, useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import {
   type FeatureFlagKey,
-  type KortixAccount,
   type KortixProject,
   type ProjectDetail,
   type ProjectSession,
   type ProjectSessionPage,
   getProject,
-  getProjectDetail,
   listProjectSessions,
   PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   listProjectsForAccount,
@@ -179,7 +175,8 @@ import {
   MagnifyingGlassIcon as Search,
   SunDimIcon,
   TextAlignLeftIcon as TextAlignLeft,
-  UsersIcon as UsersSolid,
+  GearSixIcon as CogOne,
+  PlusIcon,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -196,7 +193,6 @@ type PalettePage =
   | 'agents'
   | 'models'
   | 'workspaces'
-  | 'accounts'
   | 'sessions'
   | 'files'
   | 'density'
@@ -278,50 +274,6 @@ export function buildPaletteSearchText(item: { label: string; keywords?: string 
 }
 
 /**
- * Legacy `SettingsTabId` (menu-registry's vocabulary) -> new `SettingsTab`
- * (settings-tabs.ts), for the command-palette items whose `kind` is
- * `'settings'`. Task 10 retired the legacy user-settings modal these items
- * used to open directly, in favor of `useSettingsPanelStore` — the same
- * overlay the `'navigate'` branch below already opens via
- * `resolveSettingsOverlayHref`.
- *
- * `tokens` -> `api-keys` and `transactions` -> `usage` mirror
- * `RENAMED_TABS` in `settings-tabs.ts` (same rename, same source
- * vocabulary). `appearance`, `sounds`, and `shortcuts` all merged into the
- * new `preferences` tab — `tabs/preferences-tab.tsx` already hosts all
- * three (wallpaper/theme, sound-pack controls, and a full "Keyboard
- * shortcuts" section with the modifier picker and shortcut list).
- *
- * NOTE: no palette entry uses `kind: 'settings'` any more — every settings
- * destination is now derived from the rail (`settings-palette-items.ts`), so
- * `handleOpenSettings` below is unreachable from the current registry. The
- * map and the branch stay because `MenuItemDef.kind` still admits
- * `'settings'` and the `userMenu` surface still declares entries with it; if
- * one is re-added to `showIn: ['commandPalette']` it must open through
- * `openSettingsTab`, not through a raw `openSettings` call.
- *
- * `referrals` is deliberately absent: there is no `referrals` member of
- * `SettingsTab`, and the API has no referral routes. Its registry entry was
- * removed rather than mapped — see `menu-registry.ts`.
- */
-export const LEGACY_SETTINGS_TAB_MAP: Partial<Record<SettingsTabId, SettingsTab>> = {
-  // `billing`, `tokens` and `transactions` are gone. They mapped onto the
-  // overlay's `billing` / `api-keys` / `usage` tabs, and all three tabs left
-  // the overlay for `/accounts/[id]`. There is no `SettingsTab` to map them
-  // to any more, and mapping them to a survivor would open Settings on an
-  // unrelated pane — so the registry rows that spoke those ids became plain
-  // `kind: 'navigate'` rows pointed straight at the account page instead
-  // (`account-billing`, `account-tokens`, `account-usage` in
-  // `lib/menu-registry.ts`).
-  // Since 2026-09-02 each legacy id has a tab of its own name again:
-  // theme/wallpaper live on Appearance, sound packs on Sessions, and the
-  // shortcut list stayed on Preferences.
-  appearance: 'appearance',
-  sounds: 'sessions',
-  shortcuts: 'preferences',
-};
-
-/**
  * How many rows the no-query root page offers under "Suggestions".
  * `rootSuggestionItems` and `buildRootSuggestions` are the only readers.
  */
@@ -358,7 +310,7 @@ export const SUGGESTION_PRIORITY: readonly string[] = [
   'open-session-terminal',
   'view-changes',
   'review-changes',
-  'nav-accounts',
+  'nav-workspace-settings',
 ];
 
 /**
@@ -410,7 +362,6 @@ export const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
   // routed fallback for the same reason every other entry here keeps one — if
   // this map loses the id, the row navigates instead of dead-ending.
   'nav-projects': 'workspaces',
-  'nav-accounts': 'accounts',
   'proj-sessions': 'sessions',
   'conversation-density': 'density',
   // "Review changes" lists this workspace's OPEN change requests in-palette;
@@ -471,19 +422,15 @@ const DENSITY_PAGE_OPTIONS: {
  * and passing only `emoji` (as the sidebar still does) silently renders a
  * glyph-iconed workspace as bare initials.
  *
- * The account label is trailing, muted and conditional — see
- * `showAccount`. With one account it is the same word on every row, which is
- * noise; with two it is the only thing separating two workspaces that share a
- * name.
+ * No account label: a workspace is one account and its project, so the
+ * row is the workspace's icon and name, the same as the sidebar switcher.
  */
 function WorkspaceCommandItem({
   row,
-  showAccount,
   onSelect,
   trailing,
 }: {
   row: WorkspacePaletteRow;
-  showAccount: boolean;
   onSelect: () => void;
   trailing?: React.ReactNode;
 }) {
@@ -496,11 +443,6 @@ function WorkspaceCommandItem({
         size="sm"
       />
       <span className="min-w-0 flex-1 truncate">{row.workspace.name}</span>
-      {showAccount && (
-        <span className="text-muted-foreground/40 max-w-[9rem] shrink-0 truncate text-xs">
-          {row.accountName}
-        </span>
-      )}
       {trailing}
     </CommandItem>
   );
@@ -707,7 +649,7 @@ function ChangeRequestsPage({
  * the current workspace, by name, with its switch.
  *
  * Same data, same route, same permission gate as the Feature flags section of
- * `/projects/<id>/config` (`settings/tabs/experimental-tab.tsx`): the project
+ * `/workspaces/<id>/config` (`settings/tabs/experimental-tab.tsx`): the project
  * summary's `experimental_features`, `PATCH /projects/:id/features` through
  * `updateFeatureFlag`, and `PROJECT_SETTINGS_WRITE`. Two doors onto one
  * behaviour, not a second implementation of it — the cache writes below are
@@ -883,6 +825,7 @@ export function CommandPalette() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tPalette = useTranslations('commandPalette');
+  const tWorkspaces = useTranslations('workspaces.switcher');
   const { user } = useAuth();
   const tSettingsRail = useTranslations('settings.rail');
   const densityPageOptions = useLocalizedUiCatalog(DENSITY_PAGE_OPTIONS);
@@ -908,7 +851,7 @@ export function CommandPalette() {
   const params = useParams<{ id?: string; sessionId?: string }>();
   const queryClient = useQueryClient();
   const openProjectTab = useProjectSessionTabsStore((s) => s.openTab);
-  const projectId = rawPathname?.startsWith('/projects/') ? (params?.id ?? null) : null;
+  const projectId = rawPathname?.startsWith('/workspaces/') ? (params?.id ?? null) : null;
   const currentSessionId = useMemo(() => {
     if (params?.sessionId) return params.sessionId;
     const match = pathname?.match(/^\/sessions\/([^/]+)/);
@@ -944,11 +887,6 @@ export function CommandPalette() {
 
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
   const { data: accountsList } = useAccountsList({ enabled: open });
-  const activeAccount =
-    accountsList?.find((account) => account.account_id === selectedAccountId) ??
-    accountsList?.[0] ??
-    null;
-  const activeAccountId = activeAccount?.account_id ?? null;
   /**
    * EVERY account's workspaces, not just the active account's.
    *
@@ -957,7 +895,7 @@ export function CommandPalette() {
    * (`workspace-menu-section.tsx`) already fans out over every account, so a
    * workspace in a second account was reachable by trackpad and invisible to
    * ⌘K. There is no single unscoped call that returns everything — `GET
-   * /projects` with no `account_id` resolves server-side to ONE default
+   * /workspaces` with no `account_id` resolves server-side to ONE default
    * account (apps/api `resolveProjectAccount`) — so it is one request per
    * account, exactly as the sidebar does it.
    *
@@ -981,8 +919,22 @@ export function CommandPalette() {
   // rows; the palette's per-keystroke cost is dominated by cmdk scoring every
   // row in the list, not by this.
   const allWorkspaces = workspaceQueries.flatMap((q) => q.data ?? []);
+  // The account of the workspace on screen; the persisted selection off one.
+  // Never the first account in the list: that is a guess, and the wrong one
+  // for anyone in two workspaces.
+  const activeAccountId =
+    allWorkspaces.find((workspace) => workspace.project_id === projectId)?.account_id ??
+    selectedAccountId ??
+    null;
   const workspacesLoading =
     workspaceQueries.length === 0 || workspaceQueries.some((q) => q.isLoading);
+  const { data: adminRole } = useAdminRole({ enabled: open });
+  // The sidebar switcher's rule (`canCreateWorkspace`): a restricted self-host
+  // offers Create workspace only to a platform admin.
+  const canCreateNewWorkspace = canCreateWorkspace({
+    restricted: isAccountCreationRestricted(),
+    isPlatformAdmin: Boolean(adminRole?.isAdmin),
+  });
   const { data: paletteSessions, isPending: projectSessionsPending } = useQuery({
     queryKey: qk.project.sessions(projectId ?? ''),
     queryFn: () => listProjectSessions(projectId!, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
@@ -1010,17 +962,6 @@ export function CommandPalette() {
     limit: 20,
     enabled: open && !!projectId && debouncedQuery.length > 0,
   });
-  // Same query key every other project surface fetches (page.tsx,
-  // project-shell.tsx) — dedupes against that cache entry. Resolves the
-  // account the "Invite members" command lands on, via the same fallback
-  // `project-shell.tsx` uses for its account-scoped tabs.
-  const { data: paletteProjectDetail } = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId!),
-    enabled: open && !!projectId,
-    ...contract('config'),
-  });
-  const inviteMembersAccountId = useSettingsAccountId(paletteProjectDetail?.project?.account_id);
   /**
    * The open change requests, for the count on the "Review changes" row.
    *
@@ -1224,7 +1165,9 @@ export function CommandPalette() {
   // A row is offered only when the caller can act on it: the same verdicts
   // the account hub nav and the sidebar rows read, joined so the memo keys on
   // the answers. Every one is false until its probe lands.
-  const { sectionVisible } = useAccountHubAccess(selectedAccountId ?? undefined);
+  // The workspace on screen, never the persisted global selection: the
+  // palette's Workspace rows open THIS workspace's settings.
+  const { sectionVisible } = useAccountHubAccess(activeAccountId ?? undefined);
   const accountSections = Object.entries(sectionVisible)
     .filter(([, visible]) => visible)
     .map(([section]) => section)
@@ -1259,7 +1202,6 @@ export function CommandPalette() {
     const result: MenuItemDef[] = [];
     for (const sourceItem of getItemsForSurface('commandPalette')) {
       const item = translateMenuItem(sourceItem, tI18nComplete);
-      if (LEGACY_PALETTE_HIDDEN.has(item.id)) continue;
       if (item.id === 'toggle-sidebar' && !sidebarCtx) continue;
       if (item.requiresBilling && !billingEnabled) continue;
       if (item.requiresSession && !currentSessionId) continue;
@@ -1278,7 +1220,7 @@ export function CommandPalette() {
       // An account row cannot resolve without a selected account, exactly as
       // an `{accountId}` href could not. Same guard, off the kind instead of
       // off a token, so a new account row can never ship without it.
-      if (item.kind === 'account' && !selectedAccountId) continue;
+      if (item.kind === 'account' && !activeAccountId) continue;
       if (!paletteRowPermitted(item, gates)) continue;
       let href = item.href;
       if (href?.includes('{projectId}')) {
@@ -1290,8 +1232,8 @@ export function CommandPalette() {
         if (tab && !customizeTabSet.has(tab)) continue;
       }
       if (href?.includes('{accountId}')) {
-        if (!selectedAccountId) continue;
-        href = href.replaceAll('{accountId}', selectedAccountId);
+        if (!activeAccountId) continue;
+        href = href.replaceAll('{accountId}', activeAccountId);
       }
       result.push(href === item.href ? item : { ...item, href });
     }
@@ -1301,7 +1243,7 @@ export function CommandPalette() {
     currentSessionId,
     runtimeCapabilities,
     projectId,
-    selectedAccountId,
+    activeAccountId,
     sidebarCtx,
     projectFlags,
     tI18nComplete,
@@ -1343,7 +1285,7 @@ export function CommandPalette() {
   }, [allPaletteItems, hasQuery, debouncedQuery]);
 
   // No `flags` argument any more: Marketplace, Review and Voice were the only
-  // flag-gated rail rows and all three moved to `/projects/<id>/config`, whose
+  // flag-gated rail rows and all three moved to `/workspaces/<id>/config`, whose
   // own sub-nav composes them. Nothing left in the rail varies by flag.
   const chromeOffered = useChromeOffered(open);
   const allSettingsGroups = useMemo(
@@ -1465,7 +1407,7 @@ export function CommandPalette() {
       .mutateAsync()
       .then((session) => {
         // LEGACY, unreachable in the product: this branch runs only when
-        // there is NO projectId, and every authed route is `/projects/[id]/*`.
+        // there is NO projectId, and every authed route is `/workspaces/[id]/*`.
         // `/sessions/<id>` is not a route — see `packages/ui/src/internal/lib/navigation/session-href.ts`.
         openTabAndNavigate({
           id: session.id,
@@ -1512,25 +1454,10 @@ export function CommandPalette() {
       if (workspace.account_id !== selectedAccountId) setSelectedAccountId(workspace.account_id);
       // nav-contract: prefetch-only — a cmdk row activated by keyboard, and the
       // push must follow `beginSwitch`. The workspace-rows effect warms it.
-      router.push(`/projects/${workspace.project_id}`);
+      router.push(`/workspaces/${workspace.project_id}`);
       close();
     },
     [beginSwitch, selectedAccountId, setSelectedAccountId, router, close],
-  );
-
-  const handleSelectAccount = useCallback(
-    (a: KortixAccount) => {
-      setSelectedAccountId(a.account_id);
-      // The landing door for THIS account (`?account=`). The plain door
-      // reopened the project the browser remembered, in the account just
-      // left, and set the selected account back to it (KRTX-1731).
-      // nav-contract: prefetch-only — a cmdk row activated by keyboard, and the
-      // push must follow `setSelectedAccountId`. The 'accounts' page effect
-      // warms it.
-      router.push(`${PROJECT_LANDING_PATH}?account=${encodeURIComponent(a.account_id)}`);
-      close();
-    },
-    [setSelectedAccountId, router, close],
   );
 
   const handleSelectProjectSession = useCallback(
@@ -1539,7 +1466,7 @@ export function CommandPalette() {
       openProjectTab(projectId, s.session_id);
       // nav-contract: prefetch-only — a cmdk row activated by keyboard, and the
       // push must follow `openProjectTab`. The session-rows effect warms it.
-      router.push(`/projects/${projectId}/sessions/${s.session_id}`);
+      router.push(`/workspaces/${projectId}/sessions/${s.session_id}`);
       close();
     },
     [projectId, openProjectTab, router, close],
@@ -1573,17 +1500,10 @@ export function CommandPalette() {
     [allPaletteItems],
   );
 
-  /** Whether a row should say which account it is in. One account, no noise. */
-  const showWorkspaceAccount = (accountsList?.length ?? 0) > 1;
 
   const workspacePageRows = useMemo(
     () => workspacePageResults(workspaceRows, query),
     [workspaceRows, query],
-  );
-
-  const workspacePageGroups = useMemo(
-    () => groupWorkspacePaletteRows(workspacePageRows),
-    [workspacePageRows],
   );
 
   const recentProjectSessions = useMemo(() => {
@@ -1592,13 +1512,6 @@ export function CommandPalette() {
 
   const recentWorkspaces = useMemo(() => recentWorkspaceRows(workspaceRows), [workspaceRows]);
 
-  const filteredAccountsList = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const sorted = [...(accountsList ?? [])].sort((a, b) =>
-      (a.name || '').localeCompare(b.name || ''),
-    );
-    return q ? sorted.filter((a) => (a.name || '').toLowerCase().includes(q)) : sorted;
-  }, [accountsList, query]);
 
   const filteredDensityOptions = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1683,7 +1596,7 @@ export function CommandPalette() {
    * PALETTE_PREFETCH_LIMIT.
    */
 
-  // Root — registry Navigation rows. Only /projects and /accounts hrefs reach
+  // Root — registry Navigation rows. Only /workspaces and /accounts hrefs reach
   // `router.push` in `handleRegistryItem`; the rest open the settings overlay
   // or a workspace tab.
   useEffect(() => {
@@ -1698,7 +1611,7 @@ export function CommandPalette() {
         continue;
       }
       if (item.kind !== 'navigate' || !href) continue;
-      if (href.startsWith('/projects')) router.prefetch(href);
+      if (href.startsWith('/workspaces')) router.prefetch(href);
     }
   }, [open, page, hasQuery, filteredNavItems, rootSuggestionItems, router]);
 
@@ -1713,24 +1626,24 @@ export function CommandPalette() {
   }, [open, page, projectId, filteredSettingsGroups, router]);
 
   // Workspace rows — the root hits and the dedicated page both land on
-  // /projects/<id>.
+  // /workspaces/<id>.
   useEffect(() => {
     if (!open) return;
     const rows =
       page === 'workspaces' ? workspacePageRows : page === 'root' ? rootWorkspaceRows : [];
     for (const row of rows.slice(0, PALETTE_PREFETCH_LIMIT)) {
-      router.prefetch(`/projects/${row.workspace.project_id}`);
+      router.prefetch(`/workspaces/${row.workspace.project_id}`);
     }
   }, [open, page, workspacePageRows, rootWorkspaceRows, router]);
 
   // Session rows — the root hits and the dedicated page both land on
-  // /projects/<projectId>/sessions/<id>.
+  // /workspaces/<projectId>/sessions/<id>.
   useEffect(() => {
     if (!open || !projectId) return;
     const rows =
       page === 'sessions' ? filteredProjectSessionsList : page === 'root' ? rootSessionResults : [];
     for (const s of rows.slice(0, PALETTE_PREFETCH_LIMIT)) {
-      router.prefetch(`/projects/${projectId}/sessions/${s.session_id}`);
+      router.prefetch(`/workspaces/${projectId}/sessions/${s.session_id}`);
     }
   }, [open, page, projectId, filteredProjectSessionsList, rootSessionResults, router]);
 
@@ -1738,20 +1651,18 @@ export function CommandPalette() {
   // page opens.
   useEffect(() => {
     if (!open) return;
-    if (page === 'accounts') router.prefetch(PROJECT_LANDING_PATH);
-    if (page === 'files' && projectId) router.prefetch(`/projects/${projectId}/files`);
+    if (page === 'files' && projectId) router.prefetch(`/workspaces/${projectId}/files`);
+    if (page === 'workspaces') {
+      router.prefetch('/workspaces/new');
+      if (projectId) router.prefetch(`/workspaces/${projectId}/admin`);
+    }
   }, [open, page, projectId, router]);
 
-  // "Invite members" and "Workspace members". The account id arrives from
-  // `paletteProjectDetail`, whose query only runs once the palette opens, so
-  // warm the common branch the moment it resolves. The `/projects/<id>/members`
-  // fallback stays cold on purpose: it exists only for the window before that.
+  // "Invite people" and "Workspace members" open Members: warm its route.
   useEffect(() => {
-    if (!open || !projectId || !inviteMembersAccountId) return;
-    // The destination is the account hub, which is a modal: what needs warming
-    // is its chunk, not an RSC payload.
-    preloadAccountHub();
-  }, [open, projectId, inviteMembersAccountId]);
+    if (!open || !projectId) return;
+    router.prefetch(workspaceSettingsPath(projectId, 'members'));
+  }, [open, projectId, router]);
 
   /**
    * The identifiers people paste into support threads, CLI flags, and bug
@@ -1770,16 +1681,10 @@ export function CommandPalette() {
       },
       { id: 'user-id', label: tPalette('copyUserId'), value: user?.id ?? '', keywords: 'user id me' },
       {
-        id: 'account-id',
-        label: tPalette('copyAccountId'),
-        value: activeAccountId ?? '',
-        keywords: 'account id team organization org',
-      },
-      {
         id: 'project-id',
         label: tPalette('copyProjectId'),
         value: projectId ?? '',
-        keywords: 'project id',
+        keywords: 'workspace id project id account id',
       },
       {
         id: 'session-id',
@@ -1893,7 +1798,7 @@ export function CommandPalette() {
       if (!projectId) return close();
       // nav-contract: prefetch-only — a cmdk row activated by keyboard. The
       // 'files' page effect warms this one destination as the page opens.
-      router.push(`/projects/${projectId}/files`);
+      router.push(`/workspaces/${projectId}/files`);
       close();
     },
     [projectId, router, close],
@@ -1974,11 +1879,11 @@ export function CommandPalette() {
    *
    * **The rule: open the overlay only where it is mounted, otherwise
    * navigate.** `SettingsPanel` has exactly two mounts — `ProjectShell`
-   * (`project-layout/project-shell.tsx`, every `/projects/*` route) and
+   * (`project-layout/project-shell.tsx`, every `/workspaces/*` route) and
    * `StandaloneSettingsRoute` (`/settings`, which mounts no palette). This
    * palette also mounts under `AppHeader`, whose only route group is
    * `/accounts/**`, and that layout renders no panel. `projectId` is non-null
-   * exactly on `/projects/*` (see its definition above), so it is precisely
+   * exactly on `/workspaces/*` (see its definition above), so it is precisely
    * the "is the panel mounted?" signal.
    *
    * Calling `openSettings()` where no panel is mounted did two things, both
@@ -1999,13 +1904,6 @@ export function CommandPalette() {
       router.push(`/settings/${tab}`);
     },
     [close, projectId, router],
-  );
-
-  const handleOpenSettings = useCallback(
-    (tab: SettingsTabId) => {
-      openSettingsTab(LEGACY_SETTINGS_TAB_MAP[tab] ?? DEFAULT_SETTINGS_TAB);
-    },
-    [openSettingsTab],
   );
 
   const handleOpenPlan = useCallback(() => {
@@ -2084,53 +1982,21 @@ export function CommandPalette() {
   }, [currentSessionId, close]);
 
   /**
-   * "Invite members" — the project Members capability tab is gone; access
-   * for a project is now granted from the account hub's Access tab, scoped to
-   * this project via `?project=`. There is no one-shot "open the grant
-   * dialog" intent to carry across (the old `membersTab: 'invite'` field
-   * belonged to the deleted page's sub-tab model, with no equivalent here) —
-   * landing pre-filtered on this project's row is enough. Nice-to-have: wire
-   * a real "open grant dialog" intent once `AccessProjectsTab` exposes a prop
-   * for it.
+   * "Invite people" and "Workspace members": one section of the Settings
+   * panel, Members. `?invite=1` opens the invite dialog on arrival, so the
+   * palette, the workspace menu and the Members button share one target.
    */
   const handleInviteMembers = useCallback(() => {
     if (!projectId) return;
-    // The account id comes from `paletteProjectDetail`, whose query is only
-    // `enabled` once the palette opens — so on the FIRST ⌘K it can still be in
-    // flight, and this used to return silently and leave the palette sitting
-    // open with nothing having happened. `/projects/<id>/members` exists to
-    // redirect to exactly this destination (it resolves the account id itself
-    // and appends the same `&project=` scoping), so the unresolved case costs
-    // one extra hop instead of the click doing nothing.
-    if (inviteMembersAccountId) {
-      // The hub over the page you are on — no navigation at all.
-      openAccountPanel(
-        hubTarget(inviteMembersAccountId, { tab: 'access-projects', project: projectId }),
-      );
-      close();
-      return;
-    }
-    // nav-contract: prefetch-only — the fallback only runs in the window
-    // before `inviteMembersAccountId` resolves; that route redirects to the
-    // same hub destination, resolving the account id itself.
-    router.push(`/projects/${projectId}/members`);
+    router.push(`${workspaceSettingsPath(projectId, 'members')}?invite=1`);
     close();
-  }, [close, projectId, inviteMembersAccountId, router]);
+  }, [close, projectId, router]);
 
-  /**
-   * "Workspace members" — the same destination `handleInviteMembers` reaches,
-   * from the other half of the vocabulary. The account hub's Access pane
-   * scoped to this workspace IS the workspace roster: `/projects/<id>/members`
-   * exists only to redirect here (see that route), so linking it directly
-   * would cost a second navigation and paint the capabilities shell first.
-   *
-   * Two rows, one URL, deliberately: "invite" is a verb a person types when
-   * they want to add someone, "members" is a noun they type when they want to
-   * see who is already there. Both are true of this pane, and neither query
-   * had a correct answer before — "member" returned the project SETTINGS row
-   * and the organization roster, never the workspace one.
-   */
-  const handleOpenProjectMembers = handleInviteMembers;
+  const handleOpenProjectMembers = useCallback(() => {
+    if (!projectId) return;
+    router.push(workspaceSettingsPath(projectId, 'members'));
+    close();
+  }, [close, projectId, router]);
 
   const handleReviewChanges = useCallback(() => {
     goToPage('changes');
@@ -2227,7 +2093,6 @@ export function CommandPalette() {
   const actionHandlers: Record<string, () => void> = useMemo(
     () => ({
       newSession: handleNewSession,
-      openTerminal: handleOpenTerminal,
       compactSession: handleCompactSession,
       viewChanges: handleViewChanges,
       inviteMembers: handleInviteMembers,
@@ -2253,7 +2118,6 @@ export function CommandPalette() {
     }),
     [
       handleNewSession,
-      handleOpenTerminal,
       handleCompactSession,
       handleViewChanges,
       handleInviteMembers,
@@ -2282,8 +2146,8 @@ export function CommandPalette() {
         // then leaves the palette, and the hub is already there — no fetch, no
         // transition, and Escape puts you back on this same page.
         case 'account': {
-          if (!selectedAccountId) break;
-          openAccountPanel(hubTarget(selectedAccountId, { tab: item.accountTab }));
+          if (!activeAccountId) break;
+          openAccountPanel(hubTarget(activeAccountId, { tab: item.accountTab }));
           close();
           break;
         }
@@ -2308,7 +2172,7 @@ export function CommandPalette() {
             break;
           }
 
-          if (href.startsWith('/projects')) {
+          if (href.startsWith('/workspaces')) {
             // nav-contract: prefetch-only — a cmdk row activated by keyboard,
             // and `href` is resolved from the registry item at click time. The
             // root-navigation effect warms the rendered rows.
@@ -2335,9 +2199,6 @@ export function CommandPalette() {
           close();
           break;
         }
-        case 'settings':
-          handleOpenSettings(item.settingsTab!);
-          break;
         case 'theme':
           handleSetTheme(item.themeValue!);
           break;
@@ -2356,11 +2217,10 @@ export function CommandPalette() {
       close,
       projectId,
       openSettingsTab,
-      handleOpenSettings,
       handleSetTheme,
       handleSetWallpaper,
       actionHandlers,
-      selectedAccountId,
+      activeAccountId,
     ],
   );
 
@@ -2399,7 +2259,6 @@ export function CommandPalette() {
     if (page === 'agents') return filteredAgents.length;
     if (page === 'models') return visibleModels.length;
     if (page === 'workspaces') return workspacePageRows.length;
-    if (page === 'accounts') return filteredAccountsList.length;
     if (page === 'sessions') return filteredProjectSessionsList.length;
     if (page === 'density') return filteredDensityOptions.length;
     // 0: these pages fetch and filter their own rows, so the count lives
@@ -2433,7 +2292,6 @@ export function CommandPalette() {
     filteredAgents,
     visibleModels,
     workspacePageRows,
-    filteredAccountsList,
     filteredProjectSessionsList,
     filteredDensityOptions,
     rootCopyResults,
@@ -2443,27 +2301,25 @@ export function CommandPalette() {
     if (page === 'agents') return tI18nComplete.raw('text32f4468b0b6f');
     if (page === 'models') return tI18nComplete.raw('text37b90680b842');
     if (page === 'files') return tI18nComplete.raw('text19608ade89b8');
-    if (page === 'workspaces') return tI18nComplete.raw('text5c192a3e6f23');
-    if (page === 'accounts') return tI18nComplete.raw('text72eb3689cab9');
+    if (page === 'workspaces') return tWorkspaces('find');
     if (page === 'sessions') return tI18nComplete.raw('textf41875714fdc');
     if (page === 'density') return tI18nComplete.raw('textf0f41388d721');
     if (page === 'changes') return tI18nComplete.raw('text3db1f0d55a5b');
     if (page === 'flags') return tI18nComplete.raw('textfd20bd366efb');
     return channelsOn ? tPalette('searchChannels') : tI18nComplete.raw('text7b355872be1c');
-  }, [page, tI18nComplete, channelsOn, tPalette]);
+  }, [page, tI18nComplete, channelsOn, tPalette, tWorkspaces]);
 
   const pageTitle = useMemo(() => {
     if (page === 'agents') return tI18nComplete.raw('text6fb2caa0ee1c');
     if (page === 'models') return tI18nComplete.raw('text9cb6d01d8b29');
     if (page === 'files') return tI18nComplete.raw('text5a5bc0c4ce6e');
-    if (page === 'workspaces') return tI18nComplete.raw('text9ad6baffd025');
-    if (page === 'accounts') return tI18nComplete.raw('text4ecda5e7a644');
+    if (page === 'workspaces') return tWorkspaces('switch');
     if (page === 'sessions') return tI18nComplete.raw('text113463edeb06');
     if (page === 'density') return tI18nComplete.raw('textd0fffb7fa940');
     if (page === 'changes') return tI18nComplete.raw('text6a47708f4e14');
     if (page === 'flags') return tI18nComplete.raw('text20a2e59ba129');
     return null;
-  }, [page, tI18nComplete]);
+  }, [page, tI18nComplete, tWorkspaces]);
 
   return (
     <>
@@ -2733,7 +2589,6 @@ export function CommandPalette() {
                           <WorkspaceCommandItem
                             key={row.workspace.project_id}
                             row={row}
-                            showAccount={showWorkspaceAccount}
                             onSelect={() => handleSelectWorkspace(row.workspace)}
                             trailing={
                               (row.workspace.last_opened_at || row.workspace.updated_at) && (
@@ -2965,7 +2820,6 @@ export function CommandPalette() {
                           <WorkspaceCommandItem
                             key={row.workspace.project_id}
                             row={row}
-                            showAccount={showWorkspaceAccount}
                             onSelect={() => handleSelectWorkspace(row.workspace)}
                             trailing={
                               (row.workspace.last_opened_at || row.workspace.updated_at) && (
@@ -3175,42 +3029,26 @@ export function CommandPalette() {
               <FileSearchPage query={query} onSelect={handleSelectFile} />
             )}
 
-            {/* The dedicated directory. Grouped by account like the sidebar
-                switcher, and for the same reason: two workspaces can share a
-                name, and the account is the only thing that tells them apart.
-                One account gets a single "Workspaces" heading instead — a lone
-                account heading over the only list is noise, not structure.
-
-                Like the root results this includes the workspace you are in,
-                marked here with a check. */}
-            {page === 'workspaces' &&
-              (workspacePageRows.length > 0 ? (
-                workspacePageGroups.map((group) => (
-                  <CommandGroup
-                    key={group.accountId}
-                    heading={workspacePageGroups.length > 1 ? group.accountName : 'Workspaces'}
-                    forceMount
-                  >
-                    {group.rows.map((row) => (
+            {/* The dedicated directory: one flat list like the sidebar
+                switcher (a workspace is one account and its project), the
+                workspace you are in checked, then Create workspace and
+                Workspace settings — the switcher's two bottom actions. */}
+            {page === 'workspaces' && (
+              <>
+                {workspacePageRows.length > 0 ? (
+                  <CommandGroup heading={tWorkspaces('heading')} forceMount>
+                    {workspacePageRows.map((row) => (
                       <WorkspaceCommandItem
                         key={row.workspace.project_id}
                         row={row}
-                        // Never on this page: the heading already says which
-                        // account, so repeating it on every row under it is
-                        // the same word twice.
-                        showAccount={false}
                         onSelect={() => handleSelectWorkspace(row.workspace)}
                         trailing={
-                          row.isActive ? (
-                            <Check className="text-primary h-3.5 w-3.5 shrink-0" />
-                          ) : null
+                          row.isActive ? <Check className="text-foreground size-3.5 shrink-0" /> : null
                         }
                       />
                     ))}
                   </CommandGroup>
-                ))
-              ) : (
-                workspacesLoading ? (
+                ) : workspacesLoading ? (
                   // "No workspaces yet" over a list that has not arrived is a
                   // lie the sidebar already learned not to tell.
                   <div className="flex justify-center py-8">
@@ -3220,41 +3058,39 @@ export function CommandPalette() {
                   <PaletteEmpty>
                     {query
                       ? tI18nComplete('textbe27a86a69e5', { value0: query })
-                      : tHardcodedUi.raw('i18nComplete.text97d0b1171f3e')}
+                      : tWorkspaces('noMatches')}
                   </PaletteEmpty>
-                )
-              ))}
-
-            {page === 'accounts' &&
-              (filteredAccountsList.length > 0 ? (
-                <CommandGroup heading="Accounts" forceMount>
-                  {filteredAccountsList.map((account) => {
-                    const label = account.name || 'Account';
-                    return (
-                      <CommandItem
-                        key={account.account_id}
-                        value={sanitizeCmdkValue(`account ${label} ${account.account_id}`)}
-                        onSelect={() => handleSelectAccount(account)}
-                      >
-                        <UsersSolid
-                          weight="fill"
-                          className="text-muted-foreground size-4 shrink-0"
-                        />
-                        <span className="flex-1 truncate">{label}</span>
-                        {account.account_id === activeAccountId && (
-                          <Check className="text-primary h-3.5 w-3.5 shrink-0" />
-                        )}
-                      </CommandItem>
-                    );
-                  })}
+                )}
+                <CommandGroup forceMount>
+                  {canCreateNewWorkspace ? (
+                    <CommandItem
+                      value={sanitizeCmdkValue(`create workspace new ${tWorkspaces('create')}`)}
+                      onSelect={() => {
+                        // nav-contract: prefetch-only — a cmdk row activated by keyboard; the 'workspaces' page effect warms it.
+                        router.push('/workspaces/new');
+                        close();
+                      }}
+                    >
+                      <PlusIcon className="text-muted-foreground size-4 shrink-0" />
+                      <span className="flex-1 truncate">{tWorkspaces('create')}</span>
+                    </CommandItem>
+                  ) : null}
+                  {projectId ? (
+                    <CommandItem
+                      value={sanitizeCmdkValue(`workspace settings ${tWorkspaces('settings')}`)}
+                      onSelect={() => {
+                        // nav-contract: prefetch-only — a cmdk row activated by keyboard; the 'workspaces' page effect warms it.
+                        router.push(`/workspaces/${projectId}/admin`);
+                        close();
+                      }}
+                    >
+                      <CogOne className="text-muted-foreground size-4 shrink-0" />
+                      <span className="flex-1 truncate">{tWorkspaces('settings')}</span>
+                    </CommandItem>
+                  ) : null}
                 </CommandGroup>
-              ) : (
-                <PaletteEmpty>
-                  {query
-                    ? tI18nComplete('text7433280153b9', { value0: query })
-                    : tHardcodedUi.raw('i18nComplete.text177116ee5177')}
-                </PaletteEmpty>
-              ))}
+              </>
+            )}
 
             {page === 'density' &&
               (filteredDensityOptions.length > 0 ? (

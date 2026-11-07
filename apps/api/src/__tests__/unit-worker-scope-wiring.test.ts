@@ -59,6 +59,8 @@ const WORKERS: Record<string, string> = {
   'session-lifecycle': 'projects/session-lifecycle/drain.ts',
   'tunnel-cleanup': 'worker/jobs/tunnel-cleanup.ts',
   'tunnel-forward-expiry': 'worker/jobs/tunnel-forward-expiry.ts',
+  'workspace-split': 'worker/jobs/workspace-split.ts',
+  'workspace-id-fill': 'worker/jobs/workspace-id-fill.ts',
   'tunnel-rpc-forwarder': 'tunnel/core/cluster-forwarder.ts',
   'billing-trial-expiry': 'worker/jobs/billing-rotation.ts',
   'billing-yearly-rotation': 'worker/jobs/billing-rotation.ts',
@@ -67,8 +69,6 @@ const WORKERS: Record<string, string> = {
   'account-deletion': 'worker/jobs/account-deletion.ts',
   'slack-turn-gc': 'worker/jobs/slack-turn-gc.ts',
   'teams-turn-gc': 'worker/jobs/teams-turn-gc.ts',
-  'artifact-doc-gc': 'worker/jobs/artifact-doc-gc.ts',
-  'artifact-doc-compaction': 'worker/jobs/artifact-doc-compaction.ts',
   'discord-gateway': 'worker/jobs/discord-gateway.ts',
   'job-queue': 'replica/job-queue.ts',
   'trigger-event-poll': 'replica/trigger-event-poll.ts',
@@ -87,7 +87,6 @@ const WORKERS: Record<string, string> = {
   'gateway-spend-backfill': 'worker/jobs/gateway-spend-backfill.ts',
   'residential-proxy-billing': 'worker/jobs/residential-proxy-billing.ts',
   'storage-billing': 'worker/jobs/storage-billing.ts',
-  'artifact-live': 'replica/artifact-live.ts',
 };
 
 /**
@@ -100,8 +99,6 @@ const PER_PROCESS: Record<string, string> = {
   'job-queue': 'the durable job queue (held connector calls, Capture ingest): any web process claims a job with SKIP LOCKED',
   'trigger-event-poll': 'Kortix-polled app events: every web process claims due streams under a lease',
   'tunnel-rpc-forwarder': 'forwards RPCs to the agents connected to this process: it claims only rows addressed to its own instance id',
-  'artifact-live':
-    'Artifact live presence: each process holds its own sockets and rooms in memory, so each one expires them, keeps its participants alive on the other processes, and re-checks their access',
 };
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
@@ -141,7 +138,6 @@ const PROCESS_STARTS: Record<string, string> = {
   startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
   startSessionLifecycleWorker: 'session-lifecycle',
   startTriggerEventPollWorker: 'trigger-event-poll',
-  startArtifactLiveSweep: 'artifact-live',
   startConfigBaseMoveBroadcast: 'not a worker: one LISTEN connection, event-driven, no timer and no tick',
 };
 

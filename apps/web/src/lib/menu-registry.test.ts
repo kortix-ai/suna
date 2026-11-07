@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { resolveSettingsOverlayHref } from '@kortix/ui/customize/settings/settings-tabs';
 
-import { getItemsForSurface, type MenuItemDef } from './menu-registry';
+import { getItemsForSurface, menuRegistry, type MenuItemDef } from './menu-registry';
 import { WALLPAPERS } from '@kortix/ui/theme';
 
 function matchesPaletteQuery(item: MenuItemDef, query: string): boolean {
@@ -91,7 +91,7 @@ describe('project sessions command palette item', () => {
     const sessionsItem = paletteItems.find((item) => item.id === 'proj-sessions');
 
     expect(sessionsItem).toBeDefined();
-    expect(sessionsItem!.href).toBe('/projects/{projectId}/sessions');
+    expect(sessionsItem!.href).toBe('/workspaces/{projectId}/sessions');
   });
 });
 
@@ -114,7 +114,7 @@ describe('project commands palette entry is gone with the Instructions tab', () 
   test('no entry points at the removed Instructions tab', () => {
     expect(paletteItems.find((item) => item.id === 'proj-commands')).toBeUndefined();
     expect(paletteItems.some((item) => item.href?.includes('/settings/instructions'))).toBe(false);
-    expect(resolveSettingsOverlayHref('/projects/p1/settings/instructions')).toEqual({
+    expect(resolveSettingsOverlayHref('/workspaces/p1/settings/instructions')).toEqual({
       opensOverlay: false,
     });
   });
@@ -132,7 +132,7 @@ describe('project commands palette entry is gone with the Instructions tab', () 
     //   (The other matcher used to be `workspace`, a PRE-EXISTING dead entry
     //   — neither `/workspace` nor `/commands` exists under `src/app`. It was
     //   deleted with its dead `/workspace` href rather than kept hidden via
-    //   LEGACY_PALETTE_HIDDEN.)
+    //   the palette's hidden-id set, since deleted.)
     // What this change owns is narrower: no PROJECT navigation entry offers
     // to take the user to a commands surface that no longer exists.
     const projectNavMatches = paletteItems
@@ -173,7 +173,7 @@ describe('graduated capability entries are not shadowed by Customize', () => {
   });
 
   test('typing "agents" surfaces the real Agents entry; Customize no longer matches', () => {
-    // Agents graduated to /projects/<id>/agent and carries its own palette
+    // Agents graduated to /workspaces/<id>/agent and carries its own palette
     // entry, so Customize dropped the word — exactly like skills and
     // connectors above. Leaving it would list Customize AHEAD of the page the
     // user is typing the name of.
@@ -184,15 +184,15 @@ describe('graduated capability entries are not shadowed by Customize', () => {
   });
 
   test('Connectors and Skills navigate to standalone pages', () => {
-    expect(skillsItem!.href).toBe('/projects/{projectId}/admin/skills');
-    expect(connectorsItem!.href).toBe('/projects/{projectId}/admin/connectors');
+    expect(skillsItem!.href).toBe('/workspaces/{projectId}/admin/skills');
+    expect(connectorsItem!.href).toBe('/workspaces/{projectId}/admin/connectors');
   });
 
   // The Connectors page hosts `PoliciesPanel` behind `?rules=1`, so this entry
   // opens the Global rules sheet instead of merely landing near it.
   test('proj-connectors-policies deep-links into Global rules', () => {
     expect(policiesItem).toBeDefined();
-    expect(policiesItem!.href).toBe('/projects/{projectId}/admin/connectors?rules=1');
+    expect(policiesItem!.href).toBe('/workspaces/{projectId}/admin/connectors?rules=1');
     expect(policiesItem!.label).not.toContain('Customize');
   });
 });
@@ -202,11 +202,35 @@ describe('the dead workspace palette row is deleted', () => {
     // The `workspace` entry shipped a `kind: 'navigate'` row with
     // `href: '/workspace'`, but no page lives at that path under `src/app`
     // and no rewrite serves it. Runtime kept it invisible only through
-    // LEGACY_PALETTE_HIDDEN, which is why the live-route loop in
+    // the palette's hidden-id set (since deleted), which is why the live-route loop in
     // menu-registry-destinations.test.ts never saw it. The entry is deleted
     // (with its hidden-set entry); a future workspace row must target a
     // route that exists, which that loop enforces for every visible row.
     expect(paletteItems.find((item) => item.id === 'workspace')).toBeUndefined();
     expect(paletteItems.some((item) => item.href === '/workspace')).toBe(false);
+  });
+});
+
+describe('the hidden legacy palette rows are deleted', () => {
+  test('no registry row is left that only a hidden-id list kept off the palette', () => {
+    // These rows declared `commandPalette` (`scheduled-tasks` also the
+    // unrendered `rightSidebar`), and the palette dropped each one by id
+    // through a hidden set, so no surface could render them. `/files` and
+    // `/scheduled-tasks` are not routes at all. The rows and the set are
+    // deleted; the same defect class as the `workspace` row above.
+    for (const id of [
+      'open-terminal',
+      'dashboard',
+      'scheduled-tasks',
+      'files',
+      'running-services-cmd',
+      'agent-browser-cmd',
+      'internal-browser-cmd',
+      'changelog',
+      'credits-explained',
+      'llm-providers',
+    ]) {
+      expect(menuRegistry.find((item) => item.id === id)).toBeUndefined();
+    }
   });
 });

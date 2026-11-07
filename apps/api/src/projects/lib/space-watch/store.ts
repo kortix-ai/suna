@@ -6,12 +6,14 @@
  * project: a project that never turns it on pays one primary-key read per
  * finished thread turn, nothing more.
  */
-import { projects, projectSpaceEvents, projectSpaces, projectSpaceWatchers } from '@kortix/db';
+import { projectSpaceEvents, projectSpaces, projectSpaceWatchers } from '@kortix/db';
 import { and, asc, desc, eq, gt, lt, sql } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../../../feature-flags/registry';
 import { logger } from '../../../lib/logger';
 import { db } from '../../../shared/db';
+import { qualifiedColumn } from '../../../shared/sql-qualified-column';
 import { SPACE_EVENTS_KEEP, SPACE_EVENTS_RETENTION_DAYS, type SpaceEventKind } from './policy';
+import { projectsView } from '../../../workspaces/rows';
 
 export type WatcherRow = typeof projectSpaceWatchers.$inferSelect;
 
@@ -80,9 +82,9 @@ export async function recordSpaceEvent(input: {
 }): Promise<number | null> {
   try {
     const [watch] = await db
-      .select({ enabled: projectSpaceWatchers.enabled, metadata: projects.metadata })
+      .select({ enabled: projectSpaceWatchers.enabled, metadata: projectsView.metadata })
       .from(projectSpaceWatchers)
-      .innerJoin(projects, eq(projects.projectId, projectSpaceWatchers.projectId))
+      .innerJoin(projectsView, eq(projectsView.projectId, projectSpaceWatchers.projectId))
       .where(eq(projectSpaceWatchers.spaceId, input.spaceId))
       .limit(1);
     if (!watch?.enabled || !proactiveOn(watch.metadata)) return null;
@@ -128,15 +130,15 @@ export async function loadWatchCandidates(now: Date): Promise<WatchCandidate[]> 
   const rows = await db
     .select({
       watch: projectSpaceWatchers,
-      projectMetadata: projects.metadata,
-      accountId: projects.accountId,
+      projectMetadata: projectsView.metadata,
+      accountId: projectsView.accountId,
       space: projectSpaces,
-      pending: sql<number>`(SELECT count(*)::int FROM kortix.project_space_events e WHERE e.space_id = ${projectSpaceWatchers.spaceId} AND e.event_id > ${projectSpaceWatchers.cursor})`,
-      urgent: sql<boolean>`EXISTS (SELECT 1 FROM kortix.project_space_events e WHERE e.space_id = ${projectSpaceWatchers.spaceId} AND e.event_id > ${projectSpaceWatchers.cursor} AND e.urgent)`,
-      lastDay: sql<number>`(SELECT count(*)::int FROM kortix.project_space_events e WHERE e.space_id = ${projectSpaceWatchers.spaceId} AND e.created_at > ${dayAgo.toISOString()}::timestamptz)`,
+      pending: sql<number>`(SELECT count(*)::int FROM kortix.project_space_events e WHERE e.space_id = ${qualifiedColumn(projectSpaceWatchers.spaceId)} AND e.event_id > ${qualifiedColumn(projectSpaceWatchers.cursor)})`,
+      urgent: sql<boolean>`EXISTS (SELECT 1 FROM kortix.project_space_events e WHERE e.space_id = ${qualifiedColumn(projectSpaceWatchers.spaceId)} AND e.event_id > ${qualifiedColumn(projectSpaceWatchers.cursor)} AND e.urgent)`,
+      lastDay: sql<number>`(SELECT count(*)::int FROM kortix.project_space_events e WHERE e.space_id = ${qualifiedColumn(projectSpaceWatchers.spaceId)} AND e.created_at > ${dayAgo.toISOString()}::timestamptz)`,
     })
     .from(projectSpaceWatchers)
-    .innerJoin(projects, eq(projects.projectId, projectSpaceWatchers.projectId))
+    .innerJoin(projectsView, eq(projectsView.projectId, projectSpaceWatchers.projectId))
     .innerJoin(projectSpaces, eq(projectSpaces.spaceId, projectSpaceWatchers.spaceId))
     .where(and(eq(projectSpaceWatchers.enabled, true), sql`${projectSpaces.archivedAt} IS NULL`));
   return rows.filter((row) => proactiveOn(row.projectMetadata));

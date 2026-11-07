@@ -95,5 +95,5 @@ export function applyLocalLegacy(root: string, legacy: LocalLegacyManifest, conv
 /** The message every CLI write gives a legacy project. */
 export function legacyWriteRefusal(path: string, from: 1 | 2): string {
   const what = from === 1 ? 'kortix.toml (kortix_version = 1)' : `${path} (kortix_version: 2)`;
-  return `This project's manifest is ${what}, an older format. Kortix still runs it, but the CLI edits only the current format. Run \`kortix validate --fix\` to convert it, then run this command again.`;
+  return `This workspace's manifest is ${what}, an older format. Kortix still runs it, but the CLI edits only the current format. Run \`kortix validate --fix\` to convert it, then run this command again.`;
 }

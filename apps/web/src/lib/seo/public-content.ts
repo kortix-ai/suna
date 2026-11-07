@@ -47,37 +47,6 @@ function loadContentTimestamps(): Record<string, string> {
   return contentTimestamps!;
 }
 
-export const STATIC_PUBLIC_ROUTES = [
-  '/',
-  '/a1o',
-  '/about',
-  '/careers',
-  '/changelog',
-  '/changelog/releases',
-  '/contact',
-  '/developers',
-  '/docs',
-  '/download',
-  '/enterprise',
-  '/legal',
-  '/marketplace',
-  '/pricing',
-  '/security',
-  '/self-hosted',
-  '/services',
-  '/case-studies',
-  '/framework',
-  '/multiplayer',
-  '/sovereign',
-  '/compliance',
-  '/use-cases',
-  '/white-label',
-  '/desktop',
-  '/mobile',
-  '/slack',
-  '/teams',
-] as const;
-
 const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
@@ -113,9 +82,9 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   {
     kind: 'marketing',
     slug: 'marketplace',
-    title: 'Marketplace: agents, skills and project templates',
+    title: 'Marketplace: agents, skills and workspace templates',
     description:
-      'Browse skills, agents, and commands from every source. Add them to a Kortix project in one click.',
+      'Browse skills, agents, and commands from every source. Add them to a Kortix workspace in one click.',
     htmlPath: '/marketplace',
   },
   {
@@ -123,7 +92,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'developers',
     title: 'Developers: CLI, SDK and API for AI agents',
     description:
-      'Build with Kortix from the terminal: drive projects, sessions, and agents through the CLI and SDK, wire triggers and connectors, and land every change through a reviewed change request.',
+      'Build with Kortix from the terminal: drive workspaces, sessions, and agents through the CLI and SDK, wire triggers and connectors, and land every change through a reviewed change request.',
     htmlPath: '/developers',
     markdownPath: '/markdown/developers.md',
   },

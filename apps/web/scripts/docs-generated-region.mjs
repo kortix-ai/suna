@@ -61,3 +61,22 @@ export async function runRegionGenerator(name, script, render) {
     process.exit(1);
   }
 }
+
+/**
+ * Runs a generator that owns a whole file (rather than one marked region).
+ * Writes `outputPath` from `render()`, or with --check exits 1 when the file is
+ * stale, pointing at `script` to regenerate it. Call it from the entry guard:
+ * `if (import.meta.url === pathToFileURL(process.argv[1]).href) await runFileGenerator(...)`.
+ */
+export async function runFileGenerator(name, script, render, outputPath) {
+  const rendered = await render();
+  if (process.argv.includes('--check')) {
+    if (readFileSync(outputPath, 'utf8') !== rendered) {
+      console.error(`${outputPath} is stale. Run: ${script}`);
+      process.exit(1);
+    }
+  } else {
+    writeFileSync(outputPath, rendered);
+    console.log(`Wrote ${name} to ${outputPath}`);
+  }
+}

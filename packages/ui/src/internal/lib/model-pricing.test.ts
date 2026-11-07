@@ -5,7 +5,7 @@ import type { ProviderListResponse } from '@kortix/sdk/react';
 
 import { buildCatalogPricingMap, createModelPricingLookup } from './model-pricing';
 
-// The `/projects/:id/llm-catalog/providers` shape (arrays of providers and
+// The `/workspaces/:id/llm-catalog/providers` shape (arrays of providers and
 // models) built from a compact provider → model → cost map.
 function catalog(
   byProvider: Record<

@@ -1,12 +1,5 @@
 import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import {
-  accounts,
-  chatEventDedup,
-  chatInstalls,
-  chatUserIdentities,
-  projectAccessRequests,
-  projects,
-} from '@kortix/db';
+import { chatEventDedup, chatInstalls, chatUserIdentities, projectAccessRequests } from '@kortix/db';
 import { db } from '../../shared/db';
 import { userAccountMemberRow } from '../../iam/membership-read';
 import { authorize } from '../../iam';
@@ -14,6 +7,7 @@ import { mfaGateBlocks } from '../../iam/authorize';
 import { actorForUser } from '../../iam/actor';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
+import { accountsView, projectsView } from '../../workspaces/rows';
 
 /**
  * The chat identity link: which Kortix user a person on a chat platform acts
@@ -42,7 +36,7 @@ export type ChatActor = { userId: string } | { reason: 'unlinked' | 'not_member'
 function linkRow(user: ChatUser) {
   return and(
     eq(chatUserIdentities.platform, user.platform),
-    eq(chatUserIdentities.workspaceId, user.workspaceId),
+    eq(chatUserIdentities.platformTeamId, user.workspaceId),
     eq(chatUserIdentities.platformUserId, user.platformUserId),
     isNull(chatUserIdentities.revokedAt),
   );
@@ -79,13 +73,13 @@ export async function linkChatIdentity(
     .insert(chatUserIdentities)
     .values({
       platform: user.platform,
-      workspaceId: user.workspaceId,
+      platformTeamId: user.workspaceId,
       platformUserId: user.platformUserId,
       userId,
       mfaVerifiedAt: opts.mfaVerified ? now : null,
     })
     .onConflictDoUpdate({
-      target: [chatUserIdentities.platform, chatUserIdentities.workspaceId, chatUserIdentities.platformUserId],
+      target: [chatUserIdentities.platform, chatUserIdentities.platformTeamId, chatUserIdentities.platformUserId],
       set: {
         userId,
         linkedAt: now,
@@ -147,9 +141,9 @@ export async function completeChatLogin(input: {
   const hasAccess = memberAccountIds.length > 0;
   if (hasAccess) {
     const rows = await db
-      .select({ mfaRequired: accounts.mfaRequired })
-      .from(accounts)
-      .where(inArray(accounts.accountId, memberAccountIds));
+      .select({ mfaRequired: accountsView.mfaRequired })
+      .from(accountsView)
+      .where(inArray(accountsView.accountId, memberAccountIds));
     const accountMfaRequired = rows.some((r) => r.mfaRequired);
     if (mfaGateBlocks({ accountMfaRequired }, input.tokenId, input.mfaAal)) {
       return { ok: false, reason: 'mfa_required' };
@@ -185,7 +179,7 @@ export async function lookupChatUserForKortixUser(
     .where(
       and(
         eq(chatUserIdentities.platform, platform),
-        eq(chatUserIdentities.workspaceId, workspaceId),
+        eq(chatUserIdentities.platformTeamId, workspaceId),
         eq(chatUserIdentities.userId, userId),
         isNull(chatUserIdentities.revokedAt),
       ),
@@ -242,9 +236,9 @@ export async function resolveProjectChatActor(
   action: string = PROJECT_ACTIONS.PROJECT_SESSION_START,
 ): Promise<ChatActor> {
   const [project] = await db
-    .select({ accountId: projects.accountId })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ accountId: projectsView.accountId })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!project) return { reason: 'not_member' };
   return resolveChatActor(user, { projectId, accountId: project.accountId }, action);
@@ -272,17 +266,17 @@ export async function createChatAccessRequest(user: ChatUser, projectId: string)
   // card or button, so without the join anyone linked could file requests
   // against any project on the platform.
   const [project] = await db
-    .select({ accountId: projects.accountId })
-    .from(projects)
+    .select({ accountId: projectsView.accountId })
+    .from(projectsView)
     .innerJoin(
       chatInstalls,
       and(
-        eq(chatInstalls.projectId, projects.projectId),
+        eq(chatInstalls.projectId, projectsView.projectId),
         eq(chatInstalls.platform, user.platform),
-        eq(chatInstalls.workspaceId, user.workspaceId),
+        eq(chatInstalls.platformTeamId, user.workspaceId),
       ),
     )
-    .where(eq(projects.projectId, projectId))
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!project) return { status: 'no-project' };
 

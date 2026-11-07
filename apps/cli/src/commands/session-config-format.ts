@@ -79,7 +79,7 @@ export function describeConfigStatus(
     return {
       tone: 'warn',
       text: state.sandbox_reachable
-        ? 'This project has no compiled agent config to compare.'
+        ? 'This workspace has no compiled agent config to compare.'
         : 'Sandbox unreachable — cannot tell whether this session is current.',
     };
   }

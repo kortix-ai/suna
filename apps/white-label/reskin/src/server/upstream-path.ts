@@ -94,5 +94,44 @@ export function buildUpstreamPath(segments: string[]): UpstreamPathResult {
   if (path.split('/').some((s) => s === '.' || s === '..')) {
     return { ok: false, reason: 'path traversal segment' };
   }
-  return { ok: true, path };
+  return { ok: true, path: legacyWorkspacePath(path) };
+}
+
+// Account-key families: `/v1/workspaces/:id/<family>` is `/v1/accounts/:id/<family>`.
+const WORKSPACE_ACCOUNT_FAMILIES = new Set([
+  'audit',
+  'automations',
+  'branding',
+  'capture',
+  'iam',
+  'invites',
+  'leave',
+  'members',
+  'secret-resources',
+  'subscription-connections',
+  'tokens',
+  'top-up-requests',
+]);
+
+const under = (path: string, prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
+
+/**
+ * The legacy name of a canonical workspace path (below `/v1`), else the path.
+ * The SDK calls `/v1/workspaces/…`, `/v1/me`, `/v1/invites/…` and
+ * `/v1/connectors/workspaces/…`; the policy here is written against the names
+ * the API has always served (`projects/…`, `accounts/…`). The proxy judges AND
+ * forwards the legacy name, so the two never disagree about the route. The API
+ * serves every legacy name permanently. Same map as `@kortix/shared/workspace-routes`.
+ */
+export function legacyWorkspacePath(path: string): string {
+  if (under(path, 'workspaces')) {
+    const family = /^workspaces\/[^/]+\/([^/]+)/.exec(path)?.[1];
+    return family && WORKSPACE_ACCOUNT_FAMILIES.has(family)
+      ? `accounts/${path.slice('workspaces/'.length)}`
+      : `projects${path.slice('workspaces'.length)}`;
+  }
+  if (under(path, 'me')) return `accounts/me${path.slice('me'.length)}`;
+  if (under(path, 'invites')) return `account-invites${path.slice('invites'.length)}`;
+  if (path.startsWith('connectors/workspaces/')) return `connectors/projects/${path.slice('connectors/workspaces/'.length)}`;
+  return path;
 }

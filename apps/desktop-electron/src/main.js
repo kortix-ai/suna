@@ -20,6 +20,7 @@ const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeImage, nativeThe
 const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
+const { showMessage } = require('./message-box');
 const basicAuth = require('./basic-auth');
 const { needsMainWindow, revealMainWindow, shouldAllowPreventedUnload } = require('./lifecycle-rules');
 const { createDeepLinkInbox } = require('./deep-link-inbox');
@@ -87,7 +88,7 @@ function bakedDefaultUrl() {
 //   2. value baked into package.json at build time (CI dev vs prod)
 //   3. production kortix.com
 // A runtime KORTIX_DESKTOP_URL / the Frontend-URL menu still overrides this.
-const DEFAULT_URL = process.env.KORTIX_DESKTOP_DEFAULT_URL || bakedDefaultUrl() || 'https://kortix.com/projects';
+const DEFAULT_URL = process.env.KORTIX_DESKTOP_DEFAULT_URL || bakedDefaultUrl() || 'https://kortix.com/workspaces';
 
 // The update channel baked into the bundle decides whether the frontend-URL
 // menu is the developer preset switcher or the single production
@@ -593,7 +594,7 @@ function createMainWindow() {
         defaultId: 0,
         cancelId: 0,
         message: 'Kortix stopped unexpectedly',
-        detail: 'Reload to return to this page, or go home to your latest project.',
+        detail: 'Reload to return to this page, or go home to your latest workspace.',
       })
       .then(({ response }) => {
         if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -1003,7 +1004,6 @@ function buildMenu() {
 
 /** Kortix ▸ About Kortix on Windows and Linux (macOS uses the native about panel). */
 function showAboutDialog() {
-  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
   const options = {
     type: 'info',
     title: `About ${app.name}`,
@@ -1011,7 +1011,7 @@ function showAboutDialog() {
     detail: `Version ${app.getVersion()}\nElectron ${process.versions.electron} · Chromium ${process.versions.chrome}`,
     buttons: ['OK'],
   };
-  void (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options));
+  void showMessage(options, mainWindow);
 }
 
 /** Open the application menu as a popup at window point (x, y). */

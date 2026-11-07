@@ -36,7 +36,7 @@ None of it is a flaw in CrewAI, which was never asked to hold permissions or an 
 
 ## Grants are a file, and the merge is where they get checked
 
-In the starter project's manifest, one agent's governance is five lines:
+In the starter workspace's manifest, one agent's governance is five lines:
 
 ```yaml
 agents:
@@ -52,7 +52,7 @@ Those grants are deliberately wide. The file says so, and tells you to narrow th
 
 A change request merges a session's branch into its base branch. For a config edit that ordering is the point: a session runs the config release of its base branch, not the files in its own working copy, so the edit takes effect when the merge lands. The change request is where a second person reads the edit first. Kortix validates `kortix.yaml` on the head branch first: an invalid manifest stops the merge with `422 MANIFEST_INVALID`. A merge that changes `agents` or `default_agent` also needs `project.agent.write`. A merge that adds, changes, or removes a trigger needs `project.trigger.create`, `project.trigger.update`, or `project.trigger.delete`. A session also cannot merge a change request it opened unless its grant includes `project.gitops.merge`. Without that, the merge returns `403` `CR_SELF_MERGE_REFUSED` ([git and change requests](https://kortix.com/docs/git), checked October 2026).
 
-One merged change request from the starter repo shows what that looks like. Change request 9873, merged in October 2026, is a two-file diff. It adds two comment lines to the starter `kortix.yaml`, naming the `workspace:` switch a new project starts with. The embedded snapshot the starter ships is regenerated in the same change ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS/pull/9873)).
+One merged change request from the starter repo shows what that looks like. Change request 9873, merged in October 2026, is a two-file diff. It adds two comment lines to the starter `kortix.yaml`, naming the `workspace:` switch a new workspace starts with. The embedded snapshot the starter ships is regenerated in the same change ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS/pull/9873)).
 
 On a v2 manifest you can also set grants from the dashboard's agent editor or with `kortix agents scope`. Both commit `kortix.yaml` straight to the default branch and need `project.agent.write`, with no change request in between ([agents and permissions](https://kortix.com/docs/project/agents), checked October 2026). Either path leaves a commit in the repo. The change-request path also leaves the diff and the approval beside it, which is the part a second person can read a year later.
 
@@ -66,7 +66,7 @@ Connectors are how that sandbox reaches the rest of the company, and connector c
 
 ## What the other half costs
 
-CrewAI charges nothing for the framework. Kortix prices the sandbox a session runs on and sells it in credits: "It bills per second while it runs and costs nothing while it is stopped." Free is $0 with 500 credits per month, every feature and 1 project, on the user's own provider keys or ChatGPT subscription. Managed models are on the Credits plan only. Credits sell at one rate, 100 credits per dollar, so 5,000 credits a month costs $50. Members are unlimited and free, and the account shares one credit pool ([pricing](https://kortix.com/pricing), checked October 2026).
+CrewAI charges nothing for the framework. Kortix prices the sandbox a session runs on and sells it in credits: "It bills per second while it runs and costs nothing while it is stopped." Free is $0 with 500 credits per month on your first workspace and every feature, on your own provider keys or ChatGPT subscription. Managed models are on the Credits plan only. Credits sell at one rate, 100 credits per dollar, so 5,000 credits a month costs $50. Members are unlimited and free, and the account shares one credit pool ([pricing](https://kortix.com/pricing), checked October 2026).
 
 Hosting is separate from that. Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free. The same repository runs in all three places, and the code that reads the grants and starts the sandboxes sits in it. The runtime is yours to read.
 

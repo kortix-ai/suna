@@ -29,10 +29,10 @@
     "./access/access/access-row": "./src/access/access/access-row.tsx",
     "./access/access/agent-principals": "./src/access/access/agent-principals.ts",
     "./access/access/index": "./src/access/access/index.ts",
+    "./access/access/invite-people-dialog": "./src/access/access/invite-people-dialog.tsx",
     "./access/access/principal-picker": "./src/access/access/principal-picker.tsx",
+    "./access/access/workspace-role-dialog": "./src/access/access/workspace-role-dialog.tsx",
     "./access/iam/add-github-account-dialog": "./src/access/iam/add-github-account-dialog.tsx",
-    "./access/iam/api-key-expiry": "./src/access/iam/api-key-expiry.ts",
-    "./access/iam/api-key-rows": "./src/access/iam/api-key-rows.ts",
     "./access/iam/managed-git-notice": "./src/access/iam/managed-git-notice.tsx",
     "./access/iam/session-oversight-card": "./src/access/iam/session-oversight-card.tsx",
     "./access/sharing-picker": "./src/access/sharing-picker.tsx",
@@ -109,6 +109,7 @@
     "./customize/settings/tabs/sandbox-tab": "./src/customize/settings/tabs/sandbox-tab.tsx",
     "./customize/settings/tabs/snapshots-tab": "./src/customize/settings/tabs/snapshots-tab.tsx",
     "./customize/settings/tabs/tokens-tab": "./src/customize/settings/tabs/tokens-tab.tsx",
+    "./customize/settings/tabs/workspace-keys": "./src/customize/settings/tabs/workspace-keys.tsx",
     "./customize/settings/type": "./src/customize/settings/type.ts",
     "./customize/shared/agent-resource-scope": "./src/customize/shared/agent-resource-scope.tsx",
     "./customize/shared/capability-access-gate": "./src/customize/shared/capability-access-gate.tsx",
@@ -226,12 +227,12 @@
     "./input-group": "./src/primitives/input-group.tsx",
     "./internal/account-hub/account-hub-entry": "./src/internal/account-hub/account-hub-entry.tsx",
     "./internal/account-hub/account-hub-location": "./src/internal/account-hub/account-hub-location.tsx",
-    "./internal/account-hub/account-settings-shell": "./src/internal/account-hub/account-settings-shell.tsx",
     "./internal/account-hub/hub-sheet": "./src/internal/account-hub/hub-sheet.tsx",
     "./internal/account-hub/sections": "./src/internal/account-hub/sections.ts",
     "./internal/account-hub/use-account-detail": "./src/internal/account-hub/use-account-detail.ts",
     "./internal/account-hub/use-account-hub-access": "./src/internal/account-hub/use-account-hub-access.ts",
     "./internal/account-hub/use-account-members": "./src/internal/account-hub/use-account-members.ts",
+    "./internal/account-hub/workspace-settings-route": "./src/internal/account-hub/workspace-settings-route.ts",
     "./internal/auth/auth-card-shell": "./src/internal/auth/auth-card-shell.tsx",
     "./internal/auth/auth-consent": "./src/internal/auth/auth-consent.tsx",
     "./internal/auth/auth-primitives": "./src/internal/auth/auth-primitives.tsx",
@@ -250,6 +251,7 @@
     "./internal/components/agent-mark": "./src/internal/components/agent-mark.tsx",
     "./internal/components/hover-prefetch-link": "./src/internal/components/hover-prefetch-link.tsx",
     "./internal/components/mobile-store-qr": "./src/internal/components/mobile-store-qr.tsx",
+    "./internal/components/nav-rail": "./src/internal/components/nav-rail.tsx",
     "./internal/desktop/desktop-back-button": "./src/internal/desktop/desktop-back-button.tsx",
     "./internal/desktop/titlebar-control": "./src/internal/desktop/titlebar-control.ts",
     "./internal/files/session-drive-files": "./src/internal/files/session-drive-files.ts",
@@ -271,7 +273,6 @@
     "./internal/hooks/use-channel-bindings": "./src/internal/hooks/use-channel-bindings.ts",
     "./internal/hooks/use-copy": "./src/internal/hooks/use-copy.ts",
     "./internal/hooks/use-debounced-value": "./src/internal/hooks/use-debounced-value.ts",
-    "./internal/hooks/use-notification-center": "./src/internal/hooks/use-notification-center.ts",
     "./internal/hooks/use-slash-focus": "./src/internal/hooks/use-slash-focus.ts",
     "./internal/icons/claude": "./src/internal/icons/claude.tsx",
     "./internal/icons/discord": "./src/internal/icons/discord.tsx",
@@ -286,6 +287,7 @@
     "./internal/icons/solid-check-icon": "./src/internal/icons/solid-check-icon.tsx",
     "./internal/layout/connect-mcp-modal": "./src/internal/layout/connect-mcp-modal.tsx",
     "./internal/layout/open-command-palette": "./src/internal/layout/open-command-palette.ts",
+    "./internal/layout/project-settings-nav": "./src/internal/layout/project-settings-nav.tsx",
     "./internal/layout/settings-nav-context": "./src/internal/layout/settings-nav-context.tsx",
     "./internal/layout/sidebar-opener": "./src/internal/layout/sidebar-opener.ts",
     "./internal/layout/sidebar-toggle": "./src/internal/layout/sidebar-toggle.tsx",
@@ -337,8 +339,10 @@
     "./internal/lib/utils/time-budget": "./src/internal/lib/utils/time-budget.ts",
     "./internal/lib/web-notifications": "./src/internal/lib/web-notifications.ts",
     "./internal/notifications/notification-bell": "./src/internal/notifications/notification-bell.tsx",
+    "./internal/notifications/notification-inbox": "./src/internal/notifications/notification-inbox.tsx",
     "./internal/notifications/notification-rows": "./src/internal/notifications/notification-rows.ts",
     "./internal/notifications/session-toast-cards": "./src/internal/notifications/session-toast-cards.tsx",
+    "./internal/notifications/use-inbox-summary": "./src/internal/notifications/use-inbox-summary.ts",
     "./internal/notifications/web-push": "./src/internal/notifications/web-push.ts",
     "./internal/session-types/index": "./src/internal/session-types/index.ts",
     "./internal/session-types/types": "./src/internal/session-types/types.ts",
@@ -527,12 +531,11 @@
     "./workspace/layout/project-home": "./src/workspace/layout/project-home.tsx",
     "./workspace/layout/sidebar-cookie": "./src/workspace/layout/sidebar-cookie.ts",
     "./workspace/new/account-param": "./src/workspace/new/account-param.ts",
-    "./workspace/new/account-picker": "./src/workspace/new/account-picker.tsx",
     "./workspace/new/advanced-fields": "./src/workspace/new/advanced-fields.tsx",
     "./workspace/new/clone-param": "./src/workspace/new/clone-param.ts",
     "./workspace/new/new-workspace-form": "./src/workspace/new/new-workspace-form.ts",
+    "./workspace/new/provision-new-workspace": "./src/workspace/new/provision-new-workspace.ts",
     "./workspace/new/source-param": "./src/workspace/new/source-param.ts",
-    "./workspace/new/use-creatable-accounts": "./src/workspace/new/use-creatable-accounts.ts",
     "./workspace/new/use-create-workspace": "./src/workspace/new/use-create-workspace.ts",
     "./workspace/new/use-project-quota": "./src/workspace/new/use-project-quota.ts",
     "./workspace/new/workspace-handoff": "./src/workspace/new/workspace-handoff.tsx",
@@ -546,6 +549,7 @@
     "./workspace/review/mock-data": "./src/workspace/review/mock-data.ts",
     "./workspace/review/review-center": "./src/workspace/review/review-center.tsx",
     "./workspace/review/types": "./src/workspace/review/types.ts",
+    "./workspace/settings/use-leave-workspace": "./src/workspace/settings/use-leave-workspace.tsx",
     "./workspace/sidebar/footer/project-apps-nav": "./src/workspace/sidebar/footer/project-apps-nav.tsx",
     "./workspace/sidebar/footer/project-balance-warning": "./src/workspace/sidebar/footer/project-balance-warning.tsx",
     "./workspace/sidebar/footer/project-computer-nav": "./src/workspace/sidebar/footer/project-computer-nav.tsx",
@@ -560,7 +564,10 @@
     "./workspace/sidebar/project-sidebar": "./src/workspace/sidebar/project-sidebar.tsx",
     "./workspace/sidebar/session-section-labels": "./src/workspace/sidebar/session-section-labels.ts",
     "./workspace/sidebar/session-source-icons": "./src/workspace/sidebar/session-source-icons.ts",
+    "./workspace/sidebar/use-workspace-directory": "./src/workspace/sidebar/use-workspace-directory.ts",
+    "./workspace/sidebar/use-workspace-list": "./src/workspace/sidebar/use-workspace-list.ts",
     "./workspace/sidebar/workspace-grouping": "./src/workspace/sidebar/workspace-grouping.ts",
+    "./workspace/sidebar/workspace-menu-model": "./src/workspace/sidebar/workspace-menu-model.ts",
     "./workspace/sidebar/workspace-menu-section": "./src/workspace/sidebar/workspace-menu-section.tsx",
     "./workspace/space/space-page": "./src/workspace/space/space-page.tsx"
   },
@@ -590,21 +597,21 @@
         "types": "./dist/access/access/index.d.ts",
         "import": "./dist/access/access/index.js"
       },
+      "./access/access/invite-people-dialog": {
+        "types": "./dist/access/access/invite-people-dialog.d.ts",
+        "import": "./dist/access/access/invite-people-dialog.js"
+      },
       "./access/access/principal-picker": {
         "types": "./dist/access/access/principal-picker.d.ts",
         "import": "./dist/access/access/principal-picker.js"
       },
+      "./access/access/workspace-role-dialog": {
+        "types": "./dist/access/access/workspace-role-dialog.d.ts",
+        "import": "./dist/access/access/workspace-role-dialog.js"
+      },
       "./access/iam/add-github-account-dialog": {
         "types": "./dist/access/iam/add-github-account-dialog.d.ts",
         "import": "./dist/access/iam/add-github-account-dialog.js"
-      },
-      "./access/iam/api-key-expiry": {
-        "types": "./dist/access/iam/api-key-expiry.d.ts",
-        "import": "./dist/access/iam/api-key-expiry.js"
-      },
-      "./access/iam/api-key-rows": {
-        "types": "./dist/access/iam/api-key-rows.d.ts",
-        "import": "./dist/access/iam/api-key-rows.js"
       },
       "./access/iam/managed-git-notice": {
         "types": "./dist/access/iam/managed-git-notice.d.ts",
@@ -906,6 +913,10 @@
       "./customize/settings/tabs/tokens-tab": {
         "types": "./dist/customize/settings/tabs/tokens-tab.d.ts",
         "import": "./dist/customize/settings/tabs/tokens-tab.js"
+      },
+      "./customize/settings/tabs/workspace-keys": {
+        "types": "./dist/customize/settings/tabs/workspace-keys.d.ts",
+        "import": "./dist/customize/settings/tabs/workspace-keys.js"
       },
       "./customize/settings/type": {
         "types": "./dist/customize/settings/type.d.ts",
@@ -1369,10 +1380,6 @@
         "types": "./dist/internal/account-hub/account-hub-location.d.ts",
         "import": "./dist/internal/account-hub/account-hub-location.js"
       },
-      "./internal/account-hub/account-settings-shell": {
-        "types": "./dist/internal/account-hub/account-settings-shell.d.ts",
-        "import": "./dist/internal/account-hub/account-settings-shell.js"
-      },
       "./internal/account-hub/hub-sheet": {
         "types": "./dist/internal/account-hub/hub-sheet.d.ts",
         "import": "./dist/internal/account-hub/hub-sheet.js"
@@ -1392,6 +1399,10 @@
       "./internal/account-hub/use-account-members": {
         "types": "./dist/internal/account-hub/use-account-members.d.ts",
         "import": "./dist/internal/account-hub/use-account-members.js"
+      },
+      "./internal/account-hub/workspace-settings-route": {
+        "types": "./dist/internal/account-hub/workspace-settings-route.d.ts",
+        "import": "./dist/internal/account-hub/workspace-settings-route.js"
       },
       "./internal/auth/auth-card-shell": {
         "types": "./dist/internal/auth/auth-card-shell.d.ts",
@@ -1464,6 +1475,10 @@
       "./internal/components/mobile-store-qr": {
         "types": "./dist/internal/components/mobile-store-qr.d.ts",
         "import": "./dist/internal/components/mobile-store-qr.js"
+      },
+      "./internal/components/nav-rail": {
+        "types": "./dist/internal/components/nav-rail.d.ts",
+        "import": "./dist/internal/components/nav-rail.js"
       },
       "./internal/desktop/desktop-back-button": {
         "types": "./dist/internal/desktop/desktop-back-button.d.ts",
@@ -1549,10 +1564,6 @@
         "types": "./dist/internal/hooks/use-debounced-value.d.ts",
         "import": "./dist/internal/hooks/use-debounced-value.js"
       },
-      "./internal/hooks/use-notification-center": {
-        "types": "./dist/internal/hooks/use-notification-center.d.ts",
-        "import": "./dist/internal/hooks/use-notification-center.js"
-      },
       "./internal/hooks/use-slash-focus": {
         "types": "./dist/internal/hooks/use-slash-focus.d.ts",
         "import": "./dist/internal/hooks/use-slash-focus.js"
@@ -1608,6 +1619,10 @@
       "./internal/layout/open-command-palette": {
         "types": "./dist/internal/layout/open-command-palette.d.ts",
         "import": "./dist/internal/layout/open-command-palette.js"
+      },
+      "./internal/layout/project-settings-nav": {
+        "types": "./dist/internal/layout/project-settings-nav.d.ts",
+        "import": "./dist/internal/layout/project-settings-nav.js"
       },
       "./internal/layout/settings-nav-context": {
         "types": "./dist/internal/layout/settings-nav-context.d.ts",
@@ -1813,6 +1828,10 @@
         "types": "./dist/internal/notifications/notification-bell.d.ts",
         "import": "./dist/internal/notifications/notification-bell.js"
       },
+      "./internal/notifications/notification-inbox": {
+        "types": "./dist/internal/notifications/notification-inbox.d.ts",
+        "import": "./dist/internal/notifications/notification-inbox.js"
+      },
       "./internal/notifications/notification-rows": {
         "types": "./dist/internal/notifications/notification-rows.d.ts",
         "import": "./dist/internal/notifications/notification-rows.js"
@@ -1820,6 +1839,10 @@
       "./internal/notifications/session-toast-cards": {
         "types": "./dist/internal/notifications/session-toast-cards.d.ts",
         "import": "./dist/internal/notifications/session-toast-cards.js"
+      },
+      "./internal/notifications/use-inbox-summary": {
+        "types": "./dist/internal/notifications/use-inbox-summary.d.ts",
+        "import": "./dist/internal/notifications/use-inbox-summary.js"
       },
       "./internal/notifications/web-push": {
         "types": "./dist/internal/notifications/web-push.d.ts",
@@ -2555,10 +2578,6 @@
         "types": "./dist/workspace/new/account-param.d.ts",
         "import": "./dist/workspace/new/account-param.js"
       },
-      "./workspace/new/account-picker": {
-        "types": "./dist/workspace/new/account-picker.d.ts",
-        "import": "./dist/workspace/new/account-picker.js"
-      },
       "./workspace/new/advanced-fields": {
         "types": "./dist/workspace/new/advanced-fields.d.ts",
         "import": "./dist/workspace/new/advanced-fields.js"
@@ -2571,13 +2590,13 @@
         "types": "./dist/workspace/new/new-workspace-form.d.ts",
         "import": "./dist/workspace/new/new-workspace-form.js"
       },
+      "./workspace/new/provision-new-workspace": {
+        "types": "./dist/workspace/new/provision-new-workspace.d.ts",
+        "import": "./dist/workspace/new/provision-new-workspace.js"
+      },
       "./workspace/new/source-param": {
         "types": "./dist/workspace/new/source-param.d.ts",
         "import": "./dist/workspace/new/source-param.js"
-      },
-      "./workspace/new/use-creatable-accounts": {
-        "types": "./dist/workspace/new/use-creatable-accounts.d.ts",
-        "import": "./dist/workspace/new/use-creatable-accounts.js"
       },
       "./workspace/new/use-create-workspace": {
         "types": "./dist/workspace/new/use-create-workspace.d.ts",
@@ -2630,6 +2649,10 @@
       "./workspace/review/types": {
         "types": "./dist/workspace/review/types.d.ts",
         "import": "./dist/workspace/review/types.js"
+      },
+      "./workspace/settings/use-leave-workspace": {
+        "types": "./dist/workspace/settings/use-leave-workspace.d.ts",
+        "import": "./dist/workspace/settings/use-leave-workspace.js"
       },
       "./workspace/sidebar/footer/project-apps-nav": {
         "types": "./dist/workspace/sidebar/footer/project-apps-nav.d.ts",
@@ -2687,9 +2710,21 @@
         "types": "./dist/workspace/sidebar/session-source-icons.d.ts",
         "import": "./dist/workspace/sidebar/session-source-icons.js"
       },
+      "./workspace/sidebar/use-workspace-directory": {
+        "types": "./dist/workspace/sidebar/use-workspace-directory.d.ts",
+        "import": "./dist/workspace/sidebar/use-workspace-directory.js"
+      },
+      "./workspace/sidebar/use-workspace-list": {
+        "types": "./dist/workspace/sidebar/use-workspace-list.d.ts",
+        "import": "./dist/workspace/sidebar/use-workspace-list.js"
+      },
       "./workspace/sidebar/workspace-grouping": {
         "types": "./dist/workspace/sidebar/workspace-grouping.d.ts",
         "import": "./dist/workspace/sidebar/workspace-grouping.js"
+      },
+      "./workspace/sidebar/workspace-menu-model": {
+        "types": "./dist/workspace/sidebar/workspace-menu-model.d.ts",
+        "import": "./dist/workspace/sidebar/workspace-menu-model.js"
       },
       "./workspace/sidebar/workspace-menu-section": {
         "types": "./dist/workspace/sidebar/workspace-menu-section.d.ts",

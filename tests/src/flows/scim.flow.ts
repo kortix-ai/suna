@@ -1191,7 +1191,7 @@ flow('SCIM-16', {
     'POST /v1/tunnel/device-auth',
     'GET /v1/tunnel/device-auth/:code/status',
     'POST /v1/tunnel/device-auth/:code/approve',
-    'GET /v1/projects/:projectId/connections',
+    'GET /v1/workspaces/:projectId/connections',
     'PATCH /scim/v2/accounts/:accountId/Users/:userId',
     'GET /v1/accounts/:accountId/audit',
     'GET /v1/tunnel/connections',
@@ -1257,9 +1257,9 @@ flow('SCIM-17', {
     'POST /scim/v2/accounts/:accountId/Groups',
     'GET /scim/v2/accounts/:accountId/Groups/:groupId',
     'POST /v1/accounts/:accountId/members',
-    'POST /v1/account-invites/:inviteId/accept',
+    'POST /v1/invites/:inviteId/accept',
     'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
-    'GET /v1/projects/:projectId/access',
+    'GET /v1/workspaces/:projectId/access',
   ],
 }, async (ctx) => {
   const team = await ctx.fixtures.team({ enterprise: true });
@@ -1292,7 +1292,7 @@ flow('SCIM-17', {
 
   await ctx.step('the person signs up and accepts → 200; the group roster lists them and they hold the project grant', async () => {
     const person = await ctx.fixtures.userWithEmail(email, { label: 'SCIM-17-INVITEE' });
-    (await ctx.client.as(person).post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+    (await ctx.client.as(person).post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } }))
       .status(200).body().has('$.account_id', team.id);
     // The SCIM view names the person by their SCIM id before and after sign-in;
     // the account's own group roster is where the membership lands.
@@ -1303,7 +1303,7 @@ flow('SCIM-17', {
     if (!members.some((m) => (m.user_id ?? m.userId) === person.userId)) {
       throw new Error(`the accepted person is not in the SCIM group: ${JSON.stringify(members)}`);
     }
-    const access = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+    const access = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/access', { params: { projectId: project.id } });
     const row = access.status(200).json<{ members: Array<{ user_id: string; effective_project_role: string }> }>()
       .members.find((m) => m.user_id === person.userId);
     if (row?.effective_project_role !== 'member') throw new Error(`expected the project grant to land, got ${JSON.stringify(row)}`);
@@ -1316,7 +1316,7 @@ flow('SCIM-18', {
     'POST /scim/v2/accounts/:accountId/Users',
     'POST /scim/v2/accounts/:accountId/Groups',
     'POST /v1/accounts/:accountId/members',
-    'POST /v1/account-invites/:inviteId/accept',
+    'POST /v1/invites/:inviteId/accept',
     'DELETE /v1/accounts/:accountId/members/:userId',
     'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
   ],
@@ -1342,7 +1342,7 @@ flow('SCIM-18', {
     group.status(201);
     groupId = group.json<{ id: string }>().id;
     const person = await ctx.fixtures.userWithEmail(email, { label: 'SCIM-18-FIRST' });
-    (await ctx.client.as(person).post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } })).status(200);
+    (await ctx.client.as(person).post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } })).status(200);
     if (!(await roster()).includes(person.userId!)) throw new Error('the accepted person is not in the SCIM group');
     (await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
       params: { accountId: team.id, userId: person.userId! },
@@ -1359,7 +1359,7 @@ flow('SCIM-18', {
 
   await ctx.step('a new sign-up for that address accepts → 200; the group it already used does not come back', async () => {
     const person = await ctx.fixtures.userWithEmail(email, { label: 'SCIM-18-AGAIN' });
-    (await ctx.client.as(person).post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+    (await ctx.client.as(person).post('/v1/invites/:inviteId/accept', {}, { params: { inviteId } }))
       .status(200).body().has('$.account_id', team.id);
     const members = await roster();
     if (members.includes(person.userId!)) throw new Error(`an accepted invite's group came back on re-invite: ${JSON.stringify(members)}`);

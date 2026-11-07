@@ -31,7 +31,7 @@ export function projectProviderModalTab(tab: ProviderModalTab): 'providers' | 'm
  * route segment is the fallback.
  *
  * The fallback is what every original caller relies on — they all render under
- * `/projects/[id]`. The explicit id serves callers outside that route, such as
+ * `/workspaces/[id]`. The explicit id serves callers outside that route, such as
  * Customize's provider list: there the route may yield `null`, `modal` is
  * then `null`, and `openConnectProvider` renders nothing.
  *
@@ -64,7 +64,7 @@ export function resolveGateProjectId(
  * models the project does not offer. See `isModelOffered` for the check.
  *
  * `options.projectId` names the project explicitly, for callers that render
- * outside `/projects/[id]`. Omitting it keeps the original route-inferred
+ * outside `/workspaces/[id]`. Omitting it keeps the original route-inferred
  * behaviour verbatim — see `resolveGateProjectId`.
  */
 export function useModelConnectionGate(
@@ -180,12 +180,12 @@ export function useModelConnectionGate(
   // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade()
   // (every host mounts it behind the same flag — `app-providers.tsx`'s
   // `isBillingEnabled() && <GlobalUpgradeModal />`, and the same line on
-  // `/new`) — an "Upgrade" button would be a dead click. Callers should hide it
+  // `/workspaces/new`) — an "Upgrade" button would be a dead click. Callers should hide it
   // and only offer "bring your own key" when this is false.
   //
   // This flag answers "is billing ON", NOT "is a host MOUNTED". A route that
   // enables billing without mounting one still yields a dead click — which is
-  // exactly why `/new` had to mount its own. It is the SDK's flag
+  // exactly why `/workspaces/new` had to mount its own. It is the SDK's flag
   // (`configureKortix({ billingEnabled })`), the one every billing gate reads.
   const showUpgradeOption = !!platformConfig().billingEnabled;
 

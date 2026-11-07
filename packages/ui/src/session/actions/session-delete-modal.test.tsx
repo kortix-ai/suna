@@ -86,7 +86,7 @@ async function confirmDelete(target: string, open: string, onDeleted?: () => voi
 }
 
 test('deleting the open session leaves its page for the project home', async () => {
-  expect(await confirmDelete('s-open', 's-open')).toEqual(['/projects/p-1']);
+  expect(await confirmDelete('s-open', 's-open')).toEqual(['/workspaces/p-1']);
 });
 
 test('deleting another session stays on the page', async () => {

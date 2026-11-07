@@ -147,7 +147,7 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
   //
   // Capped, and keyed by the hrefs rather than by `items`. Two reasons, both
   // measured against how this screen actually behaves:
-  //  - `/projects/[id]/sessions/[sessionId]` has a `loading.tsx`, so each
+  //  - `/workspaces/[id]/sessions/[sessionId]` has a `loading.tsx`, so each
   //    prefetch is a real dynamic RSC render on the server, not a no-op.
   //  - `useReviewItems` polls on an 8s `refetchInterval`, so `items` takes a new
   //    identity on every material change. Depending on it re-fired the whole

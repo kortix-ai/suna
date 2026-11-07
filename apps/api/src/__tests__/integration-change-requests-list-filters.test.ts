@@ -43,6 +43,7 @@ const HEAD_TWICE = crypto.randomUUID();
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'cr-list-filters-test' });
   await db.insert(projects).values({
+    splitPending: true,
     projectId: PROJECT,
     accountId: ACCOUNT,
     name: 'cr-list-filters-test',
@@ -135,6 +136,7 @@ beforeAll(async () => {
     },
   ]);
   await db.insert(projects).values({
+    splitPending: true,
     projectId: BIG_PROJECT,
     accountId: ACCOUNT,
     name: 'cr-list-pages-test',
@@ -156,6 +158,7 @@ beforeAll(async () => {
 
 beforeAll(async () => {
   await db.insert(projects).values({
+    splitPending: true,
     projectId: SUPERSEDE_PROJECT,
     accountId: ACCOUNT,
     name: 'cr-superseded-test',

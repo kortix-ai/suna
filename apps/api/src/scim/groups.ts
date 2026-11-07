@@ -25,6 +25,7 @@ import {
   scimRouter,
   userIdByEmail,
 } from './app';
+import { accountIdParam } from '../shared/route-params';
 
 /**
  * Add SCIM-referenced members to a group. The IdP references each member by the
@@ -264,7 +265,7 @@ async function applyGroupChanges(accountId: string, groupId: string, changes: Gr
 }
 
 async function writeGroup(c: any) {
-  const accountId = c.req.param('accountId');
+  const accountId = accountIdParam(c);
   const groupId = c.req.param('groupId');
   const [group] = await accountGroupFullRow(accountId, groupId);
   if (!group) return scimError(c, 404, 'Group not found');
@@ -297,11 +298,11 @@ export function registerScimGroupsRoutes(): void {
   scimRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/accounts/{accountId}/Groups',
+      path: '/accounts/{workspaceId}/Groups',
       ...auth, tags: ['scim'],
       summary: 'List SCIM Groups (filter by displayName/id/externalId eq)',
       request: {
-        params: z.object({ accountId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: ScimListQuery,
       },
       responses: {
@@ -310,7 +311,7 @@ export function registerScimGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const rawFilter = c.req.query('filter');
       // Supplied-but-unsupported filter → 400, not a silent full-list (RFC 7644 §3.4.2.2).
       if (isUnsupportedFilter(rawFilter)) {
@@ -341,17 +342,17 @@ export function registerScimGroupsRoutes(): void {
   scimRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/accounts/{accountId}/Groups/{groupId}',
+      path: '/accounts/{workspaceId}/Groups/{groupId}',
       ...auth, tags: ['scim'],
       summary: 'Get a SCIM Group',
-      request: { params: z.object({ accountId: z.string(), groupId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), groupId: z.string() }) },
       responses: {
         200: json(ScimResource, 'SCIM Group'),
         ...errors(401, 403, 404),
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const groupId = c.req.param('groupId');
 
       const [row] = await scimGroupRow(accountId, groupId);
@@ -364,11 +365,11 @@ export function registerScimGroupsRoutes(): void {
   scimRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/accounts/{accountId}/Groups',
+      path: '/accounts/{workspaceId}/Groups',
       ...auth, tags: ['scim'],
       summary: 'Create a SCIM Group',
       request: {
-        params: z.object({ accountId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: ScimResource } } },
       },
       responses: {
@@ -377,7 +378,7 @@ export function registerScimGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       let body: Record<string, unknown>;
       try {
         body = await c.req.json();
@@ -442,10 +443,10 @@ export function registerScimGroupsRoutes(): void {
 
   for (const method of ['patch', 'put'] as const) {
     scimRouter.openapi(createRoute({
-      method, path: '/accounts/{accountId}/Groups/{groupId}', ...auth, tags: ['scim'],
+      method, path: '/accounts/{workspaceId}/Groups/{groupId}', ...auth, tags: ['scim'],
       summary: method === 'patch' ? 'Patch a SCIM Group' : 'Replace a SCIM Group',
       request: {
-        params: z.object({ accountId: z.string().uuid(), groupId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid(), groupId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: ScimResource } } },
       },
       responses: { 200: json(ScimResource, 'SCIM Group'), ...errors(400, 401, 403, 404, 409) },
@@ -455,17 +456,17 @@ export function registerScimGroupsRoutes(): void {
   scimRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/accounts/{accountId}/Groups/{groupId}',
+      path: '/accounts/{workspaceId}/Groups/{groupId}',
       ...auth, tags: ['scim'],
       summary: 'Delete a SCIM Group',
-      request: { params: z.object({ accountId: z.string(), groupId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), groupId: z.string() }) },
       responses: {
         204: { description: 'No content (deleted / idempotent)' },
         ...errors(401, 403),
       },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const groupId = c.req.param('groupId');
 
       // Capture members before the cascade so we can bust their cached roles —

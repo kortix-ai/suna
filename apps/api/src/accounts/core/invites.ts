@@ -1,20 +1,49 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountInvitations, accountMemberships, accounts, projects } from '@kortix/db';
+import { accountInvitations, accountMemberships } from '@kortix/db';
 import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
-import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, addWorkspaceMember, assertAuthorized, authorize, workspaceFactsOf } from '../../iam';
+import { SYSTEM_ACTOR } from '../../iam/assignments';
 import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
 import { actorOf } from '../../iam/actor';
-import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/roles';
+import {
+  accountRoleForWorkspaceRole,
+  parseAssignableProjectRole,
+  parseWorkspaceRole,
+  PROJECT_ROLE_INPUT_ERROR,
+  type ProjectRole,
+  type WorkspaceRole,
+} from '../../iam/roles';
 import { auth, errors, json } from '../../openapi';
-import { grantProjectRole } from '../../projects/lib/access';
+import { parseExpiresAtBody } from '../../projects/lib/access';
 import { db } from '../../shared/db';
 import { readJsonObject } from '../../shared/http-body';
 import { buildInviteUrl, sendAccountInviteEmail } from '../email';
-import { AccountIdParam, AccountInviteSchema, type AccountRole, OkSchema, accountsRouter, getMembership, normalizeEmail, parseRole } from './app';
-import { grantAccountRole } from './member-role-write';
+import { AccountIdParam, AccountInviteSchema, type AccountRole, OkSchema, accountsRouter, getMembership, normalizeEmail } from './app';
 import { logger } from '../../lib/logger';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { captureProductEvent } from '../../shared/product-analytics';
+import { accountIdParam } from '../../shared/route-params';
+import { accountsView, projectsView } from '../../workspaces/rows';
+
+type BootstrapEntry = NonNullable<(typeof accountInvitations.$inferInsert)['bootstrapGrants']>[number];
+
+/**
+ * The workspace-ladder role an invite grants, for its email: Admin, Manager
+ * or Member. A Manager invite stores `initial_role: member` plus a manager
+ * grant on the workspace's project in `bootstrap_grants` (applied at accept),
+ * so the role is read back from both.
+ */
+export function inviteLadderRole(invite: {
+  initialRole: string;
+  bootstrapGrants?: unknown;
+}): 'admin' | 'manager' | 'member' {
+  if (invite.initialRole === 'admin' || invite.initialRole === 'owner') return 'admin';
+  const grants = Array.isArray(invite.bootstrapGrants) ? invite.bootstrapGrants : [];
+  const manages = grants.some(
+    (grant) => grant !== null && typeof grant === 'object' && (grant as { role?: unknown }).role === 'manager',
+  );
+  return manages ? 'manager' : 'member';
+}
 
 export function registerMemberInviteRoute(): void {
   // POST /v1/accounts/:accountId/members — invite a user by email. If the user
@@ -23,7 +52,7 @@ export function registerMemberInviteRoute(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/members',
+      path: '/{workspaceId}/members',
       tags: ['accounts'],
       summary: 'Invite a user by email (added immediately or pending invite)',
       ...auth,
@@ -34,7 +63,9 @@ export function registerMemberInviteRoute(): void {
             'application/json': {
               schema: z.object({
                 email: z.string(),
+                /** The workspace ladder: admin | manager | member (default member). Owner is a transfer. */
                 role: z.string().optional(),
+                expires_at: z.string().nullable().optional(),
                 // Project access to grant alongside the invite — applied
                 // immediately if the invitee already has a Kortix account,
                 // or staged on the pending invite (same bootstrap_grants
@@ -56,30 +87,74 @@ export function registerMemberInviteRoute(): void {
     async (c: any) => {
       const userId = c.get('userId') as string;
       const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
-      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE);
+      const actor = await actorOf(c, accountId);
+      const facts = await workspaceFactsOf(accountId);
+      // Membership is access (design.md §3.2 C3): inviting is `member.invite`
+      // on the workspace, or `project.members.manage` on its project (a
+      // workspace manager invites too). Admin additionally needs member.update.
+      const canInvite =
+        (await authorize(actor, ACCOUNT_ACTIONS.MEMBER_INVITE)).allowed ||
+        (facts.soleProjectId !== null &&
+          (await authorize(actor, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'workspace', id: facts.soleProjectId }))
+            .allowed);
+      if (!canInvite) await assertAuthorized(actor, ACCOUNT_ACTIONS.MEMBER_INVITE);
 
       const body = await readJsonObject(c);
       const email = normalizeEmail(body.email);
       if (!email) return c.json({ error: 'A valid email is required' }, 400);
 
-      const role: AccountRole = parseRole(body.role, ['admin', 'member']) ?? 'member';
+      const parsedRole: WorkspaceRole | null = body.role === undefined ? 'member' : parseWorkspaceRole(body.role);
+      let role: WorkspaceRole;
+      if (parsedRole && parsedRole !== 'owner') {
+        role = parsedRole;
+      } else if (c.req.path.startsWith('/v1/workspaces/')) {
+        return c.json({ error: 'role must be one of admin|manager|member (owner is a transfer)' }, 400);
+      } else {
+        // The legacy spelling always coerced an unknown role to `member`;
+        // published CLIs and SDKs rely on it.
+        role = 'member';
+      }
+      if (role === 'admin') await assertAuthorized(actor, ACCOUNT_ACTIONS.MEMBER_UPDATE);
+      if (role === 'manager' && !facts.soleProjectId) {
+        return c.json(
+          { error: 'Manager needs a workspace that is set up. On a legacy account with several projects, grant Manager per project.' },
+          400,
+        );
+      }
+      const accountRole: AccountRole = accountRoleForWorkspaceRole(role);
+      const expiry = parseExpiresAtBody(body.expires_at);
+      if (!expiry.ok) return c.json({ error: expiry.error }, 400);
+      const membershipExpiresAt = expiry.value ?? null;
 
-      // Project grants only apply to `member` invites — an admin/owner
-      // already holds implicit Manager on every project in the account (see
-      // the PATCH role-change handler below, which strips their direct
-      // project_members rows for the same reason), so a grant would be
-      // redundant at best and misleading at worst.
+      // `project_grants` is the per-project access of a split_pending legacy
+      // account only. On a 1:1 workspace membership already IS access: a grant
+      // naming the workspace itself is accepted and ignored, any other project
+      // is a 400 (it cannot belong to this workspace).
       const rawGrants: Array<{ project_id?: unknown; role?: unknown }> = Array.isArray(
         body.project_grants,
       )
         ? body.project_grants
         : [];
       let projectGrants: Array<{ project_id: string; role: ProjectRole }> = [];
-      if (rawGrants.length > 0 && role === 'member') {
+      const canonical = c.req.path.startsWith('/v1/workspaces/');
+      if (!facts.splitPending) {
+        const namesWorkspace = (g: { project_id?: unknown }) =>
+          typeof g.project_id === 'string' && g.project_id.toLowerCase() === facts.soleProjectId;
+        // The canonical route refuses a grant on another project; the legacy
+        // route kept its old answer and drops it.
+        if (canonical && rawGrants.some((g) => !namesWorkspace(g))) {
+          return c.json({ error: 'project_grants may only name this workspace; membership already gives access to it' }, 400);
+        }
+        // A `manager` grant on the workspace is the manager rung (older clients
+        // send it that way); a `member` grant adds nothing to membership.
+        if (role === 'member' && rawGrants.some((g) => namesWorkspace(g) && parseAssignableProjectRole(g.role) === 'manager')) {
+          role = 'manager';
+        }
+      } else if (rawGrants.length > 0 && accountRole === 'member') {
         const requestedIds = [
           ...new Set(
             rawGrants
@@ -92,10 +167,10 @@ export function registerMemberInviteRoute(): void {
         // malicious payload can't plant a cross-account project_members row.
         const owned = requestedIds.length
           ? await db
-              .select({ projectId: projects.projectId })
-              .from(projects)
+              .select({ projectId: projectsView.projectId })
+              .from(projectsView)
               .where(
-                and(eq(projects.accountId, accountId), inArray(projects.projectId, requestedIds)),
+                and(eq(projectsView.accountId, accountId), inArray(projectsView.projectId, requestedIds)),
               )
           : [];
         const ownedIds = new Set(owned.map((p) => p.projectId));
@@ -110,12 +185,17 @@ export function registerMemberInviteRoute(): void {
           projectGrants.push({ project_id: projectId, role: grantRole });
         }
       }
+      // A manager invite stores the project manager row on the workspace's
+      // project, applied at once or at accept (bootstrap_grants).
+      if (role === 'manager' && facts.soleProjectId) {
+        projectGrants = [{ project_id: facts.soleProjectId, role: 'manager' }];
+      }
 
       // Need account name for the invite email
       const [accountRow] = await db
-        .select({ name: accounts.name })
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
+        .select({ name: accountsView.name })
+        .from(accountsView)
+        .where(eq(accountsView.accountId, accountId))
         .limit(1);
       if (!accountRow) return c.json({ error: 'Account not found' }, 404);
 
@@ -131,14 +211,17 @@ export function registerMemberInviteRoute(): void {
           return c.json({ error: 'Already a member' }, 409);
         }
 
-        // IDENTITY first, then the GRANT. Two stores, two writes: the row that
-        // says "this user belongs to this account" (and carries is_super_admin /
-        // scim_external_id) is kortix.account_memberships; the role is an
-        // account-scope assignment. The route already asserted member.invite;
-        // `assignRole` additionally asserts member.update, which owner and admin
-        // both hold and no custom role can (both are non-delegable).
-        await db.insert(accountMemberships).values({ userId: targetUserId, accountId });
-        await grantAccountRole(await actorOf(c, accountId), accountId, targetUserId, role);
+        // THE membership write: identity row, account role, the manager row
+        // for a manager, explicit grants on a split_pending account.
+        // `SYSTEM_ACTOR`: this route authorized the caller above (an admin
+        // invite also asserted member.update); `grantedBy` names them.
+        await addWorkspaceMember(
+          accountId,
+          targetUserId,
+          role,
+          role === 'manager' ? [] : projectGrants.map((g) => ({ projectId: g.project_id, role: g.role })),
+          { writer: SYSTEM_ACTOR, source: 'invite', grantedBy: userId, expiresAt: membershipExpiresAt },
+        );
         // An account admin explicitly re-adding the same account-scoped person
         // clears the manual-removal tombstone. Future SAML logins may now sync
         // this identity again; SCIM can still deactivate it later.
@@ -147,17 +230,6 @@ export function registerMemberInviteRoute(): void {
           SET user_id=${targetUserId}::uuid, active=true, deleted_at=NULL, updated_at=now()
           WHERE account_id=${accountId}::uuid AND lower(user_name)=lower(${email})
         `);
-
-
-        for (const g of projectGrants) {
-          await grantProjectRole({
-            accountId,
-            projectId: g.project_id,
-            userId: targetUserId,
-            role: g.role,
-            grantedBy: userId,
-          });
-        }
 
         captureProductEvent({
           userId: targetUserId,
@@ -171,7 +243,8 @@ export function registerMemberInviteRoute(): void {
             status: 'added',
             user_id: targetUserId,
             email,
-            account_role: role,
+            role,
+            account_role: accountRole,
             project_grants: projectGrants,
           },
           201,
@@ -189,10 +262,16 @@ export function registerMemberInviteRoute(): void {
       // still-pending invite stay: only the IdP adds or removes those
       // (KRTX-2329). An accepted invite already applied its groups, and
       // offboarding removed them, so a refresh never hands them back.
-      const bootstrapGrants = projectGrants.map((g) => ({
+      const bootstrapGrants: BootstrapEntry[] = projectGrants.map((g) => ({
         project_id: g.project_id,
         role: g.role,
+        ...(membershipExpiresAt ? { expires_at: membershipExpiresAt.toISOString() } : {}),
       }));
+      // A time-boxed membership travels with the invite and is applied at accept
+      // (`accounts/invites.ts`). An older API pod skips the entry as malformed.
+      if (membershipExpiresAt) {
+        bootstrapGrants.push({ account_expires_at: membershipExpiresAt.toISOString() } as unknown as BootstrapEntry);
+      }
       const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
       const [invite] = await db
         .insert(accountInvitations)
@@ -200,14 +279,14 @@ export function registerMemberInviteRoute(): void {
           accountId,
           email,
           invitedBy: userId,
-          initialRole: role,
+          initialRole: accountRole,
           expiresAt,
           bootstrapGrants,
         })
         .onConflictDoUpdate({
           target: [accountInvitations.accountId, accountInvitations.email],
           set: {
-            initialRole: role,
+            initialRole: accountRole,
             expiresAt,
             invitedBy: userId,
             // Clear any prior accepted_at so a refreshed invite is "pending" again.
@@ -227,7 +306,7 @@ export function registerMemberInviteRoute(): void {
         accountName: accountRow.name,
         inviterEmail: callerEmail,
         inviteId: invite.inviteId,
-        role: invite.initialRole === 'admin' ? 'admin' : 'member',
+        role: inviteLadderRole(invite),
       });
 
       return c.json(
@@ -235,6 +314,7 @@ export function registerMemberInviteRoute(): void {
           status: 'pending',
           invite_id: invite.inviteId,
           email,
+          role,
           account_role: invite.initialRole,
           project_grants: bootstrapGrants,
           expires_at: invite.expiresAt.toISOString(),
@@ -254,7 +334,7 @@ export function registerInviteRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/invites',
+      path: '/{workspaceId}/invites',
       tags: ['accounts'],
       summary: 'List pending invitations',
       ...auth,
@@ -266,7 +346,7 @@ export function registerInviteRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
@@ -307,11 +387,11 @@ export function registerInviteRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/invites/{inviteId}',
+      path: '/{workspaceId}/invites/{inviteId}',
       tags: ['accounts'],
       summary: 'Cancel a pending invite',
       ...auth,
-      request: { params: z.object({ accountId: z.string(), inviteId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), inviteId: z.string() }) },
       responses: {
         200: json(OkSchema, 'Cancellation result'),
         ...errors(401, 403),
@@ -319,7 +399,7 @@ export function registerInviteRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const inviteId = c.req.param('inviteId');
 
       const membership = await getMembership(userId, accountId);
@@ -348,11 +428,11 @@ export function registerInviteRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/invites/{inviteId}/resend',
+      path: '/{workspaceId}/invites/{inviteId}/resend',
       tags: ['accounts'],
       summary: 'Resend an invite email and refresh its expiry',
       ...auth,
-      request: { params: z.object({ accountId: z.string(), inviteId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), inviteId: z.string() }) },
       responses: {
         200: json(
           z.object({
@@ -370,7 +450,7 @@ export function registerInviteRoutes(): void {
     async (c: any) => {
       const userId = c.get('userId') as string;
       const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const inviteId = c.req.param('inviteId');
 
       const membership = await getMembership(userId, accountId);
@@ -393,9 +473,9 @@ export function registerInviteRoutes(): void {
       if (!updated) return c.json({ error: 'Invite not found' }, 404);
 
       const [accountRow] = await db
-        .select({ name: accounts.name })
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
+        .select({ name: accountsView.name })
+        .from(accountsView)
+        .where(eq(accountsView.accountId, accountId))
         .limit(1);
 
       let delivery: Awaited<ReturnType<typeof sendAccountInviteEmail>> | null = null;
@@ -405,7 +485,7 @@ export function registerInviteRoutes(): void {
           accountName: accountRow.name,
           inviterEmail: callerEmail,
           inviteId: updated.inviteId,
-          role: updated.initialRole === 'admin' ? 'admin' : 'member',
+          role: inviteLadderRole(updated),
         });
       }
 

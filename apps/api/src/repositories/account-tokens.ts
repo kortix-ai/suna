@@ -1,6 +1,6 @@
 import { eq, and, desc, gt, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { SESSION_LEASE_REFUSAL } from '../shared/session-lease-refusal';
-import { accountTokens, accounts, projects, projectSessions, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
+import { accountTokens, projectSessions, readStoredAgentGrant, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
 import {
@@ -9,9 +9,11 @@ import {
   isApiKeySecretConfigured,
   isAccountToken,
 } from '../shared/crypto';
-import type { AgentGrant } from '@kortix/db';
+import type { AgentGrant, StoredKeyScopes } from '@kortix/db';
+import { readKeyScopes, type KeyScopes } from '../iam/key-scope';
 import { isUuid } from '../shared/validate';
 import { createLastUsedTracker } from '../shared/throttled-last-used';
+import { accountsView, projectsView } from '../workspaces/rows';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -41,6 +43,9 @@ export interface AccountTokenValidationResult {
   serviceAccountId?: string | null;
   /** When the token expires, or null for a token without an expiry. */
   expiresAt?: Date | null;
+  /** A workspace key's scope inside its creator's role (`iam/key-scope.ts`);
+   *  null = the creator's whole role. */
+  scopes?: KeyScopes | null;
   error?: string;
   /** True = the credential itself can never come back (missing, revoked,
    *  expired, or its sandbox lease closed). The auth middleware turns this
@@ -90,6 +95,14 @@ export interface CreateAccountTokenParams {
   /** Agent-session tokens only: the human the session acts on behalf of
    *  (spec 2026-09-22-agents-as-principals §2.3). Null = unattended. */
   onBehalfOfUserId?: string | null;
+  /** A workspace key's scope inside its creator's role. Null/undefined = full. */
+  scopes?: StoredKeyScopes | null;
+  /** A renewing expiry: each use moves `expires_at` to now + this many days
+   *  (the CLI device login). Null/undefined = a fixed expiry. */
+  expiryRenewDays?: number | null;
+  /** The person who minted a key whose `userId` is a service account (an
+   *  agent or bot key). Null/undefined = `userId` minted it. */
+  createdBy?: string | null;
 }
 
 export interface CreateAccountTokenResult {
@@ -101,6 +114,7 @@ export interface CreateAccountTokenResult {
   projectId: string | null;
   expiresAt: Date | null;
   createdAt: Date;
+  scopes: KeyScopes | null;
 }
 
 export interface AccountTokenListEntry {
@@ -118,13 +132,27 @@ export interface AccountTokenListEntry {
   lastUsedAt: Date | null;
   createdAt: Date;
   revokedAt: Date | null;
+  scopes: KeyScopes | null;
+  /** Non-null = a renewing expiry: each use moves `expiresAt` this many days out. */
+  expiryRenewDays: number | null;
+}
+
+/** Normalize the stored scope of each listed row (`readKeyScopes`). */
+function withReadScopes<T extends { scopes: unknown }>(rows: T[]): Array<T & { scopes: KeyScopes | null }> {
+  return rows.map((row) => ({ ...row, scopes: readKeyScopes(row.scopes) }));
 }
 
 // ─── Throttle for last_used_at updates ───────────────────────────────────────
 
+// A renewing expiry (the CLI device login, `expiry_renew_days`) moves with the
+// same throttled write: a key in use never expires, an unused one does.
 const updateLastUsedThrottled = createLastUsedTracker((tokenId) =>
   db.update(accountTokens)
-    .set({ lastUsedAt: new Date() })
+    .set({
+      lastUsedAt: new Date(),
+      expiresAt: sql`CASE WHEN ${accountTokens.expiryRenewDays} IS NULL THEN ${accountTokens.expiresAt}
+        ELSE now() + make_interval(days => ${accountTokens.expiryRenewDays}) END`,
+    })
     .where(and(
       eq(accountTokens.tokenId, tokenId),
       eq(accountTokens.status, 'active'),
@@ -155,15 +183,17 @@ async function loadPatPolicy(
   maxLifetimeDays: number | null;
   requireExpiry: boolean;
   idleRevokeDays: number | null;
+  allowNoExpiry: boolean;
 } | null> {
   const [row] = await database
     .select({
-      maxLifetimeDays: accounts.patMaxLifetimeDays,
-      requireExpiry: accounts.patRequireExpiry,
-      idleRevokeDays: accounts.patIdleRevokeDays,
+      maxLifetimeDays: accountsView.patMaxLifetimeDays,
+      requireExpiry: accountsView.patRequireExpiry,
+      idleRevokeDays: accountsView.patIdleRevokeDays,
+      allowNoExpiry: accountsView.patAllowNoExpiry,
     })
-    .from(accounts)
-    .where(eq(accounts.accountId, accountId))
+    .from(accountsView)
+    .where(eq(accountsView.accountId, accountId))
     .limit(1);
   return row ?? null;
 }
@@ -191,8 +221,8 @@ export async function createAccountToken(
     // Serialize project-bound mints with archive/revocation. The lock lasts
     // through insert and owner validation; DELETE either sees this token or
     // the mint sees the committed archive.
-    const [project] = await tx.select({ status: projects.status }).from(projects)
-      .where(and(eq(projects.projectId, projectId), eq(projects.accountId, params.accountId)))
+    const [project] = await tx.select({ status: projectsView.status }).from(projectsView)
+      .where(and(eq(projectsView.projectId, projectId), eq(projectsView.accountId, params.accountId)))
       .for('share');
     if (project?.status === 'archived') throw new Error('Project is archived');
     if (params.sessionId) {
@@ -251,6 +281,9 @@ async function insertAccountToken(
       agentGrant: params.agentGrant ?? null,
       serviceAccountId: params.serviceAccountId ?? null,
       onBehalfOfUserId: params.onBehalfOfUserId ?? null,
+      scopes: params.scopes ?? null,
+      expiryRenewDays: params.expiryRenewDays ?? null,
+      createdBy: params.createdBy ?? null,
     })
     .returning();
 
@@ -262,8 +295,8 @@ async function insertAccountToken(
   // tokens. Either its revocation sees this row or this read sees the tombstone.
   if (params.sessionId && params.projectId) {
     try {
-      const [project] = await database.select({ status: projects.status }).from(projects)
-        .where(and(eq(projects.projectId, params.projectId), eq(projects.accountId, params.accountId)));
+      const [project] = await database.select({ status: projectsView.status }).from(projectsView)
+        .where(and(eq(projectsView.projectId, params.projectId), eq(projectsView.accountId, params.accountId)));
       if (project?.status === 'archived') throw new Error('Project is archived');
       const [session] = await database.select({ metadata: projectSessions.metadata }).from(projectSessions)
         .where(and(eq(projectSessions.sessionId, params.sessionId), eq(projectSessions.accountId, params.accountId)));
@@ -284,7 +317,75 @@ async function insertAccountToken(
     projectId: row.projectId,
     expiresAt: row.expiresAt,
     createdAt: row.createdAt,
+    scopes: readKeyScopes(row.scopes),
   };
+}
+
+/** A new key expires this many days out when the caller names no expiry. */
+export const KEY_DEFAULT_LIFETIME_DAYS = 90;
+/** The longest lifetime a key may have when the workspace sets no maximum. */
+export const KEY_MAX_LIFETIME_DAYS = 365;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type MintExpiry =
+  | { ok: true; expiresAt: Date | undefined }
+  | { ok: false; status: 400; code: 'expiry_required' | 'expiry_too_far' | 'invalid_expiry'; error: string };
+
+/**
+ * The expiry of a key a person mints by hand (design.md §3.2 C4a), from the
+ * request's `expires_at` and the workspace's key policy:
+ *
+ *   - absent           → now + 90 days (or the policy maximum, when shorter);
+ *   - an ISO-8601 time → that time, at most the policy maximum out (365 days
+ *                        when the policy sets none);
+ *   - `null`           → no expiry, only when the policy allows it
+ *                        (`allow_no_expiry` and not `require_expiry`).
+ *
+ * Keys minted before this rule keep their stored expiry, none included: the
+ * rule decides new mints only.
+ */
+export async function resolveMintExpiry(accountId: string, requested: unknown, now = new Date()): Promise<MintExpiry> {
+  const policy = await loadPatPolicy(accountId, db);
+  const ceilingDays = policy?.maxLifetimeDays ?? KEY_MAX_LIFETIME_DAYS;
+  const mayNeverExpire = policy?.allowNoExpiry === true && policy.requireExpiry !== true;
+  if (requested === undefined || (typeof requested === 'string' && requested.trim() === '')) {
+    return { ok: true, expiresAt: new Date(now.getTime() + Math.min(KEY_DEFAULT_LIFETIME_DAYS, ceilingDays) * DAY_MS) };
+  }
+  if (requested === null || requested === 'never') {
+    if (mayNeverExpire) return { ok: true, expiresAt: undefined };
+    return {
+      ok: false,
+      status: 400,
+      code: 'expiry_required',
+      error: `This workspace requires every key to expire, at most ${ceilingDays} days from now. A workspace admin can allow keys without expiry in the key policy.`,
+    };
+  }
+  const at = typeof requested === 'string' ? new Date(requested.trim()) : new Date(Number.NaN);
+  if (Number.isNaN(at.getTime())) {
+    return { ok: false, status: 400, code: 'invalid_expiry', error: 'expires_at must be ISO-8601, or null for no expiry' };
+  }
+  if (at.getTime() - now.getTime() > ceilingDays * DAY_MS) {
+    return { ok: false, status: 400, code: 'expiry_too_far', error: `Expiry cannot be more than ${ceilingDays} days from now.` };
+  }
+  return { ok: true, expiresAt: at };
+}
+
+/**
+ * A default expiry (the caller named none) never outlives the minting key: a
+ * workspace key that mints a key without `expires_at` gives it the earlier of
+ * the default and its own expiry. `checkTokenMintExpiry` then passes it.
+ */
+export async function clampDefaultToParentExpiry(
+  expiresAt: Date | undefined,
+  parentTokenId: string | undefined,
+): Promise<Date | undefined> {
+  if (!expiresAt || !parentTokenId) return expiresAt;
+  const [parent] = await db
+    .select({ expiresAt: accountTokens.expiresAt })
+    .from(accountTokens)
+    .where(eq(accountTokens.tokenId, parentTokenId))
+    .limit(1);
+  return parent?.expiresAt && parent.expiresAt < expiresAt ? parent.expiresAt : expiresAt;
 }
 
 /**
@@ -312,7 +413,7 @@ export async function checkTokenMintExpiry(
     return {
       status: 403,
       code: 'token_mint_exceeds_parent',
-      error: 'A project-scoped token must set expires_at, no later than its own expiry.',
+      error: 'A workspace-bound token must set expires_at, no later than its own expiry.',
     };
   }
   return null;
@@ -353,7 +454,7 @@ export async function listAccountTokens(
     // An expired token and a token of an archived (or gone) project no longer
     // authenticate, so they are not live. `?mine=true` keeps expired keys as history.
     or(isNull(accountTokens.expiresAt), gt(accountTokens.expiresAt, sql`now()`)),
-    or(isNull(accountTokens.projectId), eq(projects.status, 'active')),
+    or(isNull(accountTokens.projectId), eq(projectsView.status, 'active')),
   );
   return db
     .select({
@@ -367,11 +468,14 @@ export async function listAccountTokens(
       lastUsedAt: accountTokens.lastUsedAt,
       createdAt: accountTokens.createdAt,
       revokedAt: accountTokens.revokedAt,
+      scopes: accountTokens.scopes,
+      expiryRenewDays: accountTokens.expiryRenewDays,
     })
     .from(accountTokens)
-    .leftJoin(projects, eq(projects.projectId, accountTokens.projectId))
+    .leftJoin(projectsView, eq(projectsView.projectId, accountTokens.projectId))
     .where(filter)
-    .orderBy(desc(accountTokens.createdAt));
+    .orderBy(desc(accountTokens.createdAt))
+    .then(withReadScopes);
 }
 
 /**
@@ -410,6 +514,8 @@ export async function listPersonalAccountTokens(
       lastUsedAt: accountTokens.lastUsedAt,
       createdAt: accountTokens.createdAt,
       revokedAt: accountTokens.revokedAt,
+      scopes: accountTokens.scopes,
+      expiryRenewDays: accountTokens.expiryRenewDays,
     })
     .from(accountTokens)
     .where(
@@ -421,7 +527,118 @@ export async function listPersonalAccountTokens(
         isNull(accountTokens.agentGrant),
       ),
     )
-    .orderBy(desc(accountTokens.createdAt));
+    .orderBy(desc(accountTokens.createdAt))
+    .then(withReadScopes);
+}
+
+/**
+ * The person's personal keys across every workspace: hand-minted by `userId`,
+ * bound to no workspace (`project_id` NULL), and not a session,
+ * service-account or agent-grant bearer. `GET /v1/me/tokens`.
+ */
+export async function listPersonalTokensOfUser(userId: string) {
+  return db
+    .select({
+      tokenId: accountTokens.tokenId,
+      accountId: accountTokens.accountId,
+      publicKey: accountTokens.publicKey,
+      name: accountTokens.name,
+      status: accountTokens.status,
+      expiresAt: accountTokens.expiresAt,
+      lastUsedAt: accountTokens.lastUsedAt,
+      createdAt: accountTokens.createdAt,
+      revokedAt: accountTokens.revokedAt,
+      scopes: accountTokens.scopes,
+      expiryRenewDays: accountTokens.expiryRenewDays,
+    })
+    .from(accountTokens)
+    .where(and(...personalOfUser(userId)))
+    .orderBy(desc(accountTokens.createdAt))
+    .then(withReadScopes);
+}
+
+/** The account a personal key of `userId` was minted in, or null when it is not theirs. */
+export async function personalTokenAccountOfUser(tokenId: string, userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ accountId: accountTokens.accountId })
+    .from(accountTokens)
+    .where(and(eq(accountTokens.tokenId, tokenId), ...personalOfUser(userId)))
+    .limit(1);
+  return row?.accountId ?? null;
+}
+
+function personalOfUser(userId: string) {
+  return [
+    eq(accountTokens.userId, userId),
+    isNull(accountTokens.projectId),
+    isNull(accountTokens.sessionId),
+    isNull(accountTokens.serviceAccountId),
+    isNull(accountTokens.agentGrant),
+  ];
+}
+
+/**
+ * The workspace keys that act as a service account: an agent key (the agent's
+ * identity, `agent_grant` set) or a bot key (a bot service account). Bound to
+ * the workspace, never a session token. Revoked keys stay as history, like a
+ * person's own keys (`listPersonalAccountTokens`).
+ */
+export async function listServiceAccountKeys(accountId: string, projectId: string) {
+  return db
+    .select({
+      tokenId: accountTokens.tokenId,
+      publicKey: accountTokens.publicKey,
+      name: accountTokens.name,
+      status: accountTokens.status,
+      projectId: accountTokens.projectId,
+      expiresAt: accountTokens.expiresAt,
+      lastUsedAt: accountTokens.lastUsedAt,
+      createdAt: accountTokens.createdAt,
+      revokedAt: accountTokens.revokedAt,
+      scopes: accountTokens.scopes,
+      expiryRenewDays: accountTokens.expiryRenewDays,
+      createdBy: accountTokens.createdBy,
+      serviceAccountId: serviceAccounts.serviceAccountId,
+      serviceAccountName: serviceAccounts.name,
+      agentName: serviceAccounts.agentName,
+    })
+    .from(accountTokens)
+    .innerJoin(serviceAccounts, eq(serviceAccounts.serviceAccountId, accountTokens.serviceAccountId))
+    .where(
+      and(
+        eq(accountTokens.accountId, accountId),
+        eq(accountTokens.projectId, projectId),
+        isNull(accountTokens.sessionId),
+      ),
+    )
+    .orderBy(desc(accountTokens.createdAt))
+    .then(withReadScopes);
+}
+
+/**
+ * One key of the workspace that acts as a service account (agent or bot), or
+ * null. The keys route revokes it with `token.revoke`.
+ */
+export async function getServiceAccountKey(tokenId: string, accountId: string, projectId: string) {
+  const [row] = await db
+    .select({ tokenId: accountTokens.tokenId, serviceAccountId: accountTokens.serviceAccountId })
+    .from(accountTokens)
+    .where(
+      and(
+        eq(accountTokens.tokenId, tokenId),
+        eq(accountTokens.accountId, accountId),
+        eq(accountTokens.projectId, projectId),
+        isNull(accountTokens.sessionId),
+        sql`${accountTokens.serviceAccountId} IS NOT NULL`,
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/** Remove a key that was minted and refused in the same request (its secret never left the server). */
+export async function deleteUnissuedAccountToken(tokenId: string, accountId: string): Promise<void> {
+  await db.delete(accountTokens).where(and(eq(accountTokens.tokenId, tokenId), eq(accountTokens.accountId, accountId)));
 }
 
 /** Revoke a token (soft-delete — sets status='revoked' + revoked_at). */
@@ -697,10 +914,11 @@ async function validateAccountTokenMatching(
         agentGrant: accountTokens.agentGrant,
         onBehalfOfUserId: accountTokens.onBehalfOfUserId,
         serviceAccountId: accountTokens.serviceAccountId,
-        patIdleRevokeDays: accounts.patIdleRevokeDays,
+        scopes: accountTokens.scopes,
+        patIdleRevokeDays: accountsView.patIdleRevokeDays,
       })
       .from(accountTokens)
-      .innerJoin(accounts, eq(accounts.accountId, accountTokens.accountId))
+      .innerJoin(accountsView, eq(accountsView.accountId, accountTokens.accountId))
       .where(
         and(
           match(),
@@ -818,9 +1036,10 @@ async function validateAccountTokenMatching(
 
     // Idle-revoke: if the account has an idle policy and the PAT hasn't
     // been used in that window, soft-revoke it now and refuse the call.
-    // Project-scoped tokens (sandbox-injected, lifetime tied to the
-    // sandbox) are exempt — same carve-out as the mint path.
-    if (row.patIdleRevokeDays != null && !row.projectId) {
+    // Session tokens (sandbox-injected, lifetime tied to the sandbox) are
+    // exempt — same carve-out as the mint path. A workspace key is a durable
+    // credential like a personal key and follows the policy (design.md §3.2 C4a).
+    if (row.patIdleRevokeDays != null && !row.sessionId) {
       const reference = row.lastUsedAt ?? row.createdAt;
       const idleMs = Date.now() - reference.getTime();
       const maxIdleMs = row.patIdleRevokeDays * 24 * 60 * 60 * 1000;
@@ -860,6 +1079,7 @@ async function validateAccountTokenMatching(
       onBehalfOfUserId: row.onBehalfOfUserId ?? null,
       serviceAccountId: row.serviceAccountId ?? null,
       expiresAt: row.expiresAt ?? null,
+      scopes: readKeyScopes(row.scopes),
     };
   } catch (err) {
     console.error('Account token validation error:', err);

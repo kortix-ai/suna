@@ -55,7 +55,7 @@ export async function saveSlackInstall(input: SlackInstallInput): Promise<SlackI
     .insert(chatInstalls)
     .values({
       platform: 'slack',
-      workspaceId: input.teamId,
+      platformTeamId: input.teamId,
       projectId,
     })
     .onConflictDoNothing();
@@ -91,7 +91,7 @@ export async function saveSlackOauthInstall(
     .insert(chatInstalls)
     .values({
       platform: 'slack',
-      workspaceId: input.workspaceId,
+      platformTeamId: input.workspaceId,
       projectId: input.projectId,
     })
     .onConflictDoNothing();

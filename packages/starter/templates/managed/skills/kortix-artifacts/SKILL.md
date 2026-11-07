@@ -1,8 +1,6 @@
 ---
 name: kortix-artifacts
-description: "Share work from the project's Drive as artifacts with the `kortix artifacts` CLI: a `doc` (a Markdown file people read and edit in place, exportable as PDF) or an `html` page (a slide deck, dashboard, mockup, tool or app). The files stay plain files in Drive; every save is a version from the Drive history; people open artifacts in the Kortix app under Artifacts and share them with the project, chosen people, or anyone with a link. Load when the user asks for a doc, report, write-up, plan, proposal, spec, decision record, comparison, deck, slides, presentation, dashboard, tracker, mockup, tool, page, or anything meant to be read, kept or shared; when a reply would run past a screen of structured content; or when the user names an artifact or an artifact link."
-metadata:
-  kortix-feature-flag: artifacts
+description: "Share work from the workspace's Drive as artifacts with the `kortix artifacts` CLI: a `doc` (a Markdown file people read and edit in place, exportable as PDF) or an `html` page (a slide deck, dashboard, mockup, tool or app). The files stay plain files in Drive; every save is a version from the Drive history; people open artifacts in the Kortix app under Artifacts and share them with the project, chosen people, or anyone with a link. Load when the user asks for a doc, report, write-up, plan, proposal, spec, decision record, comparison, deck, slides, presentation, dashboard, tracker, mockup, tool, page, or anything meant to be read, kept or shared; when a reply would run past a screen of structured content; or when the user names an artifact or an artifact link."
 ---
 
 <skill name="kortix-artifacts">
@@ -13,7 +11,7 @@ Before every publish:
    never `--title "Scheduler migration: off the cron VM"`. The explanation goes in
    `--description`.
 2. **Private unless told otherwise.** A named person ("send it to Ada") →
-   `--with <email>`. Only an explicit "everyone in the project" →
+   `--with <email>`. Only an explicit "everyone in the workspace" →
    `--visibility project`. "The team" or "for review" names nobody: ask who,
    or share with the people named in the thread. In a private channel
    (`/drives/README.md` says so) never use `--visibility project` or `public`:
@@ -26,7 +24,7 @@ Before every publish:
 </checklist>
 
 <overview>
-An artifact is a folder in the project's Drive, shared. Its files are ordinary
+An artifact is a folder in the workspace's Drive, shared. Its files are ordinary
 files (`index.md` for a doc, `index.html` plus its images and scripts for a
 page). The artifact adds a place in the Artifacts gallery, a viewer, version
 history (the Drive history of that folder) and share links. Keep a code change
@@ -153,12 +151,12 @@ as `url`) and one line on what it shows. Never paste the content into the chat.
 
 A new artifact is **private**: the person who runs this session (and you) can
 see it. Share it only as far as the user asks. Named people mean `--with`.
-Only an explicit "everyone in the project" means `--visibility project`; "the
+Only an explicit "everyone in the workspace" means `--visibility project`; "the
 team" or "for review" alone does not: ask who, or share with the people named
 in the thread. Only an explicit "public" or "anyone with the link" means
 public:
 
-    kortix artifacts share <id> --visibility project        # every project member
+    kortix artifacts share <id> --visibility project        # every workspace member
     kortix artifacts share <id> --with ada@example.com      # chosen people (private)
     kortix artifacts share <id> --visibility public         # anyone with the link
 
@@ -180,51 +178,8 @@ history; `restore <id> <version-id>` writes one back as a new save.
 `kortix artifacts rm <id>` stops sharing; the files stay in Drive.
 If the request also asks to share, share the artifact you saved as far as the
 user asked: `--with <email>` for named people, `--visibility project` only for
-an explicit "everyone in the project".
+an explicit "everyone in the workspace".
 </update>
-
-<comments>
-After a hand-off, run `kortix artifacts comments <id>`. Read the open threads,
-fix each issue, reply with the change in one sentence, then resolve the thread:
-
-    kortix artifacts reply <thread_id> "Changed the forecast to the confirmed figure."
-    kortix artifacts resolve <thread_id>
-
-Never resolve a thread you did not address. Reply with a question instead.
-When a fact needs a person's confirmation, comment to `@name`. Never comment
-only to report status. Stop when a thread shows "Waiting for a person".
-
-People viewing the artifact see where you work. Tell them as you go:
-
-    kortix artifacts focus <id> --thread <thread_id>                    # before you answer a thread
-    kortix artifacts focus <id> --quote "Revenue rose."                 # before you change that passage
-    kortix artifacts focus <id> --thread <thread_id> --status writing   # while you draft the reply
-    kortix artifacts focus <id> --status idle                           # when you are done
-
-`--status` defaults to `editing`. Focus is a signal, not a comment: skip it
-when it fails and continue the work.
-
-People may be typing in a doc while you edit it. Publish to the doc as
-usual: your change merges into their editors, and nothing they typed is
-lost. Change only the passages you mean to change, and keep the rest of the
-file byte for byte: read the current file right before you edit, never an
-older copy. When a person changed the same words, both versions of that
-paragraph stay, yours under theirs, so the person can pick.
-
-When asked to review, open one thread per issue, anchored to an exact quote:
-
-    kortix artifacts comment <id> "Confirm the source for this figure, @name." --quote "Revenue rose."
-
-Quotes contain at most 500 characters. A missing quote exits nonzero and creates
-no thread. The CLI reads a pinned Files history version before it posts.
-Omit the anchor flag for a comment on the whole artifact. For an HTML element,
-use `--selector "#chart"`; the CLI records its center (0.5, 0.5), viewport width
-1280, scroll (0, 0), and an empty snippet. These are defaults, not measured geometry.
-
-`comments --all` includes resolved threads; `--resolved` shows only resolved
-threads. `reopen <thread_id>` opens one again. `activity <id> --limit 20 --json`
-lists events and saves. Add `--json` to any comment command for structured output.
-</comments>
 
 <quality>
 - Say the answer first: the doc's opening paragraph, the deck's title slide,
@@ -247,11 +202,6 @@ lists events and saves. Add `--json` to any comment command for structured outpu
 | `kortix artifacts info <id>` / `open <id>` | details, path, links |
 | `kortix artifacts cat <id> [path] [--version v]` / `pull <id> <dir>` | read |
 | `kortix artifacts share <id> --visibility … [--with …]` | share |
-| `kortix artifacts comments <id> [--all\|--resolved]` | read threads |
-| `kortix artifacts comment <id> "text" [--quote "text"\|--selector "css"]` | open one thread |
-| `kortix artifacts reply <thread_id> "text"` / `resolve <thread_id>` / `reopen <thread_id>` | address threads |
-| `kortix artifacts activity <id> [--limit N]` | events and saves |
-| `kortix artifacts focus <id> [--thread <thread_id>\|--quote "text"] [--status reading\|editing\|writing\|idle]` | show viewers where you work |
 | `kortix artifacts versions` / `restore` / `rename` / `pin` / `unpin` / `rm` | manage |
 
 Add `--json` for machine-readable output. Permissions (a role's, and for an
@@ -259,14 +209,13 @@ agent its `kortix_permissions` in kortix.yaml):
 
 | Permission | Lets you |
 |---|---|
-| `project.artifact.read` | list, open, read versions and files |
-| `project.artifact.comment` | read artifacts and activity; open threads, reply, edit your comments, resolve your threads |
-| `project.artifact.write` | publish, add, save, restore; rename and share your own |
-| `project.artifact.manage` | rename, share or stop sharing anyone's |
-| `project.artifact.public` | give an artifact a public link |
+| `workspace.artifact.read` | list, open, read versions and files |
+| `workspace.artifact.write` | publish, add, save, restore; rename and share your own |
+| `workspace.artifact.manage` | rename, share or stop sharing anyone's |
+| `workspace.artifact.public` | give an artifact a public link |
 
 Saving also needs write access to the folder in Drive. A refused public link
-answers 403 `public_link_forbidden`: share with the project instead and tell
+answers 403 `public_link_forbidden`: share with the workspace instead and tell
 the user.
 </commands>
 

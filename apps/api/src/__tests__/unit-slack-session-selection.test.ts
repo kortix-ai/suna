@@ -59,6 +59,7 @@ function makeChain(): any {
 // Every table a delete targeted, so a released claim can be asserted.
 const deletedFrom: unknown[] = [];
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: {
     select: () => makeChain(),
     insert: () => makeChain(),
@@ -396,7 +397,7 @@ test('a follow-up image no model can read carries the no-vision note', async () 
   });
   expect(plan).toEqual({ model: null, imagesUnavailable: true });
   const prompt = renderFollowUpPrompt(envelope, imageEvent, undefined, plan.imagesUnavailable);
-  expect(prompt).toContain('no image-capable model is available in this project');
+  expect(prompt).toContain('no image-capable model is available in this Kortix workspace');
 });
 
 test('a follow-up with no image carries no no-vision note', async () => {

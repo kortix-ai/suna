@@ -95,7 +95,7 @@ export function SessionTimeLabel({ timestamp }: { timestamp: number }) {
 export function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[] }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { enabled: navigationEnabled, openTab } = useToolNavigation();
-  // `/projects/<id>/sessions/<id>`, not `/sessions/<id>` — the latter is not a
+  // `/workspaces/<id>/sessions/<id>`, not `/sessions/<id>` — the latter is not a
   // route and 404s on reload or Back. See `session-href.ts`.
   const sessionHref = useProjectSessionHref();
 
@@ -114,7 +114,7 @@ export function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[
               id: s.id,
               title: s.title || 'Session',
               type: 'session',
-              href: sessionHref(s.id) ?? `/projects/${s.id}`,
+              href: sessionHref(s.id) ?? `/workspaces/${s.id}`,
             })
           }
           className={cn(

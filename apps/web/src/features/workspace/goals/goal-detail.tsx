@@ -82,7 +82,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 /**
- * /projects/[id]/goals/[goalId] — one goal's home, in two columns. The goal
+ * /workspaces/[id]/goals/[goalId] — one goal's home, in two columns. The goal
  * is the server record (`useProjectGoal`): it re-reads every 60 seconds, and
  * every control writes on the revision the page shows.
  *
@@ -313,11 +313,14 @@ const CONTEXT_PLACEHOLDER = "The request in the person's words, constraints, and
 
 /** GOAL.md as the goal's description: no front matter, no `# title` (the page shows it), no empty seed, no `## Context` heading, no criteria list (the page shows them). */
 function goalDescription(brief: string | null): string {
-  return (brief ?? '')
-    .replace(/^---\n[\s\S]*?\n---\n?/, '')
-    .replace(/^\s*# [^\n]*\n+/, '')
-    // Notes for the agent (HTML comments, and the plain line goals created before it was one) are not the brief.
-    .replace(/<!--[\s\S]*?-->/g, '')
+  // Notes for the agent (HTML comments, and the plain line goals created before it was one) are not the brief.
+  // Strip comments to a fixed point, an unterminated one to the end, so no `<!--` survives a removal.
+  let text = (brief ?? '').replace(/^---\n[\s\S]*?\n---\n?/, '').replace(/^\s*# [^\n]*\n+/, '');
+  for (let prev = ''; prev !== text; ) {
+    prev = text;
+    text = text.replace(/<!--[\s\S]*?(?:-->|$)/g, '');
+  }
+  return text
     .replace(/^The Kortix API holds this goal's state[^\n]*\n*/m, '')
     .replace(CONTEXT_PLACEHOLDER, '')
     .replace(/\n## (Done criteria|Done when|Success criteria)\b[\s\S]*$/i, '')

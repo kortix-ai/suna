@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { parseFileLinkHref, workspaceFileLinkPath } from './file-links';
 
@@ -75,5 +75,37 @@ describe('parseFileLinkHref — round-trip', () => {
   test('a rewritten fragment decodes back to the resolved path', () => {
     const path = workspaceFileLinkPath('kortix-company.md', '/workspace/memory');
     expect(parseFileLinkHref(`#kortix-file:${encodeURIComponent(path ?? '')}`)).toBe(path);
+  });
+});
+
+// A chat message linked a Drive file as `https://<this app>/drives/me/…`. The
+// web app has no `/drives` route, so the link opened the 404 page. A link to
+// this app's own `/drives/…` path is the same file as the root-relative path.
+describe('workspaceFileLinkPath — an absolute link to this app\'s drive path', () => {
+  const ORIGIN = 'https://app.example.com';
+  beforeAll(() => {
+    Object.defineProperty(globalThis, 'window', { value: { location: { origin: ORIGIN } }, configurable: true });
+  });
+  afterAll(() => {
+    Reflect.deleteProperty(globalThis, 'window');
+  });
+
+  test('the same-origin drive URL is the drive path', () => {
+    expect(workspaceFileLinkPath(`${ORIGIN}/drives/me/Avatars/avatar.jpg`)).toBe('/drives/me/Avatars/avatar.jpg');
+  });
+
+  test('spaces and encoding decode, case is kept, query and hash are dropped', () => {
+    expect(workspaceFileLinkPath(`${ORIGIN}/drives/me/Team%20photos/Group%20Shot.JPG?download=1#top`)).toBe('/drives/me/Team photos/Group Shot.JPG');
+  });
+
+  test('another origin, an app route and a traversal out of /drives stay links', () => {
+    expect(workspaceFileLinkPath('https://other.example.com/drives/me/a.jpg')).toBeNull();
+    expect(workspaceFileLinkPath(`${ORIGIN}/projects/p1/drive`)).toBeNull();
+    expect(workspaceFileLinkPath(`${ORIGIN}/drives/../projects/p1`)).toBeNull();
+    expect(workspaceFileLinkPath(`${ORIGIN}/drives/me/..%2F..%2Fetc%2Fpasswd`)).toBeNull();
+  });
+
+  test('an encoded traversal in a root-relative drive path is not a file link', () => {
+    expect(workspaceFileLinkPath('/drives/me/..%2F..%2Fetc%2Fpasswd')).toBeNull();
   });
 });

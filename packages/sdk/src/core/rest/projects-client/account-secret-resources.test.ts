@@ -118,7 +118,7 @@ test('list preserves an empty configured pool after its last resource disappears
   }) as unknown as typeof fetch;
   expect(await listSessionProviderSecretPools('project/id', 'session/id')).toEqual(result);
   expect(calls).toEqual([{
-    url: 'http://test.local/projects/project%2Fid/sessions/session%2Fid/provider-secret-pools',
+    url: 'http://test.local/workspaces/project%2Fid/sessions/session%2Fid/provider-secret-pools',
     method: 'GET', body: null,
   }]);
 });

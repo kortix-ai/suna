@@ -4,7 +4,7 @@ import { MY_KORTIX_AGENT_NAME } from '@kortix/shared';
 import { adminPath } from '../../lib/routes';
 
 /**
- * /projects/[id]/customize/agents/[name]: one agent, as a page with a rail.
+ * /workspaces/[id]/customize/agents/[name]: one agent, as a page with a rail.
  *
  * Customize is agent-first. My Kortix is the one agent a person talks to; every
  * other agent is a work product with only the access its work needs. So the

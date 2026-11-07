@@ -99,7 +99,7 @@ function startApi(): void {
     async fetch(req) {
       const me = ME_BY_TOKEN[(req.headers.get('authorization') ?? '').replace('Bearer ', '')];
       if (!me) return Response.json({ error: 'unauthenticated' }, { status: 401 });
-      if (new URL(req.url).pathname.endsWith('/accounts/me')) return Response.json(me);
+      if (new URL(req.url).pathname.endsWith('/me')) return Response.json(me);
       return Response.json({ error: 'not found' }, { status: 404 });
     },
   });
@@ -220,7 +220,7 @@ describe('whoami renderings (human + --token-only) are byte-stable', () => {
     expect(stdout).toBe(
       '\n' +
         '  session token\n' +
-        '  project   proj_1\n' +
+        '  workspace proj_1\n' +
         '  session   sess_1\n' +
         '  agent     reviewer\n' +
         '  connectors projects:read, files:read\n' +
@@ -249,15 +249,17 @@ describe('whoami renderings (human + --token-only) are byte-stable', () => {
     expect(stdout).toBe('\n  user token\n  agent     reviewer\n  connectors all\n\n');
   });
 
-  test('human mode: the summary carries identity, account, default project and host', () => {
+  test('human mode: the summary carries identity, the bound workspace and host', () => {
     const { code, stdout } = get('human session');
     expect(code).toBe(0);
     expect(stdout).toContain(`\n  ${EMAIL}\n`);
     expect(stdout).toContain(`  email     ${EMAIL}\n`);
     expect(stdout).toContain(`  user_id   ${USER_ID}\n`);
-    expect(stdout).toContain('  account   Acme (acme, owner)\n');
-    expect(stdout).toContain('  2 accounts total — switch with kortix accounts use <slug>\n');
-    expect(stdout).toContain('  project   Def Project (default)\n');
+    // A session token reaches one workspace: it outranks the stored default.
+    expect(stdout).toContain('  workspace proj_1 (bound)\n');
+    expect(stdout).not.toContain('Def Project');
+    expect(stdout).not.toContain('switch workspace with');
+    expect(stdout).not.toContain('  account   ');
     expect(stdout).toContain(`  host      ${HOST_NAME} (http://127.0.0.1:${apiPort}/v1)\n`);
     expect(stdout).toMatch(/hosts configured — list with `kortix hosts ls`\n/);
   });
@@ -265,7 +267,7 @@ describe('whoami renderings (human + --token-only) are byte-stable', () => {
   test('human mode: a session token renders the token block without permissions/env', () => {
     const { stdout } = get('human session');
     expect(stdout).toContain('  token     session token\n');
-    expect(stdout).toContain('  project   proj_1\n');
+    expect(stdout).toContain('  workspace proj_1\n');
     expect(stdout).toContain('  session   sess_1\n');
     expect(stdout).toContain('  agent     reviewer\n');
     expect(stdout).toContain('  connectors projects:read, files:read\n');

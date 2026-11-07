@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT, readRepoFile } from '../src/fixtures/repo';
 
 // A utility class beats `@layer base`, so one `cursor-default` silently removes
 // the pointer from an interactive element. The base rule in
@@ -11,7 +12,6 @@ import { describe, expect, it } from 'vitest';
 // and must say why, with an inline `// cursor-default: <reason>` comment on the
 // same line.
 
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const SCOPES = ['packages/ui/src/primitives', 'apps/web/src/components/ui'];
 const REASON = 'cursor-default:';
 
@@ -25,7 +25,7 @@ describe('cursor affordance in components/ui', () => {
   it('justifies every cursor-default with an inline reason', () => {
     const offenders: string[] = [];
     for (const file of trackedFiles()) {
-      const lines = readFileSync(join(REPO_ROOT, file), 'utf8').split('\n');
+      const lines = readRepoFile(file).split('\n');
       lines.forEach((line, index) => {
         if (line.includes('cursor-default') && !line.includes(REASON)) {
           offenders.push(`${file}:${index + 1}`);

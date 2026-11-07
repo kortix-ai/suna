@@ -1,15 +1,9 @@
 /** Kortix in Chrome rows: connections, grants, attachments. */
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
-import {
-  chromeAttachments,
-  chromeConnections,
-  chromeGrants,
-  projectSessions,
-  projects,
-  sessionSandboxes,
-} from '@kortix/db';
+import { chromeAttachments, chromeConnections, chromeGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import type { ActiveSession, ChromeRow, GrantRow } from './logic';
+import { projectsView } from '../workspaces/rows';
 
 const connectionColumns = {
   chromeId: chromeConnections.chromeId,
@@ -345,11 +339,11 @@ export async function loadSessionContext(sessionId: string, projectId: string): 
     .select({
       externalId: sessionSandboxes.externalId,
       title: sql<string | null>`${projectSessions.metadata}->>'name'`,
-      projectName: projects.name,
+      projectName: projectsView.name,
     })
     .from(sessionSandboxes)
     .leftJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
-    .leftJoin(projects, eq(projects.projectId, sessionSandboxes.projectId))
+    .leftJoin(projectsView, eq(projectsView.projectId, sessionSandboxes.projectId))
     .where(and(eq(sessionSandboxes.sessionId, sessionId), eq(sessionSandboxes.projectId, projectId)))
     .limit(1);
   return {

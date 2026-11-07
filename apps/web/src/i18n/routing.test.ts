@@ -16,7 +16,7 @@ describe('locale routing', () => {
   test('maps public paths onto the [locale] segment', () => {
     expect(localizedPathname('en', '/')).toBe('/en');
     expect(localizedPathname('de', '/pricing')).toBe('/de/pricing');
-    expect(localizedPathname('en', '/de/projects')).toBe('/en/de/projects');
+    expect(localizedPathname('en', '/de/workspaces')).toBe('/en/de/workspaces');
   });
 
   test('never rewrites Route Handlers, rewrite sources, files, or docs', () => {
@@ -51,7 +51,7 @@ describe('locale routing', () => {
       '/download',
       '/auth',
       '/auth/signup',
-      '/projects',
+      '/workspaces',
       '/docsearch',
       '/blogroll',
     ]) {

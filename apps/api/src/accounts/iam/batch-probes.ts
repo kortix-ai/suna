@@ -21,7 +21,7 @@
 // #4531). A persistent `authorize` bug still surfaces (every probe returns
 // probe_error), just as a structured log rather than a Sentry error.
 
-import { resourceTypeForAction } from '../../iam/actions';
+import { resourceTypeForAction, toWorkspaceAction } from '../../iam/actions';
 import type { Actor } from '../../iam/actor';
 import type { Obj, Verdict } from '../../iam/authorize';
 
@@ -40,6 +40,8 @@ export type BatchProbe = {
 
 export type BatchProbeResult = {
   action: string;
+  /** The same action's workspace name (`@kortix/shared/workspace-actions`). */
+  workspace_action: string;
   resource_type: string | null;
   resource_id: string | null;
   allowed: boolean;
@@ -95,6 +97,7 @@ export async function resolveBatchProbes(
       const r = await inflight;
       return {
         action: p.action,
+        workspace_action: toWorkspaceAction(p.action),
         resource_type: resourceTypeForAction(p.action),
         resource_id: (p.target && 'id' in p.target ? p.target.id : null) ?? null,
         allowed: r.allowed,
@@ -117,6 +120,7 @@ export async function resolveBatchProbes(
     });
     return {
       action: p.action,
+      workspace_action: toWorkspaceAction(p.action),
       resource_type: resourceTypeForAction(p.action),
       resource_id: (p.target && 'id' in p.target ? p.target.id : null) ?? null,
       allowed: false,

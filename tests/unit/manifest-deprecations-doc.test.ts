@@ -2,11 +2,10 @@
 // the public reference has one row per DEPRECATIONS id, so a person can look up
 // what a `fix:` warning means and what to write instead.
 import { describe, expect, test } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { DEPRECATIONS } from '../../packages/manifest-schema/src/deprecations';
+import { readRepoFile } from '../src/fixtures/repo';
 
-const DOCS = readFileSync(join(import.meta.dirname, '../../apps/web/content/docs/developers.mdx'), 'utf8');
+const DOCS = readRepoFile('apps/web/content/docs/developers.mdx');
 const TABLE = DOCS.slice(DOCS.indexOf('### Deprecated keys'), DOCS.indexOf('### ', DOCS.indexOf('### Deprecated keys') + 4));
 
 describe('the Deprecated keys table', () => {

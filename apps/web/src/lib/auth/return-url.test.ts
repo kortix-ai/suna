@@ -19,7 +19,7 @@ describe('sanitizeAuthReturnUrl', () => {
     // manual step this flow exists to remove.
     expect(sanitizeAuthReturnUrl(undefined)).toBe(PROJECT_LANDING_PATH);
     expect(sanitizeAuthReturnUrl(null)).toBe(PROJECT_LANDING_PATH);
-    expect(PROJECT_LANDING_PATH).not.toBe('/projects');
+    expect(PROJECT_LANDING_PATH).not.toBe('/workspaces');
   });
 
   test('rejects an absolute/off-origin URL', () => {
@@ -28,9 +28,9 @@ describe('sanitizeAuthReturnUrl', () => {
   });
 
   test('does not return from auth to the projects list', () => {
-    // Middleware sends an unauthenticated /projects request through /auth.
+    // Middleware sends an unauthenticated /workspaces request through /auth.
     // Returning to the list exposes it while first-project provisioning runs.
-    expect(sanitizeAuthReturnUrl('/projects')).toBe(PROJECT_LANDING_PATH);
+    expect(sanitizeAuthReturnUrl('/workspaces')).toBe(PROJECT_LANDING_PATH);
   });
 
   test('returns the canonical path, so later rules see what the browser opens', () => {
@@ -38,7 +38,7 @@ describe('sanitizeAuthReturnUrl', () => {
     // A dot segment must not sneak a legacy path past its own prefix check.
     expect(sanitizeAuthReturnUrl('/invites/../dashboard')).toBe(PROJECT_LANDING_PATH);
     // Normalization must not disturb an ordinary path, its query, or its hash.
-    expect(sanitizeAuthReturnUrl('/projects?tab=recent')).toBe('/projects?tab=recent');
+    expect(sanitizeAuthReturnUrl('/workspaces?tab=recent')).toBe('/workspaces?tab=recent');
     expect(sanitizeAuthReturnUrl('/invites/abc-123?x=1#note')).toBe('/invites/abc-123?x=1#note');
   });
 });
@@ -50,7 +50,7 @@ describe('isInviteReturnUrl', () => {
   });
 
   test('false for non-invite destinations', () => {
-    expect(isInviteReturnUrl('/projects')).toBe(false);
+    expect(isInviteReturnUrl('/workspaces')).toBe(false);
     expect(isInviteReturnUrl('/accounts')).toBe(false);
     // Must be the /invites/ segment, not just a prefix match.
     expect(isInviteReturnUrl('/invitesomething')).toBe(false);
@@ -73,16 +73,16 @@ describe('resolveNewAccountReturnUrl', () => {
     // path through /auth as ?redirect=. Creating an account there landed the
     // brand-new user on "Request access to this project" for a stranger's
     // project — an account seconds old cannot own something older than itself.
-    expect(resolveNewAccountReturnUrl('/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c')).toBe(
+    expect(resolveNewAccountReturnUrl('/workspaces/319395c1-9c3f-41b4-ac6c-9539a12dbb7c')).toBe(
       PROJECT_LANDING_PATH,
     );
   });
 
   test('drops every account-scoped destination', () => {
     for (const path of [
-      '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c/sessions/abc',
-      '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c/files',
-      '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c/customize',
+      '/workspaces/319395c1-9c3f-41b4-ac6c-9539a12dbb7c/sessions/abc',
+      '/workspaces/319395c1-9c3f-41b4-ac6c-9539a12dbb7c/files',
+      '/workspaces/319395c1-9c3f-41b4-ac6c-9539a12dbb7c/customize',
       '/accounts/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
       '/accounts',
       '/connectors',
@@ -121,7 +121,7 @@ describe('resolveNewAccountReturnUrl', () => {
     expect(resolveNewAccountReturnUrl(undefined)).toBe(PROJECT_LANDING_PATH);
     expect(resolveNewAccountReturnUrl(null)).toBe(PROJECT_LANDING_PATH);
     // The bare list is rewritten to the door by the sanitizer, and stays safe.
-    expect(resolveNewAccountReturnUrl('/projects')).toBe(PROJECT_LANDING_PATH);
+    expect(resolveNewAccountReturnUrl('/workspaces')).toBe(PROJECT_LANDING_PATH);
   });
 
   test('still rejects everything sanitizeAuthReturnUrl rejects', () => {
@@ -134,10 +134,16 @@ describe('resolveNewAccountReturnUrl', () => {
     // A lookalike path must not inherit an allowlisted prefix's exemption.
     expect(isSignupSafeReturnUrl('/marketplace-evil')).toBe(false);
     expect(isSignupSafeReturnUrl('/invitesomething')).toBe(false);
-    expect(isSignupSafeReturnUrl('/projects/startle')).toBe(false);
+    expect(isSignupSafeReturnUrl('/workspaces/startle')).toBe(false);
     expect(isSignupSafeReturnUrl('/marketplace')).toBe(true);
     expect(isSignupSafeReturnUrl('/marketplace/acme')).toBe(true);
     expect(isSignupSafeReturnUrl('/marketplace?q=1')).toBe(true);
+  });
+
+  test('a credit-code link survives sign-up: a new account redeems its own code', () => {
+    expect(resolveNewAccountReturnUrl('/redeem?code=FRONTIER2026')).toBe('/redeem?code=FRONTIER2026');
+    expect(isSignupSafeReturnUrl('/redeem')).toBe(true);
+    expect(isSignupSafeReturnUrl('/redeemer')).toBe(false);
   });
 
   test('is default-deny: an unknown route is not signup-safe', () => {
@@ -156,13 +162,13 @@ describe('resolveNewAccountReturnUrl', () => {
   test('a dot segment cannot smuggle a foreign project past the allowlist', () => {
     // Every consumer rebuilds this path through `new URL()`, which collapses
     // dot segments — so testing the raw string tests a path the browser never
-    // visits. `/marketplace/../projects/<id>` would pass a `/marketplace`
-    // check and then open `/projects/<id>`: the exact bug, through the fix.
+    // visits. `/marketplace/../workspaces/<id>` would pass a `/marketplace`
+    // check and then open `/workspaces/<id>`: the exact bug, through the fix.
     for (const crafted of [
-      '/marketplace/../projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
+      '/marketplace/../workspaces/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
       '/marketplace/%2e%2e/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
-      '/invites/../projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
-      '/use-cases/a/../../projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
+      '/invites/../workspaces/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
+      '/use-cases/a/../../workspaces/319395c1-9c3f-41b4-ac6c-9539a12dbb7c',
     ]) {
       const resolved = resolveNewAccountReturnUrl(crafted);
       // What the browser will actually open, not what the string looks like.

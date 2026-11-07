@@ -14,9 +14,12 @@
 // with a 60s TTL, so the common case is no query at all.
 
 import { ACTION_CATALOG, loadPermissionCatalog } from '../../iam';
+import { toLegacyAction } from '@kortix/shared/workspace-actions';
 
 export const ACTION_CATALOG_WIRE = ACTION_CATALOG.map((e) => ({
   action: e.action,
+  // The same action's workspace name. Both names are accepted on every input.
+  workspace_action: e.workspaceAction,
   label: e.label,
   resource_type: e.resourceType,
 }));
@@ -56,7 +59,9 @@ export async function validateActions(
   const out: string[] = [];
   for (const a of actions) {
     if (typeof a !== 'string') return { ok: false, error: `unknown action: ${String(a)}` };
-    const entry = catalog.byAction.get(a);
+    // Either name is accepted; the stored row is always the legacy name, which
+    // old pods still read.
+    const entry = catalog.byAction.get(toLegacyAction(a));
     if (!entry) return { ok: false, error: `unknown action: ${a}` };
     if (!entry.delegable) {
       return { ok: false, error: `action not allowed in a custom role (privilege escalation): ${a}` };
@@ -64,7 +69,7 @@ export async function validateActions(
     if (resourceType && entry.scopeType !== resourceType) {
       return { ok: false, error: `action ${a} is not a ${resourceType}-scoped permission` };
     }
-    if (!out.includes(a)) out.push(a);
+    if (!out.includes(entry.action)) out.push(entry.action);
   }
   return { ok: true, actions: out };
 }

@@ -1,7 +1,9 @@
 /**
- * Where the app opens: the project the user had open last, else the first
- * project. Never the Projects list — the app does not drop the user there;
- * the project drawer's switcher is how they move between projects.
+ * Where the app opens: the workspace the user had open last, else the first
+ * workspace. A workspace is a project and its account (the workspace id is
+ * the `project_id`); an account with 0 projects is not a workspace and is
+ * passed over. Never the Workspaces list — the app does not drop the user
+ * there; the drawer's switcher is how they move between workspaces.
  *
  * The last project opens at once, before any request (`app/index.tsx`); the
  * server's lists confirm it in the background (`checkLastProject`). With no
@@ -11,9 +13,9 @@
  *
  * Mirror of web's `/projects/start` resolver
  * (apps/web/src/lib/onboarding/resolve-landing-destination.ts) without
- * auto-provisioning: with no project in any account the caller opens the
- * first-run upgrade screen or `/new` (`startDestination`,
- * lib/onboarding/onboarding.ts).
+ * auto-provisioning: with no workspace (0 accounts, or only accounts with 0
+ * projects) the caller opens `/new`, the create-or-join screen
+ * (`startDestination`, lib/onboarding/onboarding.ts).
  *
  * Pure: the project lists come in through `listProjects`, so tests pass plain
  * fakes instead of module-mocking the SDK.

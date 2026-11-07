@@ -34,7 +34,6 @@ import {
   AlarmIcon as AlarmClock,
   SquaresFourIcon as Blocks,
   RobotIcon as Bot,
-  CalendarIcon as Calendar,
   ChatCircleIcon as ChatCircle,
   GearSixIcon as CogOne,
   CoinsIcon as Coins,
@@ -51,7 +50,6 @@ import {
   CardsThreeIcon as GalleryVerticalEnd,
   KeyIcon as KeyRound,
   StackIcon as Layers,
-  SquaresFourIcon as LayoutDashboard,
   LifebuoyIcon as Lifebuoy,
   LockKeyIcon as LockKey,
   SignOutIcon as LogOut,
@@ -61,6 +59,7 @@ import {
   PlusIcon as Plus,
   QuestionIcon as QuestionMark,
   ArrowClockwiseIcon as RefreshCw,
+  BellIcon as Bell,
   ScrollIcon as ScrollText,
   MagnifyingGlassIcon as Search,
   ShieldCheckIcon as ShieldCheck,
@@ -87,7 +86,6 @@ export type MenuSurface = 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'u
  *
  * - 'navigate': Opens a route in a tab (uses openTabAndNavigate)
  * - 'action':   Runs an imperative callback (e.g. "new session", "logout")
- * - 'settings': Opens the UserSettingsModal to a specific tab
  * - 'theme':    Switches the app theme
  * - 'wallpaper': Applies a wallpaper (same set as Settings → Appearance)
  * - 'sandboxService': Opens a sandbox service preview tab (needs special handler)
@@ -95,7 +93,6 @@ export type MenuSurface = 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'u
 export type MenuItemKind =
   | 'navigate'
   | 'action'
-  | 'settings'
   | 'theme'
   | 'wallpaper'
   | 'sandboxService'
@@ -115,13 +112,10 @@ export type MenuGroup =
   | 'actions'
   | 'navigation'
   | 'quickActions'
-  | 'settingsPages'
-  | 'preferences'
   | 'account'
   | 'theme'
   | 'wallpaper'
-  | 'view'
-  | 'admin';
+  | 'view';
 
 /**
  * Optional sub-group within a group for visual clustering.
@@ -181,8 +175,6 @@ export interface MenuItemDef {
   /** For kind='navigate': additional pathname prefixes that make this item "active" */
   activePathPrefixes?: string[];
 
-  /** For kind='settings': which settings tab to open */
-  settingsTab?: SettingsTabId;
   /** For kind='theme': which theme to set */
   themeValue?: InterfaceThemeId;
   /** For kind='wallpaper': which wallpaper to apply */
@@ -260,15 +252,6 @@ export const menuRegistry: MenuItemDef[] = [
     shortcut: 'Ctrl+K',
   },
   {
-    id: 'open-terminal',
-    label: 'Open Terminal',
-    icon: Terminal,
-    group: 'actions',
-    showIn: ['commandPalette'],
-    kind: 'action',
-    actionId: 'openTerminal',
-  },
-  {
     id: 'compact-session',
     label: 'Compact Session',
     icon: Layers,
@@ -310,12 +293,6 @@ export const menuRegistry: MenuItemDef[] = [
     keywords:
       'review changes change requests cr diff pull request merge open pending approve waiting',
   },
-  // NOTE: distinct id/actionId from the legacy 'open-terminal' entry below
-  // (which spawns a standalone workspace PTY tab and is hidden from the
-  // palette via LEGACY_PALETTE_HIDDEN in command-palette.tsx) — this one
-  // opens THIS session's own terminal/audit surface (Easy detail layer /
-  // Advanced tab), so it needs its own identity even though the label the
-  // product wants ("Open Terminal") collides in English.
   {
     id: 'open-session-terminal',
     label: 'Open Terminal',
@@ -338,12 +315,8 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'audit governed actions approvals trail session',
     requiresSession: true,
   },
-  // Distinct id/actionId from the legacy 'agent-browser-cmd'/'internal-browser-cmd'
-  // entries below (both hidden from the palette via LEGACY_PALETTE_HIDDEN in
-  // command-palette.tsx, and both standalone workspace tabs) — this one opens
-  // THIS session's own in-panel port browser (Easy detail layer / Advanced
-  // Browser tab), the same distinction 'open-session-terminal' draws from the
-  // legacy 'open-terminal'.
+  // Opens THIS session's own in-panel port browser (Easy detail layer /
+  // Advanced Browser tab), not a standalone workspace tab.
   {
     id: 'open-session-browser',
     label: 'Open Browser',
@@ -412,43 +385,49 @@ export const menuRegistry: MenuItemDef[] = [
     // (`/v1/projects`), the CLI (`kortix projects`), `kortix.yaml` and the DB
     // all say it, and renaming those would break a published SDK's public
     // surface and every existing link.
-    label: 'Switch project',
+    label: 'Switch workspace',
     icon: FolderGit2,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     // Static registry entry — no user id to resolve the latest project with,
-    // so this is the id-free landing door, never the removed `/projects`
+    // so this is the id-free landing door, never the removed `/workspaces`
     // list. Selecting the row normally opens the in-palette switcher
     // (`SUBMENU_PAGE_BY_ID` in command-palette.tsx); this href is the routed
     // fallback if that map ever loses the id.
     href: PROJECT_LANDING_PATH,
     shortcut: 'Ctrl+O',
     // `project`/`projects` stay in the bag deliberately. It is the word the
-    // product used until recently, the word the URL still uses
+    // product used until recently, the word the URL used until 2026-11-06
     // (`/projects/<id>`), and the word anyone arriving from the API or the
     // CLI will type. Dropping it would make the rename cost users a search.
     keywords: 'switch workspace workspaces project projects change move open all list',
   },
   {
-    id: 'nav-accounts',
-    label: 'Accounts',
-    icon: UsersSolid,
+    id: 'nav-workspace-settings',
+    // The switcher's bottom action: the one settings surface per workspace
+    // (`/workspaces/<id>/admin`), which opens on the first section the caller
+    // may see. It replaced the "Accounts" switcher row: a workspace is one
+    // account and its project, so there is no account to switch to.
+    label: 'Workspace settings',
+    icon: CogOne,
     group: 'navigation',
     showIn: ['commandPalette'],
-    // Selecting this in the palette opens the in-palette account switcher
-    // (`SUBMENU_PAGE_BY_ID` in command-palette.tsx); `kind: 'account'` with no
-    // `accountTab` is the fallback for any surface that consumes the registry
-    // without that picker — it opens the hub on its account LIST, which is the
-    // same choice by another route.
-    kind: 'account',
-    // 'members' is deliberately absent. It names the SETTINGS MEMBERS TAB and
-    // the 'proj-invite' action, not the account switcher, so typing "member"
-    // used to return Accounts ahead of the two rows that actually answer it.
-    // A keyword belongs on a row only when it names that row — a synonym, an
-    // alias, or something the row itself contains. Words that name a
-    // neighbouring row's subject are removed on sight.
-    keywords: 'accounts teams organizations switch manage',
+    kind: 'navigate',
+    href: '/workspaces/{projectId}/admin',
+    requiresProject: true,
+    keywords: 'workspace settings organizations teams manage',
+  },
+  {
+    id: 'workspace-create',
+    // The switcher page offers it too; this row finds it from the first keystroke.
+    label: 'Create workspace',
+    icon: Plus,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/workspaces/new',
+    keywords: 'new workspace create add team',
   },
   {
     id: 'proj-home',
@@ -457,11 +436,11 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // `/projects/<id>` — the workspace's own landing page (`ProjectHome`), the
-    // composer plus the setup tiles. Every OTHER page under `/projects/<id>`
+    // `/workspaces/<id>` — the workspace's own landing page (`ProjectHome`), the
+    // composer plus the setup tiles. Every OTHER page under `/workspaces/<id>`
     // had a palette row and this one did not, so the only way back to it was
     // the sidebar's workspace name.
-    href: '/projects/{projectId}',
+    href: '/workspaces/{projectId}',
     requiresProject: true,
     keywords: 'home overview landing start composer ask',
   },
@@ -475,7 +454,7 @@ export const menuRegistry: MenuItemDef[] = [
     // Opens the in-palette "Open Session" sub-picker (see SUBMENU_PAGE_BY_ID);
     // the href is the routed fallback for surfaces that consume this registry
     // without the palette's nested picker.
-    href: '/projects/{projectId}/sessions',
+    href: '/workspaces/{projectId}/sessions',
     requiresProject: true,
     // 'project' dropped with the rest of the legacy "project customize" tail:
     // it names 'nav-projects', and carrying it here made a one-word query for
@@ -514,7 +493,7 @@ export const menuRegistry: MenuItemDef[] = [
     // sidebar's Customize row lands (Marko, 2026-09-01: Customize is
     // agent-centric). It is kept as the palette's href rather than `/agent`
     // so the two cannot drift: one redirect owns the landing rule.
-    href: '/projects/{projectId}/customize',
+    href: '/workspaces/{projectId}/customize',
     requiresProject: true,
     keywords: 'customize configure setup capabilities overview hub',
   },
@@ -528,7 +507,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/general',
+    href: '/workspaces/{projectId}/admin/general',
     requiresProject: true,
     keywords:
       'settings general workspace rename delete danger zone name description git repo repository github clone branch remote',
@@ -540,7 +519,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/sandbox',
+    href: '/workspaces/{projectId}/admin/sandbox',
     requiresProject: true,
     // Snapshots merged into this section — a snapshot is a sandbox template's
     // build history — so both vocabularies answer here.
@@ -553,7 +532,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/feature-flags',
+    href: '/workspaces/{projectId}/admin/feature-flags',
     requiresProject: true,
     keywords: 'feature flags flag experimental labs beta toggle enable disable',
   },
@@ -564,7 +543,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/models',
+    href: '/workspaces/{projectId}/admin/models',
     requiresProject: true,
     // The reported bug's row. `llm gateway providers budgets anthropic openai
     // openrouter` came off `proj-customize`'s bag, where they pointed at
@@ -581,7 +560,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/models?tab=usage&provider=codex',
+    href: '/workspaces/{projectId}/admin/models?tab=usage&provider=codex',
     requiresProject: true,
     keywords: 'chatgpt openai codex subscription usage limits weekly allowance quota',
   },
@@ -592,7 +571,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/models?tab=usage&provider=claude-agent',
+    href: '/workspaces/{projectId}/admin/models?tab=usage&provider=claude-agent',
     requiresProject: true,
     keywords: 'anthropic claude code subscription usage limits weekly allowance quota fable',
   },
@@ -606,7 +585,7 @@ export const menuRegistry: MenuItemDef[] = [
     // The standalone page, not `/customize/agents`. That href still works —
     // `legacySectionRedirect` bounces it here — but routing through the
     // redirect costs a second navigation and paints the overlay route first.
-    href: '/projects/{projectId}/customize/agents',
+    href: '/workspaces/{projectId}/customize/agents',
     requiresProject: true,
     keywords: 'agents subagents ai',
   },
@@ -617,7 +596,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/skills',
+    href: '/workspaces/{projectId}/admin/skills',
     requiresProject: true,
     keywords: 'skills abilities',
   },
@@ -632,12 +611,28 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/connectors',
+    href: '/workspaces/{projectId}/admin/connectors',
     requiresProject: true,
     // 'apps' removed: it is the label of `proj-apps` (deployments), so the
     // one-word query for that page returned Connectors as well. 'connector' /
     // 'connectors' / 'connections' still cover everything this row is called.
     keywords: 'connectors connections pipedream mcp openapi postman collections connector',
+  },
+  {
+    // The person's notification inbox, across projects: the workspace menu's
+    // Inbox row (`workspace-switcher.tsx`), same icon, same route. On for every project
+    // since the `notification_center` flag graduated (2026-11-06). Above
+    // Channels and Review, whose keywords also hold "inbox": the palette keeps
+    // registry order inside a group, so "inbox" lists this row first.
+    id: 'proj-inbox',
+    label: 'Inbox',
+    icon: Bell,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/workspaces/{projectId}/inbox',
+    requiresProject: true,
+    keywords: 'inbox notifications alerts unread mentions bell needs you done mark read',
   },
   {
     id: 'proj-channels',
@@ -651,7 +646,7 @@ export const menuRegistry: MenuItemDef[] = [
     // "slack" and "inbox" are words people type, and the scope query lands
     // them on the inbound half rather than the outbound one.
     // 'connections' stays off this bag — it names `proj-connectors`.
-    href: '/projects/{projectId}/admin/connectors?scope=channels',
+    href: '/workspaces/{projectId}/admin/connectors?scope=channels',
     requiresProject: true,
     keywords: 'channels channel slack teams discord email telegram inbox inbound messaging',
   },
@@ -667,7 +662,7 @@ export const menuRegistry: MenuItemDef[] = [
     // `?rules=1` opens the Global rules sheet on arrival — the Connectors page
     // hosts `PoliciesPanel` and reads that param (`connectors-page.tsx`), so
     // this entry now reaches the destination its label names.
-    href: '/projects/{projectId}/admin/connectors?rules=1',
+    href: '/workspaces/{projectId}/admin/connectors?rules=1',
     requiresProject: true,
     keywords: 'policies approval block require_approval rules tools connector guardrails',
   },
@@ -680,10 +675,10 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     // Schedules and Webhooks merged into one Triggers capability page,
     // alongside Connectors / Agents / Skills — a trigger is one resource with
-    // two ways to start it, not two separate rows. `/projects/{id}/settings/
+    // two ways to start it, not two separate rows. `/workspaces/{id}/settings/
     // schedules` and `/settings/webhooks` no longer resolve to a tab; both
     // redirect here via `legacySectionRedirect`.
-    href: '/projects/{projectId}/admin/triggers',
+    href: '/workspaces/{projectId}/admin/triggers',
     requiresProject: true,
     // The combined bag both retired rows carried, so neither query goes dark.
     keywords:
@@ -696,13 +691,13 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/secrets',
+    href: '/workspaces/{projectId}/admin/secrets',
     requiresProject: true,
     keywords: 'secrets secret env environment variables credentials vault egress store',
   },
   {
     id: 'proj-members',
-    label: 'Project members',
+    label: 'Workspace members',
     icon: UsersSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -712,7 +707,7 @@ export const menuRegistry: MenuItemDef[] = [
     // (`/accounts/<acct>?tab=access-projects&project=<id>`), and the account
     // id is a field on the project detail — a network read the registry
     // cannot do. `openProjectMembers` in command-palette.tsx resolves it, the
-    // same way `inviteMembers` does. `/projects/<id>/members` still resolves
+    // same way `inviteMembers` does. `/workspaces/<id>/members` still resolves
     // and redirects to the same place, but routing through it costs a second
     // navigation and paints the capabilities shell first.
     actionId: 'openProjectMembers',
@@ -728,7 +723,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/files',
+    href: '/workspaces/{projectId}/files',
     requiresProject: true,
     keywords: 'files repository drive browser explorer',
   },
@@ -742,7 +737,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/drive',
+    href: '/workspaces/{projectId}/drive',
     requiresProject: true,
     keywords: 'files folders drive shared company my folder access share',
   },
@@ -755,7 +750,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/artifacts',
+    href: '/workspaces/{projectId}/artifacts',
     requiresProject: true,
     requiresFlag: 'artifacts',
     keywords: 'artifacts docs doc slides deck presentation board design dashboard page published share',
@@ -769,7 +764,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/goals',
+    href: '/workspaces/{projectId}/goals',
     requiresProject: true,
     requiresFlag: 'goals',
     keywords: 'goals goal objectives outcomes',
@@ -784,7 +779,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/admin/repo',
+    href: '/workspaces/{projectId}/admin/repo',
     requiresProject: true,
     keywords: 'repo repository git files browser explorer code',
   },
@@ -795,12 +790,12 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/apps',
+    href: '/workspaces/{projectId}/apps',
     requiresProject: true,
     keywords: 'apps deploy deployments serverless docker static hosting urls',
   },
   // `proj-config-general`, `proj-config-sandbox`, `proj-config-feature-flags`
-  // are gone with `/projects/<id>/config` (retired 2026-09-02). General,
+  // are gone with `/workspaces/<id>/config` (retired 2026-09-02). General,
   // Sandbox templates, Feature flags and Upgrades are Settings-overlay tabs
   // now, and the palette derives those rows from the overlay's rail
   // (`settings-palette-items.ts`) — a registry href would be a second,
@@ -809,7 +804,7 @@ export const menuRegistry: MenuItemDef[] = [
   //
   // `proj-config-feature-flags` outlived that sentence by a day. The row was
   // still here on 2026-09-03, twenty-five lines under its own obituary, with
-  // `href: '/projects/{projectId}/admin/feature-flags'` — a route
+  // `href: '/workspaces/{projectId}/admin/feature-flags'` — a route
   // `app/` no longer contains. Typing "feature flag" returned TWO rows: this
   // one, under Navigation, labelled "Settings · Feature flags" and landing on
   // a dead URL, and the derived `settings-tab-feature-flags` under "Settings ·
@@ -836,7 +831,7 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'navigate',
     // Review's own page (`reviewHref`), outside Customize since 2026-11-04.
-    href: '/projects/{projectId}/review',
+    href: '/workspaces/{projectId}/review',
     requiresProject: true,
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },
@@ -891,26 +886,6 @@ export const menuRegistry: MenuItemDef[] = [
   // NAVIGATION — Main pages
   // ──────────────────────────────────────────────────────────────────────────
   {
-    id: 'dashboard',
-    label: 'Dashboard',
-    icon: LayoutDashboard,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/dashboard',
-    tabType: 'dashboard',
-  },
-  {
-    id: 'scheduled-tasks',
-    label: 'Triggers',
-    icon: Calendar,
-    group: 'navigation',
-    subGroup: 'services',
-    showIn: ['commandPalette', 'rightSidebar'],
-    kind: 'navigate',
-    href: '/scheduled-tasks',
-  },
-  {
     // Kortix Capture is its own area: devices, install and its organization settings live under /capture.
     id: 'capture',
     label: 'Kortix Capture',
@@ -958,73 +933,6 @@ export const menuRegistry: MenuItemDef[] = [
     tabType: 'browser',
   },
   {
-    id: 'files',
-    label: 'Files',
-    icon: FolderOpen,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/files',
-  },
-  {
-    id: 'running-services-cmd',
-    label: 'Service Manager',
-    icon: Activity,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/service-manager',
-    tabId: 'service-manager',
-    tabType: 'services',
-    keywords:
-      'service manager services orchestration process manager sandbox active restart reload',
-  },
-  {
-    id: 'agent-browser-cmd',
-    label: 'Agent Browser',
-    icon: Globe,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/browser',
-    tabId: 'browser:main',
-    tabType: 'browser',
-    keywords: 'browser chromium agent viewport automation live stream',
-  },
-  {
-    id: 'internal-browser-cmd',
-    label: 'Internal Browser',
-    icon: Compass,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/p/browser',
-    tabId: 'preview:internal-browser',
-    tabType: 'preview',
-    keywords: 'internal browser preview iframe embedded web page',
-  },
-  {
-    id: 'changelog',
-    label: 'Changelog',
-    icon: ScrollText,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/changelog',
-  },
-  {
-    id: 'credits-explained',
-    label: 'Credits & usage',
-    icon: Coins,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/docs/guide#billing',
-    // `explained` stays in the keywords because /credits-explained was the
-    // original public URL and is still what people type for this page.
-    keywords: 'credits coins billing usage tokens cost explain explained',
-  },
-  {
     id: 'support',
     label: 'Support',
     icon: Lifebuoy,
@@ -1042,20 +950,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
 
   // ──────────────────────────────────────────────────────────────────────────
-  // SETTINGS PAGES (navigate to route)
-  // ──────────────────────────────────────────────────────────────────────────
-  {
-    id: 'llm-providers',
-    label: 'LLM Providers',
-    icon: Bot,
-    group: 'settingsPages',
-    showIn: ['commandPalette'],
-    kind: 'action',
-    actionId: 'openProviderModal',
-    keywords: 'llm providers models anthropic openai openrouter google groq xai',
-  },
-  // ──────────────────────────────────────────────────────────────────────────
-  // PREFERENCES / ACCOUNT — `kind: 'settings'`, userMenu only.
+  // PREFERENCES / ACCOUNT — no settings-tab rows.
   //
   // THE COMMAND PALETTE NO LONGER TAKES ITS SETTINGS DESTINATIONS FROM HERE.
   // Every settings tab is derived from `railGroups()` by
@@ -1081,9 +976,9 @@ export const menuRegistry: MenuItemDef[] = [
   // mislabelled destination. The API has no referral routes, and the web
   // referral modal was removed with them.
   // ──────────────────────────────────────────────────────────────────────────
-  // `pref-general` is gone. It declared `settingsTab: 'general'` — the project
-  // WORKSPACE tab — which is a `?section=` on `/projects/[id]/admin/general` now, not
-  // a settings tab at all. A `kind: 'settings'` row can only name a tab, and
+  // `pref-general` is gone. It opened the `general` settings tab — the project
+  // WORKSPACE tab — which is a `?section=` on `/workspaces/[id]/admin/general` now, not
+  // a settings tab at all. A `kind: 'settings'` row could only name a tab, and
   // there is no user-scoped tab this row meant, so it was removed rather than
   // repointed at an unrelated pane. Nothing rendered it: its only declared
   // surface was `userMenu`, and `user-menu.tsx` builds its own rows.
@@ -1111,7 +1006,7 @@ export const menuRegistry: MenuItemDef[] = [
     // heading both say Settings, and a palette row must not promise a name the
     // page does not use. `general` and `organization` stay in the keyword bag,
     // which is where the overlay-era names belong.
-    label: 'Account · Settings',
+    label: 'Workspace · Settings',
     icon: CogOne,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1120,11 +1015,11 @@ export const menuRegistry: MenuItemDef[] = [
     // preview, and deletion.
     accountTab: 'settings',
     keywords:
-      'general organization org company name sign in rules teams manage security mfa danger zone rename delete',
+      'general workspace organization org company name sign in rules teams manage security mfa danger zone rename delete',
   },
   {
     id: 'account-members',
-    label: 'Account · Members',
+    label: 'Workspace · Members',
     icon: UsersSolid,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1133,11 +1028,11 @@ export const menuRegistry: MenuItemDef[] = [
     // 'members' alone stays off this row: it names the project settings
     // Members tab, which is a different roster. These words name the ACCOUNT
     // roster specifically.
-    keywords: 'account members organization roster owners admins',
+    keywords: 'workspace account members organization roster owners admins',
   },
   {
     id: 'account-billing',
-    label: 'Account · Billing',
+    label: 'Workspace · Billing',
     icon: CreditCardSolid,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1149,7 +1044,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-usage',
-    label: 'Account · Usage',
+    label: 'Workspace · Usage',
     icon: Coins,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1160,17 +1055,9 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-access-projects',
-    // The account page's Access rail calls this pane "Projects". The label
-    // keeps that name and the `Account · ` prefix every sibling carries, so
-    // the row promises exactly what the destination shows.
-    //
-    // This is the WORKSPACE-level roster, as distinct from `account-members`
-    // above (the organization-level one): Members answers "who is in this
-    // account", this answers "which workspaces can they open, and with what
-    // agents". Both were reachable from the palette as one word — "members" —
-    // which returned the organization list only. `proj-members` is the same
-    // pane pre-scoped to the workspace you are standing in.
-    label: 'Account · Projects',
+    // Who can open this workspace, and with what agents: the Access pane of
+    // Workspace settings. `Workspace · Members` above lists the people.
+    label: 'Workspace · Access',
     icon: FolderOpen,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1180,7 +1067,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-git',
-    label: 'Account · Git',
+    label: 'Workspace · Git',
     icon: FolderGit2,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1190,7 +1077,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-groups',
-    label: 'Account · Groups',
+    label: 'Workspace · Groups',
     icon: UsersSolid,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1200,7 +1087,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-roles',
-    label: 'Account · Roles',
+    label: 'Workspace · Roles',
     icon: ShieldCheck,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1210,7 +1097,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-identity',
-    label: 'Account · Identity',
+    label: 'Workspace · Identity',
     icon: ShieldCheck,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1220,7 +1107,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-branding',
-    label: 'Account · Branding',
+    label: 'Workspace · Branding',
     icon: PaintBrush,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1234,7 +1121,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-audit',
-    label: 'Account · Audit log',
+    label: 'Workspace · Audit log',
     icon: ScrollText,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1244,7 +1131,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-help',
-    label: 'Account · Permissions help',
+    label: 'Workspace · Permissions help',
     icon: QuestionMark,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1257,7 +1144,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-tokens',
-    label: 'Account · Service account tokens',
+    label: 'Workspace · API keys',
     icon: KeyRound,
     group: 'account',
     showIn: ['commandPalette'],
@@ -1270,8 +1157,11 @@ export const menuRegistry: MenuItemDef[] = [
     // them here would make this row the answer to a query it is the wrong
     // answer to.
     accountTab: 'tokens',
+    // Workspaces (PR 1): a person's own access keys came back here from
+    // `/settings` — Workspace settings › API keys holds both kinds — so the
+    // words for them (`personal`, `pat`, `cli`) are this row's again.
     keywords:
-      'service account tokens machine identity automation ci cd bot integration key rules expiry policy',
+      'api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy',
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -1473,8 +1363,7 @@ export function isItemActive(item: MenuItemDef, pathname: string | null): boolea
  * `getInstanceTabs`, `getAccountTabs`) lived here until the merged settings
  * panel landed. Their only consumer was `SidePanelUserSettings`, deleted with
  * the modal it drove; `settings/rail.ts` now owns the rail's own vocabulary.
- * `SettingsTabId` itself stays — the command palette's
- * `LEGACY_SETTINGS_TAB_MAP` and both modal stores still speak it.
+ * `SettingsTabId` itself stays — both modal stores still speak it.
  */
 
 /** Theme options (used in user menu & command palette) */

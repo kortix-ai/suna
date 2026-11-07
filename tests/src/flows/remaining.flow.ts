@@ -50,8 +50,8 @@ flow(
   {
     domain: "secrets",
     routes: [
-      "PUT /v1/projects/:projectId/secrets/:name/personal",
-      "DELETE /v1/projects/:projectId/secrets/:name/personal",
+      "PUT /v1/workspaces/:projectId/secrets/:name/personal",
+      "DELETE /v1/workspaces/:projectId/secrets/:name/personal",
     ],
   },
   async (ctx) => {
@@ -59,22 +59,22 @@ flow(
     await ctx.step("set a personal override → 200", async () => {
       await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/secrets", { name: "PERSONAL_KEY", value: "shared" }, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/secrets", { name: "PERSONAL_KEY", value: "shared" }, { params: { projectId: p.id } });
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/secrets/:name/personal", { value: "mine" }, { params: { projectId: p.id, name: "PERSONAL_KEY" } });
+        .put("/v1/workspaces/:projectId/secrets/:name/personal", { value: "mine" }, { params: { projectId: p.id, name: "PERSONAL_KEY" } });
       r.status([200, 201, 400, 404]);
     });
     await ctx.step("delete the personal override → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/secrets/:name/personal", { params: { projectId: p.id, name: "PERSONAL_KEY" } });
+        .del("/v1/workspaces/:projectId/secrets/:name/personal", { params: { projectId: p.id, name: "PERSONAL_KEY" } });
       r.status([200, 204, 404]);
     });
     await ctx.step("personal override of an LLM provider key → 400 (always project-wide)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/secrets/:name/personal", { value: "sk-mine" }, { params: { projectId: p.id, name: "ANTHROPIC_API_KEY" } });
+        .put("/v1/workspaces/:projectId/secrets/:name/personal", { value: "sk-mine" }, { params: { projectId: p.id, name: "ANTHROPIC_API_KEY" } });
       r.status(400);
     });
   },
@@ -84,14 +84,14 @@ flow(
   "TRG-5",
   {
     domain: "triggers",
-    routes: ["POST /v1/projects/:projectId/triggers/:slug/fire"],
+    routes: ["POST /v1/workspaces/:projectId/triggers/:slug/fire"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("fire unknown trigger slug → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/triggers/:slug/fire", {}, { params: { projectId: p.id, slug: "no-such-trigger" } });
+        .post("/v1/workspaces/:projectId/triggers/:slug/fire", {}, { params: { projectId: p.id, slug: "no-such-trigger" } });
       r.status([400, 404]);
     });
   },
@@ -116,8 +116,8 @@ flow(
   {
     domain: "connectors",
     routes: [
-      "POST /v1/connectors/projects/:projectId/connectors/:slug/connect",
-      "POST /v1/connectors/projects/:projectId/connectors/:slug/connect/finalize",
+      "POST /v1/connectors/workspaces/:projectId/connectors/:slug/connect",
+      "POST /v1/connectors/workspaces/:projectId/connectors/:slug/connect/finalize",
     ],
   },
   async (ctx) => {
@@ -125,13 +125,13 @@ flow(
     await ctx.step("pipedream connect on unknown connector → 404/501", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/connectors/projects/:projectId/connectors/:slug/connect", {}, { params: { projectId: p.id, slug: "nope" } });
+        .post("/v1/connectors/workspaces/:projectId/connectors/:slug/connect", {}, { params: { projectId: p.id, slug: "nope" } });
       r.status([404, 501, 403, 400]);
     });
     await ctx.step("pipedream finalize on unknown connector → 404/501", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/connectors/projects/:projectId/connectors/:slug/connect/finalize", {}, { params: { projectId: p.id, slug: "nope" } });
+        .post("/v1/connectors/workspaces/:projectId/connectors/:slug/connect/finalize", {}, { params: { projectId: p.id, slug: "nope" } });
       r.status([404, 501, 403, 400]);
     });
   },
@@ -152,8 +152,8 @@ flow(
   {
     domain: "sessions",
     routes: [
-      "PATCH /v1/projects/:projectId/sessions/:sessionId",
-      "PUT /v1/projects/:projectId/sessions/:sessionId/sharing",
+      "PATCH /v1/workspaces/:projectId/sessions/:sessionId",
+      "PUT /v1/workspaces/:projectId/sessions/:sessionId/sharing",
     ],
   },
   async (ctx) => {
@@ -161,13 +161,13 @@ flow(
     await ctx.step("PATCH non-uuid session → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/sessions/:sessionId", { name: "x" }, { params: { projectId: p.id, sessionId: "not-a-uuid" } });
+        .patch("/v1/workspaces/:projectId/sessions/:sessionId", { name: "x" }, { params: { projectId: p.id, sessionId: "not-a-uuid" } });
       r.status([400, 404]);
     });
     await ctx.step("PUT sharing on unknown session → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/sessions/:sessionId/sharing", { visibility: "private" }, { params: { projectId: p.id, sessionId: BOGUS_UUID } });
+        .put("/v1/workspaces/:projectId/sessions/:sessionId/sharing", { visibility: "private" }, { params: { projectId: p.id, sessionId: BOGUS_UUID } });
       r.status([400, 404]);
     });
   },
@@ -178,8 +178,8 @@ flow(
   {
     domain: "sessions",
     routes: [
-      "POST /v1/projects/:projectId/sessions/:sessionId/commit-push",
-      "POST /v1/projects/:projectId/sessions/:sessionId/restart",
+      "POST /v1/workspaces/:projectId/sessions/:sessionId/commit-push",
+      "POST /v1/workspaces/:projectId/sessions/:sessionId/restart",
     ],
   },
   async (ctx) => {

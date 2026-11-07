@@ -402,12 +402,11 @@ async function publishTurnEnd(
   const { projectId, sessionId, childSession, turnStreamMetadata, turnStreamSession } = ctx;
   const { status, errorInfo, turnCompletion } = settled;
   // Tell the person who prompted the turn and the session's watchers
-  // (notifications/session-push.ts); with the project's notification_center
-  // flag off, the session creator's phones only. Only an end that closed a
-  // turn in THIS call notifies (see turnEndPushType); replays and aborts do
-  // not, and a promoted queued prompt means the session is still running, so
-  // it gets no completion. Fire-and-forget: the flag read, the prompter lookup
-  // and the delivery must never delay or fail the relay.
+  // (notifications/session-push.ts). Only an end that closed a turn in THIS
+  // call notifies (see turnEndPushType); replays and aborts do not, and a
+  // promoted queued prompt means the session is still running, so it gets no
+  // completion. Fire-and-forget: the prompter lookup and the delivery must
+  // never delay or fail the relay.
   const pushType = turnEndPushType({
     outcome: turnCompletion.outcome,
     status,
@@ -438,8 +437,7 @@ async function publishTurnEnd(
   }
   // A trigger session's creator is the agent's service account, so the turn
   // end above reaches only a person who prompted it. Record the run on its
-  // trigger: a failed or recovered run alerts the trigger's watchers (flag
-  // off: a failed run pushes the account owner, as before KRTX-1742).
+  // trigger: a failed or recovered run alerts the trigger's watchers.
   try {
     await recordTriggerRunEnd({
       projectId,

@@ -12,9 +12,10 @@
 // PATs are exempt (no session_id, no iat for our purposes). Skip when
 // the auth method isn't 'supabase'.
 
-import { accountSessionActivity, accounts } from '@kortix/db';
+import { accountSessionActivity } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { accountsView } from '../workspaces/rows';
 
 // The middleware that applies this policy to a request (`accountSessionGate`)
 // lives in `middleware/session-gate.ts`. Re-exported here so every importer
@@ -44,21 +45,21 @@ export async function loadPolicyAndActivity(
 ): Promise<PolicyAndActivity | null> {
   const [row] = await db
     .select({
-      maxLifetimeMinutes: accounts.sessionMaxLifetimeMinutes,
-      idleTimeoutMinutes: accounts.sessionIdleTimeoutMinutes,
+      maxLifetimeMinutes: accountsView.sessionMaxLifetimeMinutes,
+      idleTimeoutMinutes: accountsView.sessionIdleTimeoutMinutes,
       lastSeenAt: accountSessionActivity.lastSeenAt,
       revokedAt: accountSessionActivity.revokedAt,
     })
-    .from(accounts)
+    .from(accountsView)
     .leftJoin(
       accountSessionActivity,
       and(
-        eq(accountSessionActivity.accountId, accounts.accountId),
+        eq(accountSessionActivity.accountId, accountsView.accountId),
         eq(accountSessionActivity.userId, userId),
         eq(accountSessionActivity.sessionId, sessionId),
       ),
     )
-    .where(eq(accounts.accountId, accountId))
+    .where(eq(accountsView.accountId, accountId))
     .limit(1);
   return row ?? null;
 }

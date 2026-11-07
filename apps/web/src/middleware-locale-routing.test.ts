@@ -51,7 +51,7 @@ describe('locale rewrite onto app/[locale]', () => {
   });
 
   test('protected routes still bounce an anonymous visitor to /auth', async () => {
-    for (const path of ['/projects', '/projects/abc/sessions/def', '/settings']) {
+    for (const path of ['/workspaces', '/workspaces/abc/sessions/def', '/settings']) {
       const response = await middleware(request(path));
       expect(response.status).toBe(307);
       expect(response.headers.get('location')).toBe(
@@ -69,7 +69,7 @@ describe('locale rewrite onto app/[locale]', () => {
   });
 
   test('locale-prefixed protected routes still require authentication', async () => {
-    for (const path of ['/en/settings', '/fr/projects']) {
+    for (const path of ['/en/settings', '/fr/workspaces']) {
       const response = await middleware(request(path));
       expect(response.status).toBe(307);
       expect(response.headers.get('location')).toBe(
@@ -174,7 +174,7 @@ describe('matcher', () => {
       '/',
       '/pricing',
       '/de/pricing',
-      '/projects/abc',
+      '/workspaces/abc',
       '/robots.txt',
       '/llms.txt',
     ]) {

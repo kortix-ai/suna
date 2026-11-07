@@ -206,7 +206,7 @@ async function verifyPlatinum(principal: AuthedPrincipal, deps: ProviderVerifyDe
     if (err instanceof GatewayResolutionError && err.code === 'provider_not_connected') return { status: 'not_connected', message: err.message };
     return { status: 'unknown', message: err instanceof Error ? err.message : "Couldn't resolve the Platinum key." };
   }
-  if (!descriptor?.apiKey) return { status: 'not_connected', message: 'No Platinum API key is set for this project.' };
+  if (!descriptor?.apiKey) return { status: 'not_connected', message: 'No Platinum API key is set for this workspace.' };
   try {
     const models = await fetchPlatinumModels(descriptor.baseUrl, descriptor.apiKey);
     return models.length

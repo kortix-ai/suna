@@ -1,6 +1,7 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT, readRepoFile, readWorkflow as read } from '../src/fixtures/repo';
 
 // Guards the container-image build topology. Before 2026-08-19 every image in
 // build-staging.yml built both arches on ONE x86 runner under QEMU, with no
@@ -8,9 +9,6 @@ import { describe, expect, it } from 'vitest';
 // 3469.0s total buildx node time (80.5%) and the API job alone ran 22-26 min,
 // 97-98% of the workflow's wallclock. These assertions exist so that cost
 // cannot come back by accident.
-
-const read = (name: string) =>
-  readFileSync(resolve(import.meta.dirname, `../../.github/workflows/${name}`), 'utf8');
 
 const IMAGES = ['api', 'gateway', 'frontend'] as const;
 const DOCKERFILE: Record<(typeof IMAGES)[number], string> = {
@@ -138,7 +136,7 @@ describe('every Linux job defaults to a free runner behind the runner switch', (
   // A bare label has no rollback lever, and a paid default label bills every
   // run. The wizard PR (#6901) shipped bare `blacksmith-4vcpu-*` labels; this
   // pins the switch AND a GitHub-hosted default (free on a public repo).
-  const workflows = readdirSync(resolve(import.meta.dirname, '../../.github/workflows')).filter(
+  const workflows = readdirSync(resolve(REPO_ROOT, '.github/workflows')).filter(
     (name) => name.endsWith('.yml'),
   );
   const tiered =
@@ -188,7 +186,7 @@ describe('every Linux job defaults to a free runner behind the runner switch', (
 });
 
 describe('the API Dockerfile keeps its install layer off the source path', () => {
-  const dockerfile = readFileSync(resolve(import.meta.dirname, '../../apps/api/Dockerfile'), 'utf8');
+  const dockerfile = readRepoFile('apps/api/Dockerfile');
 
   it('copies manifests before pnpm install and sources after it', () => {
     const manifest = dockerfile.indexOf('COPY ${SERVICE}/package.json');

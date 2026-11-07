@@ -141,10 +141,10 @@ const badge = (state: string | undefined, paused?: boolean) => (paused || state 
 async function runJson<T>(args: string[], context: PlatformToolContext): Promise<{ value: T } | { error: KortixToolError }> {
   const run = await runKortix(args, context)
   if (run.code !== 0) {
-    const off = run.stderr.split('\n').find((line) => /is not enabled for this project/.test(line))
+    const off = run.stderr.split('\n').find((line) => /is not enabled for this (project|workspace)/.test(line))
     if (off) {
       const sentence = off.replace(/^\W+/, '').trim()
-      return { error: { kind: 'failed', message: `${sentence} Ask the person or a project admin to turn it on.` } }
+      return { error: { kind: 'failed', message: `${sentence} Ask the person or a workspace admin to turn it on.` } }
     }
     return { error: cliError(run) }
   }
@@ -800,7 +800,7 @@ export default {
     '4) Tell the person in one line, e.g. "I\'ll check for replies every 3 hours until 14 Nov." ' +
     '5) On each fire: check, act, report what changed; widen the cadence after repeated empty checks (remove, then a slower follow_up); `remove` every follow-up and wake-on the moment the work is done or the end date passes. ' +
     'No follow-up for work that finishes this turn, for background hand-offs, teammates and workflows (they report back by themselves), or when the person said not to track it. ' +
-    'If it answers that Loops are not enabled, tell the person and ask them or a project admin to turn Loops on in Settings → Feature flags. ' +
+    'If it answers that Loops are not enabled, tell the person and ask them or a workspace admin to turn Loops on in Workspace settings → Feature flags. ' +
     'Actions: `follow_up` (text + ONE of in "3h", at ISO time, every "4h" (min 5m), cron "0 9 * * 1-5" + timezone; with several, the first of at, in, cron, every is used); ' +
     '`wake_on` (text + on); `events` (connector); `list` (this session\'s follow-ups and wake-ons, and the project schedules, with ids); ' +
     '`create` (prompt + agent + one schedule: each run starts a new session of that agent); `pause`, `resume`, `run_now`, `remove` (each needs `id` as list shows it; `delete` = remove). ' +

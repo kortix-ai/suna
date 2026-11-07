@@ -12,16 +12,6 @@
       "count": 5
     }
   },
-  "src/accounts/core/accounts.ts": {
-    "no-console": {
-      "count": 2
-    }
-  },
-  "src/accounts/core/bootstrap-personal-account.ts": {
-    "no-console": {
-      "count": 2
-    }
-  },
   "src/accounts/core/invites.ts": {
     "kortix-api/projects-surface": {
       "count": 1
@@ -282,11 +272,6 @@
       "count": 1
     }
   },
-  "src/billing/routes/account-deletion.ts": {
-    "no-restricted-syntax": {
-      "count": 5
-    }
-  },
   "src/billing/routes/account-state.ts": {
     "no-console": {
       "count": 2
@@ -521,7 +506,7 @@
       "count": 1
     },
     "no-restricted-imports": {
-      "count": 2
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 3
@@ -673,7 +658,7 @@
       "count": 1
     },
     "no-restricted-imports": {
-      "count": 2
+      "count": 1
     }
   },
   "src/channels/teams/identity.ts": {
@@ -1118,7 +1103,7 @@
   },
   "src/iam/sso-sync.ts": {
     "no-console": {
-      "count": 3
+      "count": 2
     }
   },
   "src/inbound-dispatch.ts": {
@@ -1894,7 +1879,7 @@
   },
   "src/projects/routes/agent-config.ts": {
     "no-restricted-imports": {
-      "count": 2
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 3
@@ -2093,7 +2078,7 @@
       "count": 2
     },
     "no-restricted-imports": {
-      "count": 2
+      "count": 1
     }
   },
   "src/projects/routes/project-files.ts": {
@@ -2135,7 +2120,7 @@
   },
   "src/projects/routes/project-settings.ts": {
     "no-restricted-imports": {
-      "count": 2
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 5
@@ -2143,7 +2128,7 @@
   },
   "src/projects/routes/projects.ts": {
     "no-restricted-imports": {
-      "count": 2
+      "count": 1
     },
     "no-restricted-properties": {
       "count": 1
@@ -2306,7 +2291,7 @@
   },
   "src/projects/routes/trigger-webhooks.ts": {
     "no-restricted-imports": {
-      "count": 2
+      "count": 1
     }
   },
   "src/projects/routes/triggers.ts": {
@@ -2678,7 +2663,7 @@
   },
   "src/sandbox-proxy/forward/retry.ts": {
     "no-console": {
-      "count": 7
+      "count": 6
     }
   },
   "src/sandbox-proxy/forward/turn-start.ts": {
@@ -2780,9 +2765,6 @@
     }
   },
   "src/scim/users.ts": {
-    "no-console": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 6
     }
@@ -2847,7 +2829,7 @@
   },
   "src/shared/account-limits.ts": {
     "kortix-api/layers": {
-      "count": 3
+      "count": 2
     }
   },
   "src/shared/actor-context.ts": {
@@ -2963,14 +2945,6 @@
   "src/shared/project-account-lookup.ts": {
     "kortix-api/replica-local": {
       "count": 1
-    }
-  },
-  "src/shared/resolve-account.ts": {
-    "kortix-api/layers": {
-      "count": 3
-    },
-    "no-console": {
-      "count": 2
     }
   },
   "src/shared/runtime-audit-rate-guard.ts": {
@@ -3121,7 +3095,7 @@
   },
   "src/snapshots/templates.ts": {
     "kortix-api/projects-surface": {
-      "count": 3
+      "count": 2
     },
     "no-console": {
       "count": 3

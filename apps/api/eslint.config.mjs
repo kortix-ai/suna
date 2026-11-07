@@ -41,7 +41,9 @@ const NO_PLATFORM = {
 export function layerOf(abs) {
   const rel = relative(SRC, abs).split(sep).join('/').replace(/\.ts$/, '');
   if (rel.startsWith('..')) return null;
-  if (/^(lib|shared)\//.test(rel) || rel === 'config' || rel === 'types') return 0;
+  // workspaces/rows: the account and project row handles. It imports only
+  // drizzle, @kortix/db and shared/db, so shared/ modules can read rows.
+  if (/^(lib|shared)\//.test(rel) || rel === 'config' || rel === 'types' || rel === 'workspaces/rows') return 0;
   if (['index', 'worker', 'app', 'bootstrap', 'http-middleware'].includes(rel)) return 3;
   if (/(^|\/)routes(\/|$)|(^|\/)(router|[^/]*-routes)$|^[^/]+\/index$/.test(rel)) return 2;
   return 1;
@@ -111,6 +113,59 @@ const projectsSurface = {
       ExportNamedDeclaration: (node) => check(node.source),
       ExportAllDeclaration: (node) => check(node.source),
       ImportExpression: (node) => check(node.source),
+    };
+  },
+};
+
+/** The `@kortix/db` tables only the workspaces store reads and writes. */
+const WORKSPACE_STORE_TABLES = new Set(['accounts', 'projects', 'workspaces']);
+
+/**
+ * `kortix-api/workspace-store-only` (Workspaces design.md §3.2 C2): only
+ * src/workspaces/ imports the `accounts`, `projects` and `workspaces` tables
+ * from `@kortix/db`, statically or through `await import('@kortix/db')`.
+ * Everyone else reads rows through the read-only handles of
+ * `workspaces/rows.ts` (`projectsView`, `accountsView`) and writes them through
+ * its functions (`updateProjectRows`, `insertAccountRow`, …). No suppression:
+ * Release 2 swaps the tables under these functions.
+ * @type {import('eslint').Rule.RuleModule}
+ */
+const workspaceStoreOnly = {
+  meta: {
+    type: 'problem',
+    messages: {
+      table:
+        "Import '{{name}}' from @kortix/db only inside src/workspaces/. Read rows through 'workspaces/rows' (projectsView, accountsView), write them through its functions, and read workspace identity through 'workspaces/surface' (design.md §3.2 C2).",
+    },
+    schema: [],
+  },
+  create(context) {
+    if (relative(SRC, context.filename).split(sep).join('/').startsWith('workspaces/')) return {};
+    /** @param {any} source */
+    const fromDb = (source) => source?.value === '@kortix/db' || source?.value === '@kortix/db/schema';
+    /** @param {any} node @param {string | undefined} name */
+    const check = (node, name) => {
+      if (name && WORKSPACE_STORE_TABLES.has(name)) context.report({ node, messageId: 'table', data: { name } });
+    };
+    return {
+      ImportDeclaration: (/** @type {any} */ node) => {
+        if (!fromDb(node.source)) return;
+        for (const spec of node.specifiers) if (spec.type === 'ImportSpecifier') check(spec, spec.imported?.name);
+      },
+      ExportNamedDeclaration: (/** @type {any} */ node) => {
+        if (!fromDb(node.source)) return;
+        for (const spec of node.specifiers) check(spec, spec.local?.name);
+      },
+      // `const { projects } = await import('@kortix/db')`
+      'VariableDeclarator[id.type="ObjectPattern"]': (/** @type {any} */ node) => {
+        const init = node.init?.type === 'AwaitExpression' ? node.init.argument : node.init;
+        if (init?.type !== 'ImportExpression' || !fromDb(init.source)) return;
+        for (const prop of node.id.properties) if (prop.type === 'Property') check(prop, prop.key?.name);
+      },
+      // `(await import('@kortix/db')).projects`
+      'MemberExpression[object.type="AwaitExpression"][object.argument.type="ImportExpression"]': (/** @type {any} */ node) => {
+        if (fromDb(node.object.argument.source)) check(node, node.property?.name);
+      },
     };
   },
 };
@@ -205,11 +260,22 @@ export default tseslint.config(
     files: ['src/**/*.ts'],
     languageOptions: { parser: tseslint.parser },
     linterOptions: { reportUnusedDisableDirectives: 'off' },
-    plugins: { 'kortix-api': { rules: { layers, 'projects-surface': projectsSurface, 'replica-local': replicaLocal, 'guarded-status': guardedStatus } } },
+    plugins: {
+      'kortix-api': {
+        rules: {
+          layers,
+          'projects-surface': projectsSurface,
+          'replica-local': replicaLocal,
+          'workspace-store-only': workspaceStoreOnly,
+          'guarded-status': guardedStatus,
+        },
+      },
+    },
     rules: {
       'kortix-api/layers': 'error',
       'kortix-api/projects-surface': 'error',
       'kortix-api/replica-local': 'error',
+      'kortix-api/workspace-store-only': 'error',
       'kortix-api/guarded-status': 'error',
       'no-console': 'error',
       // A statement after a return is dead code that still reads as live.

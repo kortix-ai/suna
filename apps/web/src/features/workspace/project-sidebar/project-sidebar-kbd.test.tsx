@@ -78,15 +78,17 @@ mock.module('@kortix/sdk/react', () => ({
   useVisibleAgents: () => [{ name: 'kortix' }, { name: 'meta' }],
   useCreateProjectSpace: () => ({ mutate: () => undefined, isPending: false }),
   useUpdateProjectSpace: () => ({ mutate: () => undefined, isPending: false }),
+  // 3 unread, one of them a question (Needs you): the sidebar still shows no Inbox row.
+  useNotificationInbox: () => ({
+    data: { notifications: [{ id: 'n1', kind: 'question', read: false }], unread_count: 3 },
+    unreadCount: 3,
+  }),
 }));
 mock.module('@kortix/ui/internal/hooks/projects/new-session-guard', () => ({
   useIsCreatingProjectSession: () => false,
 }));
 mock.module('@kortix/ui/internal/stores/billing-account-context', () => ({
   useBillingAccountId: () => 'synthetic-account',
-}));
-mock.module('@kortix/ui/internal/notifications/notification-bell', () => ({
-  NotificationBell: () => React.createElement('div', { 'data-testid': 'notification-bell' }),
 }));
 mock.module('@kortix/ui/workspace/sidebar/project-session-list', () => ({
   ProjectSessionList: ({ secondary }: { secondary?: boolean }) =>
@@ -142,11 +144,17 @@ let container: { innerHTML: string; remove(): void } | undefined;
 
 /** Opens the mobile sheet on mount: its content only exists while open. */
 function MobileOpenHarness({ projectId }: { projectId: string }) {
-  const { setOpenMobile } = useSidebar();
+  const { openMobile, setOpenMobile } = useSidebar();
   React.useEffect(() => {
     setOpenMobile(true);
   }, [setOpenMobile]);
-  return React.createElement(ProjectSidebar, { projectId });
+  return React.createElement(
+    React.Fragment,
+    null,
+    // Outside the sheet: whether the sheet is open.
+    React.createElement('span', { 'data-testid': 'sheet', 'data-open': openMobile ? 'true' : 'false' }),
+    React.createElement(ProjectSidebar, { projectId }),
+  );
 }
 
 async function mountSidebar(width: number) {
@@ -218,14 +226,14 @@ test('with chat on, the sidebar is Spaces only (Cmd+J still opens the new-sessio
   expect(html).not.toContain('oneChat');
   expect(html).not.toContain('spaces.directMessages');
   // Review first, then the person's own space (their chat with My Kortix, at /chat), then the channels.
-  const review = html.indexOf('href="/projects/synthetic-project/review"');
-  const personal = html.indexOf('href="/projects/synthetic-project/chat"');
-  const general = html.indexOf('href="/projects/synthetic-project/c/general"');
+  const review = html.indexOf('href="/workspaces/synthetic-project/review"');
+  const personal = html.indexOf('href="/workspaces/synthetic-project/chat"');
+  const general = html.indexOf('href="/workspaces/synthetic-project/c/general"');
   expect(review).toBeGreaterThan(-1);
   expect(personal).toBeGreaterThan(review);
   expect(general).toBeGreaterThan(personal);
   // The My Kortix DM is that personal row, never a second row of its own.
-  expect(html).not.toContain('href="/projects/synthetic-project/dm/kortix"');
+  expect(html).not.toContain('href="/workspaces/synthetic-project/dm/kortix"');
   // Live channels only, then the add row.
   expect(html).not.toContain('/c/old');
   expect(html.indexOf('spaces.addChannel')).toBeGreaterThan(general);
@@ -245,9 +253,24 @@ test('with chat off, the sidebar keeps New session, the session list and Cmd+J',
   expect(html).toContain('data-testid="session-list" data-secondary="false"');
   expect(html).toContain('newSession');
   expect(html).not.toContain('spaces.channels');
-  expect(html).not.toContain('href="/projects/synthetic-project/chat"');
+  expect(html).not.toContain('href="/workspaces/synthetic-project/chat"');
   await act(async () => {
     win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'j', metaKey: true }));
   });
   expect(newSessionCalls).toBe(1);
+});
+
+const INBOX_HREF = 'href="/workspaces/synthetic-project/inbox"';
+
+// The Inbox is a row in the workspace menu (`workspace-switcher.tsx`), not a
+// sidebar nav row, with Spaces off or on.
+test('the sidebar has no Inbox row (KRTX-1742)', async () => {
+  await mountSidebar(1280);
+  expect(container!.innerHTML).not.toContain(INBOX_HREF);
+});
+
+test('with chat on, the sidebar has no Inbox row either', async () => {
+  channelsOn = true;
+  await mountSidebar(1280);
+  expect(container!.innerHTML).not.toContain(INBOX_HREF);
 });

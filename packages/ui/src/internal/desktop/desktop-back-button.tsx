@@ -14,7 +14,7 @@ import { cn } from '../lib/utils';
  * Back, for every screen that carries no product navigation.
  *
  * The desktop shell has no browser toolbar. A screen with no sidebar and no
- * in-page exit — `/new`, `/checkout`, a loading frame, an auth status screen —
+ * in-page exit — `/workspaces/new`, `/checkout`, a loading frame, an auth status screen —
  * has nothing to click, so the user is stuck on it. This is the missing toolbar
  * button, drawn in the title-bar band. The shell's Go menu (Back ⌘[, Forward
  * ⌘], Home ⇧⌘H, apps/desktop-electron/src/navigation.js) backs it up on pages

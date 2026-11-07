@@ -12,7 +12,7 @@
  * `storageView` is the redacted read a client gets.
  */
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
-import { captureWorkspaces } from '@kortix/db';
+import { captureTenants } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { config } from '../config';
@@ -125,7 +125,7 @@ export function resolveInput(input: StorageInput): ResolvedStorage {
 }
 
 async function readRow(accountId: string): Promise<Record<string, unknown>> {
-  const [row] = await db.select({ storage: captureWorkspaces.storage }).from(captureWorkspaces).where(eq(captureWorkspaces.accountId, accountId)).limit(1);
+  const [row] = await db.select({ storage: captureTenants.storage }).from(captureTenants).where(eq(captureTenants.accountId, accountId)).limit(1);
   return row?.storage ?? {};
 }
 
@@ -169,8 +169,8 @@ export async function storageView(accountId: string): Promise<Record<string, unk
 export async function writeStorageConfig(accountId: string, input: StorageInput, userId: string): Promise<Record<string, unknown>> {
   const stored = toStored(accountId, input);
   await db
-    .insert(captureWorkspaces)
+    .insert(captureTenants)
     .values({ accountId, storage: stored, updatedBy: userId })
-    .onConflictDoUpdate({ target: captureWorkspaces.accountId, set: { storage: stored, updatedBy: userId, updatedAt: sql`now()` } });
+    .onConflictDoUpdate({ target: captureTenants.accountId, set: { storage: stored, updatedBy: userId, updatedAt: sql`now()` } });
   return storageView(accountId);
 }

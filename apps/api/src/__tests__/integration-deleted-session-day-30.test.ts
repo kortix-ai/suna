@@ -46,7 +46,7 @@ beforeAll(async () => {
   git('clone', '--bare', seed, remote);
 
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'day-30' });
-  await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'day-30', repoUrl: remote, defaultBranch: 'main' });
+  await db.insert(projects).values({ splitPending: true, projectId: PROJECT, accountId: ACCOUNT, name: 'day-30', repoUrl: remote, defaultBranch: 'main' });
   for (const sessionId of [PURGE_FIRST, SWEEP_FIRST]) {
     git('--git-dir', remote, 'branch', `session/${sessionId}`, 'main');
     await db.insert(projectSessions).values({
@@ -121,7 +121,7 @@ describe('a deleted session on day 30', () => {
   test('a branch whose delete fails waits a day, so it cannot hold the batch', async () => {
     const BROKEN_PROJECT = crypto.randomUUID();
     const BROKEN = crypto.randomUUID();
-    await db.insert(projects).values({ projectId: BROKEN_PROJECT, accountId: ACCOUNT, name: 'day-30-broken', repoUrl: join(root, 'missing.git'), defaultBranch: 'main' });
+    await db.insert(projects).values({ splitPending: true, projectId: BROKEN_PROJECT, accountId: ACCOUNT, name: 'day-30-broken', repoUrl: join(root, 'missing.git'), defaultBranch: 'main' });
     await db.insert(projectSessions).values({
       sessionId: BROKEN, accountId: ACCOUNT, projectId: BROKEN_PROJECT, branchName: `session/${BROKEN}`, createdBy: USER, status: 'stopped',
       metadata: { deletedAt: new Date(NOW.getTime() - 30 * DAY).toISOString(), deletedBy: USER },

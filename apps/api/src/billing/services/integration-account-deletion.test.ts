@@ -35,7 +35,7 @@ mock.module('../../shared/supabase', () => ({
 }));
 
 const { db } = await import('../../shared/db');
-const { processScheduledDeletions, deleteAccountImmediately } = await import('./account-deletion');
+const { processScheduledDeletions, deleteAccountImmediately, deleteLoginWithoutAccount } = await import('./account-deletion');
 const { claimDeletionRequest } = await import('../repositories/account-deletion');
 const { config } = await import('../../config');
 const { SWEEP_BATCH_SIZE } = await import('./account-deletion');
@@ -45,7 +45,8 @@ const past = () => new Date(Date.now() - 60_000).toISOString();
 
 /**
  * A requester and the account they asked to delete. By default the account is
- * their personal account, whose id is the user id (`bootstrapPersonalAccount`).
+ * their legacy personal account, whose id is the user id (sign-up created one
+ * until Workspaces D3).
  * `team` seeds an account with its own id; `requester` files the request as
  * someone who is not a member at all.
  */
@@ -277,6 +278,22 @@ describe('immediate deletion', () => {
     expect(deleteUser).toHaveBeenCalledWith(userId);
     expect(stripeCancel).toHaveBeenCalledTimes(1);
     expect(await requestStatus(requestId)).toBe('completed');
+  });
+});
+
+describe('a person with no workspace', () => {
+  test('deletes only their login; no account exists to delete', async () => {
+    const userId = crypto.randomUUID();
+    const result = await deleteLoginWithoutAccount(userId);
+    expect(result.success).toBe(true);
+    expect(deleteUser).toHaveBeenCalledWith(userId);
+    expect(stripeCancel).not.toHaveBeenCalled();
+    expect(await accountExists(userId)).toBe(false);
+  });
+
+  test('a retry after the auth user is gone succeeds', async () => {
+    deleteUser.mockImplementation(async () => ({ error: { status: 404 } }));
+    expect((await deleteLoginWithoutAccount(crypto.randomUUID())).success).toBe(true);
   });
 });
 

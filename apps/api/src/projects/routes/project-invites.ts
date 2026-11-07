@@ -9,7 +9,7 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { isAccountManager } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountInvitations, accounts } from '@kortix/db';
+import { accountInvitations } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   ensureOrgMembership,
@@ -21,6 +21,8 @@ import {
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { readJsonObject } from '../../shared/http-body';
+import { workspaceIdParam } from '../../shared/route-params';
+import { accountsView } from '../../workspaces/rows';
 
 export function registerProjectInvitesRoutes(): void {
   // PUT /v1/projects/:projectId/access/:userId
@@ -32,12 +34,12 @@ export function registerProjectInvitesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/access/invite',
+      path: '/{workspaceId}/access/invite',
       tags: ['access'],
       summary: 'Invite a member to a project',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               email: z.string().openapi({ description: 'Email address to invite.' }),
               role: z.enum(['manager', 'member']).optional().openapi({ description: 'Project role.' }),
@@ -50,7 +52,7 @@ export function registerProjectInvitesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Inviting a member grants project access — members.manage, not plain write.
@@ -154,9 +156,9 @@ export function registerProjectInvitesRoutes(): void {
       // anyway so a transport-layer rejection can't surface as unhandled.
       const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
       const [accountRow] = await db
-        .select({ name: accounts.name })
-        .from(accounts)
-        .where(eq(accounts.accountId, loaded.row.accountId))
+        .select({ name: accountsView.name })
+        .from(accountsView)
+        .where(eq(accountsView.accountId, loaded.row.accountId))
         .limit(1);
       const emailConfigured = isInviteEmailConfigured();
       if (emailConfigured) {
@@ -238,12 +240,12 @@ export function registerProjectInvitesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/access/pending-invites',
+      path: '/{workspaceId}/access/pending-invites',
       tags: ['access'],
       summary: 'List pending project invites',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -251,7 +253,7 @@ export function registerProjectInvitesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
@@ -327,12 +329,12 @@ export function registerProjectInvitesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/access/pending-invites/{inviteId}',
+      path: '/{workspaceId}/access/pending-invites/{inviteId}',
       tags: ['access'],
       summary: 'Cancel a pending project invite',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), inviteId: z.string() }),
+          params: z.object({ workspaceId: z.string(), inviteId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -340,7 +342,7 @@ export function registerProjectInvitesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const inviteId = c.req.param('inviteId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -402,12 +404,12 @@ export function registerProjectInvitesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/access/pending-invites/{inviteId}/resend',
+      path: '/{workspaceId}/access/pending-invites/{inviteId}/resend',
       tags: ['access'],
       summary: 'Resend a project invite',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), inviteId: z.string() }),
+          params: z.object({ workspaceId: z.string(), inviteId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -415,7 +417,7 @@ export function registerProjectInvitesRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const inviteId = c.req.param('inviteId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -443,7 +445,7 @@ export function registerProjectInvitesRoutes(): void {
       (g) => 'project_id' in g && g.project_id === projectId,
     );
     if (!grant || !('project_id' in grant)) {
-      return c.json({ error: 'Invitation does not target this project' }, 404);
+      return c.json({ error: 'Invitation does not target this workspace' }, 404);
     }
 
     const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
@@ -454,9 +456,9 @@ export function registerProjectInvitesRoutes(): void {
 
     const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
     const [accountRow] = await db
-      .select({ name: accounts.name })
-      .from(accounts)
-      .where(eq(accounts.accountId, loaded.row.accountId))
+      .select({ name: accountsView.name })
+      .from(accountsView)
+      .where(eq(accountsView.accountId, loaded.row.accountId))
       .limit(1);
     const delivery = await sendAccountInviteEmail({
       email: invite.email,

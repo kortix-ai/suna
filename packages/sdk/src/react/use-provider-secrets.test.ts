@@ -32,7 +32,7 @@ test('pool updates and cache invalidation stay bound to the same project and ses
   const sibling = useSessionProviderSecretPools('own-project', 'sibling-session') as any;
   await own.setPool.mutationFn({ providerId: 'anthropic', secretIds: [] });
   await own.setPool.onSuccess();
-  expect(calls).toEqual(['http://provider-secrets.test/projects/own-project/sessions/own-session/provider-secret-pools/anthropic']);
+  expect(calls).toEqual(['http://provider-secrets.test/workspaces/own-project/sessions/own-session/provider-secret-pools/anthropic']);
   expect(invalidated).toContainEqual(own.queryKey);
   expect(invalidated).not.toContainEqual(sibling.queryKey);
 });

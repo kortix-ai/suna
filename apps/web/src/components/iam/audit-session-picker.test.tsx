@@ -213,7 +213,7 @@ describe('AuditSessionPicker (KRTX-1727)', () => {
     await open();
     expect(calls).toEqual([]);
     await type('login');
-    expect(empty()).toBe('Select project first');
+    expect(empty()).toBe('Select workspace first');
     await type(DELETED_SESSION);
     expect(itemText()).toEqual([`${DELETED_SESSION}Session ID`]);
     await pick(0);

@@ -55,6 +55,7 @@ const { chatEventDedup: chatEventDedupTable } = await import('@kortix/db');
 
 let selectCount = 0;
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: true,
   db: {
     select: () => {

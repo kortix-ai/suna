@@ -62,14 +62,14 @@ the ledger and never contacted again.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the dunning skill and the hourly trigger, and
 opens a change request for you to review. Prefer clicks? Choose **Use this
 template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up an hourly payment recovery agent in this project.
+  code={`Set up an hourly payment recovery agent in this workspace.
 
 1. Create the agent agents/payment-recovery.md. Its job is to work each failed Stripe invoice through a fixed dunning ladder and stop when it is paid. It may use the Stripe connector, send email through the dunning email channel and post to Slack. It keeps its state in memory/payment-recovery-ledger.md.
 
@@ -90,7 +90,7 @@ template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect your billing system and Slack.
+Open **Connectors** in your workspace and connect your billing system and Slack.
 Connect the email account that sends the dunning email under **Settings →
 Channels**. Credentials are brokered server-side and never enter the agent's
 machine.
@@ -132,7 +132,7 @@ The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every hour, on the hour. Each run reads the ledger in
 `memory/payment-recovery-ledger.md` first, so it picks up where the last run
 stopped. To change the time, edit the cron line, or open **Triggers** in the
-project.
+workspace.
 
 <CopyBlock
   title="kortix.yaml"

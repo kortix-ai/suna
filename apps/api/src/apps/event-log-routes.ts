@@ -85,12 +85,12 @@ const AppEventLog = z
 export function registerAppEventLogRoutes(): void {
   projectsApp.openapi(
     createRoute({
-      method: 'get', path: '/{projectId}/apps/{appId}/events', tags: ['apps'], summary: "List an App's events", ...auth,
+      method: 'get', path: '/{workspaceId}/apps/{appId}/events', tags: ['apps'], summary: "List an App's events", ...auth,
       description:
         'The events the App posted in the last 30 days, newest first, with what came of each: one row per trigger the event ' +
         'reached, or one `unmatched` row when no enabled trigger listens to the App. Needs project.app.deploy.',
       request: {
-        params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }),
         query: z.object({
           limit: z.string().optional().openapi({ description: `1-${MAX_LIMIT}, default ${DEFAULT_LIMIT}.` }),
           cursor: z.string().optional().openapi({ description: '`next_cursor` of the previous page.' }),
@@ -102,7 +102,7 @@ export function registerAppEventLogRoutes(): void {
       responses: { 200: json(AppEventLog, 'Events, newest first'), ...errors(400, 403, 404) },
     }),
     async (c) => {
-      const { projectId, appId } = c.req.valid('param');
+      const { workspaceId: projectId, appId } = c.req.valid('param');
       const query = c.req.valid('query');
       const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
@@ -121,7 +121,7 @@ export function registerAppEventLogRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/{appId}/events/test', tags: ['apps'], summary: 'Send a test App event', ...auth,
+      method: 'post', path: '/{workspaceId}/apps/{appId}/events/test', tags: ['apps'], summary: 'Send a test App event', ...auth,
       description:
         'Sends events as if the App posted them, through the same log, limits and triggers, to prove the wiring. Every id ' +
         'starts with `test-` (one is made when none is sent), so a real event with the same id still fires later; the prompt ' +
@@ -130,13 +130,13 @@ export function registerAppEventLogRoutes(): void {
         '`kortix.app.crashed`) may be sent too, to test a repair trigger: they reach only a trigger whose event is that ' +
         'exact name. Needs project.app.deploy.',
       request: {
-        params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: TestEvent.merge(TestTarget).or(z.object({ events: z.array(TestEvent) }).merge(TestTarget)) } } },
       },
       responses: { 202: json(TestEventResult, 'Events appended'), ...errors(400, 403, 404, 429, 503) },
     }),
     async (c) => {
-      const { projectId, appId } = c.req.valid('param');
+      const { workspaceId: projectId, appId } = c.req.valid('param');
       const loaded = await authorizedProject(c, projectId, 'deploy');
       if (loaded instanceof Response) return loaded;
       const app = await visibleApp(projectId, appId, loaded.userId);

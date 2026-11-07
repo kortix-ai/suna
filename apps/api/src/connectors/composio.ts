@@ -548,6 +548,13 @@ function cachedCatalogCall<T>(runtime: ComposioRuntime, key: string, load: () =>
   return value;
 }
 
+/** The provider's `400 Pagination Error: Failed to decode cursor` (code 10400). */
+function isComposioInvalidCursorError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const { status, error } = err as { status?: unknown; error?: { error?: { code?: unknown } } };
+  return status === 400 && error?.error?.code === 10400;
+}
+
 export async function composioCatalogPage(input: {
   projectId: string;
   q?: string;
@@ -666,18 +673,28 @@ export async function composioCatalogPage(input: {
   // The discovery identity never connects anything, so a page is the same for
   // every project and is cached deployment-wide (see `cachedCatalogCall`).
   // Only unsearched pages reach here; every query returned above.
-  const pageKey = `search\u0000\u0000${input.cursor ?? ''}\u0000${input.limit ?? ''}`;
-  const [page, meta, hidden] = await Promise.all([
-    cachedCatalogCall(runtime, pageKey, async () => {
+  const loadPage = (cursor: string | undefined) =>
+    cachedCatalogCall(runtime, `search\u0000\u0000${cursor ?? ''}\u0000${input.limit ?? ''}`, async () => {
       const session = await runtime.sessions.create(`kortix-discovery:${input.projectId}`, {
         manageConnections: false,
         sandbox: { enable: false },
       });
       return session.toolkits({
-        ...(input.cursor ? { cursor: input.cursor } : {}),
+        ...(cursor ? { cursor } : {}),
         ...(input.limit != null ? { limit: input.limit } : {}),
       });
-    }),
+    });
+  // A client-supplied cursor the provider cannot decode (stale, truncated or
+  // from another catalogue) restarts at the first page, as the search branch
+  // does, instead of surfacing the provider's 400 as an API error.
+  const pageLoad = input.cursor
+    ? loadPage(input.cursor).catch((err: unknown) => {
+        if (!isComposioInvalidCursorError(err)) throw err;
+        return loadPage(undefined);
+      })
+    : loadPage(undefined);
+  const [page, meta, hidden] = await Promise.all([
+    pageLoad,
     toolkitMetaBySlug(runtime),
     hiddenToolkits,
   ]);

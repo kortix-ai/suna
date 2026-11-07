@@ -29,15 +29,15 @@ import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix tools <subcommand> [options]
 
-The tools this project's sessions get, from ./kortix.yaml \`tools:\` and its
+The tools this workspace's sessions get, from ./kortix.yaml \`tools:\` and its
 imports. Kortix maintains these tools: ${KORTIX_TOOL_NAMES.join(', ')}.
-Every Kortix tool is always registered. \`tools:\` maps a name to a project
+Every Kortix tool is always registered. \`tools:\` maps a name to a workspace
 module (\`<name>: <path to a .ts or .js module>\`), and a Kortix tool's name
 replaces that tool.
 
 Subcommands:
   ls [--json]               List each tool the sessions get: name, kind
-                            (kortix, kortix (overridden), project) and source.
+                            (kortix, kortix (overridden), workspace) and source.
   eject <name> [--force]    Copy the Kortix tool <name> to tools/<name>.ts and
                             set \`tools.<name>: tools/<name>.ts\` in kortix.yaml.
                             The copy is yours to change; Kortix no longer
@@ -86,7 +86,7 @@ export function listTools(raw: Record<string, unknown>): ToolRow[] {
 function readManifest(): { file: string; raw: Record<string, unknown>; origins: Record<string, string> } | number {
   const found = resolveLocalManifest(process.cwd());
   if (!found) {
-    process.stderr.write(`${status.err('Manifest not found')}\n  ${C.dim}Run from your project root (the folder with kortix.yaml).${C.reset}\n`);
+    process.stderr.write(`${status.err('Manifest not found')}\n  ${C.dim}Run from your workspace root (the folder with kortix.yaml).${C.reset}\n`);
     return 2;
   }
   try {
@@ -108,9 +108,10 @@ function toolsLs(json: boolean): number {
     return 0;
   }
   const nameWidth = Math.max(4, ...tools.map((row) => row.name.length)) + 2;
-  const kindWidth = Math.max(4, ...tools.map((row) => row.kind.length)) + 2;
+  const kindWidth = Math.max(4, ...tools.map((row) => (row.kind === 'project' ? 'workspace' : row.kind).length)) + 2;
   process.stdout.write(`${C.dim}${pad('NAME', nameWidth)}${pad('KIND', kindWidth)}SOURCE${C.reset}\n`);
-  for (const row of tools) process.stdout.write(`${pad(row.name, nameWidth)}${pad(row.kind, kindWidth)}${row.source}\n`);
+  // `project` is the manifest kind (kept in --json); the table says workspace.
+  for (const row of tools) process.stdout.write(`${pad(row.name, nameWidth)}${pad(row.kind === 'project' ? 'workspace' : row.kind, kindWidth)}${row.source}\n`);
   return 0;
 }
 
@@ -131,7 +132,7 @@ function toolsEject(name: string | undefined, force: boolean): number {
   const owned = safeToolFile(current);
   if (!force && owned && owned !== target) {
     process.stderr.write(
-      `${status.err(`${name} is already the project's own module: ${owned}.`)}\n  ${C.dim}Pass --force to replace it with a fresh copy at ${target}.${C.reset}\n`,
+      `${status.err(`${name} is already the workspace's own module: ${owned}.`)}\n  ${C.dim}Pass --force to replace it with a fresh copy at ${target}.${C.reset}\n`,
     );
     return 1;
   }
@@ -150,7 +151,7 @@ function toolsEject(name: string | undefined, force: boolean): number {
 
   const edited = relative(root, declaring);
   process.stdout.write(`${status.ok(`Ejected ${name}`)}\n`);
-  process.stdout.write(`  ${C.dim}wrote${C.reset}   ${target} ${C.dim}(the Kortix source, now the project's to change)${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}wrote${C.reset}   ${target} ${C.dim}(the Kortix source, now the workspace's to change)${C.reset}\n`);
   process.stdout.write(`  ${C.dim}set${C.reset}     ${edited}: tools.${name}: ${target}\n`);
   process.stdout.write(
     `\nNext:\n` +

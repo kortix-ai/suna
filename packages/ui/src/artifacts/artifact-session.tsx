@@ -2,13 +2,11 @@
 
 import { getPublicArtifact, type ArtifactDetail } from '@kortix/sdk';
 import { useArtifact } from '@kortix/sdk/react';
-import { ArrowSquareOutIcon, BrowserIcon, ChatCircleIcon, FileTextIcon, XIcon } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon, BrowserIcon, FileTextIcon, XIcon } from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 
-import { useTranslations } from '../i18n';
 import { useLocalizedUiCatalog } from '../i18n/ui-catalog/use-localized-ui-catalog';
 import { Button } from '../primitives/button';
-import { CountBadge } from '../primitives/count-badge';
 import Hint from '../primitives/hint';
 import { Skeleton } from '../primitives/skeleton';
 import { useUiComponents, useUiRouter } from '../providers/ui-provider';
@@ -34,8 +32,6 @@ interface ShownArtifact {
   frameKey: string;
   /** The app viewer (editor for a doc), when the artifact belongs to a project. */
   href: string | null;
-  /** Open comment threads (`open_thread_count`). Absent for a public artifact or while comments are off. */
-  openThreads?: number;
 }
 
 /** The artifact a URL names, as the caller may see it: a project artifact, or a public one. */
@@ -73,8 +69,7 @@ function useShownArtifact(url: string): { artifact: ShownArtifact | null; failed
       type: detail.type,
       src: detail.version.view_url,
       frameKey: artifactFrameKey(detail),
-      href: `/projects/${detail.project_id}/artifacts/${detail.artifact_id}`,
-      openThreads: detail.open_thread_count,
+      href: `/workspaces/${detail.project_id}/artifacts/${detail.artifact_id}`,
     },
     failed: false,
   };
@@ -88,7 +83,6 @@ function useShownArtifact(url: string): { artifact: ShownArtifact | null; failed
  */
 export function ShowArtifactCard({ url, fallback }: { url: string; fallback: React.ReactNode }) {
   const copy = useLocalizedUiCatalog(COPY);
-  const t = useTranslations('artifacts');
   const { artifact, failed } = useShownArtifact(url);
   if (failed) return <>{fallback}</>;
   const Icon = artifact ? TYPE_ICON[artifact.type] : FileTextIcon;
@@ -129,15 +123,6 @@ export function ShowArtifactCard({ url, fallback }: { url: string; fallback: Rea
             ) : (
               <Skeleton className="my-0.5 h-3 w-16" />
             )}
-            {artifact?.openThreads ? (
-              <CountBadge
-                count={artifact.openThreads}
-                tone="waiting"
-                icon={<ChatCircleIcon aria-hidden />}
-                role="img"
-                aria-label={t('openComments', { count: artifact.openThreads })}
-              />
-            ) : null}
           </span>
         </span>
         <span className="text-muted-foreground group-hover:text-foreground shrink-0 text-xs font-medium transition-colors">{copy.open}</span>

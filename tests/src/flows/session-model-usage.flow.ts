@@ -11,7 +11,7 @@ flow(
   {
     domain: 'sessions',
     requires: ['database'],
-    routes: ['GET /v1/projects/:projectId/sessions/:sessionId/model-usage'],
+    routes: ['GET /v1/workspaces/:projectId/sessions/:sessionId/model-usage'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -31,7 +31,7 @@ flow(
     };
     const shared = await seed('project');
     const priv = await seed('private');
-    const route = '/v1/projects/:projectId/sessions/:sessionId/model-usage';
+    const route = '/v1/workspaces/:projectId/sessions/:sessionId/model-usage';
 
     await ctx.step('a session with no model request reports no latest model, no cost and no turns → 200', async () => {
       const r = await owner.get(route, { params: { projectId: project.id, sessionId: shared } });

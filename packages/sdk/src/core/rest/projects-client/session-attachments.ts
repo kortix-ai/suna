@@ -61,7 +61,7 @@ export async function uploadSessionAttachment(
   form.append("file", file, file.name);
   entry.promise = backendApi
     .upload<SessionAttachment>(
-      `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/attachments`,
+      `/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/attachments`,
       form,
       { signal: options.signal, timeout: 120_000, showErrors: false },
     )
@@ -82,7 +82,7 @@ export async function fetchSessionAttachment(
   if (!scope) throw new Error("Invalid attachment reference");
   const base = platformConfig().backendUrl.replace(/\/$/, "");
   const response = await authenticatedFetch(
-    `${base}/projects/${scope.projectId}/sessions/${scope.sessionId}/attachments/${scope.attachmentId}`,
+    `${base}/workspaces/${scope.projectId}/sessions/${scope.sessionId}/attachments/${scope.attachmentId}`,
     { signal },
   );
   if (!response.ok)

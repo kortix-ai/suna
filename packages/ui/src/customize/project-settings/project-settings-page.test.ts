@@ -10,7 +10,7 @@ import {
 } from './project-settings-page';
 
 /**
- * `/projects/[id]/admin/general` is the SECOND host of `SettingsNav` — the context
+ * `/workspaces/[id]/admin/general` is the SECOND host of `SettingsNav` — the context
  * `packages/ui/src/internal/layout/settings-nav-context.tsx` was deliberately kept
  * panel-agnostic for. The panes it still mounts (General, the Sandbox/Snapshots
  * pair) speak the settings overlay's vocabulary, so the adapter's whole job is
@@ -46,12 +46,12 @@ function navFor(
  * ids, and `hubUrl()` is what proves the click went somewhere.
  */
 const originalWindow = (globalThis as { window?: unknown }).window;
-let historyUrl = '/projects/p1';
+let historyUrl = '/workspaces/p1';
 
 function installFakeBrowser() {
-  historyUrl = '/projects/p1';
+  historyUrl = '/workspaces/p1';
   (globalThis as { window?: unknown }).window = {
-    location: { pathname: '/projects/p1', search: '' },
+    location: { pathname: '/workspaces/p1', search: '' },
     history: {
       pushState: (_s: unknown, _t: unknown, url: string) => {
         historyUrl = url;
@@ -117,7 +117,7 @@ describe('projectCapabilityNavTarget', () => {
   test('legacy review navigation reaches the Review page', () => {
     expect(projectCapabilityNavTarget('review')).toBe('review');
     // Review is its own page since 2026-11-04; `/customize/review` redirects to it.
-    expect(projectCapabilityNavHref('p1', 'review', 'review')).toBe('/projects/p1/review');
+    expect(projectCapabilityNavHref('p1', 'review', 'review')).toBe('/workspaces/p1/review');
   });
 
   test('every legacy llm sub-section is the Models tab', () => {
@@ -138,10 +138,10 @@ describe('projectCapabilityNavTarget', () => {
     // out of it, because `capabilityTabHref` builds paths without a query.
     expect(projectCapabilityNavTarget('channels')).toBe('connectors');
     expect(projectCapabilityNavHref('p1', 'channels', 'connectors')).toBe(
-      '/projects/p1/admin/connectors?scope=channels',
+      '/workspaces/p1/admin/connectors?scope=channels',
     );
     expect(projectCapabilityNavHref('p1', 'secrets', 'secrets')).toBe(
-      '/projects/p1/admin/secrets',
+      '/workspaces/p1/admin/secrets',
     );
   });
 
@@ -165,13 +165,13 @@ describe('buildProjectSettingsNav', () => {
   test('navigate() to another section pushes its URL', () => {
     const { nav, pushed } = navFor('sandbox');
     nav.navigate('feature-flags');
-    expect(pushed).toEqual(['/projects/p1/admin/feature-flags']);
+    expect(pushed).toEqual(['/workspaces/p1/admin/feature-flags']);
   });
 
   test('navigate("llm-providers") leaves this page entirely — Models is its own top-level tab now', () => {
     const { nav, pushed } = navFor('sandbox');
     nav.navigate('llm-providers');
-    expect(pushed).toEqual(['/projects/p1/admin/models']);
+    expect(pushed).toEqual(['/workspaces/p1/admin/models']);
   });
 
   test('navigate("secrets") and navigate("channels") also leave this page', () => {
@@ -179,10 +179,10 @@ describe('buildProjectSettingsNav', () => {
     nav.navigate('secrets');
     nav.navigate('channels');
     expect(pushed).toEqual([
-      '/projects/p1/admin/secrets',
+      '/workspaces/p1/admin/secrets',
       // Channels keeps its scope across the hop. Pushing the bare Connectors
       // route would land a person who asked for Slack on the catalogue.
-      '/projects/p1/admin/connectors?scope=channels',
+      '/workspaces/p1/admin/connectors?scope=channels',
     ]);
   });
 
@@ -193,7 +193,7 @@ describe('buildProjectSettingsNav', () => {
     // is currently shown.
     const { nav, pushed } = navFor('sandbox');
     nav.navigate('members', { membersTab: 'people' });
-    expect(pushed).toEqual(['/projects/p1/members']);
+    expect(pushed).toEqual(['/workspaces/p1/members']);
     expect(useSettingsPanelStore.getState().membersTab).toBe('people');
   });
 
@@ -238,7 +238,7 @@ describe('buildProjectSettingsNav', () => {
     const { nav, pushed } = navFor('sandbox', 'acct-1');
     nav.navigate('groups');
     expect(pushed).toEqual([]);
-    expect(hubUrl()).toBe('/projects/p1?accountId=acct-1&accountTab=groups');
+    expect(hubUrl()).toBe('/workspaces/p1?accountId=acct-1&accountTab=groups');
   });
 
   test('an ACCOUNT_GRADUATED id with no accountId yet does nothing, not a broken URL', () => {

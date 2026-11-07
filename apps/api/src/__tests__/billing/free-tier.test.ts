@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
   createMockCreditAccount,
   mockRegistry,
@@ -11,6 +11,12 @@ import {
 registerGlobalMocks();
 registerWalletMock();
 
+// Accounts a workspace split created (workspace_split_runs.to_account_id).
+const splitTargets = new Set<string>();
+mock.module('../../billing/repositories/split-targets', () => ({
+  isWorkspaceSplitTarget: async (accountId: string) => splitTargets.has(accountId),
+}));
+
 type CreditAccountMock = ReturnType<typeof createMockCreditAccount>;
 type CreditAccountPatch = Record<string, string | number | boolean | null | undefined>;
 const walletGrants = fakeWallet.calls.grant;
@@ -20,6 +26,7 @@ let updateCreditAccountCalls: { accountId: string; data: CreditAccountPatch }[] 
 let freeAccountsDueResult: CreditAccountMock[] = [];
 
 beforeEach(() => {
+  splitTargets.clear();
   upsertCreditAccountCalls = [];
   updateCreditAccountCalls = [];
   freeAccountsDueResult = [];
@@ -72,6 +79,18 @@ describe('free tier account setup', () => {
     expect(upsertCreditAccountCalls).toHaveLength(1);
     expect(upsertCreditAccountCalls[0].accountId).toBe('acc_missing');
     expect(walletGrants).toHaveLength(1);
+  });
+
+  test('a split-off workspace with no credit row gets Free with 0 credits, never the free grant', async () => {
+    mockRegistry.getCreditAccount = async () => null;
+    splitTargets.add('acc_split_target');
+
+    await ensureFreeTierAccountReady('acc_split_target');
+
+    expect(upsertCreditAccountCalls).toHaveLength(1);
+    expect(upsertCreditAccountCalls[0].data.tier).toBe('free');
+    expect(upsertCreditAccountCalls[0].data.freeCreditsEligible).toBe(false);
+    expect(walletGrants).toHaveLength(0);
   });
 
   test('repairs legacy none tier with too little balance', async () => {

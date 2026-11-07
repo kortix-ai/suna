@@ -138,6 +138,17 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('llm_gateway');
   });
 
+  test('notification_center graduated: notifications are on for every project and a stored override is inert', () => {
+    // 2026-11-06: inbox rows, Web Push, mobile push, follows and alerts run for
+    // every project; email is opt-in per kind. A project that stored
+    // `experimental.notification_center` keeps the value in metadata; it must
+    // not resurface as a key, a catalog row, or a gate.
+    expect(isFeatureFlagKey('notification_center')).toBe(false);
+    const metadata = { experimental: { notification_center: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('notification_center');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('notification_center');
+  });
+
   test('event_triggers is a beta, explicit opt-in flag offered everywhere', () => {
     expect(findCatalogFlag('event_triggers')).toMatchObject({
       name: 'Composio event triggers',
@@ -382,17 +393,20 @@ describe('featureDisabledBody', () => {
       expect(body.feature).toBe(key);
       expect(typeof body.error).toBe('string');
       // A hidden flag has no toggle in Settings to point at. No message names an organization.
-      expect(body.error).toContain(HIDDEN_KEYS.includes(key) ? 'Contact Kortix' : 'Settings');
+      expect(body.error).toContain(HIDDEN_KEYS.includes(key) ? 'Contact Kortix' : 'Workspace settings');
       expect(body.error).not.toContain('organization');
     }
   });
 });
 
 
-describe('artifact comments require Artifacts', () => {
-  test('defaults off and cannot run when Artifacts is off', () => {
-    expect(resolveFeatureFlag({}, 'artifact_comments')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { artifacts: false, artifact_comments: true } }, 'artifact_comments')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { artifacts: true, artifact_comments: true } }, 'artifact_comments')).toBe(Boolean(config.PLATINUM_API_KEY));
+describe('artifacts graduated and artifact_comments removed (2026-11-06)', () => {
+  test('neither is a flag, and a stored override of either is inert', () => {
+    const metadata = { experimental: { artifacts: false, artifact_comments: true } };
+    for (const key of ['artifacts', 'artifact_comments']) {
+      expect(isFeatureFlagKey(key)).toBe(false);
+      expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain(key);
+      expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain(key);
+    }
   });
 });

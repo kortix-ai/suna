@@ -8,8 +8,8 @@
  *
  * Top to bottom: profile tile (photo; name over email, the one two-line row;
  * opens EditProfileSheet),
- * an untitled group for the current project and
- * the active account, Preferences, Help, Log out, the version footer, and a
+ * an untitled group for the current workspace (its settings, then
+ * "Billing and members"), Preferences, Help, Log out, the version footer, and a
  * quiet "Delete account" link. Layout rules:
  * apps/mobile/design.md → Account page and account screens.
  */
@@ -26,6 +26,7 @@ import {
   SignOutIcon as LogOut,
   SpeakerHighIcon as Volume2,
   SquaresFourIcon as SquaresFour,
+  UsersIcon as Users,
 } from '@/lib/icons';
 
 import {
@@ -185,20 +186,21 @@ export function AccountPage({
           />
         </SettingsGroup>
 
-        {/* Current context: the open project (project presentation only) and
-            the active account. */}
+        {/* Current workspace: its settings (project presentation only), then
+            its plan, billing and members (`/accounts/<id>`). One workspace,
+            so the second row names what it opens, not the account. */}
         <SettingsGroup>
           {isProject && projectName ? (
             <SettingsRow
               leading={<Avatar chalk size={28} fallbackText={projectName} />}
               label={projectName}
-              value={t('account.project', 'Project')}
+              value={t('account.workspace', 'Workspace')}
               onPress={openProjectSettings}
             />
           ) : null}
           <SettingsRow
-            leading={<Avatar chalk size={28} fallbackText={activeAccount?.name} />}
-            label={activeAccount?.name ?? ''}
+            icon={Users}
+            label={t('workspace.billingAndMembers', 'Billing and members')}
             onPress={openAccount}
             right={
               <View className="flex-row items-center gap-2">

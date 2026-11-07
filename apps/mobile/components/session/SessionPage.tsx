@@ -626,7 +626,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     delivery: SessionPromptDelivery = 'steer',
   ) => {
     if (!projectId || !projectSessionId) {
-      toast.error('No project session to queue a prompt');
+      toast.error('No session to queue a prompt');
       throw new Error('No project session to queue a prompt');
     }
     const nowMs = Date.now();

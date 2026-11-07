@@ -1,7 +1,7 @@
 /** Project triggers: list, create, update, activate, delete, and manual fire. */
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
-import { projectTriggerRuntime, projects } from '@kortix/db';
+import { projectTriggerRuntime } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
 import { featureDisabledBody, requireFeatureFlag } from '../../feature-flags/gate';
@@ -25,7 +25,6 @@ import {
 import { guardSession } from '../lib/http-session-access';
 import { withProjectGitAuth } from '../lib/git';
 import { resolveSessionAgentName } from '../lib/session-create';
-import { metadataMerge } from '../lib/metadata-merge';
 import { requestAuditContext } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import {
@@ -63,7 +62,6 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { annotateAuditEvent } from '../../shared/audit-scope';
 import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
 import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { logger } from '../../lib/logger';
 import type { AppEnv } from '../../types';
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
@@ -86,19 +84,19 @@ import {
   findProjectTriggerBySlug,
 } from '../triggers';
 import { capturePersonEvent } from './product-events';
+import { workspaceIdParam } from '../../shared/route-params';
+import { metadataMerge, projectsView, updateProjectRowsReturning } from '../../workspaces/rows';
 
 /**
  * The person who created or edited a trigger follows its alerts (KRTX-1742).
- * Never an API key or a service account: they name no person. Only with the
- * project's `notification_center` flag on.
+ * Never an API key or a service account: they name no person.
  */
 async function followTrigger(
   c: Context<AppEnv>,
-  project: { accountId: string; metadata: unknown },
+  project: { accountId: string },
   projectId: string,
   slug: string,
 ): Promise<void> {
-  if (!notificationsEnabled(project.metadata)) return;
   const userId = triggerWatcherOf({
     authType: c.get('authType'),
     userId: c.get('userId'),
@@ -171,12 +169,12 @@ export function registerTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/triggers',
+      path: '/{workspaceId}/triggers',
       tags: ['triggers'],
       summary: 'List project triggers',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
       },
       responses: {
         200: json(TriggerListSchema, 'Triggers, the pause switch and manifest parse errors'),
@@ -184,7 +182,7 @@ export function registerTriggersRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Leaf-gate the read (a custom role can omit project.trigger.read) — and, via
@@ -207,13 +205,13 @@ export function registerTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/triggers/event-apps',
+      path: '/{workspaceId}/triggers/event-apps',
       tags: ['triggers'],
       summary: 'List the apps that can trigger an event',
       description:
         'Apps that can trigger an event, with the project connector for each and whether a project-shared account is connected. Source `composio`: apps with at least one event type. Source `mcp`: every catalog app with sign-in, with `mcp_url` to install it (`event_count` 0 until it is connected and its tools are read), and every project MCP server (`event_count` 0 when none of its tools lists or searches).',
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: json(
           z.object({
@@ -246,7 +244,7 @@ export function registerTriggersRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -287,13 +285,13 @@ export function registerTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/triggers/event-types',
+      path: '/{workspaceId}/triggers/event-types',
       tags: ['triggers'],
       summary: 'List the connector events a connector or an app can trigger on',
       description: 'Send `connector` (a project connector slug) or `app` (an app of an event source, no connector needed) with an optional `source`, not both.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z.object({
           connector: z.string().min(1).optional().openapi({ description: 'Connector slug. Exclusive with `app`.' }),
           app: z.string().min(1).optional().openapi({ description: 'App slug of an event source, such as `github`. Exclusive with `connector`.' }),
@@ -322,7 +320,7 @@ export function registerTriggersRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
@@ -367,14 +365,14 @@ export function registerTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/triggers',
+      path: '/{workspaceId}/triggers',
       tags: ['triggers'],
       summary: 'Create a project trigger (cron, webhook, event or app)',
       description:
         'Create a trigger. It is committed to kortix.yaml. Send name, type and prompt_template, plus cron, secret_env or run by type.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             name: z.string().openapi({ description: 'Trigger name. The slug derives from it.' }),
             type: z.enum(['cron', 'webhook', 'monitor', 'event', 'app']).openapi({ description: 'cron runs on a schedule, webhook runs on an HTTP call, monitor supervises a command, event runs when an app event happens on a connector, app runs when an App of this project emits an event.' }),
@@ -416,7 +414,7 @@ export function registerTriggersRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const body = await readJsonObject(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -531,12 +529,12 @@ export function registerTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/triggers/activation',
+      path: '/{workspaceId}/triggers/activation',
       tags: ['triggers'],
       summary: "Pause or resume all of a project's triggers server-side",
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             paused: z.boolean().openapi({ description: 'true stops the platform from auto-running every trigger of the project.' }),
           }) } } },
@@ -547,7 +545,7 @@ export function registerTriggersRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const body = await readJsonObject(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -564,16 +562,12 @@ export function registerTriggersRoutes(): void {
       }
       // FIX-J: SQL-side atomic merge of ONLY `triggers_paused` (set true / delete)
       // so this kill-switch write can't revert a routing pin written concurrently.
-      const [row] = await db
-        .update(projects)
-        .set({
+      const [row] = await updateProjectRowsReturning(eq(projectsView.projectId, projectId), {
           metadata: paused
             ? metadataMerge({ triggers_paused: true })
             : metadataMerge({}, ['triggers_paused']),
           updatedAt: new Date(),
-        })
-        .where(eq(projects.projectId, projectId))
-        .returning();
+        });
       if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
       return c.json(await loadTriggersForResponse(projectId, row, { userId: loaded.userId, bound: callerKortixSessionId(c) }));
     },
@@ -584,14 +578,14 @@ export function registerTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/triggers/{slug}',
+      path: '/{workspaceId}/triggers/{slug}',
       tags: ['triggers'],
       summary: 'Update a project trigger',
       description:
         'Update a trigger. Send only the fields to change.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), slug: z.string() }),
+        params: z.object({ workspaceId: z.string(), slug: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             name: z.string().optional().openapi({ description: 'New name.' }),
             prompt_template: z.string().optional().openapi({ description: 'New prompt.' }),
@@ -628,7 +622,7 @@ export function registerTriggersRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const slug = c.req.param('slug');
       const body = await readJsonObject(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -772,12 +766,12 @@ export function registerTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/triggers/{slug}',
+      path: '/{workspaceId}/triggers/{slug}',
       tags: ['triggers'],
       summary: 'Delete a project trigger',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), slug: z.string() }),
+        params: z.object({ workspaceId: z.string(), slug: z.string() }),
       },
       responses: {
         200: json(OkSchema, 'Deleted'),
@@ -785,7 +779,7 @@ export function registerTriggersRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const slug = c.req.param('slug');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -845,12 +839,12 @@ export function registerTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/triggers/{slug}/fire',
+      path: '/{workspaceId}/triggers/{slug}/fire',
       tags: ['triggers'],
       summary: 'Fire a project trigger now, or dry-run it',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), slug: z.string() }),
+        params: z.object({ workspaceId: z.string(), slug: z.string() }),
         body: { content: { 'application/json': { schema: TriggerFireRequestSchema } }, required: false },
       },
       responses: {
@@ -870,7 +864,7 @@ export function registerTriggersRoutes(): void {
       if (body.dry_run !== undefined && typeof body.dry_run !== 'boolean') {
         return c.json({ error: 'dry_run must be a boolean' }, 400);
       }
-      const target = await authorizeTriggerFire(c, c.req.param('projectId'), c.req.param('slug'));
+      const target = await authorizeTriggerFire(c, workspaceIdParam(c), c.req.param('slug'));
       if (!('spec' in target)) return target;
       const now = new Date();
       const base = await manualFirePayload(target, now);
@@ -902,13 +896,13 @@ export function registerTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/triggers/{slug}/runs',
+      path: '/{workspaceId}/triggers/{slug}/runs',
       tags: ['triggers'],
       summary: "List a trigger's runs",
       description: 'Newest first. A run whose session the caller may not open is left out, so a page can hold fewer than `limit` runs.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), slug: z.string() }),
+        params: z.object({ workspaceId: z.string(), slug: z.string() }),
         query: z.object({
           status: z.enum(TRIGGER_RUN_STATUSES).optional(),
           limit: z.string().optional(),
@@ -928,13 +922,13 @@ export function registerTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/trigger-runs',
+      path: '/{workspaceId}/trigger-runs',
       tags: ['triggers'],
       summary: "List a project's trigger runs",
       description: 'Newest first, across every trigger. `status` narrows to one run status, e.g. `failed`.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z.object({
           status: z.enum(TRIGGER_RUN_STATUSES).optional(),
           limit: z.string().optional(),
@@ -957,13 +951,13 @@ export function registerTriggersRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/triggers/{slug}/runs/{run_id}/replay',
+      path: '/{workspaceId}/triggers/{slug}/runs/{run_id}/replay',
       tags: ['triggers'],
       summary: 'Replay a trigger run',
       description: 'A run whose webhook signature never verified needs `confirm_unverified: true`. A truncated payload cannot be replayed.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), slug: z.string(), run_id: z.string() }),
+        params: z.object({ workspaceId: z.string(), slug: z.string(), run_id: z.string() }),
         body: { content: { 'application/json': { schema: TriggerReplayRequestSchema } }, required: false },
       },
       responses: {
@@ -973,7 +967,7 @@ export function registerTriggersRoutes(): void {
     }),
     async (c) => {
       const body = await readJsonObject(c);
-      const target = await authorizeTriggerFire(c, c.req.param('projectId'), c.req.param('slug'));
+      const target = await authorizeTriggerFire(c, workspaceIdParam(c), c.req.param('slug'));
       if (!('spec' in target)) return target;
       const run = await loadTriggerRunForReplay(target.projectId, target.spec.slug, c.req.param('run_id'));
       if (!run) return c.json({ error: 'Not found' }, 404);
@@ -1167,7 +1161,7 @@ async function fireAndAnswer(
 
 /** Both run lists: the trigger read leaf, then one keyset page (rulings 4 and 6). */
 async function listRunsRoute(c: Context<AppEnv>, scope: { slug?: string }) {
-  const projectId = c.req.param('projectId')!;
+  const projectId = workspaceIdParam(c)!;
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_READ);

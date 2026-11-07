@@ -24,9 +24,10 @@ import { accountSecretResources, projectSecrets } from '@kortix/db';
 import type { ProviderKind } from '@kortix/llm-gateway';
 import { db } from '../../shared/db';
 import { decryptProjectSecret, encryptProjectSecret } from '../../projects/secrets/envelope';
-import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
+import { decryptAccountSecret } from '../../secrets/account-resource';
 import { recordAuditEvent } from '../../shared/audit';
 import { isPermanentRefreshRejection, refreshErrorCode } from './codex-core';
+import { writeRotatedAccountLogin } from './rotating-login-write';
 
 const CONSOLE = 'https://opencode.ai/console';
 const CLIENT_ID = 'opencode-cli';
@@ -162,11 +163,17 @@ async function refreshAndPersist(row: OpencodeLoginRow, current: OpencodeLogin, 
     expires: Date.now() + (body.expires_in ?? 30 * 86400) * 1000,
   };
   const value = JSON.stringify(next);
-  // Unconditional: the refresh token rotated, so this is now the only login that works.
+  // The refresh token rotated, so this is now the only login that works. It
+  // lands on the row by secret_id, sealed for the account that holds it now
+  // (a move may have re-sealed it meanwhile), unless the row no longer
+  // carries the refresh token used here (a reconnect, a split placeholder).
   if (row.storage === 'account_resource') {
-    await db.update(accountSecretResources)
-      .set({ valueEnc: encryptAccountSecret(row.accountId, value), updatedAt: new Date(), needsReauthAt: null })
-      .where(and(eq(accountSecretResources.accountId, row.accountId), eq(accountSecretResources.secretId, row.secretId)));
+    await writeRotatedAccountLogin({
+      secretId: row.secretId,
+      usedRefresh: current.refresh,
+      refreshOf: (stored) => parseOpencodeLogin(stored)?.refresh,
+      value,
+    });
   } else {
     await db.update(projectSecrets)
       .set({ valueEnc: encryptProjectSecret(row.projectId, value), updatedAt: new Date() })

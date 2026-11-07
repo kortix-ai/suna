@@ -46,7 +46,7 @@ async function readRuntimeWorkspace(): Promise<RuntimeWorkspaceInfo> {
 }
 
 /** The checkout as the compatibility `Project` shape, from the workspace route. */
-export async function getRuntimeProjectInfo(): Promise<RuntimeProjectInfo> {
+export async function getRuntimeWorkspaceInfo(): Promise<RuntimeProjectInfo> {
   const workspace = await readRuntimeWorkspace();
   return {
     id: workspace.directory,
@@ -56,6 +56,9 @@ export async function getRuntimeProjectInfo(): Promise<RuntimeProjectInfo> {
     sandboxes: [],
   };
 }
+
+/** @deprecated Use `getRuntimeWorkspaceInfo`. Kept permanently. */
+export const getRuntimeProjectInfo = getRuntimeWorkspaceInfo;
 
 /** The checkout paths as the compatibility `Path` shape, from the workspace route. */
 export async function getRuntimePathInfo(): Promise<RuntimePathInfo> {
@@ -120,14 +123,17 @@ export function getActiveStaticFileHealthUrl(): string {
   return buildStaticFileHealthPreviewUrl(deriveSubdomainOpts());
 }
 
-export function useRuntimeProjectInfo(options?: { enabled?: boolean }) {
+export function useRuntimeWorkspaceInfo(options?: { enabled?: boolean }) {
   const runtimeReady = useRuntimeReady();
   return useQuery<RuntimeProjectInfo>({
     queryKey: runtimeKeys.currentProject(),
-    queryFn: getRuntimeProjectInfo,
+    queryFn: getRuntimeWorkspaceInfo,
     enabled: runtimeReady && options?.enabled !== false,
     staleTime: Infinity,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
   });
 }
+
+/** @deprecated Use `useRuntimeWorkspaceInfo`. Kept permanently. */
+export const useRuntimeProjectInfo = useRuntimeWorkspaceInfo;

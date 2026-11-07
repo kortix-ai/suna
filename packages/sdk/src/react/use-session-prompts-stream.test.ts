@@ -144,7 +144,7 @@ test('two hooks on one session open ONE control-only stream', async () => {
   await mount(20);
   await wait(10);
   expect(connections.map((connection) => connection.url)).toEqual([
-    'http://test.local/v1/projects/p1/sessions/s1/events?channels=control',
+    'http://test.local/v1/workspaces/p1/sessions/s1/events?channels=control',
   ]);
 });
 

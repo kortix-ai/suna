@@ -6,7 +6,7 @@ import type {
   ProjectSessionSandbox,
   SandboxProviderName,
 } from './index';
-import { updateProjectSandboxProvider } from './index';
+import { updateWorkspaceSandboxProvider } from './index';
 
 test('Platinum and the legacy Daytona fallback are accepted anywhere consumers select or observe a sandbox provider', () => {
   const platformProvider: SandboxProviderName = 'platinum';
@@ -14,7 +14,7 @@ test('Platinum and the legacy Daytona fallback are accepted anywhere consumers s
   const createProvider: NonNullable<CreateProjectSessionInput['provider']> = 'platinum';
   const projectProvider: NonNullable<KortixProject['default_sandbox_provider']> = 'platinum';
   const availableProvider: NonNullable<KortixProject['available_sandbox_providers']>[number] = 'daytona';
-  const updateProvider: NonNullable<Parameters<typeof updateProjectSandboxProvider>[1]> = 'daytona';
+  const updateProvider: NonNullable<Parameters<typeof updateWorkspaceSandboxProvider>[1]> = 'daytona';
   const appProvider: AppHostingProvider = 'platinum';
 
   expect([
@@ -38,7 +38,7 @@ test('retired providers (e2b, managed, justavps) are rejected by every public pr
   // @ts-expect-error E2B cannot be persisted as a project pin
   const e2bProjectPin: NonNullable<KortixProject['default_sandbox_provider']> = 'e2b';
   // @ts-expect-error E2B cannot be sent by the project pin mutation
-  const e2bUpdate: NonNullable<Parameters<typeof updateProjectSandboxProvider>[1]> = 'e2b';
+  const e2bUpdate: NonNullable<Parameters<typeof updateWorkspaceSandboxProvider>[1]> = 'e2b';
   // @ts-expect-error E2B does not host Apps
   const e2bApp: AppHostingProvider = 'e2b';
   // @ts-expect-error managed is not a sandbox provider
@@ -48,7 +48,7 @@ test('retired providers (e2b, managed, justavps) are rejected by every public pr
   // @ts-expect-error retired providers cannot be persisted as project pins
   const retiredProjectPin: NonNullable<KortixProject['default_sandbox_provider']> = 'managed';
   // @ts-expect-error retired providers cannot be sent by the project pin mutation
-  const retiredUpdate: NonNullable<Parameters<typeof updateProjectSandboxProvider>[1]> = 'managed';
+  const retiredUpdate: NonNullable<Parameters<typeof updateWorkspaceSandboxProvider>[1]> = 'managed';
 
   expect([
     e2b, e2bRuntime, e2bCreate, e2bProjectPin, e2bUpdate, e2bApp,
