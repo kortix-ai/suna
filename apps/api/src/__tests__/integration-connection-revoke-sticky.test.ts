@@ -176,14 +176,14 @@ describe('a connector connection revoke is sticky', () => {
     // revoke is a person's decision: an agent records its authorization on the
     // row and the row stays revoked until the flow completes after the revoke.
     const conn = await seedConnection('revoke-sticky-agent-start', 'revoked', minutesAgo(10));
-    const [app] = await db
+    const applications = await db
       .insert(connectionOAuthApplications)
       .values({ ...conn, configEnc: 'not-used-by-this-test' })
       .returning({ applicationId: connectionOAuthApplications.applicationId });
     const pending = await db
       .insert(connectionOAuthSessions)
       .values({
-        applicationId: app!.applicationId,
+        applicationId: applications[0].applicationId,
         accountId: conn.accountId,
         projectId: conn.projectId,
         connectionId: conn.connectionId,
@@ -196,11 +196,11 @@ describe('a connector connection revoke is sticky', () => {
     expect(await connectConnection(conn.connectionId, { metadata: { session_id: 'sess_1' } })).toBeNull();
     // Denied: the start leaves the row revoked, so the poll of a session the
     // revoke did not expire finds no pending session and stores no token.
-    const [session] = await db
+    const sessions = await db
       .select({ status: connectionOAuthSessions.status })
       .from(connectionOAuthSessions)
-      .where(eq(connectionOAuthSessions.sessionId, pending[0]!.sessionId));
-    expect(session?.status).toBe('expired');
+      .where(eq(connectionOAuthSessions.sessionId, pending[0].sessionId));
+    expect(sessions[0].status).toBe('expired');
     expect(await state(conn.connectionId)).toEqual({ status: 'revoked', credentials: 0 });
   });
 
