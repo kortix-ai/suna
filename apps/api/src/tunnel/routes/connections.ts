@@ -383,6 +383,7 @@ export function createTunnelSelfRouter() {
       method: 'delete',
       path: '/',
       tags: ['tunnel'],
+      security: [{ bearerAuth: [] }],
       summary: 'A machine unpairs itself with its own credential',
       description:
         "Deletes the calling machine and revokes its computer accounts, exactly like `DELETE /v1/tunnel/connections/{tunnelId}`. Authenticated only by the machine's setup token (`Authorization: Bearer kortix_tnl_…`) and `X-Tunnel-Id`. Rate-limited per client.",

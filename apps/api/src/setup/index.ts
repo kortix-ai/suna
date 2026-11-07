@@ -185,6 +185,7 @@ setupApp.openapi(
     method: 'post',
     path: '/bootstrap-owner',
     tags: ['setup'],
+    security: [{ bearerAuth: [] }],
     summary: 'Create the initial owner account (only when none exists)',
     request: {
       body: { content: { 'application/json': { schema: z.object({ email: z.string().optional(), password: z.string().optional() }) } } },
