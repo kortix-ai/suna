@@ -195,8 +195,8 @@ export interface SessionShareChange {
  * project-visible session narrowed to named members tells nobody: every
  * project member could already open it.
  * One row per person per session per UTC day, so toggling a share cannot
- * flood anyone. Returns the users told. The share route calls it only with the
- * project's notification_center flag on (routes/project-sessions.ts).
+ * flood anyone. Returns the users told. The share route calls it on every
+ * share change (routes/project-sessions.ts).
  */
 export async function notifySessionShared(
   change: SessionShareChange,

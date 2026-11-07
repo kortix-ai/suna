@@ -4,21 +4,15 @@
 //
 //   bun apps/web/scripts/generate-audit-actions-doc.mjs
 //   bun apps/web/scripts/generate-audit-actions-doc.mjs --check
-import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { onByDefault } from './docs-generated-region.mjs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { code, onByDefault, repositoryRoot, runFileGenerator } from './docs-generated-region.mjs';
 
-const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const webRoot = resolve(scriptDirectory, '..');
-const repositoryRoot = resolve(webRoot, '../..');
-const outputPath = resolve(webRoot, 'content/docs/audit-actions.mdx');
+const outputPath = resolve(repositoryRoot, 'apps/web/content/docs/audit-actions.mdx');
 
 async function catalog() {
   return import(pathToFileURL(resolve(repositoryRoot, 'packages/shared/src/audit-labels.ts')).href);
 }
-
-const code = (value) => `\`${value}\``;
 
 function routeCell(key) {
   if (key.startsWith('ENTRY ')) return 'before the API router';
@@ -39,10 +33,8 @@ function isOperatorRoute(route) {
 // The actions of a feature whose flag is off by default (apps/api/src/feature-flags/registry.ts).
 // The public docs leave such a feature out until its flag is on by default.
 const FLAGGED_ACTION_PREFIXES = {
-  artifacts: ['project.artifact.', 'artifact.'],
   email_channel: ['channel.email.', 'webhook.email.'],
   event_triggers: ['trigger.event_apps.', 'trigger.event_types.', 'webhook.event.'],
-  notification_center: ['notification.inbox.', 'notification.web_push.', 'notification.web_push_key.', 'session.watch.'],
   pooled_provider_secrets: ['secret.account_resource.', 'session.provider_secret_pool.'],
   chat: ['project.space.', 'space.'],
   session_groups: ['project.session_group.', 'session.group.'],
@@ -52,7 +44,14 @@ const FLAGGED_ACTION_PREFIXES = {
 const LEGACY_ACTION_PREFIXES = ['webhook.daytona.'];
 
 // Actions of a removed feature: old audit rows still carry them, and the API answers 410 (routes/retired.ts).
-const REMOVED_ACTION_PREFIXES = ['session.warm.'];
+const REMOVED_ACTION_PREFIXES = [
+  'session.warm.',
+  // Artifact comments, live presence, doc co-editing and the activity feed (removed 2026-11-06).
+  'project.artifact.comment.',
+  'project.artifact.live.',
+  'project.artifact.doc.',
+  'project.artifact.activity',
+];
 
 function hiddenActionFilter(actions) {
   const prefixes = [
@@ -148,14 +147,10 @@ ${[...TABLE_HEAD, ...operator.map(row)].join('\n')}
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const rendered = await renderAuditActionsDoc();
-  if (process.argv.includes('--check')) {
-    if (readFileSync(outputPath, 'utf8') !== rendered) {
-      console.error(`${outputPath} is stale. Run: bun apps/web/scripts/generate-audit-actions-doc.mjs`);
-      process.exit(1);
-    }
-  } else {
-    writeFileSync(outputPath, rendered);
-    console.log(`Wrote the audit action reference to ${outputPath}`);
-  }
+  await runFileGenerator(
+    'the audit action reference',
+    'bun apps/web/scripts/generate-audit-actions-doc.mjs',
+    renderAuditActionsDoc,
+    outputPath,
+  );
 }

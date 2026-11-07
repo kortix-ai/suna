@@ -16,7 +16,6 @@ async function run(args: string[], base: string) {
         PATH: process.env.PATH ?? '', HOME: home, CI: '1', KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
         KORTIX_CONFIG_FILE: join(home, 'config.json'), KORTIX_DEFAULT_API_BASE: base,
         KORTIX_API_URL: `${base}/v1`, KORTIX_TOKEN: 'kortix_pat_synthetic', KORTIX_PROJECT_ID: pid,
-        KORTIX_FEATURE_FLAGS: 'artifacts,artifact_comments',
       },
     });
     const [exitCode, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);

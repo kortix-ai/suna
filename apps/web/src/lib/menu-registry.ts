@@ -34,7 +34,6 @@ import {
   AlarmIcon as AlarmClock,
   SquaresFourIcon as Blocks,
   RobotIcon as Bot,
-  CalendarIcon as Calendar,
   ChatCircleIcon as ChatCircle,
   GearSixIcon as CogOne,
   CoinsIcon as Coins,
@@ -51,7 +50,6 @@ import {
   CardsThreeIcon as GalleryVerticalEnd,
   KeyIcon as KeyRound,
   StackIcon as Layers,
-  SquaresFourIcon as LayoutDashboard,
   LifebuoyIcon as Lifebuoy,
   LockKeyIcon as LockKey,
   SignOutIcon as LogOut,
@@ -61,6 +59,7 @@ import {
   PlusIcon as Plus,
   QuestionIcon as QuestionMark,
   ArrowClockwiseIcon as RefreshCw,
+  BellIcon as Bell,
   ScrollIcon as ScrollText,
   MagnifyingGlassIcon as Search,
   ShieldCheckIcon as ShieldCheck,
@@ -87,7 +86,6 @@ export type MenuSurface = 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'u
  *
  * - 'navigate': Opens a route in a tab (uses openTabAndNavigate)
  * - 'action':   Runs an imperative callback (e.g. "new session", "logout")
- * - 'settings': Opens the UserSettingsModal to a specific tab
  * - 'theme':    Switches the app theme
  * - 'wallpaper': Applies a wallpaper (same set as Settings → Appearance)
  * - 'sandboxService': Opens a sandbox service preview tab (needs special handler)
@@ -95,7 +93,6 @@ export type MenuSurface = 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'u
 export type MenuItemKind =
   | 'navigate'
   | 'action'
-  | 'settings'
   | 'theme'
   | 'wallpaper'
   | 'sandboxService'
@@ -115,13 +112,10 @@ export type MenuGroup =
   | 'actions'
   | 'navigation'
   | 'quickActions'
-  | 'settingsPages'
-  | 'preferences'
   | 'account'
   | 'theme'
   | 'wallpaper'
-  | 'view'
-  | 'admin';
+  | 'view';
 
 /**
  * Optional sub-group within a group for visual clustering.
@@ -181,8 +175,6 @@ export interface MenuItemDef {
   /** For kind='navigate': additional pathname prefixes that make this item "active" */
   activePathPrefixes?: string[];
 
-  /** For kind='settings': which settings tab to open */
-  settingsTab?: SettingsTabId;
   /** For kind='theme': which theme to set */
   themeValue?: InterfaceThemeId;
   /** For kind='wallpaper': which wallpaper to apply */
@@ -260,15 +252,6 @@ export const menuRegistry: MenuItemDef[] = [
     shortcut: 'Ctrl+K',
   },
   {
-    id: 'open-terminal',
-    label: 'Open Terminal',
-    icon: Terminal,
-    group: 'actions',
-    showIn: ['commandPalette'],
-    kind: 'action',
-    actionId: 'openTerminal',
-  },
-  {
     id: 'compact-session',
     label: 'Compact Session',
     icon: Layers,
@@ -310,12 +293,6 @@ export const menuRegistry: MenuItemDef[] = [
     keywords:
       'review changes change requests cr diff pull request merge open pending approve waiting',
   },
-  // NOTE: distinct id/actionId from the legacy 'open-terminal' entry below
-  // (which spawns a standalone workspace PTY tab and is hidden from the
-  // palette via LEGACY_PALETTE_HIDDEN in command-palette.tsx) — this one
-  // opens THIS session's own terminal/audit surface (Easy detail layer /
-  // Advanced tab), so it needs its own identity even though the label the
-  // product wants ("Open Terminal") collides in English.
   {
     id: 'open-session-terminal',
     label: 'Open Terminal',
@@ -338,12 +315,8 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'audit governed actions approvals trail session',
     requiresSession: true,
   },
-  // Distinct id/actionId from the legacy 'agent-browser-cmd'/'internal-browser-cmd'
-  // entries below (both hidden from the palette via LEGACY_PALETTE_HIDDEN in
-  // command-palette.tsx, and both standalone workspace tabs) — this one opens
-  // THIS session's own in-panel port browser (Easy detail layer / Advanced
-  // Browser tab), the same distinction 'open-session-terminal' draws from the
-  // legacy 'open-terminal'.
+  // Opens THIS session's own in-panel port browser (Easy detail layer /
+  // Advanced Browser tab), not a standalone workspace tab.
   {
     id: 'open-session-browser',
     label: 'Open Browser',
@@ -640,6 +613,22 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'connectors connections pipedream mcp openapi postman collections connector',
   },
   {
+    // The person's notification inbox, across projects: the workspace menu's
+    // Inbox row (`workspace-switcher.tsx`), same icon, same route. On for every project
+    // since the `notification_center` flag graduated (2026-11-06). Above
+    // Channels and Review, whose keywords also hold "inbox": the palette keeps
+    // registry order inside a group, so "inbox" lists this row first.
+    id: 'proj-inbox',
+    label: 'Inbox',
+    icon: Bell,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/inbox',
+    requiresProject: true,
+    keywords: 'inbox notifications alerts unread mentions bell needs you done mark read',
+  },
+  {
     id: 'proj-channels',
     label: 'Channels',
     icon: ChatCircle,
@@ -891,26 +880,6 @@ export const menuRegistry: MenuItemDef[] = [
   // NAVIGATION — Main pages
   // ──────────────────────────────────────────────────────────────────────────
   {
-    id: 'dashboard',
-    label: 'Dashboard',
-    icon: LayoutDashboard,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/dashboard',
-    tabType: 'dashboard',
-  },
-  {
-    id: 'scheduled-tasks',
-    label: 'Triggers',
-    icon: Calendar,
-    group: 'navigation',
-    subGroup: 'services',
-    showIn: ['commandPalette', 'rightSidebar'],
-    kind: 'navigate',
-    href: '/scheduled-tasks',
-  },
-  {
     // Kortix Capture is its own area: devices, install and its organization settings live under /capture.
     id: 'capture',
     label: 'Kortix Capture',
@@ -958,73 +927,6 @@ export const menuRegistry: MenuItemDef[] = [
     tabType: 'browser',
   },
   {
-    id: 'files',
-    label: 'Files',
-    icon: FolderOpen,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/files',
-  },
-  {
-    id: 'running-services-cmd',
-    label: 'Service Manager',
-    icon: Activity,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/service-manager',
-    tabId: 'service-manager',
-    tabType: 'services',
-    keywords:
-      'service manager services orchestration process manager sandbox active restart reload',
-  },
-  {
-    id: 'agent-browser-cmd',
-    label: 'Agent Browser',
-    icon: Globe,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/browser',
-    tabId: 'browser:main',
-    tabType: 'browser',
-    keywords: 'browser chromium agent viewport automation live stream',
-  },
-  {
-    id: 'internal-browser-cmd',
-    label: 'Internal Browser',
-    icon: Compass,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/p/browser',
-    tabId: 'preview:internal-browser',
-    tabType: 'preview',
-    keywords: 'internal browser preview iframe embedded web page',
-  },
-  {
-    id: 'changelog',
-    label: 'Changelog',
-    icon: ScrollText,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/changelog',
-  },
-  {
-    id: 'credits-explained',
-    label: 'Credits & usage',
-    icon: Coins,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/docs/guide#billing',
-    // `explained` stays in the keywords because /credits-explained was the
-    // original public URL and is still what people type for this page.
-    keywords: 'credits coins billing usage tokens cost explain explained',
-  },
-  {
     id: 'support',
     label: 'Support',
     icon: Lifebuoy,
@@ -1042,20 +944,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
 
   // ──────────────────────────────────────────────────────────────────────────
-  // SETTINGS PAGES (navigate to route)
-  // ──────────────────────────────────────────────────────────────────────────
-  {
-    id: 'llm-providers',
-    label: 'LLM Providers',
-    icon: Bot,
-    group: 'settingsPages',
-    showIn: ['commandPalette'],
-    kind: 'action',
-    actionId: 'openProviderModal',
-    keywords: 'llm providers models anthropic openai openrouter google groq xai',
-  },
-  // ──────────────────────────────────────────────────────────────────────────
-  // PREFERENCES / ACCOUNT — `kind: 'settings'`, userMenu only.
+  // PREFERENCES / ACCOUNT — no settings-tab rows.
   //
   // THE COMMAND PALETTE NO LONGER TAKES ITS SETTINGS DESTINATIONS FROM HERE.
   // Every settings tab is derived from `railGroups()` by
@@ -1081,9 +970,9 @@ export const menuRegistry: MenuItemDef[] = [
   // mislabelled destination. The API has no referral routes, and the web
   // referral modal was removed with them.
   // ──────────────────────────────────────────────────────────────────────────
-  // `pref-general` is gone. It declared `settingsTab: 'general'` — the project
+  // `pref-general` is gone. It opened the `general` settings tab — the project
   // WORKSPACE tab — which is a `?section=` on `/projects/[id]/admin/general` now, not
-  // a settings tab at all. A `kind: 'settings'` row can only name a tab, and
+  // a settings tab at all. A `kind: 'settings'` row could only name a tab, and
   // there is no user-scoped tab this row meant, so it was removed rather than
   // repointed at an unrelated pane. Nothing rendered it: its only declared
   // surface was `userMenu`, and `user-menu.tsx` builds its own rows.
@@ -1473,8 +1362,7 @@ export function isItemActive(item: MenuItemDef, pathname: string | null): boolea
  * `getInstanceTabs`, `getAccountTabs`) lived here until the merged settings
  * panel landed. Their only consumer was `SidePanelUserSettings`, deleted with
  * the modal it drove; `settings/rail.ts` now owns the rail's own vocabulary.
- * `SettingsTabId` itself stays — the command palette's
- * `LEGACY_SETTINGS_TAB_MAP` and both modal stores still speak it.
+ * `SettingsTabId` itself stays — both modal stores still speak it.
  */
 
 /** Theme options (used in user menu & command palette) */

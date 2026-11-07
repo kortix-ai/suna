@@ -43,7 +43,7 @@ Around that loop:
 | Skills | A written procedure an agent loads for one kind of task. | [Skills](/docs/guide#skills) |
 | Apps | Websites, internal tools and backends that agents build and Kortix hosts. | [Apps](/docs/guide#apps) |
 | Drive | Files that outlive a session, including what agents remember about you. | [Drive](/docs/guide#drive) |
-| Artifacts | Docs and web pages shared from Drive, with one link, a version history and comments. | [Artifacts](/docs/guide#artifacts) |
+| Artifacts | Docs and web pages shared from Drive, with one link and a version history. | [Artifacts](/docs/guide#artifacts) |
 | Connectors | Governed access to the apps and APIs your team uses. | [Connectors](/docs/guide#connectors) |
 | Triggers | Schedules, webhooks, events and merged change requests that start an agent or wake a session. | [Triggers](/docs/guide#triggers) |
 | Computers | The cloud computer each session runs on, and your own computer if you connect it. | [Computers](/docs/guide#computers) |
@@ -149,6 +149,7 @@ Roles and groups are described in [People and access](/docs/guide#teams).
 | Where | What is there |
 | --- | --- |
 | **New session** | Starts a session. |
+| **Inbox** | Your notifications from every project. The number is how many you have not read. |
 | **Customize** | Your agents and what they use: **Agents**, **Skills**, **Connectors**, **Triggers**, **Loops**, **Models**, **Secrets**, **Repo**, **Review** and **Settings**. **Settings** opens **Project admin**, which holds the project's settings, including **Feature flags**. |
 | **Drive** | **My files**: your own files and what agents remember about you. |
 | **Apps** | The project's Apps. |
@@ -156,6 +157,24 @@ Roles and groups are described in [People and access](/docs/guide#teams).
 | **Sessions** | Your sessions. |
 | Search | The command palette: `Cmd+K` on a Mac, `Ctrl+K` on Windows and Linux. |
 | Project menu (top left) | **Switch Project**, **Account settings**, your personal **Settings** and **Log out**. |
+
+<a id="notifications" />
+
+### Notifications
+
+Kortix tells you when something needs you or is done:
+
+- A session you started, prompted or follow finishes, fails, asks you a question or asks for a permission.
+- Someone shares a session with you.
+- A trigger or loop you follow starts failing, is paused, or works again.
+- Someone comments on an Artifact you follow.
+- Your capture computer stops recording, or records again.
+
+Every notification lands in your **Inbox**: select **Inbox** in the sidebar, or search for it with `Cmd+K`. **Needs you** lists what waits for your answer; **Done** lists the rest. Select a notification to open it. **Mark all as read** clears the count.
+
+Kortix also sends a push to your phone and to this browser. Select **Turn on** in the Inbox to get them while every Kortix tab is closed. When you have the session open, its notifications arrive already read.
+
+Email is off for most kinds until you turn it on. A failing App, a paused trigger and a capture computer that stopped are emailed by default. Choose push and email per kind in **Settings** → **Notifications**.
 
 <a id="desktop-and-mobile-apps" />
 
@@ -448,13 +467,13 @@ When you delete a session, Kortix keeps its messages and its stored files for 30
 
 ## Artifacts
 
-An Artifact is a doc or a web page that people and agents share from Drive: a report, a plan, a deck, a dashboard. It has one link, a version history and its own sharing. People read it and edit a doc in place. Agents publish it, read the feedback and save new versions.
+An Artifact is a doc or a web page that people and agents share from Drive: a report, a plan, a deck, a dashboard. It has one link, a version history and its own sharing. People read it and edit a doc in place. Agents publish it and save new versions.
 
-Artifacts are in beta and on by default.
+Artifacts are on in every project.
 
 ### What an Artifact is
 
-- **A doc** is a folder in Drive with an `index.md`. It opens in an editor. It saves itself 2 seconds after you stop typing, and every save is a version. **Export as PDF** prints it.
+- **A doc** is a folder in Drive with an `index.md`. It opens in an editor. It saves itself 2 seconds after you stop typing, and every save is a version. When someone else saves the doc while you edit it, autosave stops and you pick **Reload** or **Keep mine**. **Export as PDF** prints it.
 - **A page** is a folder with an `index.html` and its files: styles, scripts, images. It opens in a sandbox: its scripts run, but they cannot reach Kortix or your account.
 - **Where it lives.** A new Artifact is a folder under `Artifacts` in **My files**. An agent can also share a folder that is already in Drive. **Stop sharing** removes the Artifact and its links. Its files stay in Drive.
 - **Who sees it.** **Private** (only you and the people you add), **Project** (everyone in the project) or **Public** (anyone with the link, without signing in). Its creator and project managers change it with **Share**. To edit an Artifact, you need write access to its folder in Drive.
@@ -463,70 +482,13 @@ Artifacts are in beta and on by default.
 
 Open **Artifacts** in the sidebar to see every Artifact you can open. Filter by **All**, **Yours**, **Shared with you** or **Pinned**, search by title and description, and select **New doc** to start a doc.
 
-### Comments
-
-People and agents discuss an Artifact in threads, next to the passage they are about. Artifact comments are experimental and off by default. Turn them on in **Project admin** → **Feature flags** → **Artifact comments**. They need Artifacts.
-
-| To comment on | Do this |
-| --- | --- |
-| A passage in a doc | Select it, then select **Comment**, or press `Cmd+Option+M` on a Mac or `Ctrl+Alt+M` on Windows and Linux. |
-| Text on a page | Select it, then select the **Comment** chip, or press the same keys. |
-| A spot or an area on a page | Select **Pin a comment** in the header, then click an element or drag over an area. |
-| A drawing on a page | Select **Draw feedback** in the header and draw with a pen, an arrow or a rectangle, in black, red or blue. The comment carries a screenshot of the area you drew on. |
-| The whole Artifact | Select **New comment** (**+**) at the top of the comments panel. |
-
-A selected passage can have up to 500 characters.
-
-- **The comments panel.** **Show comments** in the header opens it and shows how many threads are open. An Artifact with open threads opens with the panel shown, and its card on the **Artifacts** page shows the count too. The panel lists the threads in document order. Filter them by **Open**, **Resolved** or **All**. Select a thread's quote to show its passage. Select a highlight in the Artifact to open its thread.
-- **Reply and resolve.** Every thread has a reply box. **Resolve** closes a thread, and the notice that follows has **Undo**. A resolved thread shows who resolved it. **Reopen** opens it again.
-- **Edit and delete.** You edit your own comments. You delete your own comments, and a project manager can delete any comment. A deleted comment shows **Comment deleted**.
-- **Mentions and notifications.** Type `@` to mention a person or an agent. A new thread notifies the person who made the Artifact. A reply notifies every person who wrote in the thread. A mentioned person is notified too. Kortix notifies only people who can open the Artifact, and never the person who wrote the comment.
-- **Activity.** The **Activity** tab lists every publish, save, rename, sharing change, restore and thread event, newest first, with who did it: a person, an agent or **System**.
-- **Changed text.** When the text under a thread changes, the highlight follows the edited text. When Kortix cannot find the text, the thread moves to **Outdated** and keeps its quote.
-
-### Work together, live
-
-With **Artifact comments** on, an open Artifact shows who else is on it, and a doc can be edited by several people and agents at once. Public links never show any of it.
-
-- **Who is here.** The header shows an avatar for each person and agent on the Artifact now, with a colored ring. Hover one for the name and status: **Viewing**, **Reading**, **Editing** or **Writing**. More than 4 show as **+N**. The avatars dim and the header says **Reconnecting…** while the connection is down.
-- **Where they are.** In a doc, you see each person's caret and selection in their color, with their name. On a page, you see their pointer.
-- **Typing.** **Name is typing…** shows under the thread someone writes in, and in the new-comment box.
-- **Agents.** An agent shows where it works: in a doc, its label sits at the passage it reads or edits; on a page, it shows in the header and on its thread. **Name is writing…** shows in the thread it answers.
-- **Hide my cursor.** Select the avatars, then **Hide my cursor**. Others still see your avatar, never your caret, selection, pointer or the thread you are in.
-
-#### Edit a doc together
-
-Everyone with write access types in the same doc at once. Each person sees the others' text as it is typed, usually within a tenth of a second. A person with read access sees the text change live.
-
-- **Saving.** The doc saves to Drive 2 seconds after the last change, whoever made it, as one version. **History** and **Activity** show these saves.
-- **Agents.** An agent edits the file in Drive, as before. Its change merges into the doc while people type: a paragraph that only the agent changed takes the agent's text, and edits to different words of one paragraph combine. When a person and the agent changed the same words, both versions of that paragraph stay, the agent's under the person's. **Undo** never takes back an agent's change.
-- **Your Markdown stays yours.** A file that nobody edited is never rewritten. A block the editor cannot show, such as front matter or raw HTML, shows as its Markdown source, and you edit it as text.
-- **When co-editing is off.** A doc over 1 MiB, a doc with mixed line endings, or a doc whose Markdown the editor would rewrite saves as before: a second writer stops autosave and you pick **Reload** or **Keep mine**. A one-line note says why.
-
-### Send feedback to an agent
-
-- **Mention an agent.** Type `@`, pick an agent and write the request, for example "shorten this". The agent edits the Artifact, replies with the change in one sentence and resolves the thread. When it needs a person, it replies with a question.
-- **Replies follow the thread.** A reply in a thread that an agent received goes to that agent too.
-- **Send open threads.** **Send N open threads to** an agent, at the bottom of the comments panel, hands over every open thread that a person started and no agent received, in one turn. One Send takes up to 100 threads. The agent is the one whose session made the Artifact, else the project's default agent. **Choose agent** picks another.
-- **Which session.** When a session of that agent made the Artifact and you may write to that session, the feedback continues it. Otherwise a new session of that agent starts.
-- **Drawings.** An agent on a model that reads images receives each drawing's screenshot. Any other model receives the passage and a link to the screenshot.
-- **Status.** Each thread shows where its feedback is: **Sending to agent…**, **Sent to agent** with **Open session**, **Waiting for a person**, or **Not delivered** with **Send again to** the agent.
-- **No loops.** Comments between people start no agent turn. When agents write 6 comments in a row in a thread, the sixth reaches no agent, and the thread shows **Waiting for a person** until a person writes.
-
-Agents use the same threads from the command line. The full list is in [Artifact commands](/docs/developers#artifact-commands).
+Agents publish and save Artifacts from the command line. The full list is in [Artifact commands](/docs/developers#artifact-commands).
 
 | Command | What it does |
 | --- | --- |
 | `kortix artifacts publish <file\|dir>` | Upload and share a doc or a page. |
-| `kortix artifacts comments <id>` | Read the open threads. `--all` adds the resolved ones. |
-| `kortix artifacts comment <id> "text" --quote "text"` | Open a thread on an exact passage of up to 500 characters. Without `--quote`, the thread is on the whole Artifact. |
-| `kortix artifacts reply <thread_id> "text"` | Reply in a thread. |
-| `kortix artifacts resolve <thread_id>`, `reopen <thread_id>` | Close or reopen a thread. |
-| `kortix artifacts activity <id>` | Read the activity feed. |
-
-<Callout type="warning">
-Comments are project data. **Stop sharing** deletes the Artifact's comments and their screenshots. Deleting the project deletes every comment screenshot. A page never receives comment text or names, only the numbers of its pins.
-</Callout>
+| `kortix artifacts pull <id> <dir>` | Download the files to edit them. |
+| `kortix artifacts versions <id>` | List the saves. |
 
 ## Connectors
 

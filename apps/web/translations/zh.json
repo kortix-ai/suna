@@ -812,30 +812,10 @@
       "notificationsDescription": "浏览器针对会话事件发送的通知。",
       "unsupported": "您的浏览器不支持通知。",
       "enableNotifications": "启用通知",
-      "permissionGranted": "已获得浏览器权限",
       "permissionDenied": "已被浏览器阻止 — 请在网站设置中更新权限",
-      "permissionDefault": "启用时将请求浏览器权限",
       "notificationTypes": "通知类型",
       "behavior": "通知方式",
       "sendTestNotification": "发送测试通知",
-      "types": {
-        "onCompletion": {
-          "label": "任务完成",
-          "description": "会话完成任务时"
-        },
-        "onError": {
-          "label": "错误",
-          "description": "会话遇到错误时"
-        },
-        "onQuestion": {
-          "label": "问题",
-          "description": "Kortix 需要您的输入才能继续时"
-        },
-        "onPermission": {
-          "label": "权限请求",
-          "description": "Kortix 需要使用工具的权限时"
-        }
-      },
       "notificationBehavior": {
         "onlyWhenHidden": {
           "label": "仅在标签页隐藏时",
@@ -887,7 +867,7 @@
       "enableDescriptionPush": "在此浏览器中显示通知，即使所有 Kortix 标签页都已关闭。",
       "enableDescriptionDesktop": "在桌面应用窗口打开期间显示通知。",
       "enableDescriptionBrowser": "在 Kortix 标签页打开期间于此浏览器中显示通知。",
-      "notificationTypesDescription": "这些设置适用于每部手机和每个浏览器。手机对「本轮已完成」「本轮失败」「问题」「权限请求」还有自己的开关，只有两者都开启时才会收到。铃铛会列出已开启通知中心的项目的每条通知。",
+      "notificationTypesDescription": "这些设置适用于每部手机和每个浏览器。手机对「本轮已完成」「本轮失败」「问题」「权限请求」还有自己的开关，只有两者都开启时才会收到。无论这些设置如何，收件箱都会列出每条通知。大多数类型的邮件在你开启之前都处于关闭状态。",
       "push": "推送",
       "email": "电子邮件",
       "channelSwitch": "{kind}：{channel}",
@@ -1288,10 +1268,6 @@
           "name": "美国区域",
           "description": "在美国东部区域运行此项目的新会话。正在运行的会话在重启前保持其当前区域。"
         },
-        "notification_center": {
-          "name": "通知中心",
-          "description": "通过铃铛收件箱、浏览器推送和电子邮件通知与会话相关的人（发送提示的人、创建者和关注者），并在触发器和循环失败时发出警报。关闭时，会话的推送只发到会话创建者的手机；触发器开始失败时，账户所有者的手机会收到一条推送。"
-        },
         "event_triggers": {
           "name": "Composio 事件触发器",
           "description": "当已连接的应用中发生事件时启动智能体：新邮件、拉取请求、日历事件。事件来自 Composio。Kortix 也会自行检查你已连接的应用。"
@@ -1304,10 +1280,6 @@
           "name": "无状态沙盒",
           "description": "每个会话只保留 /workspace，存放在独立的卷上。停止一小时的沙盒会被删除，下次打开时会用相同的文件和对话启动新沙盒。旧沙盒中运行的程序不会继续运行。由 Kortix 按项目启用。"
         },
-        "artifacts": {
-          "name": "工件",
-          "description": "将“文件”中的文档（Markdown）和 HTML 页面（演示文稿、控制面板、原型、工具）分享给项目、指定成员或任何拥有链接的人。文档可直接编辑，每次保存都是“文件”历史中的一个版本，文档可导出为 PDF。新增“工件”页面和 `kortix artifacts`。"
-        },
         "email_channel": {
           "name": "电子邮件渠道",
           "description": "为智能体提供一个 Resend 邮箱：收到的邮件会启动并延续会话，智能体从该邮箱阅读、回复和发送邮件。使用你自己的 Resend API 密钥和域名。"
@@ -1319,10 +1291,6 @@
         "session_groups": {
           "name": "会话分组",
           "description": "将侧边栏中的会话整理到全项目共享的命名文件夹中，例如每个店铺或客户一个。可通过菜单或拖动将会话移入分组，并对分组排序和折叠。"
-        },
-        "artifact_comments": {
-          "name": "工件评论",
-          "description": "与成员和代理在讨论串中讨论文档和页面。需要启用工件。"
         },
         "chrome": {
           "name": "Chrome 中的 Kortix",
@@ -3379,8 +3347,7 @@
       "automation_failed": "失败提醒",
       "automation_recovered": "恢复提醒",
       "capture_device_down": "Capture 电脑已停止",
-      "capture_device_recovered": "Capture 电脑恢复录制",
-      "artifact_comment": "工件评论"
+      "capture_device_recovered": "Capture 电脑恢复录制"
     },
     "kindDescription": {
       "turn_done": "一轮结束。",
@@ -3391,33 +3358,37 @@
       "automation_failed": "触发器或循环开始失败。",
       "automation_recovered": "失败的触发器或循环恢复正常。",
       "capture_device_down": "有一台 Kortix Capture 电脑未在录制。发送给管理 Capture 的人员。",
-      "capture_device_recovered": "停止的 Kortix Capture 电脑已重新录制。",
-      "artifact_comment": "可查看工件的反馈、提及和回复。"
+      "capture_device_recovered": "停止的 Kortix Capture 电脑已重新录制。"
     },
-    "bell": {
-      "label": "通知",
-      "unreadLabel": "通知：{count} 条未读",
+    "inbox": {
+      "title": "收件箱",
+      "description": "来自所有项目、与你相关的会话、触发器和工件的动态。",
+      "unreadLabel": "收件箱：{count} 条未读",
+      "unreadCount": "{count} 条未读",
       "markAllRead": "全部标记为已读",
       "tabAll": "全部",
       "tabNeedsYou": "待处理",
       "tabDone": "已完成",
       "emptyNeedsYou": "目前没有需要你处理的事项",
+      "emptyNeedsYouDescription": "问题、权限请求和失败会显示在此标签页中。",
       "empty": "通知将显示在这里",
+      "emptyDescription": "当会话完成、需要你回答或失败时，Kortix 会通知你。",
       "loadError": "无法加载通知",
       "retry": "重试",
       "unread": "未读",
       "promptPush": "在 Kortix 关闭时接收通知",
       "promptBackground": "在 Kortix 处于后台时接收通知",
       "turnOn": "开启",
-      "dismiss": "关闭"
+      "dismiss": "关闭",
+      "settings": "通知设置",
+      "emailOptIn": "大多数类型的邮件在你开启之前都处于关闭状态。"
     },
     "arrival": {
       "inProject": "{project} 中的{kind}",
       "openSession": "打开会话",
       "openReminders": "打开循环",
       "openTriggers": "打开触发器",
-      "openConversation": "打开对话",
-      "openArtifact": "打开工件"
+      "openConversation": "打开对话"
     },
     "session": {
       "mute": "将通知设为静音",
@@ -5867,11 +5838,8 @@
       "line61JsxTextThisPageRefreshesAutomaticallyEvery30Seconds": "此页面每 30 秒自动刷新一次。"
     },
     "appNotFound": {
-      "line65JsxTextPageNotFound": "页面未找到",
-      "line70JsxTextThePageYouAposReLookingForDoesn": "您查找的页面不存在或已被移动。",
       "line82JsxTextText404Error": "404 错误",
-      "line85JsxTextResourceNotAvailable": "资源不可用",
-      "line100JsxTextReturnHome": "返回主页"
+      "line85JsxTextResourceNotAvailable": "资源不可用"
     },
     "appOauthAuthorizePage": {
       "line146JsxTextInvalidAuthorizationRequest": "无效的授权请求",
@@ -24897,7 +24865,6 @@
   },
   "artifacts": {
     "title": "工件",
-    "gateDescription": "将“文件”中的文档和 HTML 页面分享给你的团队或任何拥有链接的人。文档可直接编辑；每次保存都是一个版本。",
     "type": {
       "doc": "文档",
       "html": "HTML"
@@ -24916,7 +24883,6 @@
     "emptyFiltered": "没有匹配的工件",
     "updated": "更新于 {time}",
     "pinned": "已置顶",
-    "openComments": "{count, plural, other {# 条未解决的评论}}",
     "visibility": {
       "private": "私有",
       "project": "项目",
@@ -25037,178 +25003,12 @@
     "embedConvert": "转换为链接",
     "embedCopy": "复制链接",
     "embedDelete": "删除",
-    "discussion": {
-      "comments": "评论",
-      "activity": "动态",
-      "open": "未解决",
-      "resolved": "已解决",
-      "outdated": "已过时",
-      "outdatedHint": "无法在当前文档中定位此段内容。",
-      "newComment": "新建评论",
-      "annotationMode": "固定评论",
-      "annotationModeHint": "点击元素以固定评论。拖动以标记区域。",
-      "annotationLoading": "正在加载批注…",
-      "annotationUnavailable": "批注不可用。请在“{actions}”中选择“{refresh}”重试。",
-      "commentLabel": "评论",
-      "commentPlaceholder": "留下反馈或提及某人…",
-      "replyLabel": "回复",
-      "replyPlaceholder": "撰写回复…",
-      "postComment": "评论",
-      "postReply": "回复",
-      "saveEdit": "保存更改",
-      "cancel": "取消",
-      "edit": "编辑",
-      "delete": "删除",
-      "deleteTitle": "删除评论？",
-      "deleteDescription": "其文本将对所有人移除，原位置显示“评论已删除”。此操作无法撤销。",
-      "commentDeleted": "评论已删除",
-      "threadDeleted": "此讨论串已删除。",
-      "resolve": "解决",
-      "reopen": "重新打开",
-      "edited": "已编辑",
-      "commentActions": "评论操作",
-      "focusThread": "显示对应段落",
-      "quoteLabel": "所选段落",
-      "waitingForPerson": "等待人员处理",
-      "deliveryFailed": "无法向智能体发送反馈。",
-      "sendFailed": "无法发送这些评论，请重试。",
-      "retrySend": "重试发送（{count}）",
-      "discardSend": "放弃并使用最新评论",
-      "sendRetryHint": "上一个请求可能已完成。请重试以确认，或在开始新请求前将其放弃。",
-      "sendBatchHint": "此批次包含 {total} 个话题中的 {count} 个。",
-      "commentFailed": "无法保存评论，请重试。",
-      "statusFailed": "无法更改此讨论串，请重试。",
-      "deleteFailed": "无法删除此评论，请重试。",
-      "commentsLoadError": "无法加载评论。",
-      "contextLoadError": "无法加载评论权限。",
-      "activityLoadError": "无法加载动态。",
-      "retry": "重试",
-      "sendAgainTo": "重新发送给 {agent}",
-      "noComments": "没有未解决的评论",
-      "noCommentsHint": "选择一段内容进行评论，或新建一条评论。",
-      "noResolved": "没有已解决的评论",
-      "noResolvedHint": "已解决的讨论串会显示在这里。",
-      "noActivity": "暂无动态",
-      "noActivityHint": "保存的版本和评论会显示在这里。",
-      "loadMore": "加载更多",
-      "olderSaves": "此历史记录可能无法提供更早的保存版本。",
-      "historicalReadOnly": "此版本的评论为只读。",
-      "mentionPeople": "人员",
-      "mentionAgents": "智能体",
-      "sourceSession": "工件会话",
-      "composerKeys": "Enter 发送 · Shift+Enter 换行",
-      "closeSelection": "取消所选段落",
-      "preparingSelection": "正在准备所选段落…",
-      "selectionCaptureFailed": "无法准备所选段落。请放弃此选择，再对整个工件发表评论。",
-      "commentSelection": "评论",
-      "selectionTooLong": "这段内容太长，无法评论。请选择不超过 {max} 个字符。",
-      "selectionUnavailable": "无法将评论关联到此段内容，请选择其他段落。",
-      "snapshotChanged": "文档已更改，请重新加载后再评论。",
-      "commentSaveFailed": "无法保存文档，请重试后再评论。",
-      "events": {
-        "saved": "保存了一个版本",
-        "published": "发布了工件",
-        "renamed": "重命名了工件",
-        "visibility_changed": "更改了可见性",
-        "shared_with_changed": "更改了可查看的人员",
-        "restored": "恢复了一个版本",
-        "thread_opened": "创建了讨论串",
-        "replied": "回复了讨论串",
-        "resolved": "解决了讨论串",
-        "reopened": "重新打开了讨论串",
-        "comment_deleted": "删除了评论",
-        "sent_to_agent": "向智能体发送了反馈"
-      },
-      "person": "用户",
-      "deleteRootDescription": "其文本将对所有人删除，讨论串会从评论列表中移除。此操作无法撤销。",
-      "showPanel": "显示评论",
-      "hidePanel": "隐藏评论",
-      "panelTitle": "评论和动态",
-      "resizePanel": "调整评论面板大小",
-      "unshareComments": "{count, plural, other {将删除 # 条评论。}}",
-      "systemActor": "系统",
-      "draw": "绘制反馈",
-      "drawPen": "画笔",
-      "drawArrow": "箭头",
-      "drawRectangle": "矩形",
-      "drawBlack": "黑色",
-      "drawRed": "红色",
-      "drawBlue": "蓝色",
-      "drawUndo": "撤销笔画",
-      "drawPageChanged": "页面已更改。请取消后重新绘制。",
-      "drawLimit": "已达到绘图上限。请撤销一笔后继续。",
-      "openScreenshot": "打开截图",
-      "drawingScreenshot": "反馈截图",
-      "screenshotReadFailed": "无法加载截图。",
-      "screenshotMissing": "截图不可用。绘图已保存。",
-      "screenshotCaptureFailed": "无法截取屏幕。评论将包含绘图，但不含图片。",
-      "sendScreenshotLimit": "无法发送这些评论。其截图超出单次请求的上限。请减少带有绘图的讨论串。",
-      "agentsUnavailable": "无法加载智能体。",
-      "showMore": "显示更多",
-      "showLess": "收起",
-      "moreReplies": "{count, plural, other {另外 # 条回复}}",
-      "resolvedBy": "由 {name} 解决",
-      "agent": "智能体",
-      "threadResolved": "讨论串已解决",
-      "undo": "撤销",
-      "agentPending": "正在发送给智能体…",
-      "agentSent": "已发送给智能体",
-      "openSession": "打开会话",
-      "notDelivered": "未送达",
-      "sendThreads": "{count, plural, other {将 # 个未解决的讨论串发送给 {agent}}}",
-      "chooseAgent": "选择智能体",
-      "sentToAgent": "评论已发送给 {agent}",
-      "newCommentFrom": "来自 {name} 的新评论",
-      "newComments": "{count, plural, other {# 条新评论}}",
-      "pagePinLabel": "评论 {number}",
-      "showPanelCount": "显示评论，{count} 条未解决",
-      "hidePanelCount": "隐藏评论，{count} 条未解决",
-      "commentSelectionHint": "评论所选内容",
-      "threadReopened": "讨论串已重新打开",
-      "noCommentsReadOnlyHint": "关于此工件的评论会显示在这里。",
-      "commentTooLong": "评论最多 {max} 个字符。请删除 {over} 个。",
-      "discardDrawingTitle": "放弃此绘图？",
-      "discardDrawingHint": "你的笔画尚未保存。此操作无法撤销。",
-      "discardDrawing": "放弃",
-      "keepDrawing": "继续绘制",
-      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
-      "activityLabel": "{actor} {verb}"
-    },
     "moveTo": "移至空间",
     "projectWide": "项目范围",
     "moved": "产物已移动",
     "moveFailed": "无法移动产物",
     "spaceEmpty": "{space} 中还没有产物",
     "showAll": "显示全部",
-    "live": {
-      "here": "当前在线",
-      "hereLabel": "当前正在查看此工件：{names}",
-      "reconnecting": "正在重新连接…",
-      "you": "你",
-      "agents": "智能体",
-      "agentsHere": "此讨论中的智能体",
-      "status": {
-        "viewing": "查看中",
-        "reading": "阅读中",
-        "editing": "编辑中",
-        "writing": "撰写中"
-      },
-      "hideCursor": "隐藏我的光标",
-      "hideCursorHint": "其他人仍会看到你的头像。",
-      "typingOne": "{name} 正在输入…",
-      "typingTwo": "{first} 和 {second} 正在输入…",
-      "typingMany": "{count, plural, other {# 人正在输入…}}",
-      "writing": "{name} 正在撰写…"
-    },
-    "coedit": {
-      "offLarge": "实时协同编辑已关闭：此文档太大。更改会在输入时保存。",
-      "offLineEndings": "实时协同编辑已关闭：此文档混用了两种换行符。更改会在输入时保存。",
-      "offShape": "实时协同编辑已关闭：编辑器无法完全按原样保留此文档的部分内容。更改会在输入时保存。",
-      "stoppedLarge": "实时协同编辑已停止：有一处更改太大，无法共享。更改会在输入时保存。",
-      "stoppedFailed": "实时协同编辑已停止：连接失败。更改会在输入时保存。",
-      "stoppedHistory": "实时协同编辑已停止：此文档的编辑历史过大。更改会在输入时保存。",
-      "offFailed": "实时协同编辑已关闭：无法连接。更改会在输入时保存。"
-    },
     "conflictTitle": "其他人更改了此文档",
     "conflictReloadTitle": "加载较新的版本？",
     "conflictReloadHint": "上次保存后的编辑将被丢弃。此操作无法撤销。",
@@ -26163,10 +25963,6 @@
       "connectLabel": "连接 MCP",
       "copyFailed": "无法复制命令。请重试。"
     }
-  },
-  "roleCapabilities": {
-    "comment": "评论",
-    "commentArea": "评论{area}"
   },
   "sessionDesktop": {
     "title": "桌面",

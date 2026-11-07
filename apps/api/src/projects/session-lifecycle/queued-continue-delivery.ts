@@ -24,21 +24,6 @@ import { DELIVERY_FAILURE_COPY, type SessionDeliveryOutcome, type SessionInvocat
 const NOT_LANDED_RETRY_DELAY_MS = 2_000;
 type Status = 'succeeded' | 'queued' | 'failed';
 
-export async function refreshArtifactCommentQueuedPrompt(row: SessionLifecycleCommandRow, modelOverride?: { providerID?: string; modelID?: string }): Promise<{ text: string; parts?: PromptPartWire[] }> {
-  const { ArtifactCommentDeliveryError } = await import('../../artifacts/comment-delivery');
-  const { rebuildArtifactCommentScreenshotMessage } = await import('../../artifacts/comment-screenshot-delivery');
-  const { ArtifactCommentScreenshotError } = await import('../../artifacts/comment-screenshot-validation');
-  const { ArtifactCommentAuthorityError } = await import('../../artifacts/comment-authority');
-  try {
-    return await rebuildArtifactCommentScreenshotMessage(row, modelOverride);
-  } catch (error) {
-    if (error instanceof ArtifactCommentDeliveryError || error instanceof ArtifactCommentAuthorityError || error instanceof ArtifactCommentScreenshotError && error.status !== 503) {
-      throw new PromptDeliveryRefused(error.status, error.code, error.message);
-    }
-    throw error;
-  }
-}
-
 async function settleDelivery(row: SessionLifecycleCommandRow, delivery: Exclude<SessionDeliveryOutcome, 'delivered'>): Promise<Status> {
   if (delivery === 'unreachable') {
     const parked = await parkPromptForUnreachableRuntime(row, DELIVERY_FAILURE_COPY[delivery], { sessionId: row.sessionId });
@@ -183,7 +168,6 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         const refusal = await goalPromptRefusal(row.sessionId!);
         if (refusal) throw new PromptDeliveryRefused(409, 'goal_not_running', refusal);
         if (payload.clientMessageId) await assertInboxDeliveryActive(row);
-        if (row.source === 'system:artifact-comment') return refreshArtifactCommentQueuedPrompt(row, overrides?.model ?? undefined);
       });
       tl.mark('delivered');
       if (delivery !== 'delivered') break;
@@ -265,11 +249,6 @@ export async function deliverSteer(row: SessionLifecycleCommandRow, payload: Que
     if (payload.clientMessageId) await assertInboxDeliveryActive(row);
     const target = await awakeDeliveryTarget(sessionId);
     if (!target?.externalId || !target.runtimeSessionId) throw new SteerNotTaken('turn_ended');
-    if (row.source === 'system:artifact-comment') {
-      const fresh = await refreshArtifactCommentQueuedPrompt(row);
-      promptText = fresh.text;
-      payload.parts = fresh.parts;
-    }
     const wireMessageId = payload.remintOnDelivery
       ? await steerWireMessageId(row, payload, target.externalId)
       : payload.wireMessageId!;

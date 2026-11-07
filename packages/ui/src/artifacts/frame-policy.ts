@@ -17,9 +17,8 @@ export const ARTIFACT_FRAME_PREFIX = 'artifact:';
 export function artifactFrameKey(
   artifact: { artifact_id: string; updated_at: string },
   version?: string | null,
-  annotate = false,
 ): string {
-  return `${ARTIFACT_FRAME_PREFIX}${artifact.artifact_id}:${version ?? artifact.updated_at}${annotate ? ':annotate' : ''}`;
+  return `${ARTIFACT_FRAME_PREFIX}${artifact.artifact_id}:${version ?? artifact.updated_at}`;
 }
 
 /**

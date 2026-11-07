@@ -53,7 +53,6 @@ describe('pg-broadcast subscriber isolation', () => {
       broadcast.CHROME_COMMAND_CHANNEL,
       broadcast.SPACE_ACCESS_BUST_CHANNEL,
       broadcast.SESSION_LIST_BUST_CHANNEL,
-      broadcast.ARTIFACT_LIVE_CHANNEL,
     ]);
   });
 
@@ -121,7 +120,6 @@ describe('pg-broadcast subscriber isolation', () => {
   const rawChannels: Array<[string, string, (h: ((p: string) => void) | null) => void]> = [
     ['iam cache bust', 'kortix_iam_cache_bust', (h) => broadcast.onIamCacheBust(h)],
     ['chrome command', 'kortix_chrome_cmd', (h) => broadcast.onChromeCommand(h)],
-    ['artifact live', 'kortix_artifact_live', (h) => broadcast.onArtifactLive(h)],
     ['tunnel forward', 'kortix_tunnel_rpc_forward', (h) => h && broadcast.onTunnelForwardNotify(h)],
   ];
   for (const [name, channel, register] of rawChannels) {

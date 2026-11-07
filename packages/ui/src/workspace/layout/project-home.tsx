@@ -34,7 +34,6 @@ import type { AttachmentSubmission } from '../../session/composer/attachment-sub
 import { contract, invalidateProject, qk, type Command } from '@kortix/sdk/react';
 import { MY_KORTIX_SANDBOX_SLUG, isMyKortixAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from '../home/access-requests-bell';
-import { notificationCenterOn } from '../../internal/hooks/use-notification-center';
 import { FirstChat } from '../home/first-chat';
 import { SandboxPicker } from '../home/sandbox-picker';
 import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from '../home/welcome-body';
@@ -384,7 +383,6 @@ function ProjectHomeView({
       <AccessRequestsBell
         requests={accessRequests.data?.requests ?? []}
         to={accessRequestsTo}
-        notificationCenter={notificationCenterOn(projectRowQuery.data)}
       />
       {/* Not while the project is in its first-chat era, and not over the
           onboarding wizard: onboarding owns those screens. The era starts when

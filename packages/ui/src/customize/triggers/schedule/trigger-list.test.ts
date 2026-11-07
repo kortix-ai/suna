@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { testUiTranslator } from '../../../test-utils/intl';
 
-import { lastRunLabel } from '../../../internal/lib/trigger-clock';
+import { lastRunLabel, nextRunIn } from '../../../internal/lib/trigger-clock';
 import { nextRunLabel } from './trigger-list';
 
 const t = testUiTranslator;
@@ -15,12 +15,29 @@ const cron = (next: Date | null, enabled = true) =>
     'type' | 'enabled' | 'next_fire_at'
   >;
 
+const MIN = 60_000;
+const at = (ms: number) => cron(new Date(now + ms));
+
 describe('nextRunLabel (C09 trailing, line one)', () => {
-  test('today: the time alone', () => {
-    expect(nextRunLabel(cron(new Date(2026, 9, 17, 14, 45)), t, 'en-GB', now)).toMatch(/^next 14:45:00 .+/);
+  test('a schedule counts down in minutes, then hours, then days (KRTX-4380)', () => {
+    expect(nextRunLabel(at(5 * MIN), t, 'en', now)).toBe('next in 5 minutes');
+    expect(nextRunLabel(at(3 * 60 * MIN), t, 'en', now)).toBe('next in 3 hours');
+    expect(nextRunLabel(at(2 * 24 * 60 * MIN), t, 'en', now)).toBe('next in 2 days');
   });
-  test('this week: the weekday and time', () => {
-    expect(nextRunLabel(cron(new Date(2026, 9, 19, 9, 0)), t, 'en-GB', now)).toMatch(/^next Mon 09:00:00 .+/);
+  test('one unit reads singular and numeric: never "tomorrow" or "this minute"', () => {
+    expect(nextRunLabel(at(MIN), t, 'en', now)).toBe('next in 1 minute');
+    expect(nextRunLabel(at(60 * MIN), t, 'en', now)).toBe('next in 1 hour');
+    expect(nextRunLabel(at(24 * 60 * MIN), t, 'en', now)).toBe('next in 1 day');
+  });
+  test('a run already due reads in 0 minutes, never a negative countdown', () => {
+    expect(nextRunLabel(at(-5 * MIN), t, 'en', now)).toBe('next in 0 minutes');
+  });
+  test('every event-driven kind reads On event, with no countdown', () => {
+    for (const type of ['webhook', 'event', 'app', 'change_request'] as const) {
+      // A next_fire_at on an event trigger must not turn into a countdown.
+      const label = nextRunLabel({ type, enabled: true, next_fire_at: new Date(now + 5 * MIN).toISOString() }, t, 'en', now);
+      expect(label).toBe('On event');
+    }
   });
   test('webhooks and app events run on an event; paused reads Paused; unscheduled reads —', () => {
     expect(nextRunLabel({ type: 'webhook', enabled: true, next_fire_at: null }, t, 'en', now)).toBe(
@@ -54,8 +71,19 @@ describe('lastRunLabel (C09 trailing, line two)', () => {
   });
 });
 
-test('the list labels the exact six-field cron boundary, not jittered execution', () => {
+describe('nextRunIn (the session reminders panel keeps its narrow style)', () => {
+  const narrow = new Intl.RelativeTimeFormat('en', { style: 'narrow', numeric: 'auto' });
+  const iso = (ms: number) => new Date(now + ms).toISOString();
+  test('minutes, hours, days; no time reads —', () => {
+    expect(nextRunIn(iso(25 * MIN), narrow, now)).toBe('in 25m');
+    expect(nextRunIn(iso(8 * 60 * MIN), narrow, now)).toBe('in 8h');
+    expect(nextRunIn(iso(3 * 24 * 60 * MIN), narrow, now)).toBe('in 3d');
+    expect(nextRunIn(null, narrow, now)).toBe('—');
+  });
+});
+
+test('the list counts down to the exact six-field cron boundary, not jittered execution', () => {
   expect(nextRunLabel({ type: 'cron', enabled: true,
-    next_cron_at: '2026-10-17T14:00:00Z', next_fire_at: '2026-10-17T14:15:00Z',
-  }, t, 'en-GB', now)).toBe('next 14:00:00 UTC');
+    next_cron_at: new Date(now + 30 * MIN).toISOString(), next_fire_at: new Date(now + 3 * 60 * MIN).toISOString(),
+  }, t, 'en', now)).toBe('next in 30 minutes');
 });

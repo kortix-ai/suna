@@ -2,10 +2,9 @@ import { afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test }
 
 import { storage } from '@/stores/in-memory-async-storage';
 
-// The device row always carries this phone's switches: a project with the
-// `notification_center` flag off reads them alone, as before KRTX-1742. The
-// kinds this phone turned off reach the user's record only through
-// `carryOverLegacyKinds()`, once, for a user with a flag-on project.
+// The device row always carries this phone's switches. The kinds this phone
+// turned off reach the user's record only through `carryOverLegacyKinds()`,
+// once.
 // Real: the push rules, the notification store, the push store. The native
 // modules and the SDK's requests are stubs.
 

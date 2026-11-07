@@ -19,6 +19,7 @@ function isPreviewHost(host) {
 const APP_PATH_PREFIXES = [
   '/projects',
   '/new',
+  '/inbox',
   '/settings',
   '/invites',
   '/admin',

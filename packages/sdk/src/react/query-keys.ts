@@ -661,7 +661,7 @@ export const qk = {
      * purpose: the record is fixed at the thread's first turn, so no write refreshes it.
      */
     sessionMemoryUsage: (id: string, sessionId: string) => [...qk.project.scope(id), 'memory-usage', sessionId] as const,
-    /** Every artifact read of a project (flag `artifacts`): the prefix of the
+    /** Every artifact read of a project: the prefix of the
      *  keys below, so a publish refreshes the gallery and the open artifact. */
     artifacts: (id: string) => [...qk.project.scope(id), 'artifacts'] as const,
     /** `listArtifacts` — the gallery, per scope/type/search. */
@@ -670,10 +670,6 @@ export const qk = {
     artifact: (id: string, artifactId: string, version: string = 'current') => [...qk.project.artifacts(id), 'one', artifactId, version] as const,
     /** `listArtifactVersions`. */
     artifactVersions: (id: string, artifactId: string) => [...qk.project.artifacts(id), 'versions', artifactId] as const,
-    artifactComments: (id: string, artifactId: string, status?: string, version?: string) => [...qk.project.artifacts(id), 'comments', artifactId, ...(status ? [status] : []), ...(version ? [{ version }] : [])] as const,
-    artifactCommentContext: (id: string, artifactId: string, options: { version?: string; agent?: string } = {}) => [...qk.project.artifactComments(id, artifactId), 'context', JSON.stringify(options)] as const,
-    artifactActivity: (id: string, artifactId: string, options?: { limit?: number; cursor?: string }) => [...qk.project.artifacts(id), 'activity', artifactId, ...(options ? [JSON.stringify(options)] : [])] as const,
-    artifactActivityInfinite: (id: string, artifactId: string, limit: number) => [...qk.project.artifactActivity(id, artifactId), 'infinite', limit] as const,
     /** `readArtifactFile` of a doc's Markdown at one entry version. Immutable,
      *  so outside the `artifacts` prefix: a write never refetches it. */
     artifactText: (id: string, artifactId: string, entryVersion: string) => [...qk.project.scope(id), 'artifact-text', artifactId, entryVersion] as const,

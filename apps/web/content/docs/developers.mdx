@@ -2135,6 +2135,7 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 | `review <subcommand>` | The review inbox: change requests, held connector calls and submitted outputs. | [Git](/docs/developers#git) |
 | `triggers <subcommand>` | Every trigger, `kortix.yaml` and runtime: `ls` lists both, `add` writes `kortix.yaml` (with `--on`, `--session` or `--runtime` it creates a runtime trigger), `fire`, `enable`, `disable`, `run`, `pause`, `resume` and `rm` take a slug or a runtime id. | [Triggers](/docs/guide#triggers) |
 | `loops <subcommand>` | A schedule into one session (a loop: a trigger that wakes the session that created it). `kortix loop "…" --in 24h` adds one. Alias: `reminders`. | [Triggers](/docs/guide#triggers) |
+| `artifacts <subcommand>` | Publish, save, share and list docs and pages from Drive, and read their versions. | [Artifact commands](#artifact-commands) |
 | `capture <subcommand>` | Search the Capture timeline of the person you act for. Capture is off until an account admin turns it on. | [Capture](/docs/capture) |
 
 **Access and permissions**
@@ -2245,7 +2246,7 @@ The commands below are `kortix sessions <subcommand>`. `kortix sessions --help` 
 
 ### Artifact commands
 
-The commands below are `kortix artifacts <subcommand>`. `kortix artifacts --help` lists every flag. They need the `artifacts` feature flag, which is on by default. The comment commands also need `artifact_comments`, which is off by default. What an Artifact is: [Artifacts](/docs/guide#artifacts).
+The commands below are `kortix artifacts <subcommand>`. `kortix artifacts --help` lists every flag. What an Artifact is: [Artifacts](/docs/guide#artifacts).
 
 | Command | Effect |
 | --- | --- |
@@ -2260,13 +2261,7 @@ The commands below are `kortix artifacts <subcommand>`. `kortix artifacts --help
 | `rename <artifact> "<title>"` | Rename it. |
 | `pin <artifact>`, `unpin <artifact>` | Pin it in your own list, or unpin it. |
 | `versions <artifact>`, `restore <artifact> <version-id>` | `versions` lists every save, newest first. `restore` writes one save back as a new save. |
-| `rm <artifact>` | Stop sharing it. Its comments are deleted. Its files stay in Drive. |
-| `comments <artifact>` | The open threads. `--all` adds the resolved threads. `--resolved` shows only them. A thread that waits for a person says so. |
-| `comment <artifact> "<text>"` | Open a thread on the whole Artifact. `--quote "<text>"` anchors it to an exact passage of up to 500 characters. A quote that is not in the file exits nonzero and posts nothing. `--selector "<css>"` anchors it to an element of a page. |
-| `reply <thread-id> "<text>"` | Reply to a thread, by its full ID. |
-| `resolve <thread-id>`, `reopen <thread-id>` | Resolve a thread, or open it again. |
-| `activity <artifact>` | Saves and events, newest first. `--limit` takes 1 to 100. |
-| `focus <artifact>` | Agent sessions only. Shows the people viewing the Artifact where the agent works: `--thread <thread-id>` (a thread it answers) or `--quote "<text>"` (a passage it changes, up to 500 characters). `--status reading\|editing\|writing\|idle`, default `editing`. `idle` removes the agent from the viewers. A person's token exits `1`. |
+| `rm <artifact>` | Stop sharing it. Its files stay in Drive. |
 
 `<artifact>` is an Artifact ID or its first 8 characters from `ls`. `--json` prints machine-readable output. Exit codes: `0` success, `1` API error, `2` usage error, `3` version conflict.
 
@@ -3396,11 +3391,10 @@ test of one automation starts no other on the same event.
 App trigger: `on: { event: status.changed, app: status-watch }` plus
 `expect_event_within: 30m`, or `kortix triggers add … --expect-event-within
 30m`. It watches the App, not one event name: when the App posts nothing at
-all for that long, the trigger's watchers get one "automation failed" notice,
-with the `notification_center` flag on or off; the App's next post sends
-"recovered". Every post counts, whatever its name, including one Kortix
-deduplicates and `kortix.heartbeat`, so a watcher that sees no change still
-counts as alive. A test event does not count.
+all for that long, the trigger's watchers get one "automation failed" notice;
+the App's next post sends "recovered". Every post counts, whatever its name,
+including one Kortix deduplicates and `kortix.heartbeat`, so a watcher that
+sees no change still counts as alive. A test event does not count.
 
 **Repair it.** Kortix writes three events about an App to its log:
 `kortix.app.silent` when a silence alert opens (`data.trigger`,
@@ -6550,7 +6544,7 @@ The three reply actions remove the item only after the server accepts the reply.
 | `subscribeMessages` | `true` | `false` re-renders the caller only when the transcript changes shape, not on each streamed delta. Draw the rows in a child with `useSessionMessages`. See [Render messages yourself](/docs/developers#render-messages-yourself). |
 | `browserPresence` | `false` | Holds this tab's presence lease while a person uses the page (input in the last 10 minutes). The lease routes notifications and fills `presenceAwake`. The sandbox stops the idle window (15 minutes by default) after its latest turn, with the page open or not. |
 | `presenceAlerts` | `false` | `true` tells the server that this tab shows its own notifications, so the server skips phone and Web Push while the tab is in use. Pass `true` only when the tab's browser notifications are on and permitted. Needs `browserPresence`. |
-| `presencePageExit` | `false` | Ends the presence lease when the page closes. With `false`, the lease ends at its 90-second expiry. Needs `browserPresence`. |
+| `presencePageExit` | `true` | Ends the presence lease when the page closes, so a closed tab stops holding back notifications at once. Pass `false` to keep the lease until its 90-second expiry. Needs `browserPresence`. |
 | `repositoryMode` | none | `'previous'` is accepted for callers built against an older `/start`. The server reads it as telemetry only. It changes nothing. |
 
 ### Send and handle errors
@@ -8272,7 +8266,11 @@ Every method except `releaseDeviceToken` needs a person's credential. A service 
 | `preferences()` · `updatePreferences(…)` | Per-kind push and email preferences. |
 | `webPushPublicKey()` · `registerWebPushSubscription(…)` · `unregisterWebPushSubscription(…)` | Web Push for this browser. |
 
-A session push goes to the phones of the person who created the session. It goes out when a turn ends or fails, or when the agent asks a question or for a permission. While one of that person's tabs holds a presence lease on the session (`s.presence`), no push goes out.
+Every project notifies the people a session concerns: the person who prompted the turn, the session's creator and each follower (`watch()` · `setWatch(watching)` on the session), minus anyone who muted it. A turn that ends or fails, an agent question or permission request, a share, and a failing or recovered trigger each write one inbox row per person and push to that person's phones and browsers (Web Push). There is no feature flag for it.
+
+Email is opt-in per kind (`updatePreferences`). With no saved choice, email goes out only for `capture_device_down` and an `automation_failed` notice that an automation was paused, went silent or crashed. A trigger's failure streak, and a run cap that holds a trigger's fires, email only a person who turned `automation_failed` email on.
+
+While one of a person's tabs holds a presence lease on the session (`s.presence`), that person's row arrives read. A tab that shows its own notifications (`presenceAlerts`) also holds back the phone push and Web Push.
 
 #### `kortix.capture`
 
@@ -8310,7 +8308,6 @@ Capture belongs to the account. `kortix.capture.account(accountId)` binds one ac
 | `onboardingComplete(…)` | Marks project onboarding done. |
 | `updateFeatureFlag(key, enabled)` | Sets one flag for the project (`PATCH /projects/{projectId}/features`). `key` is one of `FEATURE_FLAG_KEYS`. `enabled: null` clears the override. Needs `project.settings.write`. |
 | `claudeSubscription.get()` · `.startLogin(target?)` · `.completeLogin(input)` · `.setToken(token, target?)` | The caller's Claude Pro or Max accounts. The API never returns a token. |
-| `artifacts.activity(…)` · `artifacts.comments.*` | Artifact activity and comment threads. See [Artifacts](#artifacts). |
 | `connector(slug)` · `session(sessionId)` | One connector handle · the session handle. |
 
 A route behind a flag that is off returns `403` with `code: 'feature_disabled'` and `feature`. Test it with `isFeatureDisabledError(error)`. Read the key with `featureDisabledKey(error)`.
@@ -8444,17 +8441,17 @@ Routes: `/projects/{projectId}/apps/…`. See [Deploy and operate Apps](/docs/de
 
 #### Artifacts
 
-`p.artifacts` holds the comment and activity calls. The Artifact calls are root exports that take `projectId` first. Every `/projects/{projectId}/artifacts…` route returns `403 feature_disabled` while the `artifacts` flag is off. The comment and activity routes also need `artifact_comments`, which is off by default.
+The Artifact calls are root exports that take `projectId` first. Artifacts need no feature flag: every project has them where the platform stores Drive files.
 
 | Root export | What it does |
 | --- | --- |
-| `listArtifacts(projectId, { scope?, type?, q?, limit? }?)` | The Artifacts the caller may open, newest change first, as `Artifact[]`. `scope`: `all`, `mine`, `shared` or `pinned`. `type`: `doc` or `html`. While `artifact_comments` is on, each row carries `open_thread_count`. |
+| `listArtifacts(projectId, { scope?, type?, q?, limit? }?)` | The Artifacts the caller may open, newest change first, as `Artifact[]`. `scope`: `all`, `mine`, `shared` or `pinned`. `type`: `doc` or `html`. |
 | `getArtifact(projectId, artifactId, { version? }?)` | `ArtifactDetail`: `can_edit`, `entry_version`, the files and a signed `view_url`, valid 12 h. `version` reads the Artifact at one save. |
 | `createArtifact(projectId, { files, title?, description?, visibility? })` | Publishes new files as an Artifact in the caller's `Artifacts` folder in Drive. `files` maps a path to `{ content }` or `{ content_base64 }`. `index.md` makes a doc, `index.html` a page. `visibility` defaults to `private`. Errors: `400 missing_entry`, `413 file_too_large` (a file over 16 MB), `413 publish_too_large` (over 32 MB). |
 | `shareArtifactPath(projectId, { path, title?, description?, visibility? })` | Shares a folder that is already in Drive. `409 already_shared` when the path is an Artifact already. |
 | `saveArtifact(projectId, artifactId, { files, base_version?, title?, description? })` | Writes files into the Artifact as one save. With `base_version`, a newer save by someone else returns `409 version_conflict`. Without write access to its folder: `403 artifact_read_only`. |
 | `updateArtifact(projectId, artifactId, { title?, description?, visibility?, shared_with_user_ids? })` | Rename or share. `shared_with_user_ids` replaces the people on a private Artifact. Needs the creator or `project.artifact.manage`, else `403 artifact_read_only`. A public link without `project.artifact.public` returns `403 public_link_forbidden`. |
-| `deleteArtifact(projectId, artifactId)` | Stops sharing. Deletes the Artifact's comments and screenshots. The files stay in Drive. |
+| `deleteArtifact(projectId, artifactId)` | Stops sharing. The files stay in Drive. |
 | `setArtifactPinned(projectId, artifactId, pinned)` | The caller's own pin. |
 | `listArtifactVersions(projectId, artifactId)` · `restoreArtifactVersion(projectId, artifactId, version)` | Every save from the Drive history, newest first, as `ArtifactVersion[]` · writes one save back as a new save. |
 | `readArtifactFile(projectId, artifactId, { path?, version?, signal? }?)` | One file's source as a `Blob`. Default: the entry file now. |
@@ -8462,30 +8459,7 @@ Routes: `/projects/{projectId}/apps/…`. See [Deploy and operate Apps](/docs/de
 | `getPublicArtifact(artifactId, options?)` | A public Artifact's title, type and `content_url`, with no token. Throws `HostBoundaryError` with `status` 404 when the Artifact is not public. |
 | `parseArtifactUrl(url)` | `{ projectId, artifactId }` from an app link, or `{ projectId: null, artifactId }` from a public link. `null` for any other URL. |
 
-| Method | What it does |
-| --- | --- |
-| `artifacts.comments.list(artifactId, { status?, version? }?)` | The threads with their comments, as `ArtifactCommentThread[]`. `status`: `open` (default), `resolved` or `all`. `version` reads one Files commit; its rows allow no action. Root export: `listArtifactComments`. |
-| `artifacts.comments.get(threadId)` | One thread by its ID, with the same visibility checks. Root export: `getArtifactCommentThread`. |
-| `artifacts.comments.create(artifactId, { anchor, body, marks?, screenshot_base64? })` | Opens a thread and returns it. `anchor.type` is `none`, `text`, `point` or `region`. A `text` anchor's `quote` holds up to 500 UTF-16 code units, its `prefix` and `suffix` up to 32 each. `body` holds 1 to 10,000 characters. Errors: `400 invalid_anchor`, `400 invalid_comment`. Root export: `createArtifactComment`. |
-| `artifacts.comments.reply(artifactId, threadId, { body, marks?, screenshot_base64? })` | Adds a comment and returns it. `409 thread_deleted` when the thread's first comment is deleted. Root export: `replyArtifactComment`. |
-| `artifacts.comments.setStatus(artifactId, threadId, 'open' \| 'resolved')` | Reopens or resolves a thread. Root export: `setArtifactCommentStatus`. |
-| `artifacts.comments.edit(artifactId, threadId, commentId, { body })` · `.remove(artifactId, threadId, commentId)` | Changes the caller's own comment · deletes a comment and leaves a tombstone. A caller with `project.artifact.manage` may delete any comment. Otherwise: `403 artifact_comment_forbidden`. Root exports: `editArtifactComment`, `deleteArtifactComment`. |
-| `artifacts.comments.send(artifactId, { thread_ids, batch_id?, agent? })` | Hands 1 to 100 threads to an agent in one turn. Returns `{ session_id, created }`. Reuse `batch_id` to retry the same hand-off; the SDK makes one when you leave it out. `409 artifact_comment_paused` when an agent session sends a thread that waits for a person. `413 artifact_comment_screenshot_limit` when a model that reads images would get more than 20 screenshots, 100 MiB of decoded images or 12 MiB of image parts. Root export: `sendArtifactComments`. |
-| `artifacts.comments.context(artifactId, { version?, agent? }?)` | The caller's rights, the people and agents to mention with their insertion tokens, the Send target, and the threads Send would take: `send_thread_ids` (the first 100) and `send_thread_count`. Root export: `getArtifactCommentContext`. |
-| `artifacts.comments.snapshot(artifactId, { version? }?)` · `.readScreenshot(artifactId, commentId)` | The saved text that text anchors point into, as `{ version, text }` · one comment's screenshot as a `Blob`. Root exports: `readArtifactCommentSnapshot`, `readArtifactCommentScreenshot`. |
-| `artifacts.activity(artifactId, { limit?, cursor? }?)` | One page of saves and events, newest first: `{ items, next_cursor, older_versions }`. `limit` is 1 to 100. Pass `next_cursor` as `cursor`. Root export: `listArtifactActivity`. |
-| `artifacts.live.connect(artifactId, { view, version?, hidden?, webSocket?, onEvent?, onDoc? })` | Opens the Artifact's live WebSocket and returns an `ArtifactLiveConnection`: `status`, `participants`, `you`, `setCursor`, `setSelection`, `setTyping`, `setFocus`, `setHidden`, `close`. It reconnects by itself, 1 to 30 s apart, with a new ticket each time. Close code `4403` ends it with status `access_lost`. `onDoc(seq)` receives the co-editing pings (`changed doc`); they never reach `onEvent`. Root export: `createArtifactLiveConnection`. React: `useArtifactLive(projectId, artifactId, { enabled, view, version?, hidden?, onDoc? })`. |
-| `artifacts.live.ticket(artifactId)` · `.signal(artifactId, { status, thread_id?, quote? })` | A one-use WebSocket ticket, valid 60 s · an agent session's place in the Artifact: `reading`, `editing`, `writing` or `idle`. `signal` needs a session-bound token; a person's token returns `403`. Root exports: `createArtifactLiveTicket`, `signalArtifactLiveAgent`. |
-| `artifacts.doc.get(artifactId, { after?, base? }?)` | The co-editing state of a doc: `{ seeded, latest_seq, updates, has_more, flushed, lease }`. `updates` holds the Yjs updates with `seq > after`, ascending, as `Uint8Array`; a page stops near 8 MiB with `has_more`. `base: true` adds the Markdown of the last flush. Needs view access and `artifact_comments`; an HTML Artifact answers `400 not_a_doc`. Root export: `getArtifactDoc`. |
-| `artifacts.doc.seed(artifactId, { update, markdown, version })` · `.push(artifactId, update)` | Store the first state of the doc · one more Yjs update; both return `{ seq }`. `seed` answers `409 doc_seeded` when another tab won; `push` answers `409 doc_not_seeded`, `413 update_too_large` past 512 KiB, `400 invalid_update` for bytes Yjs cannot read. Needs write access. Root exports: `seedArtifactDoc`, `pushArtifactDocUpdate`. |
-| `artifacts.doc.lease(artifactId, { holder, release? })` · `.flushed(artifactId, { holder, seq, version, markdown })` | Take, renew or release the 15 s lease of the tab that writes the Markdown file, as `{ leader, holder, expires_at }` · record the leader's save of the file, as `{ flushed_seq }`; `409 not_leader` from any other holder. Root exports: `leaseArtifactDoc`, `markArtifactDocFlushed`. |
-| `createArtifactDocSync({ projectId, artifactId, holder, apply, merge, onLeader?, onStatus?, onError? })` | The co-editing engine over those calls. It works on bytes; your app owns the `Y.Doc` (`apply` = `Y.applyUpdate`, `merge` = `Y.mergeUpdates`). `start(buildSeed)`, `push(update)` (batched for 50 ms, in order, retried 1 to 30 s apart, never dropped), `notify(seq)` (from `onDoc`), `flushed({ version, markdown })`, `base()`, `close()`. It polls every 3 s without pings. The SDK has no Yjs dependency. See the SDK README, "Co-editing a doc". |
-
-A thread carries its delivery state: `agent_state` is `none`, `pending`, `sent` or `paused`, and `sent_session_id` names the session that received it. `agent_error` holds a delivery failure. It is `null` when the loop guard paused the thread. On one Artifact, one author makes at most 60 comment writes per minute, and one session writes at most 30 comments per hour. Past either limit: `429 artifact_comment_rate_limited`.
-
-When the project's agent manifest cannot be read, `context` still answers: `agents` is empty, `send_target` is `null` and `agents_unavailable` is `true`. People keep commenting. A comment with an explicit `@agent.` mention is refused until the manifest reads again.
-
-Routes: `/projects/{projectId}/artifacts…`, `/projects/{projectId}/artifact-comment-threads/{threadId}`, and `/artifacts/meta/{artifactId}` for `getPublicArtifact`. See [Artifacts](/docs/guide#artifacts).
+Routes: `/projects/{projectId}/artifacts…` and `/artifacts/meta/{artifactId}` for `getPublicArtifact`. See [Artifacts](/docs/guide#artifacts).
 
 #### Goals
 
@@ -8681,10 +8655,6 @@ Every hook is in `@kortix/sdk/react`. Most are React Query hooks: unless a row s
 | `useArtifacts(projectId, { scope?, type?, q?, limit? }?)` · `useArtifact(projectId, artifactId, version?)` · `useArtifactText(projectId, artifact)` | The Artifact list · one Artifact, now or at a save · a doc's Markdown. `prefetchArtifact(queryClient, projectId, artifactId)` loads one Artifact, and a doc's Markdown, before a click. See [Artifacts](#artifacts). |
 | `useArtifactVersions(projectId, artifactId, enabled?)` · `useArtifactTypes(projectId)` | The saves · the two types. |
 | `useArtifactMutations(projectId)` | The mutations `create`, `share`, `save`, `update`, `remove`, `pin` and `restore`. Each one refreshes the list and the open Artifact. |
-| `useArtifactComments(projectId, artifactId, { status?, version?, enabled? }?)` | The threads (default `open`), with `create`, `reply`, `setStatus`, `edit`, `remove`, `send` and `isWriting`. Writes are optimistic: every loaded thread list shows the change at once, and a failed write undoes only its own change. Until the server confirms it, a thread or comment carries `optimistic: true`. A new one also has an `optimistic-` ID, an empty author (`user_id: ''`) and every `can_*` field `false`: render it as pending. With `version`, the hook rejects every write. |
-| `useArtifactCommentContext(projectId, artifactId, { version?, agent?, enabled? }?)` | The comment context: rights, mention tokens, the Send target and `agents_unavailable`. A comment write refreshes it. |
-| `useArtifactActivity(projectId, artifactId, { limit?, cursor?, enabled? }?)` · `useInfiniteArtifactActivity(projectId, artifactId, { limit?, enabled? }?)` | One activity page · every page, as ordered and deduplicated `items`, with `olderVersions` and `fetchNextPage`. |
-| `useArtifactCommentScreenshot(projectId, artifactId, commentId)` | One comment's screenshot as a `Blob`. The hook keeps no copy after unmount. |
 | `useProjectGoals` · `useProjectGoal` · `useProjectGoalEvents` · `useSessionGoal` · `useProjectGoalFiles` · `useProjectGoalControl` | Goals, one goal by id, its events, the goal a session works on, one goal's files, and the person controls. See [Goals](#goals). Goals are experimental and off by default. Turn them on in **Project admin** → **Feature flags**. |
 | `useProjectTriggerEventApps` · `useProjectTriggerEventTypes` | The connectors and event types for `event` triggers. |
 | `useConnectorLinkInfo(token, options)` | The `ConnectorSetupLinkInfo` behind a connect token, for a card. `undefined` while it loads, `null` when the request failed. |
@@ -8694,7 +8664,6 @@ Rules for several hooks:
 
 - `useCan` and its siblings decide what to show. The API checks every write again. Probe the action the route checks, for example `PROJECT_ACTIONS.PROJECT_GITOPS_PUSH` (`project.gitops.push`), never a role. After a write that changes access, call `invalidatePermissionProbes(queryClient, { accountId, userId })`. A verdict stays cached for 5 minutes otherwise.
 - After a runtime restart or a config reload, call `resetRuntimeQueries(queryClient)`.
-- The Artifact comment, context and activity hooks poll every 10 s while mounted and visible. They need the `artifact_comments` flag, which is experimental and off by default. Turn it on in **Project admin** → **Feature flags** → **Artifact comments**.
 
 #### Query keys and cache helpers
 

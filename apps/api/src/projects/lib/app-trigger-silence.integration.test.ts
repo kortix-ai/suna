@@ -2,11 +2,10 @@
  * Integration test (real PostgreSQL): the silence alert of app triggers.
  *
  * An app trigger with `expect_event_within` tells its watchers once when its
- * App posts nothing for that long, with the `notification_center` flag off
- * (its default). Every App POST to the trigger counts as heard, a
- * deduplicated one too (a watcher posts the same content id while nothing
- * changes); a test event does not. The App's next post ends the alert with a
- * recovery notice.
+ * App posts nothing for that long. Every App POST to the trigger counts as
+ * heard, a deduplicated one too (a watcher posts the same content id while
+ * nothing changes); a test event does not. The App's next post ends the alert
+ * with a recovery notice.
  */
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { accountMembers, apps, notifications, projectTriggerRuntime } from '@kortix/db';

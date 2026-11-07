@@ -45,3 +45,16 @@ export function lastRunLabel(
   if (min < 7 * 24 * 60) return rtf.format(-Math.floor(min / (24 * 60)), 'day');
   return rtf.format(-Math.floor(min / (7 * 24 * 60)), 'week');
 }
+
+/**
+ * A future run in whole minutes, hours or days, worded by `rtf`: "in 25m"
+ * (narrow), "in 25 minutes" (long). A past time reads as now; "—" with no time.
+ */
+export function nextRunIn(iso: string | null, rtf: Intl.RelativeTimeFormat, now: number = Date.now()): string {
+  const at = iso ? Date.parse(iso) : Number.NaN;
+  if (!Number.isFinite(at)) return '—';
+  const min = Math.max(0, Math.round((at - now) / 60_000));
+  if (min < 60) return rtf.format(min, 'minute');
+  if (min < 24 * 60) return rtf.format(Math.round(min / 60), 'hour');
+  return rtf.format(Math.round(min / (24 * 60)), 'day');
+}

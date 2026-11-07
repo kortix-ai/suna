@@ -3,15 +3,15 @@
  *
  * Prod, 2026-11-02: one free project's cron triggers were pinned to models
  * the account could not use. Each slot was refused, retried four more times,
- * and dead-lettered, ~1,250 slots a day for a month; its `notification_center`
- * flag was off, so nobody heard. A reuse trigger kept prompting its session on
- * a wallet at -$28, and the box billed every wake.
+ * and dead-lettered, ~1,250 slots a day for a month; the project had no
+ * notification center then, so nobody heard. A reuse trigger kept prompting its
+ * session on a wallet at -$28, and the box billed every wake.
  *
  * The contract here, through the real cron drain and the real queries:
  * - a model refusal dead-letters on the first attempt;
  * - 24 hours in which every run failed with a refusal only the owner can fix
- *   (and at least 3 in a row) pause the trigger and tell its watchers, flag or
- *   not; a resume starts a new 24 hours;
+ *   (and at least 3 in a row) pause the trigger and tell its watchers; a
+ *   resume starts a new 24 hours;
  * - a platform fault, an empty wallet, a shorter streak, or a run that worked
  *   never pauses it;
  * - a prompt into an existing session passes the billing gate.
@@ -52,7 +52,6 @@ const { setTriggerAlertNotifierForTest, settleTriggerAlerts } = await import('..
 
 const OWNER = crypto.randomUUID();
 const HOUR = 60 * 60_000;
-/** The project's `notification_center` flag is left at its default: off. */
 let project: SeededProject;
 const emails: string[] = [];
 
@@ -207,7 +206,7 @@ describe('24 hours in which every run was refused', () => {
   const slug = 'always-refused';
   const reason = `auto-paused: every run failed for 24 hours: ${MODEL_REFUSAL}`;
 
-  test('pause the trigger and tell its owner by inbox row and email, with the notification flag off', async () => {
+  test('pause the trigger and tell its owner by inbox row and email', async () => {
     await seedTrigger(slug);
     await refused(slug, 30);
     await refused(slug, 20);
@@ -219,7 +218,11 @@ describe('24 hours in which every run was refused', () => {
 
     expect(await newestSlot(slug)).toMatchObject({ status: 'dead_lettered', attempts: 1 });
     expect(await runtimeOf(slug)).toEqual({ at: expect.any(Date), reason });
-    expect(await alertRows(slug)).toEqual([{ userId: OWNER, kind: 'automation_failed', body: reason }]);
+    // The dead-lettered slot opens the fire streak (its email is opt-in), and
+    // the pause tells the owner again, by email too.
+    const rows = await alertRows(slug);
+    expect(rows.map((row) => row.body).sort()).toEqual([MODEL_REFUSAL, reason]);
+    expect(rows.every((row) => row.userId === OWNER && row.kind === 'automation_failed')).toBe(true);
     expect(emails).toEqual([OWNER]);
   });
 
@@ -237,7 +240,8 @@ describe('24 hours in which every run was refused', () => {
 
     expect(await newestSlot(slug)).toMatchObject({ status: 'dead_lettered', attempts: 1 });
     expect((await runtimeOf(slug)).at).toBeNull();
-    expect(await alertRows(slug)).toHaveLength(1);
+    // No new row: the fire streak the first refusal opened is still open.
+    expect(await alertRows(slug)).toHaveLength(2);
   });
 });
 
@@ -316,7 +320,6 @@ describe('a run that keeps failing on the plan', () => {
         outcome: 'closed',
         childSession: false,
       },
-      async () => ({ sent: 0, reason: 'no_devices' }),
     );
     await settleTriggerAlerts();
 

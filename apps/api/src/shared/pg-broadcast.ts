@@ -116,15 +116,6 @@ export const SESSION_LIST_BUST_CHANNEL = 'kortix_session_list_bust';
  */
 export const CHROME_COMMAND_CHANNEL = 'kortix_chrome_cmd';
 
-/**
- * An eleventh channel: live presence on Artifacts (KRTX-3669). The payload is
- * one JSON delta, always under 8 KB: one participant joined, moved or left, a
- * `changed` ping, a re-check request, or a used ticket digest. Never a full
- * presence list. Every replica merges the deltas into its own rooms; see
- * `artifacts/live-hub.ts`.
- */
-export const ARTIFACT_LIVE_CHANNEL = 'kortix_artifact_live';
-
 type Handler = (projectId: string) => void;
 
 let listener: postgres.Sql | null = null;
@@ -138,7 +129,6 @@ let tunnelForwardHandler: ((payload: string) => void) | null = null;
 let commandDueHandler: ((dueAtMs: number) => void) | null = null;
 let promptsChangedHandler: ((sessionId: string) => void) | null = null;
 let chromeCommandHandler: ((payload: string) => void) | null = null;
-let artifactLiveHandler: ((payload: string) => void) | null = null;
 // replica-local: subscribers in this process; the NOTIFY reaches every replica.
 const sessionChangedHandlers = new Set<(sessionId: string) => void>();
 let iamCacheBustHandler: ((payload: string) => void) | null = null;
@@ -212,20 +202,6 @@ function deliverPromptsChanged(payload: string): void {
 /** The chrome registry registers once, at import. Kept across stop/start. */
 export function onChromeCommand(handler: ((payload: string) => void) | null): void {
   chromeCommandHandler = handler;
-}
-
-/** `artifacts/live-hub.ts` registers once, at import. Kept across stop/start. */
-export function onArtifactLive(handler: ((payload: string) => void) | null): void {
-  artifactLiveHandler = handler;
-}
-
-/**
- * Send one Artifact presence delta to every replica (this one included; the
- * hub drops its own echo). Without the LISTEN it is a no-op: presence stays
- * inside this replica and clients keep their 10 s poll.
- */
-export function publishArtifactLive(payload: string): void {
-  if (listener) void listener.notify(ARTIFACT_LIVE_CHANNEL, payload).catch(() => {});
 }
 
 /**
@@ -392,7 +368,6 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
     await sql.listen(CHROME_COMMAND_CHANNEL, (payload) => invokeSubscriber(chromeCommandHandler, payload));
     await sql.listen(SPACE_ACCESS_BUST_CHANNEL, deliverSpaceAccessBust);
     await sql.listen(SESSION_LIST_BUST_CHANNEL, deliverSessionListBust);
-    await sql.listen(ARTIFACT_LIVE_CHANNEL, (payload) => invokeSubscriber(artifactLiveHandler, payload));
     listener = sql;
     publish = (projectId: string) => {
       // Fire-and-forget on the LISTEN connection's own pool: it runs no other
@@ -401,7 +376,7 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       void sql.notify(BASE_MOVE_CHANNEL, projectId).catch(() => {});
     };
     console.log(
-      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}, ${SESSION_PROMPTS_CHANGED_CHANNEL}, ${SESSION_CHANGED_CHANNEL}, ${IAM_CACHE_BUST_CHANNEL}, ${SPACE_ACCESS_BUST_CHANNEL}, ${SESSION_LIST_BUST_CHANNEL}, ${CHROME_COMMAND_CHANNEL}, ${ARTIFACT_LIVE_CHANNEL}`,
+      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}, ${SESSION_PROMPTS_CHANGED_CHANNEL}, ${SESSION_CHANGED_CHANNEL}, ${IAM_CACHE_BUST_CHANNEL}, ${SPACE_ACCESS_BUST_CHANNEL}, ${SESSION_LIST_BUST_CHANNEL}, ${CHROME_COMMAND_CHANNEL}`,
     );
     return true;
   } catch (error) {

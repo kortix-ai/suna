@@ -50,8 +50,6 @@ import { projectHref } from '@/lib/projects/switcher';
 import { addResumeListener } from '@/lib/utils/app-resume';
 import { useNotificationStore } from '@/stores/notification-store';
 import { usePushStore } from '@/stores/push-store';
-import { KORTIX_WEB_URL } from '@/lib/kortix-web';
-import { openLink } from '@/lib/utils/open-link';
 
 /** After the stream and auth refresh, and before the OTA check (800 ms). */
 const PUSH_RESUME_DELAY_MS = 600;
@@ -86,10 +84,6 @@ function handleResponse(
   const data = parsePushData(raw);
   if (!data) return;
   if (data.notificationId) markRead([data.notificationId], queryClient);
-  if (data.artifactPath) {
-    void openLink(new URL(data.artifactPath, KORTIX_WEB_URL).toString()).catch((error) => log.warn('Unable to open Artifact notification', error));
-    return;
-  }
   usePushStore.getState().requestOpen(data.projectId, data.sessionId);
 }
 

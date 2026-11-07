@@ -7,27 +7,20 @@
 // session's origin class, the trigger watchers — is resolved there
 // (projects/lib/notification-recipients.ts) and reaches `notifySessionEvent`
 // as a context thunk. Callers fire and forget: `notifySessionEvent` never
-// throws.
-//
-// All of this is behind the project's `notification_center` flag (enabled.ts).
-// Off, `notifySessionEvent` sends the pre-KRTX-1742 creator-only Expo push
-// (session-push-legacy.ts) and resolves no context.
+// throws. Every project runs this path: the `notification_center` flag
+// graduated on 2026-11-06.
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { logger } from '../lib/logger';
 import { ABORT_END_ERROR_NAMES, type SandboxTurnCompletionOutcome } from '../projects/session-turn-ledger';
 import { filterSessionRecipients, loadSessionAccessRows, personsAmong, type SessionAccessRow } from './access';
-import { projectNotificationsEnabled } from './enabled';
 import { clip, INBOX_BODY_MAX_CHARS } from './inbox-store';
 import { deliver, type DeliverInput, type NotifierDeps } from './notifier';
-import {
-  notifySessionPushLegacy,
-  QUESTION_TEXT_MAX_CHARS,
-  type LegacySessionPushDeps,
-  type LegacySessionPushOutcome,
-} from './session-push-legacy';
 import { sessionWatchersOf, type SessionWatchers } from './watchers';
 
 export type SessionPushEventType = 'completion' | 'error' | 'question' | 'permission';
+
+/** The question line on a phone and in the inbox, whitespace collapsed. */
+export const QUESTION_TEXT_MAX_CHARS = 140;
 
 /**
  * - `attended`: a person runs it from Kortix (web, mobile, CLI, SDK).
@@ -74,14 +67,10 @@ export type SessionEventContext = Pick<
 >;
 
 export interface NotifySessionEventOptions {
-  /** Resolved only when the flag is on; its fields override the event's. */
+  /** Resolved once per event; its fields override the event's. */
   context?: () => Promise<SessionEventContext>;
-  /** The project's flag when the caller already read it. Absent: one primary-key read. */
-  notificationCenter?: boolean;
   /** Replaces the delivery wiring (DB suites inject the senders only). */
   notifierDeps?: NotifierDeps;
-  /** Replaces the flag-off Expo wiring (DB suites inject the sender only). */
-  legacyDeps?: Partial<LegacySessionPushDeps>;
 }
 
 const KIND: Record<SessionPushEventType, NotificationKindName> = {
@@ -230,20 +219,11 @@ export function createSessionNotifier(deps: SessionNotifierDeps) {
   };
 }
 
-/**
- * Tell the people a session event is for. Never throws. The flag is checked
- * first: off, the session creator's phones get the pre-KRTX-1742 push and no
- * recipient query runs.
- */
+/** Tell the people a session event is for. Never throws. */
 export async function notifySessionEvent(
   event: SessionPushEvent,
   options: NotifySessionEventOptions = {},
-): Promise<SessionPushOutcome | LegacySessionPushOutcome> {
-  const on = options.notificationCenter ?? (await projectNotificationsEnabled(event.projectId));
-  if (!on) {
-    const { type, sessionId, projectId, question, recipients } = event;
-    return notifySessionPushLegacy({ type, sessionId, projectId, question, recipients }, options.legacyDeps);
-  }
+): Promise<SessionPushOutcome> {
   return createSessionNotifier({
     loadSession: async (sessionId) => (await loadSessionAccessRows([sessionId])).get(sessionId) ?? null,
     watchers: sessionWatchersOf,

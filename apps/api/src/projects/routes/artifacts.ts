@@ -1,4 +1,4 @@
-// Artifacts (flag `artifacts`): paths in the project's Files volume shared as
+// Artifacts: paths in the project's Files volume shared as
 // a doc (Markdown) or a page (HTML). Logic lives in `artifacts/service.ts`;
 // the bytes are served by `artifacts/content-routes.ts`.
 //
@@ -12,14 +12,13 @@
 // On top, per artifact: view needs `canView`; saving and restoring need write
 // access to its folder in Files. A private artifact the caller may not view
 // answers 404, never 403.
-// Every route answers 403 `feature_disabled` while the project has the flag off.
+// A Kortix that stores no Drive answers 403 `feature_disabled` on every route.
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { auth, errors, json } from '../../openapi';
 import { config } from '../../config';
 import { PROJECT_ACTIONS } from '../../iam';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { projectCapabilityAllowed, resolveUserIdentities } from '../lib/access';
 import { authorizeArtifactCaller as authorize, loadArtifactForCaller as loadArtifact } from '../lib/artifact-access';
@@ -28,7 +27,6 @@ import { loadProjectRosterIds } from '../lib/project-access-view';
 import { buildSessionParticipants, sessionAudienceIds } from '../lib/session-audience';
 import { DriveStorageError, legacyDriveStatus } from '../../drives/volumes';
 import { ARTIFACT_TYPES, ARTIFACT_TYPE_KEYS } from '../../artifacts/formats';
-import { openArtifactThreadCounts } from '../../artifacts/comment-counts';
 import { BINDING_AGENT_RE, SPACE_SLUG_RE } from '@kortix/shared/app-config';
 import {
   ARTIFACT_VISIBILITIES,
@@ -130,9 +128,6 @@ const ArtifactSchema = z.object({
   public_content_url: z.string().nullable().openapi({ description: 'The raw page without Kortix chrome, when public.' }),
   space: z.string().nullable().openapi({ description: 'The space it is grouped in, or null. Grouping only.' }),
   agent: z.string().nullable().openapi({ description: 'The owning agent, or null. Grouping only.' }),
-  open_thread_count: z.number().int().optional().openapi({
-    description: 'Open comment threads: status open and a root comment that is not deleted. The list and GET of one artifact only, and only while the project has artifact_comments on.',
-  }),
   created_at: z.string(),
   updated_at: z.string(),
 }).openapi('Artifact');
@@ -166,19 +161,8 @@ function frontendBase(): string {
   return (config.FRONTEND_URL ?? '').replace(/\/+$/, '');
 }
 
-/**
- * The open comment threads of `rows`, while the project has `artifact_comments`
- * on (it requires `artifacts`); undefined otherwise, so the field stays absent.
- */
-function openThreadCounts(projectMetadata: unknown, projectId: string, rows: ArtifactRow[]) {
-  return resolveFeatureFlag(projectMetadata, 'artifact_comments')
-    ? openArtifactThreadCounts(projectId, rows.map((row) => row.artifactId))
-    : undefined;
-}
-
-/** `counts`: `openThreadCounts`. Given, each artifact carries `open_thread_count`. */
-async function serialize(rows: ArtifactRow[], viewer: Viewer, counts?: Promise<ReadonlyMap<string, number>>) {
-  const [people, open] = await Promise.all([resolveUserIdentities(rows.map((r) => r.createdByUserId)), counts]);
+async function serialize(rows: ArtifactRow[], viewer: Viewer) {
+  const people = await resolveUserIdentities(rows.map((r) => r.createdByUserId));
   const person = (userId: string) => {
     const who = people.get(userId);
     return { user_id: userId, name: who?.displayName ?? null, email: who?.email ?? null, avatar_url: who?.avatarUrl ?? null };
@@ -205,7 +189,6 @@ async function serialize(rows: ArtifactRow[], viewer: Viewer, counts?: Promise<R
       public_content_url: isPublic ? artifactPublicContentUrl(row.artifactId) : null,
       space: row.space,
       agent: row.agent,
-      ...(open ? { open_thread_count: open.get(row.artifactId) ?? 0 } : {}),
       created_at: row.createdAt.toISOString(),
       updated_at: row.updatedAt.toISOString(),
     };
@@ -250,8 +233,8 @@ async function participants(c: Context, access: { loaded: { userId: string | nul
 }
 
 /** The artifact now, or at one commit: its files and a signed URL that shows exactly that. */
-async function detail(row: ArtifactRow, viewer: Viewer, at?: string, counts?: Promise<ReadonlyMap<string, number>>) {
-  const [base] = await serialize([row], viewer, counts);
+async function detail(row: ArtifactRow, viewer: Viewer, at?: string) {
+  const [base] = await serialize([row], viewer);
   const [canEdit, version, files] = await Promise.all([mayWrite(row, viewer), entryVersion(row), listFiles(row, at)]);
   return {
     ...base!,
@@ -311,8 +294,7 @@ export function registerArtifactRoutes(): void {
       scope: q.scope ?? 'all', type: q.type, q: q.q, limit: q.limit ?? 100,
       space: q.space, agents, unbound: q.unbound !== undefined,
     });
-    const counts = openThreadCounts(access.loaded.row.metadata, projectId, rows);
-    return c.json({ artifacts: await serialize(rows, access.viewer, counts) }, 200);
+    return c.json({ artifacts: await serialize(rows, access.viewer) }, 200);
   });
 
   projectsApp.use('/:projectId/artifacts', PUBLISH_LIMIT);
@@ -373,8 +355,7 @@ export function registerArtifactRoutes(): void {
     const loaded = await loadArtifact(c, projectId, artifactId, 'read');
     if (!loaded.ok) return loaded.response;
     try {
-      const counts = openThreadCounts(loaded.loaded.row.metadata, projectId, [loaded.row]);
-      const [body, people] = await Promise.all([detail(loaded.row, loaded.viewer, c.req.valid('query').version, counts), participants(c, loaded)]);
+      const [body, people] = await Promise.all([detail(loaded.row, loaded.viewer, c.req.valid('query').version), participants(c, loaded)]);
       return c.json({ ...body, participants: people }, 200);
     } catch (err) {
       return failure(c, err);
@@ -394,7 +375,7 @@ export function registerArtifactRoutes(): void {
     const loaded = await loadArtifact(c, projectId, artifactId, 'write');
     if (!loaded.ok) return loaded.response;
     try {
-      const row = await publishChanges(loaded.row, c.req.valid('json'), author(c, loaded.viewer.userId));
+      const row = await publishChanges(loaded.row, c.req.valid('json'));
       return c.json(await detail(row, loaded.viewer), 200);
     } catch (err) {
       return failure(c, err);
@@ -416,7 +397,7 @@ export function registerArtifactRoutes(): void {
     if (refused) return refused;
     let updated: ArtifactRow;
     try {
-      updated = await updateArtifactMeta(loaded.row, c.req.valid('json'), author(c, loaded.viewer.userId));
+      updated = await updateArtifactMeta(loaded.row, c.req.valid('json'));
     } catch (err) {
       // 403 `private_channel`: a private channel's artifact stays private.
       if (err instanceof ArtifactError && err.status === 403) return c.json({ error: err.message, code: err.code }, 403);
@@ -487,7 +468,7 @@ export function registerArtifactRoutes(): void {
     const loaded = await loadArtifact(c, projectId, artifactId, 'write');
     if (!loaded.ok) return loaded.response;
     try {
-      const row = await restoreVersion(loaded.row, c.req.valid('json').version, author(c, loaded.viewer.userId));
+      const row = await restoreVersion(loaded.row, c.req.valid('json').version);
       return c.json(await detail(row, loaded.viewer), 200);
     } catch (err) {
       return failure(c, err);

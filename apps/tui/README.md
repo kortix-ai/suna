@@ -150,8 +150,8 @@ is left out of the sidebar.
 | `/files` | The session sandbox's workspace tree and viewer. Drive mounts under `/drives` read through Drive. | a session |
 | `/drive` | Drive: My files, Shared with me, Team folders, All files (managers), This session. New folder, move, delete, upload, conflicts. | flag `drives` |
 | `/repo` | The project repository: branches, folders, a file viewer, commit history. | a project |
-| `/artifacts` | Docs and pages the agents published: read, rename, pin, stop sharing. | flag `artifacts` |
-| `/inbox` | Notifications, newest first: open, mark read, mark all read. | `notification_center`, or `artifacts` + `artifact_comments` |
+| `/artifacts` | Docs and pages the agents published: read, rename, pin, stop sharing. | a Drive (Platinum) |
+| `/inbox` | Notifications, newest first: open, mark read, mark all read. | a project |
 | `/approvals` | Approvals, outputs and decisions waiting on a person: approve, reject, ask for changes, answer. | a project |
 | `/goals` | Goals and their progress: start one, answer its question, stop it. | flag `goals` |
 | `/memory` | Company memory pages: read and search. | flag `chat` |
@@ -186,7 +186,7 @@ TUI shows it three ways:
 | `Ctrl+O` | Open an artifact in `/artifacts`, on its details. |
 
 The list joins what the thread shows with the project's artifacts this
-session published (flag `artifacts`). One artifact shown twice is one row.
+session published. One artifact shown twice is one row.
 `/artifacts <id>` and `/files <path>` open those screens on one artifact or
 one file.
 

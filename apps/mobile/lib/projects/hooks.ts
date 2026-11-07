@@ -5,13 +5,11 @@
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { pickerProviderList } from '@kortix/sdk';
-import { notificationInboxEnabled } from '@/lib/notifications/inbox';
 import { composerModelList, offeredModelCount } from '@/lib/session/model-picker';
 import {
   keepPreviousData,
   useInfiniteQuery,
   useMutation,
-  useQueries,
   useQuery,
   useQueryClient,
   type QueryClient,
@@ -291,32 +289,6 @@ export function useProjects(accountId: string | null) {
     enabled: !!accountId,
     staleTime: 20_000,
   });
-}
-
-/**
- * True when one of the signed-in user's projects has `notification_center`
- * on (KRTX-1742): Settings → Notifications then shows the user's record.
- * Reads every account's project list (the switcher's queries and keys).
- * False while a list loads or fails.
- */
-export function useHasNotificationCenterProject(): boolean {
-  return useHasNotificationProject((project) => project.experimental?.notification_center === true);
-}
-
-export function useHasNotificationInboxProject(): boolean {
-  return useHasNotificationProject(notificationInboxEnabled);
-}
-
-function useHasNotificationProject(enabled: (project: { experimental?: { notification_center?: unknown; artifacts?: unknown; artifact_comments?: unknown } }) => boolean): boolean {
-  const accounts = useAccounts();
-  const lists = useQueries({
-    queries: (accounts.data ?? []).map((account) => ({
-      queryKey: projectKeys.projects(account.account_id),
-      queryFn: () => listProjectsForAccount(account.account_id),
-      staleTime: 20_000,
-    })),
-  });
-  return lists.some((list) => list.data?.some(enabled));
 }
 
 export function useProject(projectId: string | null) {

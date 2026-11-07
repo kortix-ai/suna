@@ -5,6 +5,21 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (notifications are on for every project)
+- The `notification_center` project flag graduated (2026-11-06): every project has the
+  notification inbox, push, session watch and alerts. `FeatureFlagKey` keeps
+  `notification_center`, marked `@deprecated`; `FEATURE_FLAG_KEYS` no longer lists it, and
+  `useFeatureFlag(projectId, 'notification_center')` reports `enabled: true`.
+  `KortixProject.experimental.notification_center` is optional now, like `meta_agent`.
+  Removed in the next major.
+- `useSession({ presencePageExit })` defaults to `true`: a closing tab ends its presence lease
+  at once, so a notification that arrives a second later reaches the person. Pass `false` to
+  keep the lease until it expires.
+- `DEFAULT_NOTIFICATION_PREFERENCES`: email is off by default for `turn_done`, `turn_error`,
+  `question`, `permission`, `shared`, `automation_recovered` and `capture_device_recovered`;
+  a person turns it on per kind. `automation_failed`, `capture_device_down` and
+  `artifact_comment` keep email on.
+
 ### Added (harness-neutral name)
 - `harnessVersion` on the runtime connection store (`useSandboxConnectionStore`,
   `useRuntimeConnectionStore`): the session runtime's harness version from `/kortix/health`,
