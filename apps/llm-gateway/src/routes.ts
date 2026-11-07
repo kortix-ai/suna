@@ -13,7 +13,7 @@ type Gateway = {
   chatCompletions: (request: InferenceRequest) => Promise<Response>;
   messages: (request: InferenceRequest) => Promise<Response>;
   responses: (request: InferenceRequest) => Promise<Response>;
-  listModels: (authorization: string | undefined, options: { managedOnly: boolean; scope?: 'picker' }) => Promise<Response>;
+  listModels: (authorization: string | undefined, options: { managedOnly: boolean; scope?: 'picker' }, openAiList: boolean) => Promise<Response>;
   images: (request: InferenceRequest & { operation: 'generations' | 'edits' }) => Promise<Response>;
   audio: (request: AudioRequest) => Promise<Response>;
   voices: (request: VoicesRequest) => Promise<Response>;
@@ -172,9 +172,11 @@ function claudeCode(gateway: Gateway, inflight: InflightBudget, recordOutcome: (
  * Responses shape (Codex CLI >=0.157 speaks only `wire_api = "responses"`).
  * Both translate at the edges only: auth, grants, routing, dispatch, metering
  * and audit run through the same pipeline as chat completions.
- * `models?scope=managed` → managed lineup only (~3KB); `?scope=picker` → the
+ * `models` → the OpenAI `{object:'list',data}` of the models the key can call;
+ * `?scope=managed` → managed lineup only (~3KB); `?scope=picker` → the
  * project's servable set (~80KB), fetched by sandboxes on every boot so their
- * `kortix` provider matches the web picker. See wire.ts.
+ * `kortix` provider matches the web picker; `?scope=all` → the full discovery
+ * catalog. See wire.ts.
  * `audio/transcriptions` (multipart), `audio/speech` (streamed audio) and
  * `audio/voices?model=` are the OpenAI audio shapes, served by Kortix's
  * managed audio models and billed at the price the upstream reports.
@@ -209,11 +211,17 @@ export function registerRoutes(
     gateway.voices({ authorization: c.req.header('authorization'), model: c.req.query('model') ?? '', signal: c.req.raw.signal })
       .then(cloudflareSafe));
   const claude = limited(claudeCode(gateway, inflight, recordOutcome));
-  const models = limited((c: { req: { raw: Request; header: (name: string) => string | undefined; query: (name: string) => string | undefined } }) =>
-    gateway.listModels(c.req.header('authorization'), {
-      managedOnly: c.req.query('scope') === 'managed',
-      scope: c.req.query('scope') === 'picker' ? 'picker' : undefined,
-    }).then(cloudflareSafe));
+  // Unscoped (or an unknown scope) is the OpenAI `GET /models` a client picks
+  // its model from, so it lists only what this key can call (KRTX-4427).
+  // `all` is the full discovery catalog; `picker` and `managed` stay maps.
+  const models = limited((c: { req: { raw: Request; header: (name: string) => string | undefined; query: (name: string) => string | undefined } }) => {
+    const scope = c.req.query('scope');
+    const openAiList = scope !== 'managed' && scope !== 'picker' && scope !== 'all';
+    return gateway.listModels(c.req.header('authorization'), {
+      managedOnly: scope === 'managed',
+      scope: scope === 'picker' || openAiList ? 'picker' : undefined,
+    }, openAiList).then(cloudflareSafe);
+  });
   for (const prefix of ['/', '/v1/', '/v1/llm/', '/v1/openai/']) {
     app.all(prefix + 'claude-code/*', claude);
     app.post(prefix + 'chat/completions', chat);

@@ -72,18 +72,22 @@ flow(
     const gw = new Client(ctx.env.gatewayUrl);
     const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('gateway-models') });
     for (const path of ['/v1/llm/models', '/v1/models', '/v1/openai/models'] as const) {
-      await ctx.step(`${path} returns the authenticated model catalog`, async () => {
+      await ctx.step(`${path} lists the models the funded PAT can call in the OpenAI list shape`, async () => {
         const r = await gw.withBearer(pat, 'OWNER_PAT').get(path);
-        r.status(200).body().exists('$.models');
-        const models = r.json<any>()?.models;
-        if (!models || typeof models !== 'object' || Object.keys(models).length === 0) {
-          throw new Error(`${path} returned an empty model catalog`);
-        }
-        if ('auto' in models || 'kortix/auto' in models) {
+        r.status(200).body().has('$.object', 'list');
+        const ids = (r.json<{ data?: { id: string; object: string }[] }>().data ?? []).map((model) => model.id);
+        if (ids.length === 0) throw new Error(`${path} listed no callable model`);
+        if (ids.includes('auto') || ids.includes('kortix/auto')) {
           throw new Error(`${path} returned the removed Auto model`);
         }
       });
     }
+    await ctx.step('/v1/models?scope=all returns the full model catalog as a keyed map', async () => {
+      const r = await gw.withBearer(pat, 'OWNER_PAT').get('/v1/models?scope=all');
+      r.status(200).body().exists('$.models');
+      const models = r.json<{ models?: Record<string, unknown> }>().models ?? {};
+      if (Object.keys(models).length === 0) throw new Error('scope=all returned an empty model catalog');
+    });
   },
 );
 
