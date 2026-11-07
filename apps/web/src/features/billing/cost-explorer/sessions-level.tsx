@@ -3,7 +3,12 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 
-import type { SessionCostSort, SessionCostsPage, SessionCostSummary } from '@kortix/sdk';
+import type {
+  SessionCostReconciliation,
+  SessionCostSort,
+  SessionCostsPage,
+  SessionCostSummary,
+} from '@kortix/sdk';
 import { ReceiptIcon as ReceiptText } from '@phosphor-icons/react';
 
 import { Badge } from '@kortix/ui/badge';
@@ -250,15 +255,36 @@ function formatActivity(value: string | null): string {
   return activityFormat.format(new Date(value));
 }
 
-function sumBy(
-  sessions: readonly SessionCostSummary[],
-  pick: (session: SessionCostSummary) => number,
-): number {
-  return sessions.reduce((sum, session) => sum + pick(session), 0);
+/** The cells a table row and the footer sum: a session or the unattributed remainder. */
+type CostCells = Pick<SessionCostSummary, 'request_count' | 'llm_cost' | 'compute_cost' | 'total_cost'>;
+
+function sumBy(rows: readonly CostCells[], pick: (row: CostCells) => number): number {
+  return rows.reduce((sum, row) => sum + pick(row), 0);
+}
+
+/**
+ * The spend `/usage/session-costs` matched to no session in the window (its
+ * `reconciliation`), or null when the table must not show it. The summary
+ * tiles above the table count it, so without this row tiles and table
+ * disagree (KRTX-4428). It belongs to no owner, so an owner filter hides it,
+ * and it is window-wide, so it shows once: on the last page. A request that
+ * cost nothing still shows, because the request counts must add up too.
+ */
+function unattributedSpend(
+  page: SessionCostsPage,
+  ownerFiltered: boolean,
+): SessionCostReconciliation | null {
+  const remainder = page.reconciliation;
+  if (ownerFiltered || page.next_offset !== null) return null;
+  const hasActivity =
+    remainder.request_count > 0 || remainder.compute_window_count > 0 || remainder.total_cost > 0;
+  return hasActivity ? remainder : null;
 }
 
 export interface SessionsLevelTableProps {
   data: SessionCostsPage | undefined;
+  /** An owner is selected: spend that no session owns is not that owner's. */
+  ownerFiltered: boolean;
   isLoading: boolean;
   error: Error | null;
   /** The active sort, so the headers can show which column orders the table. */
@@ -278,6 +304,7 @@ export interface SessionsLevelTableProps {
  */
 export function SessionsLevelTable({
   data,
+  ownerFiltered,
   isLoading,
   error,
   sort,
@@ -321,8 +348,10 @@ export function SessionsLevelTable({
   const total = data.total;
   const start = total === 0 ? 0 : offset + 1;
   const end = Math.min(offset + sessions.length, total);
+  const unattributed = unattributedSpend(data, ownerFiltered);
+  const rows: CostCells[] = unattributed ? [...sessions, unattributed] : sessions;
 
-  if (sessions.length === 0) {
+  if (rows.length === 0) {
     return (
       <EmptyState
         size="sm"
@@ -399,13 +428,33 @@ export function SessionsLevelTable({
               </TableRow>
             );
           })}
+          {unattributed ? (
+            <TableRow>
+              <TableCell colSpan={2} className="text-muted-foreground text-sm">
+                {tI18nComplete.raw('textbe57ff2d7907')}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {unattributed.request_count.toLocaleString('en-US')}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {formatSessionCostCredits(unattributed.llm_cost)}
+              </TableCell>
+              <TableCell className="text-right font-mono tabular-nums">
+                {formatSessionCostCredits(unattributed.compute_cost)}
+              </TableCell>
+              <TableCell className="text-right font-mono font-medium tabular-nums">
+                {formatSessionCostCredits(unattributed.total_cost)}
+              </TableCell>
+            </TableRow>
+          ) : null}
         </TableBody>
         <TableFooter>
           <TableRow>
             {/* "Page total", not "Total" — same rule as the projects level's
-                footer. This row sums `sessions`, which is one page of
-                `total`; the Total tile above the table is this project's
-                whole window, from `/usage/cost-summary`. Measured on the seed
+                footer. This row sums the rows above it: one page of `total`,
+                plus the unattributed remainder on the last page. The Total
+                tile above the table is this project's whole window, from
+                `/usage/cost-summary`. Measured on the seed
                 account's largest project over 2026-07-01..2026-08-03: 55
                 sessions totalling $24.2324, of which the top 25 are $24.1103
                 — the $0.1221 remainder is sessions 26-55, not a discrepancy.
@@ -415,16 +464,16 @@ export function SessionsLevelTable({
               {tI18nComplete.raw('text420aaa63cba7')}
             </TableCell>
             <TableCell className="text-right font-mono tabular-nums">
-              {sumBy(sessions, (session) => session.request_count).toLocaleString('en-US')}
+              {sumBy(rows, (row) => row.request_count).toLocaleString('en-US')}
             </TableCell>
             <TableCell className="text-right font-mono tabular-nums">
-              {formatSessionCostCredits(sumBy(sessions, (session) => session.llm_cost))}
+              {formatSessionCostCredits(sumBy(rows, (row) => row.llm_cost))}
             </TableCell>
             <TableCell className="text-right font-mono tabular-nums">
-              {formatSessionCostCredits(sumBy(sessions, (session) => session.compute_cost))}
+              {formatSessionCostCredits(sumBy(rows, (row) => row.compute_cost))}
             </TableCell>
             <TableCell className="text-right font-mono font-medium tabular-nums">
-              {formatSessionCostCredits(sumBy(sessions, (session) => session.total_cost))}
+              {formatSessionCostCredits(sumBy(rows, (row) => row.total_cost))}
             </TableCell>
           </TableRow>
         </TableFooter>
@@ -561,6 +610,7 @@ export function SessionsLevel({
     >
       <SessionsLevelTable
         data={sessionsQuery.data}
+        ownerFiltered={filters.ownerId !== null}
         isLoading={sessionsQuery.isLoading}
         error={sessionsQuery.error instanceof Error ? sessionsQuery.error : null}
         sort={filters.sort}
