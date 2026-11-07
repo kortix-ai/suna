@@ -105,6 +105,7 @@ export function useComposerDraft({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoredKeyRef = useRef<string | null>(null);
   const activeRef = useRef(active);
+  const submittedRef = useRef(false);
 
   /**
    * Write whatever is pending, now.
@@ -148,7 +149,7 @@ export function useComposerDraft({
     };
   }, [active, flush]);
 
-  const handleDocChange = useCallback(
+  const scheduleSave = useCallback(
     (doc: JSONContent, isEmpty: boolean) => {
       if (!activeRef.current || !scopeRef.current || !userIdRef.current) return;
       pendingRef.current = { doc, isEmpty };
@@ -156,6 +157,14 @@ export function useComposerDraft({
       timerRef.current = setTimeout(flush, SAVE_DEBOUNCE_MS);
     },
     [flush, scopeRef, userIdRef],
+  );
+
+  const handleDocChange = useCallback(
+    (doc: JSONContent, isEmpty: boolean) => {
+      submittedRef.current = false;
+      scheduleSave(doc, isEmpty);
+    },
+    [scheduleSave],
   );
 
   /**
@@ -177,11 +186,17 @@ export function useComposerDraft({
     uploadsKeyRef.current = uploadsKey;
     const editor = editorRef.current;
     if (!editorReady || !editor) return;
-    const doc = editor.getDocument();
-    if (doc) handleDocChange(doc, editor.isEmpty());
-  }, [quotes, pastes, uploads, uploadsKey, editorReady, editorRef, handleDocChange]);
+    // A home composer can retain submitted text until navigation. Accessory
+    // cleanup must not turn that text back into an unsent draft. New accessories
+    // still persist, but without the spent document, until the next editor edit.
+    const doc = submittedRef.current
+      ? { type: 'doc', content: [{ type: 'paragraph' }] }
+      : editor.getDocument();
+    if (doc) scheduleSave(doc, submittedRef.current || editor.isEmpty());
+  }, [quotes, pastes, uploads, uploadsKey, editorReady, editorRef, scheduleSave]);
 
   const clearSavedDraft = useCallback(() => {
+    submittedRef.current = true;
     if (timerRef.current !== null) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
