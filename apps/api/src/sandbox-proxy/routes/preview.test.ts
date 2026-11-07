@@ -479,5 +479,8 @@ describe('isSessionLogRead', () => {
     expect(isSessionLogRead(8000, 'GET', '/kortix/runtime/log/../env')).toBe(false);
     expect(isSessionLogRead(8000, 'GET', '/kortix/runtime/logs')).toBe(false);
     expect(isSessionLogRead(8000, 'GET', '/kortix/env')).toBe(false);
+    expect(isSessionLogRead(4096, 'GET', '/kortix/runtime/log')).toBe(false);
+    expect(isSessionLogRead(4097, 'GET', '/kortix/runtime/log')).toBe(false);
+    expect(isSessionLogRead(3000, 'GET', '/kortix/runtime/log')).toBe(false);
   });
 });

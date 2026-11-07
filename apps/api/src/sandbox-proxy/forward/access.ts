@@ -182,12 +182,13 @@ export async function refuseSessionOrControlAccess(input: {
 /**
  * Is this a read of the box's session log (`GET /kortix/runtime/log`, or one message of it)?
  *
- * Matches the path as sent, never the `/proxy/{port}`-stripped one: kortixd pipes
+ * Daemon port (8000) only: 4096/4097 are an old OpenCode box's own server, which this
+ * rule never covered. Matches the path as sent, never the `/proxy/{port}`-stripped one: kortixd pipes
  * `/proxy/<any port>/…` to that user port, so stripping would call a read of a
  * user's own dev server a log read.
  */
 export function isSessionLogRead(upstreamPort: number, method: string, remainingPath: string): boolean {
-  if (method !== 'GET' || !carriesSessionData(upstreamPort)) return false;
+  if (method !== 'GET' || upstreamPort !== 8000) return false;
   return /^\/kortix\/runtime\/log(?:\/messages\/[^/?#]+)?\/?$/.test(remainingPath);
 }
 
