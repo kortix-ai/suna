@@ -194,6 +194,7 @@
     "./internal/notifications/notification-inbox",
     "./internal/notifications/notification-rows",
     "./internal/notifications/session-toast-cards",
+    "./internal/notifications/use-inbox-summary",
     "./internal/notifications/web-push",
     "./internal/session-types/index",
     "./internal/session-types/types",

@@ -4,21 +4,15 @@
 //
 //   bun apps/web/scripts/generate-audit-actions-doc.mjs
 //   bun apps/web/scripts/generate-audit-actions-doc.mjs --check
-import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { onByDefault } from './docs-generated-region.mjs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { code, onByDefault, repositoryRoot, runFileGenerator } from './docs-generated-region.mjs';
 
-const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const webRoot = resolve(scriptDirectory, '..');
-const repositoryRoot = resolve(webRoot, '../..');
-const outputPath = resolve(webRoot, 'content/docs/audit-actions.mdx');
+const outputPath = resolve(repositoryRoot, 'apps/web/content/docs/audit-actions.mdx');
 
 async function catalog() {
   return import(pathToFileURL(resolve(repositoryRoot, 'packages/shared/src/audit-labels.ts')).href);
 }
-
-const code = (value) => `\`${value}\``;
 
 function routeCell(key) {
   if (key.startsWith('ENTRY ')) return 'before the API router';
@@ -153,14 +147,10 @@ ${[...TABLE_HEAD, ...operator.map(row)].join('\n')}
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const rendered = await renderAuditActionsDoc();
-  if (process.argv.includes('--check')) {
-    if (readFileSync(outputPath, 'utf8') !== rendered) {
-      console.error(`${outputPath} is stale. Run: bun apps/web/scripts/generate-audit-actions-doc.mjs`);
-      process.exit(1);
-    }
-  } else {
-    writeFileSync(outputPath, rendered);
-    console.log(`Wrote the audit action reference to ${outputPath}`);
-  }
+  await runFileGenerator(
+    'the audit action reference',
+    'bun apps/web/scripts/generate-audit-actions-doc.mjs',
+    renderAuditActionsDoc,
+    outputPath,
+  );
 }

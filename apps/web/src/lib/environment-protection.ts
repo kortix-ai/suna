@@ -1,5 +1,7 @@
 export const ENVIRONMENT_PROTECTION_USERNAME = 'kortix';
 export const ENVIRONMENT_HEALTH_PATH = '/api/health';
+/** RFC 9116: the disclosure policy is public by definition, also on gated environments. */
+const SECURITY_TXT_PATH = '/.well-known/security.txt';
 export const ENVIRONMENT_ACCESS_COOKIE = '__Secure-kortix_test_access';
 
 /**
@@ -23,7 +25,7 @@ export interface EnvironmentProtectionInput {
 }
 
 export type EnvironmentProtectionResult =
-  | { allowed: true; source: 'disabled' | 'health' | 'auth-callback' | 'cookie' | 'basic' }
+  | { allowed: true; source: 'disabled' | 'health' | 'security-txt' | 'auth-callback' | 'cookie' | 'basic' }
   | { allowed: false; reason: 'credentials_required' | 'configuration_error' };
 
 function safeEqual(left: string, right: string): boolean {
@@ -62,6 +64,9 @@ export function authorizeEnvironment(
 ): EnvironmentProtectionResult {
   if (input.pathname === ENVIRONMENT_HEALTH_PATH) {
     return { allowed: true, source: 'health' };
+  }
+  if (input.pathname === SECURITY_TXT_PATH) {
+    return { allowed: true, source: 'security-txt' };
   }
   if (ENVIRONMENT_CALLBACK_PATHS.includes(input.pathname)) {
     return { allowed: true, source: 'auth-callback' };
