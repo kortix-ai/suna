@@ -626,10 +626,18 @@ test('activate from a draft: PUT …/criteria only when GOAL.md differs; more th
     expect(tooMany.out).toContain('GOAL.md lists 9 done criteria; the limit is 8.');
     expect(fake.writes()).toHaveLength(0);
 
-    // The brief already matches the goal: no criteria write, straight to activate.
-    writeFileSync(join(folder, 'GOAL.md'), brief('EU billing live', ['Invoice shows EUR']));
+    // The brief differs from the goal: PUT the brief's criteria with the revision read, then activate on the next revision.
+    writeFileSync(join(folder, 'GOAL.md'), brief('EU billing live', ['Invoice shows EUR', 'Checkout charges EUR']));
     expect((await cli(fake, root, 'owner', ['transition', 'active', '--reason', 'go'])).code).toBe(0);
-    expect(fake.writes().map((w) => [w.method, w.path, w.body])).toEqual([['POST', `/v1/projects/p1/goals/${GOAL_ID}/activate`, { revision: 1, reason: 'go' }]]);
+    expect(fake.writes().map((w) => [w.method, w.path, w.body])).toEqual([
+      ['PUT', `/v1/projects/p1/goals/${GOAL_ID}/criteria`, { revision: 1, criteria: ['Invoice shows EUR', 'Checkout charges EUR'] }],
+      ['POST', `/v1/projects/p1/goals/${GOAL_ID}/activate`, { revision: 2, reason: 'go' }],
+    ]);
+
+    // The brief already matches the goal: no criteria write, straight to activate.
+    fake.goal = { ...fake.goal, state: 'draft' };
+    expect((await cli(fake, root, 'owner', ['transition', 'active', '--reason', 'again'])).code).toBe(0);
+    expect(fake.writes().slice(2).map((w) => [w.method, w.path, w.body])).toEqual([['POST', `/v1/projects/p1/goals/${GOAL_ID}/activate`, { revision: 3, reason: 'again' }]]);
   } finally {
     fake.stop();
     rmSync(root, { recursive: true, force: true });
