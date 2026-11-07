@@ -11,7 +11,7 @@ await Sentry.close();
 // that session as a third envelope. It belongs to the closed client: drop it.
 Sentry.getIsolationScope().setSession();
 
-test('client beforeSend drops injected Talisman onboarding but sends application failures', async () => {
+test('client beforeSend drops injected Talisman and Shield wallet rejections but sends application failures', async () => {
   const envelopes: unknown[] = [];
   const client = new Sentry.NodeClient({
     ...options,
@@ -30,6 +30,10 @@ test('client beforeSend drops injected Talisman onboarding but sends application
   client.captureEvent({ exception: { values: [{ type: 'Error', value, stacktrace: { frames: [
     { filename: 'app:///_next/static/immutable/chunks/synthetic.js', function: 'r' },
     { filename: 'app:///page.js', function: 'ne.handleResponse' },
+  ] } }] } });
+  client.captureEvent({ exception: { values: [{ type: 'Error', value: 'NotUnlocked: Unlock Shield to use a DApp.', stacktrace: { frames: [
+    { filename: 'app:///background.js', function: 'yW' },
+    { filename: 'app:///background.js', function: 'Il' },
   ] } }] } });
   await client.flush();
   expect(envelopes).toHaveLength(0);
