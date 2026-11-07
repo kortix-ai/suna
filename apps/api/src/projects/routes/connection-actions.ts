@@ -482,10 +482,14 @@ export function registerConnectionActionsRoutes(): void {
             await revokeConnections(eq(connectorConnections.connectionId, connectionId));
           } else {
             // A person restores it now. Offboarding's revokedReason
-            // (connectors/computers.ts) no longer holds.
-            await connectConnection(connectionId, {
-              metadata: sql`${connectorConnections.metadata} - 'revokedReason' - 'revokedAt'`,
-            });
+            // (connectors/computers.ts) no longer holds. `loadMutableConnection`
+            // above already refused an agent session on a revoked row.
+            await connectConnection(
+              connectionId,
+              { metadata: sql`${connectorConnections.metadata} - 'revokedReason' - 'revokedAt'` },
+              db,
+              'person',
+            );
           }
         }
         // The default shared account may have changed: activate or park pending event triggers.

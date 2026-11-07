@@ -30,7 +30,9 @@ export async function startComposioConnect(projectId: string, connectionId: stri
     projectId, slug: connection.connectorAlias, app, connectionId, stableUserId,
     redirects: parseRedirects(body),
   });
-  // A person starts the authorization now: a deliberate (re)connect.
+  // Starting an authorization is not a reconnect: an agent session may start
+  // its own (`owner: "me"`), so leaving `revoked` stays a person's call and a
+  // started flow on a revoked account records its session without reviving it.
   await connectConnection(connectionId, {
     metadata: composioConnectionMetadata({
       toolkit: app, stableUserId, sessionId: result.sessionId,
@@ -39,7 +41,7 @@ export async function startComposioConnect(projectId: string, connectionId: stri
       connectedAs: result.connectedAccountId && result.connectedAccountId === metadata.connected_account_id
         ? connectedAsOf(metadata) : null,
     }),
-  });
+  }, db, 'agent');
   return { app, connectUrl: result.connectUrl, connected: result.connected, isNoAuth: result.isNoAuth };
 }
 

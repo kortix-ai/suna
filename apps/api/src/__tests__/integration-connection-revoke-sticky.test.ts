@@ -14,7 +14,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { connectionCredentials, connectorConnections, connectors } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { upsertConnectionCredential } from '../connectors/credentials';
-import { completeConnection, revokeConnections } from '../connectors/connection-status';
+import { completeConnection, connectConnection, revokeConnections } from '../connectors/connection-status';
 import { db } from '../shared/db';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 import { interleave } from './helpers/interleave';
@@ -162,5 +162,28 @@ describe('a connector connection revoke is sticky', () => {
     const conn = await seedConnection('revoke-sticky-manual-unstamped', 'revoked');
     await upsertConnectionCredential({ ...conn, value: 'pasted-secret', connectNow: true });
     expect(await state(conn.connectionId)).toEqual({ status: 'active', credentials: 1 });
+  });
+
+  test('an agent starting its own authorization does not revive a revoked account', async () => {
+    // The connector-scoped `/connect` route lets an agent session start with
+    // `owner: "me"`, and it lands on the member's row even when revoked. A
+    // revoke is a person's decision: an agent records its authorization on the
+    // row and the row stays revoked until the flow completes after the revoke.
+    const conn = await seedConnection('revoke-sticky-agent-start', 'revoked', minutesAgo(10));
+    expect(await connectConnection(conn.connectionId, { metadata: { session_id: 'sess_1' } })).toBeNull();
+    expect(await state(conn.connectionId)).toEqual({ status: 'revoked', credentials: 0 });
+  });
+
+  test('an agent starting an authorization on an active account still records it', async () => {
+    const conn = await seedConnection('revoke-sticky-agent-active', 'active');
+    const moved = await connectConnection(conn.connectionId, { metadata: { session_id: 'sess_2' } });
+    expect(moved?.connectionId).toBe(conn.connectionId);
+    expect(await state(conn.connectionId)).toEqual({ status: 'active', credentials: 0 });
+  });
+
+  test('a person clicking connect revives a revoked account', async () => {
+    const conn = await seedConnection('revoke-sticky-person-connect', 'revoked', minutesAgo(10));
+    expect(await connectConnection(conn.connectionId, {}, undefined, 'person')).not.toBeNull();
+    expect(await state(conn.connectionId)).toEqual({ status: 'active', credentials: 0 });
   });
 });

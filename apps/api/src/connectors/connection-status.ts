@@ -8,8 +8,10 @@
  * Composio finalize. Each transition is a compare-and-set
  * (`shared/status-transition.ts`):
  *
- *   - `connect`: a person (re)connects the account at request time. It is the
- *     only transition that leaves `revoked` unconditionally.
+ *   - `connect`: a reconnect. Only its `person` authority (a click, a pasted
+ *     credential, a paired machine) leaves `revoked` unconditionally; an
+ *     `agent` authority (an agent session starting its own authorization)
+ *     never does.
  *   - `complete`: an in-flight completion. It leaves `revoked` only when the
  *     revoke (`metadata.revokedAt`) is older than the flow (`startedAt`): a
  *     sign-in a person started on a revoked account still reconnects it.
@@ -77,11 +79,24 @@ export async function completeConnection(
   return moved.applied;
 }
 
-/** A person connects the account now: active from any status. */
+/**
+ * WHO starts the (re)connect: `person` is a request only a person can make (a
+ * click in Customize, a pasted credential, a paired machine); `agent` is
+ * anything an agent session can reach on its own behalf.
+ */
+export type ConnectAuthority = 'person' | 'agent';
+
+/**
+ * An account connects from any status. Only a `person` may leave `revoked`: a
+ * revoke is a person's decision, and an agent re-authorizing its own account
+ * must not undo it (`agentMayTouchConnection`, projects/lib/connection-mutation.ts).
+ * The guard makes that part of the UPDATE, so a concurrent revoke still wins.
+ */
 export async function connectConnection(
   connectionId: string,
   set: ConnectionSet = {},
   exec: StatusExecutor = db,
+  authority: ConnectAuthority = 'agent',
 ): Promise<ConnectionRow | null> {
   const moved = await transitionStatus(
     connectorConnections,
@@ -90,6 +105,7 @@ export async function connectConnection(
     {
       where: eq(connectorConnections.connectionId, connectionId),
       set: { ...set, metadata: set.metadata ?? sql`${connectorConnections.metadata} - 'revokedAt'`, updatedAt: new Date() },
+      ...(authority === 'person' ? {} : { guard: sql`${connectorConnections.status} <> 'revoked'` }),
     },
     exec,
   );

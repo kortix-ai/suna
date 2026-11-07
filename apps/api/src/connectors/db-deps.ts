@@ -456,8 +456,9 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         .where(eq(connectorConnections.connectionId, connectionId))
         .limit(1);
       const previous = (previousRow?.metadata ?? {}) as Record<string, unknown>;
-      // A person starts the authorization now: a deliberate (re)connect
-      // (connectors/connection-status.ts).
+      // Starting an authorization is not a reconnect: an agent session reaches
+      // this with owner "me", and only a person leaves `revoked`
+      // (connectors/connection-status.ts `ConnectAuthority`).
       // INVARIANT (2026-09-16, account_required rule): never set is_default
       // here — an auto-authorized account is not a deliberately pinned one.
       // `connectorFinalize` below finds this row back by recency
