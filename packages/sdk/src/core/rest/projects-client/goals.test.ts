@@ -479,8 +479,8 @@ describe('goal record: the calls a goal session makes (the CLI)', () => {
     routes[`PUT ${base}/criteria`] = { status: 409, body: { error: 'goal_conflict', message: 'The goal changed.', goal: current } };
     for (const write of [() => postWorkspaceGoalAction('p1', RECORD, 'handover', { note: 'n' }), () => setWorkspaceGoalCriteria('p1', RECORD, ['a'])]) {
       const error = await write().catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(WorkspaceGoalConflictError);
-      expect((error as WorkspaceGoalConflictError).goal.record).toEqual(current);
+      if (!(error instanceof WorkspaceGoalConflictError)) throw new Error(`expected a WorkspaceGoalConflictError, got ${String(error)}`);
+      expect(error.goal.record).toEqual(current);
     }
   });
 
