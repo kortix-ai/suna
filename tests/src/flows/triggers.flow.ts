@@ -273,12 +273,16 @@ flow(
       'PUT /v1/accounts/:accountId/iam/enterprise-demo',
       'POST /v1/accounts/:accountId/iam/roles',
       'POST /v1/accounts/:accountId/iam/policies',
+      'POST /v1/accounts/:accountId/iam/service-accounts',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project();
-    const noTriggerRead = await team.addMember('member');
+    // Membership is access (design.md §3.2 C3): every member of a 1:1
+    // workspace holds the member tier, which carries project.trigger.read. The
+    // principal without it is a service account bound to the custom role only.
+    let noTriggerRead = ctx.P.ANON;
     const floorMember = await team.addMember('member');
     const roleKey = `notrig_${team.id.replace(/-/g, '').slice(0, 10)}`;
     let roleId = '';
@@ -310,12 +314,20 @@ flow(
       },
     );
 
-    await ctx.step('bind that member to the custom role on this project', async () => {
+    await ctx.step('a service account is bound to the custom role on this project, and to nothing else', async () => {
+      const sa = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/service-accounts',
+        { name: `trg10-${team.id.slice(0, 8)}` },
+        { params: { accountId: team.id } },
+      );
+      sa.status(201);
+      const { service_account_id: saId, secret } = sa.json<{ service_account_id: string; secret: string }>();
+      noTriggerRead = { ...ctx.P.OWNER, label: 'TRG10_SERVICE_ACCOUNT', userId: saId, auth: { mode: 'bearer', token: secret } };
       const r = await ctx.client.as(ctx.P.OWNER).post(
         '/v1/accounts/:accountId/iam/policies',
         {
-          principalType: 'member',
-          principalId: noTriggerRead.userId!,
+          principalType: 'token',
+          principalId: saId,
           roleId,
           scopeType: 'project',
           scopeId: project.id,
@@ -325,7 +337,7 @@ flow(
       r.status(201);
     });
 
-    await ctx.step('member WITHOUT trigger.read → GET /triggers 403 (leaf gate)', async () => {
+    await ctx.step('a principal WITHOUT trigger.read → GET /triggers 403 (leaf gate)', async () => {
       const r = await ctx.client
         .as(noTriggerRead)
         .get('/v1/workspaces/:projectId/triggers', { params: { projectId: project.id } });

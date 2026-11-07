@@ -74,6 +74,9 @@ flow(
         .post("/v1/projects/provision-stream", {
           name: ctx.fixtures.name("stream-invalid-provider"),
           provider: "unsupported-provider",
+          // An empty team account: the OWNER's default one already holds its
+          // project (409 workspace_has_project before the provider is validated).
+          account_id: (await ctx.fixtures.team()).id,
         });
       r.status(200).headerEquals("content-type", /^text\/event-stream/);
 
@@ -266,7 +269,10 @@ flow("PROJ-8", {
   if (ctx.env.target === "local") {
     // managedGit: the connector-create step commits kortix.yaml, which a
     // database-only fixture's ke2e.invalid remote cannot take.
-    id = (await ctx.fixtures.project({ name: ctx.fixtures.name("del"), managedGit: true })).id;
+    // A team's workspace: its own account (1:1), so deleting it schedules the
+    // 14-day close. The OWNER's default account holds every database fixture
+    // project and is split_pending, which archives without a date.
+    id = (await (await ctx.fixtures.team()).project({ name: ctx.fixtures.name("del"), managedGit: true })).id;
   } else {
     await ctx.step("OWNER provisions a project to archive", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("del") });

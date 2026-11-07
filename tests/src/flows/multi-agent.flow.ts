@@ -125,9 +125,10 @@ flow(
         (await asLead.post(SEND, { to: lead, message: 'hi' }, { params: { ...p, sessionId: lead } })).status(400).body().has('$.code', 'recipient_is_self');
         (await asLead.post(SEND, { to: 'reviewer', message: 'hi', bogus: 1 }, { params: { ...p, sessionId: lead } })).status(400);
       });
-      await ctx.step("the reviewer's token cannot speak for the lead → 403; NONMEMBER → 403; ANON → 401", async () => {
+      await ctx.step("the reviewer's token cannot speak for the lead → 403; NONMEMBER → 404 workspace_not_found; ANON → 401", async () => {
         (await asReviewer.post(SEND, { to: 'reviewer', message: 'as lead' }, { params: { ...p, sessionId: lead } })).status(403).body().has('$.code', 'not_this_session');
-        (await ctx.client.as(ctx.P.NONMEMBER).get(REACHABLE, { params: { ...p, sessionId: lead } })).status(403);
+        // The canonical route answers a workspace the caller cannot read like an unknown one (design.md §3.2 C5).
+        (await ctx.client.as(ctx.P.NONMEMBER).get(REACHABLE, { params: { ...p, sessionId: lead } })).status(404).body().has('$.code', 'workspace_not_found');
         (await ctx.client.as(ctx.P.ANON).get(REACHABLE, { params: { ...p, sessionId: lead } })).status(401);
       });
       await ctx.step('the session row carries the board fields: agent_handle, inbound accept, board_state idle, attention null', async () => {
@@ -318,7 +319,7 @@ flow(
         (await asOutsider!.get(TASKS, { params: l })).status(403).body().has('$.code', 'not_in_team');
         (await owner.get(TASKS, { params: l })).status(200).body().has('$.tasks.length', 2);
         (await owner.get(TASK, { params: { ...l, seq: 99 } })).status(404);
-        (await ctx.client.as(ctx.P.NONMEMBER).get(TASKS, { params: l })).status(403);
+        (await ctx.client.as(ctx.P.NONMEMBER).get(TASKS, { params: l })).status(404).body().has('$.code', 'workspace_not_found');
       });
       await ctx.step('?team_lead=<lead> lists the two teammates with team_lead_session_id and agent_handle', async () => {
         const res = await owner.get(`${SESSIONS}?team_lead=${lead}`, { params: p });

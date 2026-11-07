@@ -611,7 +611,9 @@ flow(
         )
           .status(403)
           .body()
-          .has('$.error', 'Agent-session tokens cannot mint project tokens');
+          // HUMAN_ONLY (design.md §3.2 C8) refuses it first: no agent session mints a credential.
+          .has('$.code', 'agent_human_only_action')
+          .has('$.workspace_action', 'workspace.credentials.issue');
       });
 
       await ctx.step('the session-bound credential cannot revoke a project CLI token → 403', async () => {
@@ -640,17 +642,17 @@ flow(
           .has('$.ok', true);
       });
 
-      await ctx.step('an account that requires PAT expiry refuses a project CLI token without one → 400', async () => {
+      await ctx.step('an account that requires PAT expiry gives a project CLI token without one the default expiry, at most its 30-day maximum → 201', async () => {
         await db.query(
           'UPDATE kortix.accounts SET pat_require_expiry = true, pat_max_lifetime_days = 30 WHERE account_id = $1::uuid',
           [team.id],
         );
-        (
-          await owner.post('/v1/workspaces/:projectId/cli-token', { name: 'no-expiry' }, { params: { projectId: policyProject.id } })
-        )
-          .status(400)
-          .body()
-          .has('$.code', 'expiry_required');
+        const r = await owner.post('/v1/workspaces/:projectId/cli-token', { name: 'no-expiry' }, { params: { projectId: policyProject.id } });
+        r.status(201);
+        const created = r.json<{ token_id: string; expires_at: string | null }>();
+        minted.push(created.token_id);
+        const days = (Date.parse(created.expires_at ?? '') - Date.now()) / 86_400_000;
+        if (!(days > 29 && days <= 30)) throw new Error(`expires_at ${created.expires_at}: ${days.toFixed(2)} days, want the 30-day maximum`);
       });
 
       await ctx.step('the same account refuses an expiry beyond its maximum lifetime → 400', async () => {
