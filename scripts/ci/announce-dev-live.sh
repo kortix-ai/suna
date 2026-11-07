@@ -35,6 +35,16 @@ max_prs=50
 
 warn() { echo "::warning::announce-dev-live: $*"; }
 
+# shellcheck source=scripts/ci/lib/github-comment.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/github-comment.sh"
+
+# label | /health URL | name of the variable holding the surface's deploy result
+DEV_SURFACES=(
+  'API · dev-api.kortix.com|https://dev-api.kortix.com/v1/health|API_RESULT'
+  'Gateway · gateway-dev.kortix.com|https://gateway-dev.kortix.com/health/live|GATEWAY_RESULT'
+  'Web · dev.kortix.com|https://dev.kortix.com/api/health|WEB_RESULT'
+)
+
 # ── per-surface verdict ──────────────────────────────────────────────────────
 rows=()
 live=true
@@ -54,9 +64,10 @@ probe() {
     live=false
   fi
 }
-probe 'API · dev-api.kortix.com' "${API_RESULT:-unchanged}" https://dev-api.kortix.com/v1/health
-probe 'Gateway · gateway-dev.kortix.com' "${GATEWAY_RESULT:-unchanged}" https://gateway-dev.kortix.com/health/live
-probe 'Web · dev.kortix.com' "${WEB_RESULT:-unchanged}" https://dev.kortix.com/api/health
+for surface in "${DEV_SURFACES[@]}"; do
+  IFS='|' read -r label url result_var <<<"$surface"
+  probe "$label" "${!result_var:-unchanged}" "$url"
+done
 
 if [ "${#rows[@]}" -eq 0 ]; then
   echo "announce-dev-live: no surface deployed in this run; nothing to announce"
@@ -121,15 +132,11 @@ for number in "${prs[@]}"; do
   body="$(printf '%s\n' "$marker" "$title" '' "$lead" '' '| Surface | Result |' '|---|---|' "${rows[@]}" '' \
     "Deploy run: ${run_url}${together:+. ${together}}")"
 
-  existing="$(gh api --paginate "repos/${repo}/issues/${number}/comments" 2>/dev/null \
-    | jq -rs --arg m "$marker" '[.[][] | select(.body | startswith($m))][0].id // empty' 2>/dev/null || true)"
-  if [ -n "$existing" ]; then
-    gh api -X PATCH "repos/${repo}/issues/comments/${existing}" -f body="$body" >/dev/null \
-      || warn "could not edit the comment on #${number}"
-  else
-    gh api -X POST "repos/${repo}/issues/${number}/comments" -f body="$body" >/dev/null \
-      || warn "could not comment on #${number}"
-  fi
+  upsert_sticky_comment "$repo" "$number" "$marker" "$body" && rc=0 || rc=$?
+  case "$rc" in
+    3) warn "could not edit the comment on #${number}" ;;
+    4) warn "could not comment on #${number}" ;;
+  esac
   summary+=("| #${number} | $([ "$live" = true ] && echo live || echo 'not live') |")
 done
 
@@ -143,7 +150,8 @@ done
 corrected=()
 if [ "$live" = true ] && [ "${STALE_SWEEP:-1}" = 1 ]; then
   served=()
-  for url in https://dev-api.kortix.com/v1/health https://gateway-dev.kortix.com/health/live https://dev.kortix.com/api/health; do
+  for surface in "${DEV_SURFACES[@]}"; do
+    IFS='|' read -r _ url _ <<<"$surface"
     served+=("$(curl -fsS --max-time 10 "$url" 2>/dev/null | jq -r '.commit // empty' 2>/dev/null || true)")
   done
   candidates="$(gh api "repos/${repo}/pulls?state=closed&base=dev&sort=updated&direction=desc&per_page=30" 2>/dev/null \
@@ -151,8 +159,7 @@ if [ "$live" = true ] && [ "${STALE_SWEEP:-1}" = 1 ]; then
   while read -r number merge; do
     [ -n "$number" ] && [ -n "$merge" ] || continue
     case " ${prs[*]:-} " in *" ${number} "*) continue ;; esac
-    comment="$(gh api --paginate "repos/${repo}/issues/${number}/comments" 2>/dev/null \
-      | jq -cs --arg m "$marker" '[.[][] | select(.body | startswith($m))][0] // empty' 2>/dev/null || true)"
+    comment="$(sticky_comment "$repo" "$number" "$marker")"
     [ -n "$comment" ] || continue
     jq -e '.body | contains("### Not live on dev yet")' <<<"$comment" >/dev/null 2>&1 || continue
     contained=true
