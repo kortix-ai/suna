@@ -68,34 +68,6 @@ function UseCaseMeta({ post, className }: { post: Post; className?: string }) {
 }
 
 /**
- * The lead use case (Polar blog lead, as on /blog): the two-tone title on the
- * left, the title in ink and the description under it in muted ink at the
- * same size, the cover on the right. The whole block is one link.
- */
-export function UseCaseFeatured({ post }: { post: Post }) {
-  return (
-    <Link
-      href={post.url}
-      className="outline-ring grid grid-cols-1 items-center gap-10 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 lg:grid-cols-2 lg:gap-16"
-    >
-      <div className="order-last lg:order-first">
-        <h2 className="text-xl font-medium tracking-tight text-balance md:text-2xl">
-          <span className="text-foreground">{post.data.title}</span>
-          {post.data.description ? (
-            <>
-              {' '}
-              <span className="text-muted-foreground mt-2 block line-clamp-3">{post.data.description}</span>
-            </>
-          ) : null}
-        </h2>
-        <UseCaseMeta post={post} className="mt-8" />
-      </div>
-      <UseCaseCover post={post} featured className="aspect-video w-full" />
-    </Link>
-  );
-}
-
-/**
  * One entry in the use-case catalog (Polar blog card, as on /blog): a wide
  * cover, the title, then archetype and date. The whole card is the link; the
  * title keeps its colour on hover.
