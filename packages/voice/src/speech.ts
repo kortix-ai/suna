@@ -490,18 +490,17 @@ export const ttss: Record<string, (lang?: string, model?: string) => Tts> = {
 // fetched once. A call's voice can be one by name, or a few words picked against them ("deep calm British male").
 export type Voice = { id: string; about: string }
 let voiceList: Promise<Voice[]> | undefined
+// No source (no models base, no key) is not a catalog: [] is not kept, so a call once a source is set still fetches it.
 export const inworldVoices = (): Promise<Voice[]> =>
-  (voiceList ??= viaModels()
+  !viaModels() && !process.env.INWORLD_API_KEY ? Promise.resolve([]) : (voiceList ??= viaModels()
     ? fetch(voicesUrl(), { headers: modelsHeaders(), signal: AbortSignal.timeout(5000) })
         .then((r) => (r.ok ? (r.json() as Promise<{ data?: { id: string; description?: string; tags?: string[]; languages?: string[] }[] }>) : Promise.reject(Error(`voices ${r.status}`))))
         .then((j) => (known = (j.data ?? []).map((v) => ({ id: v.id, about: `${voiceName(v.id)} ${v.description ?? ''} ${(v.tags ?? []).join(' ')} ${(v.languages ?? []).join(' ')}`.toLowerCase() }))))
         .catch(() => ((voiceList = undefined), []))
-    : process.env.INWORLD_API_KEY
-    ? fetch('https://api.inworld.ai/tts/v1/voices', { headers: { Authorization: `Basic ${process.env.INWORLD_API_KEY}` }, signal: AbortSignal.timeout(5000) })
+    : fetch('https://api.inworld.ai/tts/v1/voices', { headers: { Authorization: `Basic ${process.env.INWORLD_API_KEY}` }, signal: AbortSignal.timeout(5000) })
         .then((r) => (r.ok ? (r.json() as Promise<{ voices?: { voiceId: string; description?: string; tags?: string[]; languages?: string[] }[] }>) : Promise.reject(Error(`voices ${r.status}`)))) // a failed fetch is tried again next time, not kept as none
         .then((j) => (known = (j.voices ?? []).map((v) => ({ id: v.voiceId, about: `${voiceName(v.voiceId)} ${v.description ?? ''} ${(v.tags ?? []).join(' ')} ${(v.languages ?? []).join(' ')}`.toLowerCase() }))))
-        .catch(() => ((voiceList = undefined), []))
-    : Promise.resolve([]))
+        .catch(() => ((voiceList = undefined), [])))
 let known: Voice[] = [] // filled by inworldVoices() (the relay calls it at start)
 /** An Inworld voice id for a name or a description: the name itself when it is one, else the voice whose description
  * shares the most of its words (gender words count double); the words as given when nothing is known yet. */
