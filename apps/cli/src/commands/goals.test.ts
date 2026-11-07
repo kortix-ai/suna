@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { ProjectGoalCriterionStatus } from '@kortix/sdk';
 import {
   briefCriteria,
   chaseViolations,
@@ -12,12 +13,11 @@ import {
   verdictResults,
   withLifecycleMirror,
   type Goal,
-  type GoalCriterion,
 } from './goals';
 
 // ── Pure rules ───────────────────────────────────────────────────────────────
 
-const crit = (id: string, over: Partial<GoalCriterion> = {}): GoalCriterion => ({ id, text: `criterion ${id}`, reported_met: false, evidence: null, verified: false, ...over });
+const crit = (id: string, over: Partial<ProjectGoalCriterionStatus> = {}): ProjectGoalCriterionStatus => ({ id, text: `criterion ${id}`, reported_met: false, evidence: null, verified: false, ...over });
 
 describe('verdict flags', () => {
   const criteria = [crit('c1'), crit('c2'), crit('c3')];
@@ -111,12 +111,15 @@ interface Req {
   body: Record<string, unknown>;
 }
 
+/** The fake's goal row: the record plus the row's current verifier, which the wire carries only in `verification`. */
+type FakeGoal = Goal & { verifier_session_id: string | null };
+
 interface Fake {
-  goal: Goal;
+  goal: FakeGoal;
   requests: Req[];
   sessionMeta: Record<string, Record<string, unknown>>;
   /** Bump the revision before the next write, as a concurrent person edit would. */
-  conflictNext: ((g: Goal) => void) | null;
+  conflictNext: ((g: FakeGoal) => void) | null;
   /** Answer a request before the fake's own rules: a route that is off, or a stale revision on every write. */
   respond: ((r: Req) => Response | null) | null;
   writes(): Req[];
@@ -126,7 +129,7 @@ interface Fake {
 
 const GOAL_ID = '00000000-0000-4000-8000-000000000001';
 
-function goalRecord(box: string, over: Partial<Goal> = {}): Goal {
+function goalRecord(box: string, over: Partial<FakeGoal> = {}): FakeGoal {
   return {
     goal_id: GOAL_ID,
     project_id: 'p1',
@@ -137,11 +140,14 @@ function goalRecord(box: string, over: Partial<Goal> = {}): Goal {
     chase_at: null,
     summary: '',
     paused_at: null,
+    paused_by_user_id: null,
     stopped_at: null,
     blocked_reason: null,
     assigned_user_id: 'u1',
+    created_by_user_id: 'u1',
     agent: 'billing',
     space: null,
+    drive_id: 'd1',
     folder: '/Users/u1/Goals/eu-billing',
     box_folder: box,
     slug: 'eu-billing',
@@ -153,15 +159,19 @@ function goalRecord(box: string, over: Partial<Goal> = {}): Goal {
     verification: null,
     heartbeat_every: '4h',
     next_wake_at: null,
+    last_wake_at: null,
     max_wakes_per_day: 12,
     wakes_today: 0,
     max_sessions: 10,
     provenance: 'api',
+    created_at: '2026-11-06T08:00:00Z',
+    updated_at: '2026-11-06T08:00:00Z',
+    capabilities: { read: true, edit: true, pause: true, resume: true, stop: true, restart: true, answer: true, edit_criteria: true },
     ...over,
   };
 }
 
-function fakeApi(start: Goal): Fake {
+function fakeApi(start: FakeGoal): Fake {
   const fake = { goal: start, requests: [] as Req[], sessionMeta: {} as Record<string, Record<string, unknown>>, conflictNext: null as Fake['conflictNext'], respond: null as Fake['respond'] };
   let n = 0;
   const err = (status: number, error: string, message: string, extra: Record<string, unknown> = {}) => Response.json({ error, message, ...extra }, { status });
@@ -172,11 +182,12 @@ function fakeApi(start: Goal): Fake {
       const actor = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/, '');
       const session = actor.startsWith('session:') ? actor.slice(8) : null;
       const body = req.method === 'GET' || req.method === 'DELETE' ? {} : ((await req.json().catch(() => ({}))) as Record<string, unknown>);
-      fake.requests.push({ method: req.method, path: url.pathname, search: url.search, actor, body });
-      const override = fake.respond?.(fake.requests.at(-1)!);
+      const recorded = { method: req.method, path: url.pathname, search: url.search, actor, body };
+      fake.requests.push(recorded);
+      const override = fake.respond?.(recorded);
       if (override) return override;
       const g = fake.goal;
-      const ok = (next: Partial<Goal>) => {
+      const ok = (next: Partial<FakeGoal>) => {
         fake.goal = { ...fake.goal, ...next, revision: fake.goal.revision + 1 };
         return Response.json({ goal: fake.goal });
       };
@@ -238,7 +249,8 @@ function fakeApi(start: Goal): Fake {
         if (missing.length) return err(422, 'goal_invalid', 'Not ready for verification.', { violations: missing });
         const id = `ver-${++n}`;
         const attempt = (g.verification?.attempt ?? 0) + 1;
-        return ok({ state: 'verifying', verifier_session_id: id, verification: { attempt, outcome: 'pending', verifier_session_id: id }, sessions: [...g.sessions, { id, role: 'verifier', since: 'x' }] });
+        const verification = { attempt, outcome: 'pending' as const, verifier_session_id: id, criteria_revision: g.criteria_revision, started_at: 'x', decided_at: null, results: [], evidence_hashes: {} };
+        return ok({ state: 'verifying', verifier_session_id: id, verification, sessions: [...g.sessions, { id, role: 'verifier', since: 'x' }] });
       }
       if (action === 'verdict') {
         if (session === null || session !== g.verifier_session_id) return forbidden();
@@ -592,7 +604,7 @@ test('resolveGoal: no goal_id metadata → ?owner_session_id=<session>, then a f
       `GET /v1/projects/p1/goals/${GOAL_ID}`,
       `POST /v1/projects/p1/goals/${GOAL_ID}/progress`,
     ]);
-    expect(fake.writes().at(-1)!.body).toEqual({ revision: 6, summary: 'Halfway.' });
+    expect(fake.writes().at(-1)).toMatchObject({ body: { revision: 6, summary: 'Halfway.' } });
 
     const none = await cli(fake, root, 'worker', ['progress', '--summary', 'x']);
     expect(none.code).toBe(1);
@@ -630,10 +642,16 @@ test('a person creates a goal: POST /goals with a new goal_id and the flags as g
   try {
     const created = await cli(fake, root, null, ['new', 'EU', 'billing', 'live', '--criterion', 'Invoice shows EUR', '--agent', 'billing', '--user', 'u1']);
     expect(created.code).toBe(0);
-    expect(created.out).toContain(`Goal created: `);
-    const post = fake.writes().at(-1)!;
-    expect(post).toMatchObject({ method: 'POST', path: '/v1/projects/p1/goals', actor: 'person' });
-    expect(post.body).toEqual({ goal_id: expect.stringMatching(/^[0-9a-f-]{36}$/), brief: 'EU billing live', criteria: ['Invoice shows EUR'], agent: 'billing', assigned_user_id: 'u1' });
+    expect(created.out).toContain('Goal created: ');
+    expect(fake.writes()).toEqual([
+      {
+        method: 'POST',
+        path: '/v1/projects/p1/goals',
+        search: '',
+        actor: 'person',
+        body: { goal_id: expect.stringMatching(/^[0-9a-f-]{36}$/), brief: 'EU billing live', criteria: ['Invoice shows EUR'], agent: 'billing', assigned_user_id: 'u1' },
+      },
+    ]);
 
     const verify = await cli(fake, root, 'owner', ['verify', '--json']);
     expect(verify.code).toBe(0);

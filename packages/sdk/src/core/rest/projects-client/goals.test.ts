@@ -3,20 +3,25 @@ import { ApiError } from '../../http/api-client';
 import { configureKortix } from '../../http/config';
 import {
   createProjectGoal,
+  createProjectGoalRecord,
   defaultGoalAgent,
   getProjectGoal,
   getProjectGoalFiles,
   goalHealth,
   listProjectGoalEvents,
+  listProjectGoalRecords,
   listProjectGoals,
   MAKE_GOAL_PROMPT,
+  MAX_GOAL_CRITERIA,
   makeSessionGoal,
   pauseProjectGoal,
+  postProjectGoalAction,
   ProjectGoalConflictError,
   replyToProjectGoal,
   restartProjectGoal,
   resumeProjectGoal,
   setProjectGoalBinding,
+  setProjectGoalCriteria,
   stopProjectGoal,
   type ProjectGoalDocument,
   type ProjectGoalEvent,
@@ -427,5 +432,82 @@ describe('defaultGoalAgent', () => {
   test('null when no agent can work a goal', () => {
     expect(defaultGoalAgent({ default_agent: 'mykortix', agents: [agent('mykortix')] })).toBeNull();
     expect(defaultGoalAgent({ agents: [] })).toBeNull();
+  });
+});
+
+describe('goal record: the calls a goal session makes (the CLI)', () => {
+  let calls: Call[] = [];
+  const routes: Record<string, { status: number; body: unknown }> = {};
+  const base = `/projects/p1/goals/${RECORD.goal_id}`;
+  beforeEach(() => {
+    calls = [];
+    for (const key of Object.keys(routes)) delete routes[key];
+    serve(routes, calls);
+  });
+
+  test('listProjectGoalRecords returns the raw records, filtered to the goals a session owns or verifies', async () => {
+    routes['GET /projects/p1/goals'] = { status: 200, body: { goals: [RECORD] } };
+    routes['GET /projects/p1/goals?owner_session_id=s-owner'] = { status: 200, body: { goals: [RECORD] } };
+    routes['GET /projects/p1/goals?verifier_session_id=s%2Fv'] = { status: 200, body: { goals: [] } };
+    expect(await listProjectGoalRecords('p1')).toEqual([RECORD]);
+    expect(await listProjectGoalRecords('p1', { role: 'owner', sessionId: 's-owner' })).toEqual([RECORD]);
+    expect(await listProjectGoalRecords('p1', { role: 'verifier', sessionId: 's/v' })).toEqual([]);
+    expect(calls.map((c) => c.key)).toEqual(['GET /projects/p1/goals', 'GET /projects/p1/goals?owner_session_id=s-owner', 'GET /projects/p1/goals?verifier_session_id=s%2Fv']);
+  });
+
+  test('listProjectGoalRecords throws when the route is off: the caller decides (listProjectGoals reads it as empty)', async () => {
+    routes['GET /projects/p1/goals'] = { status: 403, body: { error: 'Goals is not enabled for this project.', code: 'feature_disabled' } };
+    await expect(listProjectGoalRecords('p1')).rejects.toMatchObject({ status: 403, code: 'feature_disabled' });
+    expect(await listProjectGoals('p1')).toEqual([]);
+  });
+
+  test('postProjectGoalAction POSTs …/<action> with the revision first and returns the record', async () => {
+    const next = { ...RECORD, revision: 5, state: 'verifying' as const };
+    routes[`POST ${base}/request-verification`] = { status: 200, body: { goal: next } };
+    routes[`POST ${base}/progress`] = { status: 200, body: { goal: next } };
+    expect(await postProjectGoalAction('p1', RECORD, 'request-verification', {})).toEqual(next);
+    await postProjectGoalAction('p1', RECORD, 'progress', { summary: 'Halfway.', criteria: [{ id: 'c1', reported_met: true }] });
+    expect(calls.map((c) => [c.key, c.body])).toEqual([
+      [`POST ${base}/request-verification`, { revision: 4 }],
+      [`POST ${base}/progress`, { revision: 4, summary: 'Halfway.', criteria: [{ id: 'c1', reported_met: true }] }],
+    ]);
+  });
+
+  test('a stale revision on a session write throws ProjectGoalConflictError whose goal.record is the current record', async () => {
+    const current = { ...RECORD, revision: 9 };
+    routes[`POST ${base}/handover`] = { status: 409, body: { error: 'goal_conflict', message: 'The goal changed.', goal: current } };
+    routes[`PUT ${base}/criteria`] = { status: 409, body: { error: 'goal_conflict', message: 'The goal changed.', goal: current } };
+    for (const write of [() => postProjectGoalAction('p1', RECORD, 'handover', { note: 'n' }), () => setProjectGoalCriteria('p1', RECORD, ['a'])]) {
+      const error = await write().catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ProjectGoalConflictError);
+      expect((error as ProjectGoalConflictError).goal.record).toEqual(current);
+    }
+  });
+
+  test('setProjectGoalCriteria PUTs …/criteria with the revision and the texts as given', async () => {
+    routes[`PUT ${base}/criteria`] = { status: 200, body: { goal: { ...RECORD, revision: 5 } } };
+    expect(await setProjectGoalCriteria('p1', RECORD, ['Invoices in EUR', ' VAT '])).toMatchObject({ revision: 5 });
+    expect(calls.map((c) => [c.key, c.body])).toEqual([[`PUT ${base}/criteria`, { revision: 4, criteria: ['Invoices in EUR', ' VAT '] }]]);
+  });
+
+  test('createProjectGoalRecord POSTs the create body as given and returns the record; a 403 stays an ApiError', async () => {
+    routes['POST /projects/p1/goals'] = { status: 201, body: { goal: { ...RECORD, state: 'draft' } } };
+    const body = { goal_id: RECORD.goal_id, brief: 'EU billing live', criteria: [' Invoices in EUR '], agent: 'billing', assigned_user_id: 'u1' };
+    expect(await createProjectGoalRecord('p1', body)).toMatchObject({ goal_id: RECORD.goal_id, state: 'draft' });
+    expect(calls.map((c) => [c.key, c.body])).toEqual([['POST /projects/p1/goals', body]]);
+    routes['POST /projects/p1/goals'] = { status: 403, body: { error: 'goal_forbidden', message: 'A session cannot create a goal.' } };
+    await expect(createProjectGoalRecord('p1', { goal_id: RECORD.goal_id, brief: 'x' })).rejects.toMatchObject({ status: 403, details: { error: 'goal_forbidden' } });
+  });
+
+  test('a "." or ".." goal id is refused before any request: the URL parser would send it to another endpoint', async () => {
+    for (const id of ['.', '..']) {
+      await expect(getProjectGoal('p1', id)).rejects.toThrow(`Refused the goal id "${id}"`);
+      await expect(postProjectGoalAction('p1', { goal_id: id, revision: 1 }, 'progress', {})).rejects.toThrow(`Refused the goal id "${id}"`);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  test('MAX_GOAL_CRITERIA is the API limit, 8', () => {
+    expect(MAX_GOAL_CRITERIA).toBe(8);
   });
 });

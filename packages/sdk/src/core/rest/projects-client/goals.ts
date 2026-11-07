@@ -474,7 +474,11 @@ async function goalWrite(send: () => Promise<{ data?: { goal: ProjectGoalRecord 
 }
 
 const goalsPath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/goals`;
-const goalPath = (projectId: string, goalId: string) => `${goalsPath(projectId)}/${encodeURIComponent(goalId)}`;
+function goalPath(projectId: string, goalId: string): string {
+  // `encodeURIComponent` keeps "." and "..", and the URL parser resolves them: `goals/..` would reach `/projects/:projectId`.
+  if (goalId === '.' || goalId === '..') throw new Error(`Refused the goal id "${goalId}": a "." or ".." path segment would send the request to another endpoint.`);
+  return `${goalsPath(projectId)}/${encodeURIComponent(goalId)}`;
+}
 
 /** The route is not there for this caller: no such project route (404) or the `goals` flag is off (403 `feature_disabled`). */
 function routeOff(error: unknown): boolean {
@@ -489,13 +493,19 @@ function routeOff(error: unknown): boolean {
 export async function listProjectGoals(projectId: string, options?: { now?: number }): Promise<ProjectGoal[]> {
   let records: ProjectGoalRecord[];
   try {
-    records = unwrap(await backendApi.get<{ goals: ProjectGoalRecord[] }>(goalsPath(projectId)), 'Goals request failed').goals;
+    records = await listProjectGoalRecords(projectId);
   } catch (error) {
     if (routeOff(error)) return [];
     throw error;
   }
   const now = options?.now ?? Date.now();
   return records.map((record) => toProjectGoal(record, now));
+}
+
+/** The goal records the caller may read, as the API returns them; with `filter`, the goals that session owns or verifies. Unlike `listProjectGoals` it throws when the route is off. */
+export async function listProjectGoalRecords(projectId: string, filter?: { role: 'owner' | 'verifier'; sessionId: string }): Promise<ProjectGoalRecord[]> {
+  const query = filter ? `?${filter.role}_session_id=${encodeURIComponent(filter.sessionId)}` : '';
+  return unwrap(await backendApi.get<{ goals: ProjectGoalRecord[] }>(`${goalsPath(projectId)}${query}`), 'Goals request failed').goals;
 }
 
 /** One goal by its `goal_id`. Throws `ApiError` 404 (no such goal) or 403 (no access). */
@@ -598,7 +608,23 @@ export async function restartProjectGoal(projectId: string, goal: GoalTarget, re
   return written(await goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goalId)}/restart`, { revision: goal.revision, reason })));
 }
 
-const MAX_GOAL_CRITERIA = 8;
+/** A record write addresses the goal by its id and the revision the caller read. */
+type RecordTarget = Pick<ProjectGoalRecord, 'goal_id' | 'revision'>;
+/** The owner's lifecycle moves, and the verifier's `verdict`. Who may send which is the server's call. */
+type GoalAction = 'activate' | 'wait' | 'progress' | 'request-verification' | 'handover' | 'verdict';
+
+/** A goal session's lifecycle write (`POST …/goals/:goalId/<action>`): the record as the server holds it now. A stale `revision` throws `ProjectGoalConflictError`. */
+export async function postProjectGoalAction(projectId: string, goal: RecordTarget, action: GoalAction, body: Record<string, unknown>): Promise<ProjectGoalRecord> {
+  return goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goal_id)}/${action}`, { revision: goal.revision, ...body }));
+}
+
+/** The owner sets a draft goal's done criteria (`PUT …/criteria`), sent as given. A stale `revision` throws `ProjectGoalConflictError`. */
+export async function setProjectGoalCriteria(projectId: string, goal: RecordTarget, criteria: string[]): Promise<ProjectGoalRecord> {
+  return goalWrite(() => backendApi.put<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goal_id)}/criteria`, { revision: goal.revision, criteria }));
+}
+
+/** The most done criteria a goal has (the API's limit). */
+export const MAX_GOAL_CRITERIA = 8;
 /** My Kortix's sandbox slugs (current and legacy): a session on one mounts no Files, so it cannot run `kortix goals`. */
 const NO_FILES_SANDBOXES = new Set(['mykortix', 'meta']);
 
@@ -672,6 +698,13 @@ export interface CreatedProjectGoal {
   goal: ProjectGoal;
 }
 
+type GoalCreateBody = { goal_id: string; brief: string; criteria?: string[]; agent?: string; assigned_user_id?: string };
+
+/** The create (`POST /projects/:projectId/goals`) sent as given, no trim or limit check: `createProjectGoal` is the person flow on top. `goal_id` is the idempotency key. */
+export async function createProjectGoalRecord(projectId: string, body: GoalCreateBody): Promise<ProjectGoalRecord> {
+  return goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(goalsPath(projectId), body));
+}
+
 /**
  * A person creates a goal (`POST /projects/:projectId/goals`). The API puts
  * it in the caller's own folder, writes GOAL.md and log.md, starts the owner
@@ -689,11 +722,11 @@ export async function createProjectGoal(projectId: string, input: CreateProjectG
   const criteria = (input.criteria ?? []).map((c) => c.trim()).filter(Boolean);
   if (criteria.length > MAX_GOAL_CRITERIA) throw new Error(`A goal has at most ${MAX_GOAL_CRITERIA} done criteria.`);
   const goalId = input.goalId ?? input.sessionId ?? generateSessionId();
-  const payload: Record<string, unknown> = { goal_id: goalId, brief };
+  const payload: GoalCreateBody = { goal_id: goalId, brief };
   if (criteria.length) payload.criteria = criteria;
   if (input.agent) payload.agent = input.agent;
   if (input.assignedUser) payload.assigned_user_id = input.assignedUser;
-  const goal = toProjectGoal(await goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(goalsPath(projectId), payload)));
+  const goal = toProjectGoal(await createProjectGoalRecord(projectId, payload));
   return {
     slug: goal.slug,
     scope: 'personal',
