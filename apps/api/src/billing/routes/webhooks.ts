@@ -1,5 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { timingSafeEqual } from 'node:crypto';
+import Stripe from 'stripe';
+import { logger } from '../../lib/logger';
 import { config } from '../../config';
 import { processStripeWebhook, processRevenueCatWebhook } from '../services/webhooks';
 import { makeOpenApiApp, json, errors } from '../../openapi';
@@ -28,7 +30,7 @@ webhooksRouter.openapi(
     summary: 'Stripe webhook (signature-verified, public)',
     responses: {
       200: json(z.record(z.string(), z.any()), 'Webhook processing result'),
-      ...errors(400, 500),
+      ...errors(400, 500, 503),
     },
   }),
   async (c: any) => {
@@ -37,8 +39,18 @@ webhooksRouter.openapi(
     if (!config.STRIPE_WEBHOOK_SECRET) return c.json({ error: 'Webhook not configured' }, 500);
 
     const rawBody = await c.req.text();
-    const result = await processStripeWebhook(rawBody, signature);
-    return c.json(result);
+    try {
+      const result = await processStripeWebhook(rawBody, signature);
+      return c.json(result);
+    } catch (error) {
+      // Stripe rate-limiting our own API calls is a retryable condition, not a
+      // bug: answer 503 so Stripe redelivers (the dedupe marker is only written
+      // after success) instead of throwing a 500 that pages as a new error.
+      if (!(error instanceof Stripe.errors.StripeRateLimitError)) throw error;
+      logger.warn('[Webhook] Stripe rate limit while processing event; asking Stripe to redeliver');
+      c.header('Retry-After', '60');
+      return c.json({ error: 'Stripe rate limited; retry later' }, 503);
+    }
   },
 );
 
