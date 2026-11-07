@@ -21,6 +21,7 @@ import {
 import { eq } from 'drizzle-orm';
 import { upsertConnectionCredential } from '../connectors/credentials';
 import { completeConnection, connectConnection, revokeConnections } from '../connectors/connection-status';
+import { pollDeviceAuthorizationSession } from '../connectors/oauth2-store';
 import { db } from '../shared/db';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 import { interleave } from './helpers/interleave';
@@ -78,6 +79,8 @@ async function state(connectionId: string) {
 }
 
 const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000);
+/** Who started the device flow: a real member id, a uuid column. */
+const DEVICE_FLOW_MEMBER = crypto.randomUUID();
 
 describe('a connector connection revoke is sticky', () => {
   test('an OAuth completion that started before the revoke stores nothing and stays revoked', async () => {
@@ -187,21 +190,47 @@ describe('a connector connection revoke is sticky', () => {
         accountId: conn.accountId,
         projectId: conn.projectId,
         connectionId: conn.connectionId,
-        initiatedBy: conn.connectionId,
+        // The member (owner) started the flow; `connectConnection` runs for them.
+        initiatedBy: DEVICE_FLOW_MEMBER,
         flow: 'device_authorization',
         deviceCodeEnc: 'not-used-by-this-test',
         expiresAt: new Date(Date.now() + 600_000),
       })
       .returning({ sessionId: connectionOAuthSessions.sessionId });
     expect(await connectConnection(conn.connectionId, { metadata: { session_id: 'sess_1' } })).toBeNull();
-    // Denied: the start leaves the row revoked, so the poll of a session the
-    // revoke did not expire finds no pending session and stores no token.
+    // Denied: the agent's start expires the session waiting on the account, so
+    // the poll never asks the provider and never stores a token on it.
     const sessions = await db
       .select({ status: connectionOAuthSessions.status })
       .from(connectionOAuthSessions)
       .where(eq(connectionOAuthSessions.sessionId, pending[0].sessionId));
     expect(sessions[0].status).toBe('expired');
+    expect(await pollDeviceAuthorizationSession({
+      sessionId: pending[0].sessionId,
+      connectionId: conn.connectionId,
+      initiatedBy: DEVICE_FLOW_MEMBER,
+    })).toEqual({ status: 'expired' });
     expect(await state(conn.connectionId)).toEqual({ status: 'revoked', credentials: 0 });
+  });
+
+  test('an agent finishing a flow that recorded no start never stores it on a revoked account', async () => {
+    // A hosted-connect finalize reports no start. It cannot prove the flow
+    // began after the revoke, so it loses — with a stamp or without one.
+    for (const revokedAt of [undefined, minutesAgo(1)]) {
+      const conn = await seedConnection(`revoke-sticky-finish-${revokedAt ? 'stamped' : 'unstamped'}`, 'revoked', revokedAt);
+      expect(await completeConnection(conn.connectionId, null)).toBe(false);
+      expect(await state(conn.connectionId)).toEqual({ status: 'revoked', credentials: 0 });
+    }
+  });
+
+  test('a completion that started at the exact instant of the revoke loses to it', async () => {
+    const revokedAt = minutesAgo(5);
+    const conn = await seedConnection('revoke-sticky-tie', 'revoked', revokedAt);
+    expect(await completeConnection(conn.connectionId, new Date(revokedAt.getTime()))).toBe(false);
+    expect(await state(conn.connectionId)).toEqual({ status: 'revoked', credentials: 0 });
+    // One millisecond later it is a flow that started after the revoke: allowed.
+    expect(await completeConnection(conn.connectionId, new Date(revokedAt.getTime() + 1))).toBe(true);
+    expect(await state(conn.connectionId)).toEqual({ status: 'active', credentials: 0 });
   });
 
   test('an agent starting an authorization on an active account still records it', async () => {
