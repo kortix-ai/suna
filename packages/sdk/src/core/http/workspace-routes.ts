@@ -41,6 +41,7 @@ export const WORKSPACE_ACCOUNT_FAMILIES = [
   'members',
   'secret-resources',
   'subscription-connections',
+  'keys',
   'tokens',
   'top-up-requests',
 ] as const;

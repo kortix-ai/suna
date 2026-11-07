@@ -9,15 +9,18 @@ import {
   compareWorkspacesByRecent,
   getWorkspace,
   getWorkspaceBillingState,
+  createWorkspaceKey,
   createWorkspaceToken,
   inviteWorkspaceMember,
   leaveWorkspace,
   listWorkspaceAssignments,
   listWorkspaceInvites,
   listWorkspaceMembers,
+  listWorkspaceKeys,
   listWorkspaceTokens,
   listWorkspaces,
   resolveWorkspaceAccountId,
+  revokeWorkspaceKey,
   revokeWorkspaceToken,
   updateWorkspace,
   updateWorkspaceMemberRole,
@@ -485,6 +488,41 @@ describe('workspace-scoped clients call /workspaces/:id with no account lookup',
       `DELETE /workspaces/${WS_A}/tokens/t1?delete_revoked=true`,
     ]);
     expect(calls[2].body).toEqual({ name: 'ci', expires_at: '2027-01-01T00:00:00.000Z' });
+  });
+
+  test('workspace keys: one list, a key that acts as me / an agent / a bot, revoke', async () => {
+    const listed = {
+      keys: [{ key_id: 'k1', acts_as: { type: 'agent', name: 'steward', service_account_id: 'sa1' } }],
+      can_manage_principals: true,
+      agents: [{ name: 'steward' }],
+      bots: [{ bot_id: 'b1', name: 'ci', has_role: true }],
+    };
+    route('GET', new RegExp(`^/workspaces/${WS_A}/keys$`), listed);
+    route('POST', new RegExp(`^/workspaces/${WS_A}/keys$`), { key_id: 'k2', secret_key: 'kortix_pat_y' });
+    route('DELETE', new RegExp(`^/workspaces/${WS_A}/keys/k2(\\?|$)`), { ok: true });
+
+    const list = await listWorkspaceKeys(WS_A);
+    await createWorkspaceKey(WS_A, { name: 'mine', actsAs: { type: 'me' } });
+    await createWorkspaceKey(WS_A, { name: 'agent', actsAs: { type: 'agent', agent: 'steward' }, scopes: 'read' });
+    await createWorkspaceKey(WS_A, { name: 'bot', actsAs: { type: 'bot', bot: 'ci' }, expiresAt: '2027-01-01T00:00:00.000Z' });
+    await revokeWorkspaceKey(WS_A, 'k2');
+    await revokeWorkspaceKey(WS_A, 'k2', { deleteRevoked: true });
+
+    expect(list.keys[0]?.acts_as.type).toBe('agent');
+    expect(list.bots[0]?.has_role).toBe(true);
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `GET /workspaces/${WS_A}/keys`,
+      `POST /workspaces/${WS_A}/keys`,
+      `POST /workspaces/${WS_A}/keys`,
+      `POST /workspaces/${WS_A}/keys`,
+      `DELETE /workspaces/${WS_A}/keys/k2`,
+      `DELETE /workspaces/${WS_A}/keys/k2?delete_revoked=true`,
+    ]);
+    expect(calls.slice(1, 4).map((c) => c.body)).toEqual([
+      { name: 'mine', acts_as: 'me' },
+      { name: 'agent', acts_as: 'agent', agent: 'steward', scopes: 'read' },
+      { name: 'bot', acts_as: 'bot', bot: 'ci', expires_at: '2027-01-01T00:00:00.000Z' },
+    ]);
   });
 
   test('createWorkspaceToken sends the scope and an explicit no-expiry', async () => {

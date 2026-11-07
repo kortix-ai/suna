@@ -72,6 +72,15 @@ export function bindWorkspaceCore(workspaceId: string) {
       revoke: (...a: DropFirst<Parameters<typeof P.revokeWorkspaceToken>>) =>
         P.revokeWorkspaceToken(workspaceId, ...a),
     },
+    /**
+     * Workspace settings › API keys: one list of keys that act as you, an
+     * agent or a bot (`/v1/workspaces/:id/keys`).
+     */
+    keys: {
+      list: () => P.listWorkspaceKeys(workspaceId),
+      create: (input: P.CreateWorkspaceKeyInput) => P.createWorkspaceKey(workspaceId, input),
+      revoke: (...a: DropFirst<Parameters<typeof P.revokeWorkspaceKey>>) => P.revokeWorkspaceKey(workspaceId, ...a),
+    },
     iam: {
       assignments: {
         list: (filter?: P.ListAssignmentsFilter) => P.listWorkspaceAssignments(workspaceId, filter),

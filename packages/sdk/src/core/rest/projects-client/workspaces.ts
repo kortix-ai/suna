@@ -669,6 +669,108 @@ export async function revokeWorkspaceToken(
   );
 }
 
+// ── API keys (one concept: who the key acts as) ─────────────────────────────
+
+/** Who a workspace key authorizes as. */
+export type WorkspaceKeyPrincipal = 'me' | 'agent' | 'bot';
+
+/** The principal of a {@link WorkspaceKey}. */
+export interface WorkspaceKeyActsAs {
+  type: WorkspaceKeyPrincipal;
+  /** The agent or bot name; null for `me`. */
+  name: string | null;
+  /** The service account the key authorizes as; null for `me`. */
+  service_account_id: string | null;
+}
+
+/** One row of Workspace settings › API keys (`GET /v1/workspaces/:id/keys`). */
+export interface WorkspaceKey {
+  key_id: string;
+  name: string;
+  acts_as: WorkspaceKeyActsAs;
+  /** `service_account_bearer`: a bot's own `kortix_sa_` bearer from before workspace keys. */
+  credential: 'token' | 'service_account_bearer';
+  public_key: string;
+  status: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+  revoked_at: string | null;
+  created_by: string | null;
+  created_by_email: string | null;
+  scope: 'full' | 'read' | 'custom';
+  permissions: string[] | null;
+  workspace_permissions: string[] | null;
+  expiry_renews: boolean;
+}
+
+/** A just-created {@link WorkspaceKey}: `secret_key` is returned once. */
+export interface CreatedWorkspaceKey extends WorkspaceKey {
+  secret_key: string;
+}
+
+/** What {@link listWorkspaceKeys} answers: the keys, and what a new key may act as. */
+export interface WorkspaceKeyList {
+  keys: WorkspaceKey[];
+  /** The caller may create and revoke agent and bot keys (`token.create`). */
+  can_manage_principals: boolean;
+  /** The agents a key can act as (enabled kortix.yaml agents, never My Kortix). */
+  agents: Array<{ name: string }>;
+  /** The workspace's bots. `has_role: false`: its key can do nothing until the bot has a role. */
+  bots: Array<{ bot_id: string; name: string; has_role: boolean }>;
+}
+
+/** Who a new key acts as. `bot` is a bot name or id; a new name creates the bot. */
+export type WorkspaceKeyActsAsInput =
+  | { type: 'me' }
+  | { type: 'agent'; agent: string }
+  | { type: 'bot'; bot: string };
+
+/** What {@link createWorkspaceKey} sends. */
+export interface CreateWorkspaceKeyInput {
+  name: string;
+  /** Default `{ type: 'me' }`. */
+  actsAs?: WorkspaceKeyActsAsInput;
+  /** `full` (default), `read`, or permissions inside the principal's own rights. */
+  scopes?: WorkspaceKeyScopes;
+  /** ISO-8601; omitted = 90 days; `null` = no expiry where the key policy allows it. */
+  expiresAt?: string | null;
+}
+
+/** Every key of the workspace the caller may see, and the agents and bots a new key can act as. */
+export async function listWorkspaceKeys(workspaceId: string) {
+  return unwrap(await backendApi.get<WorkspaceKeyList>(`/workspaces/${workspaceId}/keys`));
+}
+
+/** Create a key that acts as you, an agent or a bot. `secret_key` is returned once. */
+export async function createWorkspaceKey(workspaceId: string, input: CreateWorkspaceKeyInput) {
+  const actsAs = input.actsAs ?? { type: 'me' };
+  return unwrap(
+    await backendApi.post<CreatedWorkspaceKey>(`/workspaces/${workspaceId}/keys`, {
+      name: input.name,
+      acts_as: actsAs.type,
+      ...(actsAs.type === 'agent' ? { agent: actsAs.agent } : {}),
+      ...(actsAs.type === 'bot' ? { bot: actsAs.bot } : {}),
+      ...(input.scopes !== undefined ? { scopes: input.scopes } : {}),
+      ...(input.expiresAt !== undefined ? { expires_at: input.expiresAt } : {}),
+    }),
+  );
+}
+
+/** Revoke a key of the workspace; `deleteRevoked` removes a revoked key of yours or a disabled bot bearer. */
+export async function revokeWorkspaceKey(
+  workspaceId: string,
+  keyId: string,
+  options?: { deleteRevoked?: boolean },
+) {
+  const qs = options?.deleteRevoked ? '?delete_revoked=true' : '';
+  return unwrap(
+    await backendApi.delete<{ ok: boolean; deleted?: boolean }>(
+      `/workspaces/${workspaceId}/keys/${encodeURIComponent(keyId)}${qs}`,
+    ),
+  );
+}
+
 // ── Billing ─────────────────────────────────────────────────────────────────
 
 /**
