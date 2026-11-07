@@ -179,6 +179,17 @@ describe('POST /:projectId/gateway/playground — a database error never reaches
     expect(body.results[0]?.error).not.toContain('usage_events');
   });
 
+  test('a wallet settlement failure that wraps a database error answers "Request failed"', async () => {
+    // billing/wallet settle() rethrows a failed debit as a plain Error whose
+    // message carries the driver text and whose cause is the driver error.
+    recordUsageRejection = new Error('Credit settlement failed for acct: Failed query: select kortix_wallet.debit_credits(...)', {
+      cause: new PostgresError('invalid input syntax'),
+    });
+    const res = await runPlayground(['claude-sonnet-4.6']);
+    const body = (await res.json()) as { results: PlaygroundResult[] };
+    expect(body.results[0]?.error).toBe('Request failed');
+  });
+
   test('recordGatewayUsage rejecting with a typed, non-database error still echoes its own message', async () => {
     recordUsageRejection = new Error('usage ledger is temporarily read-only');
     const res = await runPlayground(['claude-sonnet-4.6']);

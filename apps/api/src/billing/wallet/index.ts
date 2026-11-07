@@ -239,7 +239,9 @@ async function settle(input: SettleInput): Promise<SettleResult> {
   } catch (error) {
     console.error('[Wallet] settlement failed:', error);
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Credit settlement failed for ${input.accountId}: ${message}`);
+    // Keep the driver error as the cause: callers decide what a client may see
+    // by walking the cause chain (`isDatabaseError`, KRTX-4400).
+    throw new Error(`Credit settlement failed for ${input.accountId}: ${message}`, { cause: error });
   }
 
   if (!result.success) {
