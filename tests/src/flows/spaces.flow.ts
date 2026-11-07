@@ -13,10 +13,10 @@ import {
   SpaceMemberListSchema,
   SpaceSchema,
 } from '@kortix/api-contract';
-import { flow } from '../core/flow';
+import { flow, flowMeta } from '../core/flow';
 import { waitFor } from '../core/poll';
 import type { FlowContext, FlowMeta } from '../core/types';
-import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
+import { type AgentPrincipalsWorld, insertSession, openWorld } from '../fixtures/agent-principals';
 
 const ROUTES = {
   list: 'GET /v1/projects/:projectId/spaces',
@@ -43,8 +43,6 @@ const SESSIONS = '/v1/projects/:projectId/sessions';
 const SPACES = '/v1/projects/:projectId/spaces';
 const SPACE = '/v1/projects/:projectId/spaces/:spaceId';
 const DM = '/v1/projects/:projectId/spaces/dm';
-const MANIFEST =
-  'project:\n  name: ke2e-spaces\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
 
 type Space = { space_id: string; kind: string; slug: string | null; name: string; is_default: boolean; archived_at: string | null; can_edit: boolean };
 type Session = {
@@ -55,17 +53,7 @@ type Session = {
   reply_count?: number | null;
 };
 
-async function openWorld(ctx: FlowContext, opts: { manifest?: boolean } = {}) {
-  const team = await ctx.fixtures.team();
-  const project = await team.project({ managedGit: true });
-  const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
-  if (opts.manifest) await world.writeManifest(MANIFEST, 'ke2e: spaces agent');
-  return { team, project, world };
-}
-
-const meta = (routes: string[]): FlowMeta => ({ domain: 'spaces', requires: ['database'], timeoutMs: 120_000, routes });
-
-flow('SPACE-1', meta(Object.values(ROUTES)), async (ctx) => {
+flow('SPACE-1', flowMeta('spaces', Object.values(ROUTES), { timeoutMs: 120_000 }), async (ctx) => {
   const { project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
@@ -93,7 +81,7 @@ flow('SPACE-1', meta(Object.values(ROUTES)), async (ctx) => {
   }
 });
 
-flow('SPACE-2', meta([ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-2', flowMeta('spaces', [ROUTES.list, FEATURES_ROUTE], { timeoutMs: 120_000 }), async (ctx) => {
   const { project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   const sessionId = randomUUID();
@@ -158,7 +146,7 @@ flow('SPACE-2', meta([ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
   }
 });
 
-flow('SPACE-3', meta([ROUTES.list, ROUTES.create, ROUTES.update, FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-3', flowMeta('spaces', [ROUTES.list, ROUTES.create, ROUTES.update, FEATURES_ROUTE], { timeoutMs: 120_000 }), async (ctx) => {
   const { team, project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
@@ -250,8 +238,8 @@ flow('SPACE-3', meta([ROUTES.list, ROUTES.create, ROUTES.update, FEATURES_ROUTE]
   }
 });
 
-flow('SPACE-4', meta([ROUTES.list, ROUTES.dm, ROUTES.update, FEATURES_ROUTE]), async (ctx) => {
-  const { team, project, world } = await openWorld(ctx, { manifest: true });
+flow('SPACE-4', flowMeta('spaces', [ROUTES.list, ROUTES.dm, ROUTES.update, FEATURES_ROUTE], { timeoutMs: 120_000 }), async (ctx) => {
+  const { team, project, world } = await openWorld(ctx, { manifest: 'spaces' });
   const params = { projectId: project.id };
   try {
     await world.setFeature('chat', true);
@@ -318,34 +306,6 @@ async function listedInSpace(client: FlowContext['client'], projectId: string, s
   return r.status(200).json<Session[]>().map((s) => s.session_id);
 }
 
-/** Insert a session row directly: the local profile has no sandbox, so its create route answers 503. */
-async function insertSession(
-  world: AgentPrincipalsWorld,
-  createdBy: string,
-  visibility: 'private' | 'project',
-  opts: { spaceId?: string; updatedAt?: Date; metadata?: Record<string, unknown>; agentName?: string } = {},
-): Promise<string> {
-  const sessionId = randomUUID();
-  world.sessions.push(sessionId);
-  await world.db.query(
-    `INSERT INTO kortix.project_sessions
-       (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, metadata, space_id, updated_at)
-     VALUES ($1, $2, $3, $1, $9, 'stopped', $4, $5, $6::jsonb, $7, coalesce($8::timestamptz, now()))`,
-    [
-      sessionId,
-      world.accountId,
-      world.projectId,
-      createdBy,
-      visibility,
-      JSON.stringify(opts.metadata ?? {}),
-      opts.spaceId ?? null,
-      opts.updatedAt?.toISOString() ?? null,
-      opts.agentName ?? 'kortix',
-    ],
-  );
-  return sessionId;
-}
-
 /** The space a session is filed into, read from the row. */
 async function sessionSpaceId(world: AgentPrincipalsWorld, sessionId: string): Promise<string | null> {
   const { rows } = await world.db.query<{ space_id: string | null }>(
@@ -381,7 +341,7 @@ const createMeta = (routes: string[]): FlowMeta => ({
 });
 
 flow('SPACE-5', createMeta([ROUTES.create, SESSION_ROUTES.create, SESSION_ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
-  const { team, project, world } = await openWorld(ctx, { manifest: true });
+  const { team, project, world } = await openWorld(ctx, { manifest: 'spaces' });
   const params = { projectId: project.id };
   try {
     await world.setFeature('chat', true);
@@ -419,7 +379,7 @@ flow('SPACE-5', createMeta([ROUTES.create, SESSION_ROUTES.create, SESSION_ROUTES
 });
 
 flow('SPACE-6', createMeta([ROUTES.list, SESSION_ROUTES.create, FEATURES_ROUTE]), async (ctx) => {
-  const { project, world } = await openWorld(ctx, { manifest: true });
+  const { project, world } = await openWorld(ctx, { manifest: 'spaces' });
   const params = { projectId: project.id };
   try {
     await world.setFeature('chat', true);
@@ -438,8 +398,8 @@ flow('SPACE-6', createMeta([ROUTES.list, SESSION_ROUTES.create, FEATURES_ROUTE])
   }
 });
 
-flow('SPACE-7', meta([ROUTES.create, ROUTES.update, ROUTES.dm, SESSION_ROUTES.create, FEATURES_ROUTE]), async (ctx) => {
-  const { team, project, world } = await openWorld(ctx, { manifest: true });
+flow('SPACE-7', flowMeta('spaces', [ROUTES.create, ROUTES.update, ROUTES.dm, SESSION_ROUTES.create, FEATURES_ROUTE], { timeoutMs: 120_000 }), async (ctx) => {
+  const { team, project, world } = await openWorld(ctx, { manifest: 'spaces' });
   const params = { projectId: project.id };
   try {
     await world.setFeature('chat', true);
@@ -477,7 +437,7 @@ flow('SPACE-7', meta([ROUTES.create, ROUTES.update, ROUTES.dm, SESSION_ROUTES.cr
 });
 
 flow('SPACE-8', createMeta([SESSION_ROUTES.create]), async (ctx) => {
-  const { project, world } = await openWorld(ctx, { manifest: true });
+  const { project, world } = await openWorld(ctx, { manifest: 'spaces' });
   const params = { projectId: project.id };
   try {
     await world.fund();
@@ -492,7 +452,7 @@ flow('SPACE-8', createMeta([SESSION_ROUTES.create]), async (ctx) => {
   }
 });
 
-flow('SPACE-9', meta([ROUTES.list, SESSION_ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-9', flowMeta('spaces', [ROUTES.list, SESSION_ROUTES.list, FEATURES_ROUTE], { timeoutMs: 120_000 }), async (ctx) => {
   const { team, project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
@@ -564,7 +524,7 @@ flow('SPACE-9', meta([ROUTES.list, SESSION_ROUTES.list, FEATURES_ROUTE]), async 
   }
 });
 
-flow('SPACE-10', meta([ROUTES.list, ROUTES.create, SESSION_ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-10', flowMeta('spaces', [ROUTES.list, ROUTES.create, SESSION_ROUTES.list, FEATURES_ROUTE], { timeoutMs: 120_000 }), async (ctx) => {
   const { team, project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
@@ -632,7 +592,7 @@ flow('SPACE-10', meta([ROUTES.list, ROUTES.create, SESSION_ROUTES.list, FEATURES
   }
 });
 
-flow('SPACE-12', meta([ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-12', flowMeta('spaces', [ROUTES.list, FEATURES_ROUTE], { timeoutMs: 120_000 }), async (ctx) => {
   const { project, world } = await openWorld(ctx);
   try {
     const canary = await insertSession(world, world.ownerUserId, 'private');
@@ -671,7 +631,7 @@ async function seedSessionLog(world: AgentPrincipalsWorld, sessionId: string): P
 }
 
 flow('SPACE-13', createMeta([ROUTES.list, SESSION_ROUTES.create, SESSION_ROUTES.list, 'GET /v1/projects/:projectId/sessions/:sessionId', FEATURES_ROUTE]), async (ctx) => {
-  const { team, project, world } = await openWorld(ctx, { manifest: true });
+  const { team, project, world } = await openWorld(ctx, { manifest: 'spaces' });
   const params = { projectId: project.id };
   try {
     await world.setFeature('chat', true);
@@ -728,7 +688,7 @@ flow('SPACE-13', createMeta([ROUTES.list, SESSION_ROUTES.create, SESSION_ROUTES.
   }
 });
 
-flow('SPACE-14', meta([...Object.values(TAB_ROUTES), FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-14', flowMeta('spaces', [...Object.values(TAB_ROUTES), FEATURES_ROUTE], { timeoutMs: 120_000 }), async (ctx) => {
   const { project, world } = await openWorld(ctx);
   const params = { projectId: project.id, spaceId: randomUUID() };
   try {
@@ -764,8 +724,8 @@ async function insertAppDeployedFrom(world: AgentPrincipalsWorld, sourceSessionI
   return appId;
 }
 
-flow('SPACE-15', meta([TAB_ROUTES.apps, ROUTES.create, ROUTES.dm, FEATURES_ROUTE]), async (ctx) => {
-  const { project, world } = await openWorld(ctx, { manifest: true });
+flow('SPACE-15', flowMeta('spaces', [TAB_ROUTES.apps, ROUTES.create, ROUTES.dm, FEATURES_ROUTE], { timeoutMs: 120_000 }), async (ctx) => {
+  const { project, world } = await openWorld(ctx, { manifest: 'spaces' });
   const params = { projectId: project.id };
   try {
     await world.setFeature('chat', true);
@@ -800,7 +760,7 @@ flow('SPACE-15', meta([TAB_ROUTES.apps, ROUTES.create, ROUTES.dm, FEATURES_ROUTE
   }
 });
 
-flow('SPACE-16', meta([TAB_ROUTES.links, TAB_ROUTES.addLink, TAB_ROUTES.removeLink, ROUTES.create, ROUTES.update, FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-16', flowMeta('spaces', [TAB_ROUTES.links, TAB_ROUTES.addLink, TAB_ROUTES.removeLink, ROUTES.create, ROUTES.update, FEATURES_ROUTE], { timeoutMs: 120_000 }), async (ctx) => {
   const { team, project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
@@ -932,9 +892,9 @@ async function storedTriggerSpace(world: AgentPrincipalsWorld, slug: string): Pr
 
 flow(
   'SPACE-18',
-  meta([TRIGGER_ROUTES.list, TRIGGER_ROUTES.create, TRIGGER_ROUTES.update, ROUTES.create, ROUTES.update, ROUTES.dm, FEATURES_ROUTE]),
+  flowMeta('spaces', [TRIGGER_ROUTES.list, TRIGGER_ROUTES.create, TRIGGER_ROUTES.update, ROUTES.create, ROUTES.update, ROUTES.dm, FEATURES_ROUTE], { timeoutMs: 120_000 }),
   async (ctx) => {
-    const { team, project, world } = await openWorld(ctx, { manifest: true });
+    const { team, project, world } = await openWorld(ctx, { manifest: 'spaces' });
     const params = { projectId: project.id };
     try {
       await ctx.step('flag off: a create with space_id → 201; space_id is not stored and not listed', async () => {
@@ -1077,7 +1037,7 @@ flow(
   'SPACE-19',
   createMeta([TRIGGER_ROUTES.create, TRIGGER_ROUTES.fire, ROUTES.create, ROUTES.update, ROUTES.dm, FEATURES_ROUTE, 'POST /v1/projects/:projectId/secrets']),
   async (ctx) => {
-    const { project, world } = await openWorld(ctx, { manifest: true });
+    const { project, world } = await openWorld(ctx, { manifest: 'spaces' });
     const params = { projectId: project.id };
     const fire = async (slug: string) => {
       const r = await world.owner.post(`${TRIGGER}/fire`, {}, { params: { ...params, slug } });
@@ -1151,9 +1111,9 @@ type Link = {
 
 flow(
   'SPACE-20',
-  meta([TAB_ROUTES.links, TAB_ROUTES.addLink, TAB_ROUTES.pinLink, ROUTES.create, ROUTES.dm, FEATURES_ROUTE, `POST ${PROMPTS}`]),
+  flowMeta('spaces', [TAB_ROUTES.links, TAB_ROUTES.addLink, TAB_ROUTES.pinLink, ROUTES.create, ROUTES.dm, FEATURES_ROUTE, `POST ${PROMPTS}`], { timeoutMs: 120_000 }),
   async (ctx) => {
-    const { team, project, world } = await openWorld(ctx, { manifest: true });
+    const { team, project, world } = await openWorld(ctx, { manifest: 'spaces' });
     const params = { projectId: project.id };
     try {
       await world.setFeature('chat', true);
@@ -1296,7 +1256,7 @@ flow(
  * internet, which no flow capability declares: `parseLinkMeta` and
  * `fetchLinkMeta` are pinned by apps/api/src/projects/lib/link-unfurl.test.ts.
  */
-flow('SPACE-21', meta([TAB_ROUTES.links, TAB_ROUTES.addLink, ROUTES.create, FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-21', flowMeta('spaces', [TAB_ROUTES.links, TAB_ROUTES.addLink, ROUTES.create, FEATURES_ROUTE], { timeoutMs: 120_000 }), async (ctx) => {
   const { project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
@@ -1359,7 +1319,7 @@ flow('SPACE-21', meta([TAB_ROUTES.links, TAB_ROUTES.addLink, ROUTES.create, FEAT
 const TWO_AGENT_MANIFEST =
   'project:\n  name: ke2e-spaces\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n  writer:\n    kortix_permissions: all\n';
 
-flow('SPACE-22', meta([ROUTES.list, ROUTES.create, ROUTES.update, ROUTES.dm, FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-22', flowMeta('spaces', [ROUTES.list, ROUTES.create, ROUTES.update, ROUTES.dm, FEATURES_ROUTE], { timeoutMs: 120_000 }), async (ctx) => {
   const { team, project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
@@ -1432,7 +1392,7 @@ const SPACE_JOIN = '/v1/projects/:projectId/spaces/:spaceId/join';
 type MemberList = { members: { user_id: string; name: string; can_remove: boolean }[]; implicit: boolean; can_add: boolean };
 const memberIds = (list: MemberList) => list.members.map((m) => m.user_id).sort();
 
-flow('SPACE-23', meta([...Object.values(MEMBER_ROUTES), ROUTES.list, ROUTES.create, FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-23', flowMeta('spaces', [...Object.values(MEMBER_ROUTES), ROUTES.list, ROUTES.create, FEATURES_ROUTE], { timeoutMs: 120_000 }), async (ctx) => {
   const { team, project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
@@ -1532,7 +1492,7 @@ const PROACTIVE = '/v1/projects/:projectId/spaces/:spaceId/proactive';
 const PROACTIVE_ROUTES = { get: `GET ${PROACTIVE}`, put: `PUT ${PROACTIVE}` };
 type Proactive = { space_id: string; enabled: boolean; daily_brief: boolean; brief_timezone: string; can_edit: boolean };
 
-flow('SPACE-30', meta([...Object.values(PROACTIVE_ROUTES), ROUTES.create, FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-30', flowMeta('spaces', [...Object.values(PROACTIVE_ROUTES), ROUTES.create, FEATURES_ROUTE], { timeoutMs: 120_000 }), async (ctx) => {
   const { team, project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {

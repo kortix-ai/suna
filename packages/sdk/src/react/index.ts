@@ -164,8 +164,7 @@ export {
 } from './use-goals';
 export { useRoom, useRoomConversations, useRoomMessages, useRoomThread, useRooms, useSpaceRoom } from './use-rooms';
 export { usePeerMessages, useReachableAgents, useSessionWorkflows, useTeamTasks, useTeammates } from './use-multi-agent';
-export { useArtifactLive, type ArtifactLiveState, type UseArtifactLiveOptions } from './use-artifact-live';
-export { prefetchArtifact, useArtifact, useArtifactActivity, useArtifactCommentContext, useArtifactComments, useArtifactCommentScreenshot, useInfiniteArtifactActivity, useArtifactMutations, useArtifactText, useArtifactTypes, useArtifactVersions, useArtifacts } from './use-artifacts';
+export { prefetchArtifact, useArtifact, useArtifactMutations, useArtifactText, useArtifactTypes, useArtifactVersions, useArtifacts } from './use-artifacts';
 export {
   useApproveCaptureDevice,
   useApproveCaptureEnrollment,

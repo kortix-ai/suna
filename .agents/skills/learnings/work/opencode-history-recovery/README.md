@@ -93,14 +93,15 @@ run '["bun","src/scripts/recover-opencode-history.ts","--env","'$ENV'","--apply"
 run '["bun","src/scripts/recover-opencode-history.ts","--env","'$ENV'","--apply","--provider","daytona","--concurrency","2"]'
 ```
 
-Big stores, after the main runs: one session at a time, on a 16 GB task (the
-worker container sets no memory limit of its own, so a task override is enough).
+Big stores, after the main runs: one session at a time, on a 2 vCPU / 16 GB task
+(the worker container sets no memory limit of its own, so a task override is
+enough; Fargate allows 16 GB only from 2 vCPU, and the dev worker has 1).
 Peak memory is about 2.4 × the store (dev: 636 MB for a 262 MB store).
 
 ```bash
 runbig() { aws ecs run-task --profile kortix --region $REGION --cluster $CLUSTER --task-definition "$TD" \
   --capacity-provider-strategy capacityProvider=FARGATE,weight=1 --network-configuration "$NET" \
-  --overrides "{\"memory\":\"16384\",\"containerOverrides\":[{\"name\":\"worker\",\"command\":$1}]}" --query 'tasks[0].taskArn' --output text; }
+  --overrides "{\"cpu\":\"2048\",\"memory\":\"16384\",\"containerOverrides\":[{\"name\":\"worker\",\"command\":$1}]}" --query 'tasks[0].taskArn' --output text; }
 runbig '["bun","src/scripts/recover-opencode-history.ts","--env","'$ENV'","--apply","--max-store-mb","2048","--concurrency","1"]'
 runbig '["bun","src/scripts/recover-opencode-history.ts","--env","'$ENV'","--apply","--provider","daytona","--max-store-mb","2048","--concurrency","1"]'
 ```
@@ -161,5 +162,10 @@ are stamped and skipped.
   copy. Single-part copies read on a Platinum box (4.5 MB) and a Daytona box
   (9.4 MB). After the cycles, 0 `/tmp/kortix-recover.*` folders in the boxes, and
   every box parked.
+- 2026-11-06, the deployed dev image (`a11a454428`, worker td `:222`): a one-off
+  task at 2 vCPU / 16 GB with `--apply --max-store-mb 2048 --concurrency 1` and
+  a Daytona `--apply`, both exit 0 and 0 candidates. Dev totals: 868 `written`,
+  47 `empty_store`, 3 `no_store`, 2 `box_gone`, 1 `retry` (a box stuck in Daytona
+  `archiving`).
 - Open: the prod run after the release; pi sessions with no log (146 Platinum
   since 08-19, `ses_pi…` roots) need a pi reader and are not covered.

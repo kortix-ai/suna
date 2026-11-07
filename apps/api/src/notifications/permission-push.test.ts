@@ -1,7 +1,6 @@
 // Permission notification gate: the claim decides, the notification is
-// fire-and-forget, the ask context goes to the notifier unresolved (it resolves
-// it only when the project's notification_center flag is on), and a failure
-// never escapes. Injected claim and notifier, no mock.module.
+// fire-and-forget, the ask context goes to the notifier unresolved (the
+// notifier resolves it), and a failure never escapes. Injected claim and notifier, no mock.module.
 // The cross-replica claim on PostgreSQL: __tests__/integration-permission-push-claim.test.ts.
 import { describe, expect, test } from 'bun:test';
 import { createPermissionPushGate } from './permission-push';

@@ -56,7 +56,7 @@ mock.module('../projects/lib/access', () => ({
     row: {
       accountId: ACCOUNT,
       projectId: PROJECT,
-      metadata: { experimental: { notification_center: true } },
+      metadata: {},
     },
     userId: VIEWER,
     actor: { credential: { kind: 'jwt' } },

@@ -812,30 +812,10 @@
       "notificationsDescription": "Обавештења прегледача о догађајима у вашим сесијама.",
       "unsupported": "Ваш прегледач не подржава обавештења.",
       "enableNotifications": "Омогући обавештења",
-      "permissionGranted": "Дозвола прегледача је одобрена",
       "permissionDenied": "Прегледач је блокирао обавештења — промените дозволу у подешавањима сајта",
-      "permissionDefault": "Прегледач ће затражити дозволу када омогућите обавештења",
       "notificationTypes": "Врсте обавештења",
       "behavior": "Понашање",
       "sendTestNotification": "Пошаљи пробно обавештење",
-      "types": {
-        "onCompletion": {
-          "label": "Завршетак задатка",
-          "description": "Када сесија заврши задатак"
-        },
-        "onError": {
-          "label": "Грешке",
-          "description": "Када сесија наиђе на грешку"
-        },
-        "onQuestion": {
-          "label": "Питања",
-          "description": "Када Kortix тражи ваш одговор да би наставио"
-        },
-        "onPermission": {
-          "label": "Захтеви за дозволу",
-          "description": "Када Kortix тражи дозволу за коришћење алатке"
-        }
-      },
       "notificationBehavior": {
         "onlyWhenHidden": {
           "label": "Само када је картица скривена",
@@ -887,7 +867,7 @@
       "enableDescriptionPush": "Приказује обавештења у овом прегледачу, чак и кад су све картице Kortix затворене.",
       "enableDescriptionDesktop": "Приказује обавештења десктоп апликације док је њен прозор отворен.",
       "enableDescriptionBrowser": "Приказује обавештења у овом прегледачу док је картица Kortix отворена.",
-      "notificationTypesDescription": "Ова подешавања важе на сваком телефону и у сваком прегледачу. Телефон има и свој прекидач за „Потез завршен“, „Потез није успео“, „Питање“ и „Захтев за дозволу“. Добија их само док су оба укључена. Звонце приказује свако обавештење пројеката са укљученим Центром за обавештења.",
+      "notificationTypesDescription": "Ова подешавања важе на сваком телефону и у сваком прегледачу. Телефон има и свој прекидач за „Потез завршен“, „Потез није успео“, „Питање“ и „Захтев за дозволу“. Добија их само док су оба укључена. Пријемно сандуче приказује свако обавештење, без обзира на ова подешавања. Имејл је искључен за већину врста док га не укључите.",
       "push": "Push",
       "email": "Имејл",
       "channelSwitch": "{kind}: {channel}",
@@ -1288,10 +1268,6 @@
           "name": "Регион САД",
           "description": "Покрените нове сесије овог пројекта у региону Исток САД. Сесија која је у току задржава свој регион до поновног покретања."
         },
-        "notification_center": {
-          "name": "Центар за обавештења",
-          "description": "Обавештава људе којих се сесија тиче (ко је послао промпт, ко ју је направио и ко је прати) преко пријемног сандучета са звонцем, push обавештења у прегледачу и е-поште, и упозорава на окидаче и петље који не успевају. Искључено: push сесије добија само телефон особе која ју је направила, а телефон власника налога добија један push кад окидач почне да не успева."
-        },
         "event_triggers": {
           "name": "Composio okidači događaja",
           "description": "Pokrenite agenta kada se nešto desi u povezanoj aplikaciji: nova e-pošta, pull request, događaj u kalendaru. Događaji dolaze iz Composio-a. Kortix i sam proverava vaše povezane aplikacije."
@@ -1304,10 +1280,6 @@
           "name": "Sandboxi bez stanja",
           "description": "Svaka sesija čuva samo /workspace, na zasebnom volumenu. Sandbox koji je zaustavljen sat vremena se briše, a sledeće otvaranje pokreće novi sa istim fajlovima i razgovorom. Programi iz starog sandboxa više ne rade. Kortix ga uključuje po projektu."
         },
-        "artifacts": {
-          "name": "Артефакти",
-          "description": "Дели документе (Markdown) и HTML странице (презентације, контролне табле, макете, алате) из Датотека са пројектом, изабраним особама или свима са линком. Документи се уређују на месту, свако чување је једна верзија из историје Датотека, а документи се могу извести у PDF. Додаје страницу Артефакти и `kortix artifacts`."
-        },
         "email_channel": {
           "name": "Kanal e-pošte",
           "description": "Dajte agentu poštansko sanduče na Resend-u: dolazna pošta pokreće i nastavlja sesije, a agent čita, odgovara i šalje iz sandučeta. Koristite sopstveni Resend API ključ i domen."
@@ -1319,10 +1291,6 @@
         "session_groups": {
           "name": "Групе сесија",
           "description": "Груписање сесија у бочној траци у именоване фасцикле које дели цео пројекат, на пример једну по продавници или клијенту. Премести сесију у групу из њеног менија или превлачењем; преуреди и скупи групе."
-        },
-        "artifact_comments": {
-          "name": "Коментари на артефакте",
-          "description": "Разговарајте о документима и страницама у нитима са особама и агентима. Захтева Артефакте."
         },
         "chrome": {
           "name": "Kortix у Chrome-у",
@@ -3379,8 +3347,7 @@
       "automation_failed": "Упозорење о грешци",
       "automation_recovered": "Обавештење о опоравку",
       "capture_device_down": "Capture рачунар је стао",
-      "capture_device_recovered": "Capture рачунар поново снима",
-      "artifact_comment": "Komentari na artefakte"
+      "capture_device_recovered": "Capture рачунар поново снима"
     },
     "kindDescription": {
       "turn_done": "Потез се завршава.",
@@ -3391,33 +3358,37 @@
       "automation_failed": "Окидач или петља почиње да не успева.",
       "automation_recovered": "Окидач или петља који нису успевали поново раде.",
       "capture_device_down": "Kortix Capture рачунар не снима. Шаље се људима који управљају Capture-ом.",
-      "capture_device_recovered": "Kortix Capture рачунар који је стао поново снима.",
-      "artifact_comment": "Povratne informacije, pominjanja i odgovori na artefakte koje možete da vidite."
+      "capture_device_recovered": "Kortix Capture рачунар који је стао поново снима."
     },
-    "bell": {
-      "label": "Обавештења",
-      "unreadLabel": "Обавештења: непрочитаних {count}",
+    "inbox": {
+      "title": "Пријемно сандуче",
+      "description": "Новости о сесијама, окидачима и артефактима који вас се тичу, из свих пројеката.",
+      "unreadLabel": "Пријемно сандуче: непрочитаних {count}",
+      "unreadCount": "непрочитаних {count}",
       "markAllRead": "Означи све као прочитано",
       "tabAll": "Sve",
       "tabNeedsYou": "Čeka tebe",
       "tabDone": "Gotovo",
       "emptyNeedsYou": "Trenutno ništa ne čeka tebe",
+      "emptyNeedsYouDescription": "Питања, захтеви за дозволу и грешке појављују се на овој картици.",
       "empty": "Обавештења ће се појавити овде",
+      "emptyDescription": "Kortix вас обавештава кад се сесија заврши, кад јој треба ваш одговор или кад не успе.",
       "loadError": "Учитавање обавештења није успело",
       "retry": "Покушај поново",
       "unread": "Непрочитано",
       "promptPush": "Добијајте обавештења кад је Kortix затворен",
       "promptBackground": "Добијајте обавештења кад је Kortix у позадини",
       "turnOn": "Укључи",
-      "dismiss": "Одбаци"
+      "dismiss": "Одбаци",
+      "settings": "Подешавања обавештења",
+      "emailOptIn": "Имејл је искључен за већину врста док га не укључите."
     },
     "arrival": {
       "inProject": "{kind} у пројекту {project}",
       "openSession": "Отвори сесију",
       "openReminders": "Отвори петље",
       "openTriggers": "Отвори окидаче",
-      "openConversation": "Otvori razgovor",
-      "openArtifact": "Otvori artefakt"
+      "openConversation": "Otvori razgovor"
     },
     "session": {
       "mute": "Утишај обавештења",
@@ -5867,11 +5838,8 @@
       "line61JsxTextThisPageRefreshesAutomaticallyEvery30Seconds": "Ова страница се аутоматски освежава сваких 30 секунди."
     },
     "appNotFound": {
-      "line65JsxTextPageNotFound": "Страница није пронађена",
-      "line70JsxTextThePageYouAposReLookingForDoesn": "Страница коју тражите не постоји или је премештена.",
       "line82JsxTextText404Error": "404 Грешка",
-      "line85JsxTextResourceNotAvailable": "ресурс није доступан",
-      "line100JsxTextReturnHome": "Повратак кући"
+      "line85JsxTextResourceNotAvailable": "ресурс није доступан"
     },
     "appOauthAuthorizePage": {
       "line146JsxTextInvalidAuthorizationRequest": "Неважећи захтев за ауторизацију",
@@ -24897,7 +24865,6 @@
   },
   "artifacts": {
     "title": "Артефакти",
-    "gateDescription": "Дели документе и HTML странице из Датотека са својим тимом или свима са линком. Документи се уређују на месту; свако чување је једна верзија.",
     "type": {
       "doc": "Документ",
       "html": "HTML"
@@ -24916,7 +24883,6 @@
     "emptyFiltered": "Ниједан артефакт не одговара",
     "updated": "Ажурирано {time}",
     "pinned": "Закачено",
-    "openComments": "{count, plural, one {# отворен коментар} few {# отворена коментара} other {# отворених коментара}}",
     "visibility": {
       "private": "Приватни",
       "project": "Пројектни",
@@ -25037,178 +25003,12 @@
     "embedConvert": "Pretvori u link",
     "embedCopy": "Kopiraj link",
     "embedDelete": "Obriši",
-    "discussion": {
-      "comments": "Коментари",
-      "activity": "Активност",
-      "open": "Отворени",
-      "resolved": "Решени",
-      "outdated": "Застарели",
-      "outdatedHint": "Овај одломак није могуће пронаћи у тренутном документу.",
-      "newComment": "Нови коментар",
-      "annotationMode": "Закачи коментар",
-      "annotationModeHint": "Кликни на елемент да закачиш коментар. Превуци да означиш област.",
-      "annotationLoading": "Учитавање ознака…",
-      "annotationUnavailable": "Ознаке нису доступне. Изабери {refresh} у менију {actions} да покушаш поново.",
-      "commentLabel": "Коментар",
-      "commentPlaceholder": "Оставите коментар или помените некога…",
-      "replyLabel": "Одговор",
-      "replyPlaceholder": "Напишите одговор…",
-      "postComment": "Коментариши",
-      "postReply": "Одговори",
-      "saveEdit": "Сачувај измене",
-      "cancel": "Откажи",
-      "edit": "Измени",
-      "delete": "Обриши",
-      "deleteTitle": "Обрисати коментар?",
-      "deleteDescription": "Текст се уклања за све, а на његовом месту остаје „Коментар је обрисан”. Ово се не може опозвати.",
-      "commentDeleted": "Коментар је обрисан",
-      "threadDeleted": "Ова нит је обрисана.",
-      "resolve": "Реши",
-      "reopen": "Поново отвори",
-      "edited": "Измењено",
-      "commentActions": "Радње за коментар",
-      "focusThread": "Прикажи одломак",
-      "quoteLabel": "Изабрани одломак",
-      "waitingForPerson": "Чека се одговор особе",
-      "deliveryFailed": "Коментаре није могуће послати агенту.",
-      "sendFailed": "Слање ових коментара није успело. Покушајте поново.",
-      "retrySend": "Понови слање ({count})",
-      "discardSend": "Одбаци и користи најновије коментаре",
-      "sendRetryHint": "Претходни захтев је можда завршен. Понови га да потврдиш или га одбаци пре покретања новог захтева.",
-      "sendBatchHint": "Овај пакет садржи {count} од {total} нити.",
-      "commentFailed": "Чување коментара није успело. Покушајте поново.",
-      "statusFailed": "Измена ове нити није успела. Покушајте поново.",
-      "deleteFailed": "Брисање коментара није успело. Покушајте поново.",
-      "commentsLoadError": "Учитавање коментара није успело.",
-      "contextLoadError": "Учитавање дозвола за коментаре није успело.",
-      "activityLoadError": "Учитавање активности није успело.",
-      "retry": "Покушај поново",
-      "sendAgainTo": "Пошаљи поново агенту {agent}",
-      "noComments": "Нема отворених коментара",
-      "noCommentsHint": "Изаберите одломак да бисте га коментарисали или започните нови коментар.",
-      "noResolved": "Нема решених коментара",
-      "noResolvedHint": "Решене нити се приказују овде.",
-      "noActivity": "Још нема активности",
-      "noActivityHint": "Сачуване верзије и коментари се приказују овде.",
-      "loadMore": "Учитај још",
-      "olderSaves": "Старије сачуване верзије можда нису доступне у овој историји.",
-      "historicalReadOnly": "Коментари ове верзије могу само да се читају.",
-      "mentionPeople": "Људи",
-      "mentionAgents": "Агенти",
-      "sourceSession": "Сесија артефакта",
-      "composerKeys": "Enter за слање · Shift+Enter за нови ред",
-      "closeSelection": "Одбаци изабрани одломак",
-      "preparingSelection": "Припрема изабраног одломка…",
-      "selectionCaptureFailed": "Није могуће припремити изабрани одломак. Одбаци га да оставиш коментар на цео артефакт.",
-      "commentSelection": "Коментариши",
-      "selectionTooLong": "Овај одломак је предугачак за коментар. Изаберите највише {max} знакова.",
-      "selectionUnavailable": "Коментар није могуће везати за овај одломак. Изаберите други.",
-      "snapshotChanged": "Документ је измењен. Поново га учитајте пре коментарисања.",
-      "commentSaveFailed": "Чување документа није успело. Покушајте поново пре коментарисања.",
-      "events": {
-        "saved": "чува верзију",
-        "published": "објављује артефакт",
-        "renamed": "мења назив артефакта",
-        "visibility_changed": "мења видљивост",
-        "shared_with_changed": "мења ко има приступ",
-        "restored": "враћа верзију",
-        "thread_opened": "отвара нит",
-        "replied": "одговара у нити",
-        "resolved": "решава нит",
-        "reopened": "поново отвара нит",
-        "comment_deleted": "брише коментар",
-        "sent_to_agent": "шаље коментаре агенту"
-      },
-      "person": "Особа",
-      "deleteRootDescription": "Његов текст се уклања за све, а нит излази са листе коментара. Ово се не може опозвати.",
-      "showPanel": "Прикажи коментаре",
-      "hidePanel": "Сакриј коментаре",
-      "panelTitle": "Коментари и активност",
-      "resizePanel": "Промени величину панела коментара",
-      "unshareComments": "{count, plural, one {# коментар ће бити обрисан.} few {# коментара ће бити обрисана.} other {# коментара ће бити обрисано.}}",
-      "systemActor": "Систем",
-      "draw": "Нацртај повратне информације",
-      "drawPen": "Оловка",
-      "drawArrow": "Стрелица",
-      "drawRectangle": "Правоугаоник",
-      "drawBlack": "Црна",
-      "drawRed": "Црвена",
-      "drawBlue": "Плава",
-      "drawUndo": "Поништи потез",
-      "drawPageChanged": "Страница се променила. Откажи и нацртај поново.",
-      "drawLimit": "Достигнуто је ограничење цртежа. Поништи потез да наставиш.",
-      "openScreenshot": "Отвори снимак екрана",
-      "drawingScreenshot": "Снимак повратних информација",
-      "screenshotReadFailed": "Учитавање снимка екрана није успело.",
-      "screenshotMissing": "Снимак екрана није доступан. Цртеж је сачуван.",
-      "screenshotCaptureFailed": "Снимање екрана није успело. Коментар ће садржати цртеж без слике.",
-      "sendScreenshotLimit": "Ови коментари нису могли да се пошаљу. Њихови снимци екрана прелазе ограничење за један захтев. Пошаљите мање нити са цртежима.",
-      "agentsUnavailable": "Агенти нису могли да се учитају.",
-      "showMore": "Прикажи више",
-      "showLess": "Прикажи мање",
-      "moreReplies": "{count, plural, one {Још # одговор} few {Још # одговора} other {Још # одговора}}",
-      "resolvedBy": "Решено: {name}",
-      "agent": "Агент",
-      "threadResolved": "Нит је решена",
-      "undo": "Опозови",
-      "agentPending": "Шаље се агенту…",
-      "agentSent": "Послато агенту",
-      "openSession": "Отвори сесију",
-      "notDelivered": "Није испоручено",
-      "sendThreads": "{count, plural, one {Пошаљи # отворену нит агенту {agent}} few {Пошаљи # отворене нити агенту {agent}} other {Пошаљи # отворених нити агенту {agent}}}",
-      "chooseAgent": "Изабери агента",
-      "sentToAgent": "Коментари су послати агенту {agent}",
-      "newCommentFrom": "Нови коментар: {name}",
-      "newComments": "{count, plural, one {# нови коментар} few {# нова коментара} other {# нових коментара}}",
-      "pagePinLabel": "Коментар {number}",
-      "showPanelCount": "Прикажи коментаре, отворених: {count}",
-      "hidePanelCount": "Сакриј коментаре, отворених: {count}",
-      "commentSelectionHint": "Коментаришите избор",
-      "threadReopened": "Нит је поново отворена",
-      "noCommentsReadOnlyHint": "Коментари на овај артефакт појављују се овде.",
-      "commentTooLong": "Коментар може имати највише {max} знакова. Уклоните {over}.",
-      "discardDrawingTitle": "Одбацити овај цртеж?",
-      "discardDrawingHint": "Ваши потези нису сачувани. Ово се не може опозвати.",
-      "discardDrawing": "Одбаци",
-      "keepDrawing": "Настави цртање",
-      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
-      "activityLabel": "{actor} {verb}"
-    },
     "moveTo": "Премести у простор",
     "projectWide": "На нивоу пројекта",
     "moved": "Артефакт је премештен",
     "moveFailed": "Није могуће преместити артефакт",
     "spaceEmpty": "Још нема артефаката у {space}",
     "showAll": "Прикажи све",
-    "live": {
-      "here": "Сада овде",
-      "hereLabel": "Сада на овом артефакту: {names}",
-      "reconnecting": "Поновно повезивање…",
-      "you": "Ви",
-      "agents": "Агенти",
-      "agentsHere": "Агенти у овој нити",
-      "status": {
-        "viewing": "Прегледа",
-        "reading": "Чита",
-        "editing": "Уређује",
-        "writing": "Пише"
-      },
-      "hideCursor": "Сакриј мој курсор",
-      "hideCursorHint": "Остали и даље виде ваш аватар.",
-      "typingOne": "{name} куца…",
-      "typingTwo": "{first} и {second} куцају…",
-      "typingMany": "{count, plural, one {# особа куца…} few {# особе куцају…} other {# особа куца…}}",
-      "writing": "{name} пише…"
-    },
-    "coedit": {
-      "offLarge": "Заједничко уређивање уживо је искључено: овај документ је превелик. Измене се чувају док куцате.",
-      "offLineEndings": "Заједничко уређивање уживо је искључено: овај документ меша две врсте прелома реда. Измене се чувају док куцате.",
-      "offShape": "Заједничко уређивање уживо је искључено: уређивач не може да задржи део овог документа тачно онако како је написан. Измене се чувају док куцате.",
-      "stoppedLarge": "Заједничко уређивање уживо је заустављено: једна измена је била превелика за дељење. Измене се чувају док куцате.",
-      "stoppedFailed": "Заједничко уређивање уживо је заустављено: веза није успела. Измене се чувају док куцате.",
-      "stoppedHistory": "Заједничко уређивање уживо је заустављено: историја измена овог документа је превелика. Измене се чувају док куцате.",
-      "offFailed": "Заједничко уређивање уживо је искључено: повезивање није успело. Измене се чувају док куцате."
-    },
     "conflictTitle": "Неко други је изменио овај документ",
     "conflictReloadTitle": "Учитати новију верзију?",
     "conflictReloadHint": "Ваше измене од последњег чувања се одбацују. Ово се не може опозвати.",
@@ -26163,10 +25963,6 @@
       "connectLabel": "Повежи MCP",
       "copyFailed": "Команда није копирана. Покушај поново."
     }
-  },
-  "roleCapabilities": {
-    "comment": "Коментар",
-    "commentArea": "Коментариши {area}"
   },
   "sessionDesktop": {
     "title": "Радна површина",

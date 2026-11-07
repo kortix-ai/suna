@@ -139,6 +139,8 @@ const PROTECTED_APP_PREFIXES = [
   '/teams',
   '/tunnel',
   '/game-of-life',
+  // The account-level Inbox (KRTX-1742): /projects, /new and /settings link it.
+  '/inbox',
   '/invites',
   '/maintenance',
   '/new',
@@ -257,6 +259,8 @@ const DESKTOP_ALLOWED_ROUTES = [
   // desktop shell bounces it to the landing door — including the post-sign-in
   // redirect to `/settings/billing`.
   '/settings',
+  // The account-level Inbox; `/projects/[id]/inbox` rides `/projects`.
+  '/inbox',
   '/invites',
   '/admin',
   '/setup',

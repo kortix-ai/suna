@@ -26,6 +26,22 @@ function isFilePreviewPath(path: string): boolean {
 }
 
 /**
+ * The path of a link to this app's own `/drives/…` URL, still encoded, or null.
+ * The web app has no `/drives` route: `https://<app>/drives/me/a.jpg` is the
+ * same file as `/drives/me/a.jpg`, not a page. Without a window (server
+ * render) no origin is this app's.
+ */
+function ownDriveUrlPath(href: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const url = new URL(href);
+    return url.origin === window.location.origin && url.pathname.startsWith('/drives/') ? url.pathname : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolves a document-relative href against the directory of the document
  * that contains the link, lexically (`.` and `..` only — no filesystem
  * access). The caller validates the normalized result against sandbox roots.
@@ -52,6 +68,7 @@ function resolveDocumentRelative(baseDir: string, href: string): string | null {
  */
 export function workspaceFileLinkPath(url: string | undefined, baseDir?: string): string | null {
   let path = url?.trim() ?? '';
+  path = ownDriveUrlPath(path) ?? path;
   if (FILE_SCHEME.test(path)) {
     path = path.replace(FILE_SCHEME, '');
   } else if (ANY_SCHEME.test(path) || /^(?:[#?]|\/\/)/.test(path)) {
@@ -72,6 +89,8 @@ export function workspaceFileLinkPath(url: string | undefined, baseDir?: string)
       : resolveDocumentRelative(baseDir, path);
     return resolved && isFilePreviewPath(resolved) ? resolved : null;
   }
+  // An encoded `..` (`%2F..%2F`) only shows after decoding.
+  if (path.startsWith('/drives/') && !isFilePreviewPath(path)) return null;
   return path || null;
 }
 

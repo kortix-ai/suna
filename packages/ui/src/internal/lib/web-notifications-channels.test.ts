@@ -228,7 +228,7 @@ describe('notifyQuestion and notifyPermissionRequest', () => {
   beforeEach(() => {
     bodies.length = 0;
     useWebNotificationStore.setState({
-      preferences: { ...realPreferences, enabled: true, onQuestion: true, onPermission: true, playSound: false },
+      preferences: { ...realPreferences, enabled: true, playSound: false },
     });
     globalThis.Notification = FakeNotification as unknown as typeof Notification;
     globalThis.window = {

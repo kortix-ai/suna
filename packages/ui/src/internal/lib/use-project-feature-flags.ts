@@ -20,6 +20,8 @@ import { useFeatureFlag } from '@kortix/sdk/react';
  * The map is `Partial` because `FeatureFlagKey` still carries deprecated
  * graduated keys that the API no longer serves; they have no member here, and
  * `requiresFlag` may only name a served key (pinned by the same test).
+ * `volumes`, `drives` and `artifacts` graduated but are still served: each
+ * reads whether the platform stores Files (Platinum).
  *
  * Fail-closed: every member is `false` until the project detail resolves.
  */
@@ -33,7 +35,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const pooledProviderSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
   const usRegion = useFeatureFlag(projectId, 'us_region');
   const eventTriggers = useFeatureFlag(projectId, 'event_triggers');
-  const notificationCenter = useFeatureFlag(projectId, 'notification_center');
   const volumes = useFeatureFlag(projectId, 'volumes');
   const drives = useFeatureFlag(projectId, 'drives');
   const sessionLog = useFeatureFlag(projectId, 'session_log');
@@ -41,7 +42,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const sharedDrives = useFeatureFlag(projectId, 'shared_drives');
   const goals = useFeatureFlag(projectId, 'goals');
   const artifacts = useFeatureFlag(projectId, 'artifacts');
-  const artifactComments = useFeatureFlag(projectId, 'artifact_comments');
   const emailChannel = useFeatureFlag(projectId, 'email_channel');
   const workspaceVolume = useFeatureFlag(projectId, 'workspace_volume');
   const sessionGroups = useFeatureFlag(projectId, 'session_groups');
@@ -60,7 +60,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       pooled_provider_secrets: pooledProviderSecrets.enabled,
       us_region: usRegion.enabled,
       event_triggers: eventTriggers.enabled,
-      notification_center: notificationCenter.enabled,
       volumes: volumes.enabled,
       drives: drives.enabled,
       session_log: sessionLog.enabled,
@@ -68,7 +67,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       shared_drives: sharedDrives.enabled,
       goals: goals.enabled,
       artifacts: artifacts.enabled,
-      artifact_comments: artifactComments.enabled,
       email_channel: emailChannel.enabled,
       workspace_volume: workspaceVolume.enabled,
       session_groups: sessionGroups.enabled,

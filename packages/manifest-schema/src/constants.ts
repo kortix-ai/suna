@@ -315,7 +315,6 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   // Artifacts: read = gallery and viewer; write = publish and edit; manage =
   // anyone's sharing; public = public links.
   'project.artifact.read',
-  'project.artifact.comment',
   'project.artifact.write',
   'project.artifact.manage',
   'project.artifact.public',
@@ -366,9 +365,9 @@ export const DEPRECATED_KORTIX_PERMISSION_ALIASES: Readonly<Record<string, reado
  * Actions retired with their feature. A manifest that still grants one keeps
  * validating with a warning, and the grant holds nothing: rejecting it would
  * fail the agent's parse and give it an EMPTY grant. `project.room.*`: Rooms,
- * removed 2026-11.
+ * removed 2026-11. `project.artifact.comment`: artifact comments, removed 2026-11-06.
  */
-export const RETIRED_KORTIX_PERMISSIONS: readonly string[] = ['project.room.read', 'project.room.write'];
+export const RETIRED_KORTIX_PERMISSIONS: readonly string[] = ['project.room.read', 'project.room.write', 'project.artifact.comment'];
 
 /** Kortix skills retired with their feature. An agent that still grants one validates with a warning. `kortix-rooms`: Rooms, removed 2026-11. */
 export const RETIRED_KORTIX_SKILL_NAMES: readonly string[] = ['kortix-rooms'];

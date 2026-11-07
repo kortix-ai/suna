@@ -349,6 +349,29 @@ describe('GET /v1/usage/session-costs', () => {
     expect(listInput).toBeNull();
   });
 
+  // A non-uuid owner_id reached the uuid-typed project_sessions.created_by
+  // comparison: Postgres 22P02, surfaced as a 500 (KRTX-4372).
+  test.each(['not-a-uuid', "x' OR 1=1--", '123'])('rejects the malformed owner_id %p with 400', async (ownerId) => {
+    for (const query of [`owner_id=${encodeURIComponent(ownerId)}`, `owner_id=${encodeURIComponent(ownerId)}&format=csv`]) {
+      listInput = null;
+      const response = await createTestApp().request(`/v1/usage/session-costs?${query}`);
+
+      expect(response.status).toBe(400);
+      expect(listInput).toBeNull();
+    }
+  });
+
+  test('forwards a well-formed owner_id and ignores an empty one', async () => {
+    const ok = await createTestApp().request(`/v1/usage/session-costs?owner_id=${SECONDARY_ACCOUNT_ID}`);
+    expect(ok.status).toBe(200);
+    expect(listInput).toMatchObject({ ownerId: SECONDARY_ACCOUNT_ID });
+
+    listInput = null;
+    const empty = await createTestApp().request('/v1/usage/session-costs?owner_id=');
+    expect(empty.status).toBe(200);
+    expect(listInput).toMatchObject({ ownerId: undefined });
+  });
+
   test('preserves the account-wide sandbox-token rejection', async () => {
     authType = 'apiKey';
     sandboxId = '00000000-0000-4000-a000-000000000099';

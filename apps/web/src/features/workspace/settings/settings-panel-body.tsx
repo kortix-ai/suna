@@ -512,7 +512,7 @@ function SettingsTabPane({
     profile: () => <ProfileTab />,
     security: () => <SecurityTab />,
     appearance: () => <AppearanceTab />,
-    sessions: () => <SessionsTab projectId={projectId} />,
+    sessions: () => <SessionsTab />,
     preferences: () => <PreferencesTab />,
     connected: () => <ConnectedAccountsTab accountId={accountId} />,
     chrome: () => <ChromeConnectionsTab />,

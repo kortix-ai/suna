@@ -558,7 +558,6 @@ flow(
       });
 
       await ctx.step('an Artifact publish is held to the same limit → refused with storage_limit_exceeded', async () => {
-        (await owner.patch('/v1/projects/:projectId/features', { feature: 'artifacts', enabled: true }, { params: { projectId: project.id } })).status(200);
         const r = await owner.post(
           '/v1/projects/:projectId/artifacts',
           { files: { 'index.md': { content: `# Big\n\n${'z'.repeat(4096)}` } } },

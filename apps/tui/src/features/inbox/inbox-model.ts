@@ -31,7 +31,6 @@ export const KIND_LABEL: Record<InboxNotificationKind, string> = {
   capture_device_down: 'Capture computer stopped',
   capture_device_recovered: 'Capture computer recording again',
   message: 'Message',
-  artifact_comment: 'Artifact comment',
 };
 
 /** Kinds that wait on the person: an answer, an approval, a failure to look at. */
@@ -55,7 +54,6 @@ const KIND_MARK: Record<InboxNotificationKind, { glyph: string; tone: InboxTone 
   capture_device_down: { glyph: '!', tone: 'bad' },
   capture_device_recovered: { glyph: '✓', tone: 'ok' },
   message: { glyph: '"', tone: 'idle' },
-  artifact_comment: { glyph: '"', tone: 'idle' },
 };
 
 export interface InboxRow {
