@@ -119,7 +119,9 @@ flow(
       r.status(OWNER_READ);
     });
     await ctx.step("a team member with no credit row of their own reads an all-zero breakdown, not an error", async () => {
-      const team = await ctx.fixtures.team();
+      // A team with no credit row: the member has no account of their own, so
+      // the breakdown reads the team's.
+      const team = await ctx.fixtures.team({ credits: false });
       const member = await team.addMember("member");
       const r = await ctx.client.as(member).get("/v1/billing/credit-breakdown");
       r.status(OWNER_READ);

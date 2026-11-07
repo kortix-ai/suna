@@ -110,8 +110,12 @@ export interface Fixtures {
   ): Promise<CreatedSession>;
   /** Mint a fresh run-scoped account-scoped PAT. */
   pat(opts?: { name?: string }): Promise<string>;
-  /** Create a team account with member/role helpers (auto-torn-down). */
-  team(opts?: { name?: string; enterprise?: boolean }): Promise<TeamFixture>;
+  /**
+   * Create a team account with member/role helpers (auto-torn-down). The team
+   * starts with the Free plan's monthly credits; `credits: false` leaves it at
+   * 0 credits (no credit row at all).
+   */
+  team(opts?: { name?: string; enterprise?: boolean; credits?: boolean }): Promise<TeamFixture>;
   /**
    * Create an isolated user (auto-torn-down). No account exists at sign-up
    * (Workspaces D3), so by default the fixture creates one account the user

@@ -39,6 +39,9 @@ import { mapWithConcurrency } from '../core/concurrency';
 import { createLocalGitRepository } from './local-git';
 import type { FixtureStats } from '../core/result';
 
+/** The Free plan's monthly credits (USD): what each team fixture workspace starts with. */
+const TEAM_FIXTURE_CREDITS_USD = 5;
+
 const PUBLIC_DOMAINS = new Set(['system', 'access']);
 
 export interface World {
@@ -314,6 +317,18 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       const accountId = res.json<any>()?.account_id;
       if (!accountId) throw new Error(`team account create returned no id: ${res.text()}`);
       stack.push('account', accountId);
+      // A person's free credits go to their first workspace only, and every
+      // team is another workspace of the same OWNER: without this grant a team
+      // starts at 0 credits and its first session answers 402. The fixture
+      // funds it with the Free plan's monthly amount, through the admin grant
+      // a real operator uses; no billing rule is relaxed.
+      if (env.adminToken && opts?.credits !== false) {
+        const funded = await adminClient
+          .withBearer(env.adminToken, ADMIN_TOKEN_LABEL)
+          .post('/v1/admin/api/accounts/:id/credits', { amount: TEAM_FIXTURE_CREDITS_USD, description: 'ke2e team fixture credits' }, { params: { id: accountId } });
+        throwIfEdgeLaundered(funded, 'team account credit grant');
+        if (funded.statusCode !== 200) throw new Error(`team credit grant failed: ${funded.statusCode} ${funded.text()}`);
+      }
       if (opts?.enterprise) {
         // Enterprise is a feature layer: the fixture account gets the
         // Enterprise demo (fixtures/enterprise-access.ts), switched on by the
