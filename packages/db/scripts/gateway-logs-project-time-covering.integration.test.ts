@@ -7,7 +7,7 @@
  * 15-minute budgets poll of a busy project crossed the 25 s statement timeout
  * (503 + error page) while its neighbors ran 2-14 s every poll — the latency
  * is heap I/O. idx_gateway_logs_project_time_covering
- * (20261020080000000) carries every column those aggregates read, so the
+ * (20261020080000000, widened to _v2 by 20261104060000000 for KRTX-4022) carries every column those aggregates read, so the
  * plans become index-only.
  *
  * The assertion reads the live catalog and the live planner (EXPLAIN), never
@@ -21,7 +21,7 @@ import pg from 'pg';
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const suite = databaseUrl ? describe : describe.skip;
 
-const INDEX = 'idx_gateway_logs_project_time_covering';
+const INDEX = 'idx_gateway_logs_project_time_covering_v2';
 
 /** The projectAgg statement of GET /:projectId/gateway/budgets (gateway-spend.ts),
  *  with the same money expression llm-spend.ts composes. */
@@ -76,8 +76,9 @@ suite('gateway_request_logs project aggregates are index-only', () => {
        on conflict (project_id) do nothing`,
       [projectId, accountId],
     );
-    // 4k month-to-date rows with a request payload, so the heap is wider than
-    // the index. Size is not what the plans below rest on (`enable_seqscan =
+    // 4k month-to-date rows with a ~1.3 KB incompressible request payload, so
+    // the heap is wider than the index (the _v2 index also carries provider,
+    // resolved_model and metadata; a narrow heap would price it out). Size is not what the plans below rest on (`enable_seqscan =
     // off` is): 40k rows of 2 KB timed the setup out at 30 s on a loaded CI
     // runner.
     await client.query(
@@ -93,7 +94,7 @@ suite('gateway_request_logs project aggregates are index-only', () => {
               case when i % 4 = 0 then null else 'credits' end,
               i % 17 > 0, (i % 900)::int, (i % 500)::int, (i % 900)::int,
               ((i % 50) * 0.001)::numeric, ((i % 80) * 0.001)::numeric,
-              jsonb_build_object('messages', repeat('x', 200)),
+              jsonb_build_object('messages', (select string_agg(md5(i::text || g::text), '') from generate_series(1, 40) g)),
               date_trunc('month', now()) + ((i % 400) || ' minutes')::interval
          from generate_series(1, 4000) as i`,
       [accountId, projectId],
@@ -137,14 +138,15 @@ suite('gateway_request_logs project aggregates are index-only', () => {
   });
 
   test('the index carries exactly the columns the aggregates read', async () => {
-    const { rows } = await superuser.query<{ indexdef: string }>(
-      `select pg_get_indexdef(c.oid) as indexdef
-         from pg_class c
+    const { rows } = await superuser.query<{ indexdef: string; indisvalid: boolean }>(
+      `select pg_get_indexdef(c.oid) as indexdef, i.indisvalid
+         from pg_class c join pg_index i on i.indexrelid = c.oid
         where c.relname = $1 and c.relkind = 'i'`,
       [INDEX],
     );
     expect(rows).toHaveLength(1);
     const def = rows[0].indexdef;
+    expect(rows[0]).toMatchObject({ indisvalid: true });
     expect(def).toContain('ON kortix.gateway_request_logs USING btree (project_id, created_at)');
     for (const column of [
       'ok',
@@ -155,6 +157,12 @@ suite('gateway_request_logs project aggregates are index-only', () => {
       'output_tokens',
       'latency_ms',
       'actor_user_id',
+      // KRTX-4022: read by the usage-value aggregate (llm-value.ts).
+      'provider',
+      'resolved_model',
+      'cached_tokens',
+      'cache_write_tokens',
+      'metadata',
     ]) {
       expect(def).toContain(column);
     }
@@ -172,7 +180,8 @@ suite('gateway_request_logs project aggregates are index-only', () => {
       create index if not exists ${INDEX}
         on kortix.gateway_request_logs (project_id, created_at) include (
           ok, billing_mode, final_cost_precise, upstream_cost_precise,
-          input_tokens, output_tokens, latency_ms, actor_user_id
+          input_tokens, output_tokens, latency_ms, actor_user_id,
+          provider, resolved_model, cached_tokens, cache_write_tokens, metadata
         )`);
     expect(await planOf(BUDGETS_PROJECT_AGG)).toContain(INDEX);
   });

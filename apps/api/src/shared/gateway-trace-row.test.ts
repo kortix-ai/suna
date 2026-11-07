@@ -69,3 +69,42 @@ describe('buildGatewayTraceRow', () => {
     expect(row.request).toEqual(request);
   });
 });
+
+describe('buildGatewayTraceRow metadata bound (KRTX-4022)', () => {
+  // metadata is an INCLUDE column of idx_gateway_logs_project_time_covering_v2;
+  // a btree tuple over ~2.7 KB makes the INSERT of the whole trace row fail.
+  const BOUND = 2000;
+  const failure = (attempt: number, message: string) => ({
+    attempt,
+    provider: 'openai',
+    routeModel: 'gpt-6.1-sol',
+    resolvedModel: 'gpt-6.1-sol',
+    stage: 'dispatch',
+    status: 502,
+    code: 502,
+    message,
+  });
+  const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
+
+  test('multi-attempt failures with huge upstream messages stay under the index-tuple bound', () => {
+    const attemptFailures = Array.from({ length: 6 }, (_, i) => failure(i + 1, `${i}`.repeat(20_000)));
+    const row = buildGatewayTraceRow(baseInput({ metadata: { usageEstimated: false, servedModel: 'm', attemptFailures } }));
+    expect(bytes(row.metadata)).toBeLessThanOrEqual(BOUND);
+    const kept = (row.metadata as any).attemptFailures;
+    expect(kept.length).toBeGreaterThan(0);
+    expect(kept[0]).toMatchObject({ attempt: 1, provider: 'openai', status: 502, code: 502 });
+    expect((row.metadata as any).usageEstimated).toBe(false);
+    expect((row.metadata as any).servedModel).toBe('m');
+  });
+
+  test('multi-byte text is bounded by bytes, not characters', () => {
+    const attemptFailures = [failure(1, '\u{1F600}'.repeat(5000))];
+    const row = buildGatewayTraceRow(baseInput({ metadata: { attemptFailures } }));
+    expect(bytes(row.metadata)).toBeLessThanOrEqual(BOUND);
+  });
+
+  test('metadata already under the bound is stored untouched', () => {
+    const metadata = { usageEstimated: true, attemptFailures: [failure(1, 'upstream said no')] };
+    expect(buildGatewayTraceRow(baseInput({ metadata })).metadata).toEqual(metadata);
+  });
+});

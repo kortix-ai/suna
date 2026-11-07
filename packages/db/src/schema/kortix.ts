@@ -5023,11 +5023,14 @@ export const gatewayRequestLogs = kortixSchema.table(
     // index-only scan by (project_id, created_at) that never touches the wide
     // request/response jsonb heap rows. Built CONCURRENTLY with INCLUDE (ok,
     // billing_mode, final_cost_precise, upstream_cost_precise, input_tokens,
-    // output_tokens, latency_ms, actor_user_id) — not expressible in
+    // output_tokens, latency_ms, actor_user_id, provider, resolved_model,
+    // cached_tokens, cache_write_tokens, metadata) — not expressible in
     // drizzle-orm 0.45's index builder; the schema contract checks relation
     // + uniqueness only, same pattern as idx_gateway_logs_account_time_covering
-    // — by 20261020080000000_gateway_logs_project_time_covering.concurrent.ts.
-    index('idx_gateway_logs_project_time_covering').on(table.projectId, table.createdAt),
+    // — by 20261104060000000_gateway_logs_project_time_covering_v2.concurrent.ts
+    // (KRTX-4022: the last five INCLUDE columns are what the usage-value
+    // aggregate of KRTX-3560 reads; without them the series is heap-bound).
+    index('idx_gateway_logs_project_time_covering_v2').on(table.projectId, table.createdAt),
   ],
 );
 

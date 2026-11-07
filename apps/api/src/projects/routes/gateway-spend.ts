@@ -13,6 +13,7 @@ import {
   projectCapabilityAllowed,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import { gatewaySeriesRows } from '../lib/gateway-series';
 import { projectReadView } from '../lib/project-read-view';
 import { listProjectGatewaySessionSpend, listProjectGatewaySourceSpend } from '../../shared/session-costs';
 import { projectSpendByModel } from '../lib/session-model-usage';
@@ -112,30 +113,7 @@ export function registerGatewaySpendRoutes(): void {
       );
 
       const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
-      const rows = await db
-        .select({
-          day: sql<string>`to_char(date_trunc('day', ${gatewayRequestLogs.createdAt}), 'YYYY-MM-DD')`,
-          ...llmValueFields,
-          requests: sql<number>`count(*)::int`,
-          errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
-          cost: totalSpendSql,
-          kortixCost: kortixBilledSpendSql,
-          providerCost: providerBilledSpendSql,
-          inputTokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens}), 0)`,
-          outputTokens: sql<string>`coalesce(sum(${gatewayRequestLogs.outputTokens}), 0)`,
-          p50: sql<number>`coalesce(percentile_cont(0.5) within group (order by ${gatewayRequestLogs.latencyMs}), 0)::int`,
-          p95: sql<number>`coalesce(percentile_cont(0.95) within group (order by ${gatewayRequestLogs.latencyMs}), 0)::int`,
-          p99: sql<number>`coalesce(percentile_cont(0.99) within group (order by ${gatewayRequestLogs.latencyMs}), 0)::int`,
-        })
-        .from(gatewayRequestLogs)
-        .where(
-          and(
-            eq(gatewayRequestLogs.projectId, projectId),
-            sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${days})`,
-          ),
-        )
-        .groupBy(sql`date_trunc('day', ${gatewayRequestLogs.createdAt})`)
-        .orderBy(sql`date_trunc('day', ${gatewayRequestLogs.createdAt})`);
+      const rows = await gatewaySeriesRows(projectId, days);
 
       const byDay = new Map(rows.map((r) => [r.day, r]));
       const series: {
