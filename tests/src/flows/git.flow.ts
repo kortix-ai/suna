@@ -52,14 +52,14 @@ flow(
       r.status([401, 403]);
       if (r.text().includes("X-Amz-")) throw new Error("refused descriptor leaked a presigned URL");
     });
-    await ctx.step("project snapshot descriptor with a malformed sha → 400", async () => {
+    await ctx.step("project snapshot descriptor with a malformed sha and no git auth → 401 (auth before validation)", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
         .get("/v1/git/:project/project-snapshot", {
           params: { project: p.id },
           query: { sha: "not-a-sha" },
         });
-      r.status(400);
+      r.status(401);
     });
     await ctx.step("info/refs without git auth header → 401", async () => {
       const r = await ctx.client
