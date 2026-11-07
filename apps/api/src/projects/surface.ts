@@ -208,6 +208,12 @@ export { signalSessionRuntimeActive } from './session-lifecycle/runtime-active-s
 export { noteSandboxHealthBody } from './lib/turn-start-convergence';
 
 export { registerRuntimeFork } from './lib/runtime-session-snapshot';
+// A provider edge refused a daemon-port request: start the dead-daemon relaunch now (consumed by sandbox-proxy/forward/retry.ts).
+// Behind a dynamic import: the wiring module must stay out of the proxy's static graph (sandbox-proxy/module-graph.test.ts).
+export async function repairDeadDaemonOnEdgeRefusal(sandboxId: string): Promise<boolean> {
+  const wiring = await import('./lib/legacy-runtime-bootstrap-wiring');
+  return wiring.repairDeadDaemonOnEdgeRefusal(sandboxId);
+}
 
 // `chat` on: file every session into `#general`, and the "turned on
 // again" record (consumed by ../feature-flags/toggle-effects).

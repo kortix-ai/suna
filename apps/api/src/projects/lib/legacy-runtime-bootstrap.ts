@@ -402,6 +402,26 @@ export function decideDeadDaemonOnOpen(input: {
   return input.nowMs - requestedMs < DEAD_DAEMON_REPAIR_BUDGET_MS ? 'wait' : 'park';
 }
 
+/**
+ * The Platinum edge refused a daemon-port request (502 with `x-pt-edge-verdict`).
+ * That is the first sign of a dead daemon on a running box, long before the
+ * next `/start` or reaper tick would find it (prod 2026-11-07: up to 12 min of
+ * upload 502s). Ask for the relaunch, once per repair budget. The relaunch
+ * itself re-probes twice and checks the box loopback before it touches anything,
+ * so a refusal from a healthy box repairs nothing.
+ */
+export function decideDeadDaemonOnEdgeRefusal(input: {
+  provider: string;
+  metadata: Record<string, unknown> | null;
+  nowMs: number;
+}): 'request' | 'skip' {
+  if (relaunchStrategyFor(input.provider) !== 'pt-app') return 'skip';
+  const requestedMs = Date.parse(String(input.metadata?.[DEAD_DAEMON_REPAIR_REQUESTED_KEY] ?? ''));
+  return Number.isFinite(requestedMs) && input.nowMs - requestedMs < DEAD_DAEMON_REPAIR_BUDGET_MS
+    ? 'skip'
+    : 'request';
+}
+
 export interface RenderScriptOptions {
   relaunch: RelaunchStrategy;
   /** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted". */
