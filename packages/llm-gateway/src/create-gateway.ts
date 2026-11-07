@@ -123,6 +123,7 @@ export function createGateway(rawHooks: GatewayHooks, deps: GatewayDeps = {}) {
   const listModels = async (
     authorization: string | undefined,
     opts?: ListModelsOptions,
+    openAiList = false,
   ): Promise<Response> => {
     const requestId = `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     const token = bearer(authorization);
@@ -148,13 +149,17 @@ export function createGateway(rawHooks: GatewayHooks, deps: GatewayDeps = {}) {
           requestId,
           suggestion: 'Sign in again or provide a valid API token, then retry.',
         });
-      if (!hooks.listModels) return jsonResponse({ models: {} });
-      const models = await hooks.listModels(principal, opts);
+      const models = hooks.listModels ? await hooks.listModels(principal, opts) : {};
       logger.info(
         `[gateway] models ${Object.keys(models).length}${opts?.managedOnly ? ' (managed only)' : opts?.scope === 'picker' ? ' (picker)' : ''} ` +
           `for acct=${principal.accountId.slice(0, 8)}`,
       );
-      return jsonResponse({ models });
+      if (!openAiList) return jsonResponse({ models });
+      // A picker entry turned off or not connected answers 400: never list it.
+      const data = Object.entries(models)
+        .filter(([, model]) => model.enabled !== false && model.available !== false)
+        .map(([id, model]) => ({ ...model, id, object: 'model', created: 0, owned_by: model.provider ?? 'kortix' }));
+      return jsonResponse({ object: 'list', data });
     } catch (err) {
       logger.error('[gateway] model catalog request failed', err);
       return gatewayErrorResponse(502, {
