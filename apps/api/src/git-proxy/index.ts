@@ -18,6 +18,7 @@
  * Scope: `git-receive-pack` ⇒ write; `git-upload-pack` ⇒ read.
  */
 import { createRoute, z } from '@hono/zod-openapi';
+import type { MiddlewareHandler } from 'hono';
 import {
   authorizeGitProxy,
   resolveProjectUpstream,
@@ -713,6 +714,18 @@ async function buildFastBootBundle(
   const built = await build;
   return { ...built, cacheHit: false };
 }
+
+// The two GET routes below carry a query schema, and the OpenAPI validator runs
+// before any handler code. Without this, an anonymous request with a missing or
+// malformed query got `400 Validation failed` (naming the parameters) instead of
+// `401`. Reject a credential-less request first; the handler still authorizes
+// the token against the project.
+const requireGitCredential: MiddlewareHandler = async (c, next) => {
+  if (!extractToken(c.req.header('authorization'))) return unauthorized(c, 'authentication required');
+  await next();
+};
+gitProxyApp.use('/:project/fast-boot-bundle', requireGitCredential);
+gitProxyApp.use('/:project/project-snapshot', requireGitCredential);
 
 gitProxyApp.openapi(
   createRoute({
