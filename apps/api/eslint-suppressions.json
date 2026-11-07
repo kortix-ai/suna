@@ -360,7 +360,7 @@
   },
   "src/billing/services/webhooks.ts": {
     "no-console": {
-      "count": 25
+      "count": 24
     }
   },
   "src/billing/services/yearly-rotation.ts": {
