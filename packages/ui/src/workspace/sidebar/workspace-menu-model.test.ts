@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 
 import { workspaceMenuGroups } from './workspace-menu-model';
 
-const ALL = { canInvite: true, canOpenSettings: true, canCreate: true, canLeave: true };
-const NONE = { canInvite: false, canOpenSettings: false, canCreate: false, canLeave: false };
+const ALL = { canInvite: true, canOpenSettings: true, canCreate: true, canLeave: true, hasInbox: true };
+const NONE = { canInvite: false, canOpenSettings: false, canCreate: false, canLeave: false, hasInbox: false };
 
 describe('workspaceMenuGroups — the workspace menu, top to bottom', () => {
   test('an owner of a shared workspace: workspace actions first, Preferences in the middle, Leave above Log out', () => {
@@ -11,7 +11,7 @@ describe('workspaceMenuGroups — the workspace menu, top to bottom', () => {
       ['header'],
       ['invite', 'settings'],
       ['switch', 'create'],
-      ['preferences', 'apps', 'appearance', 'help', 'download'],
+      ['inbox', 'preferences', 'apps', 'appearance', 'help', 'download'],
       ['leave', 'logout'],
     ]);
   });
@@ -36,5 +36,16 @@ describe('workspaceMenuGroups — the workspace menu, top to bottom', () => {
     const rows = workspaceMenuGroups(ALL).flat();
     expect(rows.indexOf('preferences')).toBeGreaterThan(rows.indexOf('switch'));
     expect(rows as string[]).not.toContain('rename');
+  });
+
+  test('the Inbox is a menu row above Preferences, below the workspace rows (KRTX-1742)', () => {
+    const rows = workspaceMenuGroups(ALL).flat();
+    expect(rows.indexOf('inbox')).toBeGreaterThan(rows.indexOf('settings'));
+    expect(rows.indexOf('inbox')).toBeGreaterThan(rows.indexOf('switch'));
+    expect(rows.indexOf('preferences')).toBe(rows.indexOf('inbox') + 1);
+  });
+
+  test('a host that serves no Inbox page gets no Inbox row', () => {
+    expect(workspaceMenuGroups({ ...ALL, hasInbox: false }).flat()).not.toContain('inbox');
   });
 });

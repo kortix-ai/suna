@@ -19,7 +19,6 @@ import { ComputerConnectModal } from '../../internal/tunnel/computer-connect';
 import { ConnectMcpModal } from '../../internal/layout/connect-mcp-modal';
 import { ProjectMcpNavItem } from './footer/project-mcp-nav';
 import { ProjectComputerNavItem } from './footer/project-computer-nav';
-import { ProjectInboxNavItem } from './footer/project-inbox-nav';
 import { ProjectManifestIssuesAlert } from './footer/project-manifest-issues-alert';
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
@@ -216,8 +215,8 @@ export function ProjectSidebar({
           {menu ? <div className="min-w-0">{menu}</div> : null}
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
             {/* The switcher shrinks before either icon button, so the row
-                fits the 208px floor. The inbox is a nav row below
-                (KRTX-1742), not a header control. */}
+                fits the 208px floor. The inbox is a row in the switcher's
+                menu (KRTX-1742), not a header control or a nav row. */}
             {/* Search is the palette's only pointer-reachable entry point —
                 ⌘K is otherwise the whole discovery story. Renders on mobile
                 too: there is no keystroke to fall back on there. The ⌘K
@@ -329,11 +328,6 @@ export function ProjectSidebar({
                   )}
                 </SidebarMenuItem>
               )}
-
-              {/* The person's notifications from every project (KRTX-1742).
-                  With Spaces on (`chat`) it is the one row up here: the rest
-                  waits in "More". */}
-              <ProjectInboxNavItem projectId={projectId} />
 
               {/* Customize, Apps, Files: order and
                   visibility come from "Customize sidebar". They moved up here

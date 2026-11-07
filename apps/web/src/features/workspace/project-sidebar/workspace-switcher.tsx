@@ -88,8 +88,10 @@ import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel
 import { useAppsModalStore } from '@kortix/ui/internal/stores/apps-modal-store';
 import { getProject } from '@kortix/sdk';
 import { contract, qk, useWorkspace } from '@kortix/sdk/react';
+import { useInboxSummary } from '@kortix/ui/internal/notifications/use-inbox-summary';
 import {
   ArrowsLeftRightIcon,
+  BellIcon,
   CaretUpDownIcon,
   GearSixIcon as CogOne,
   DoorOpenIcon,
@@ -118,6 +120,8 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const leave = useLeaveWorkspace(projectId);
   const inviteCount = useMyInvites().data?.length ?? 0;
   const directory = useWorkspaceDirectory();
+  const tNotifications = useI18nTranslations('notifications');
+  const inbox = useInboxSummary(projectId);
   const sidebar = React.useContext(SidebarContext);
   const [menuOpen, setMenuOpen] = useState(false);
   const { user } = useAuth();
@@ -191,7 +195,13 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
     return () => sidebar?.holdPeek(false);
   }, [menuOpen, sidebar]);
 
-  const menuGroups = workspaceMenuGroups({ canInvite, canOpenSettings, canCreate, canLeave: leave.canLeave });
+  const menuGroups = workspaceMenuGroups({
+    canInvite,
+    canOpenSettings,
+    canCreate,
+    canLeave: leave.canLeave,
+    hasInbox: inbox.href !== null,
+  });
   const renderRow = (row: WorkspaceMenuRow): React.ReactNode => {
     switch (row) {
       case 'header':
@@ -254,6 +264,26 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
             </Link>
           </DropdownMenuItem>
         );
+      case 'inbox':
+        // The person's notifications from every workspace (KRTX-1742). An
+        // anchor, like the other navigating rows. It left the sidebar's nav
+        // rows: a page you visit when something calls you needs no permanent row.
+        return inbox.href ? (
+          <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+            <Link href={inbox.href} prefetch>
+              <BellIcon />
+              {tNotifications('inbox.title')}
+              {inbox.count > 0 ? (
+                <CountBadge
+                  className="ml-auto"
+                  count={inbox.count}
+                  tone={inbox.needsYou ? 'waiting' : 'neutral'}
+                  aria-label={tNotifications('inbox.unreadCount', { count: inbox.count })}
+                />
+              ) : null}
+            </Link>
+          </DropdownMenuItem>
+        ) : null;
       case 'preferences':
         // The person's own settings (Slack's Preferences). The keycap sits on
         // this row because this row is what the keystroke does:
@@ -316,7 +346,11 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
-                aria-label={tWorkspaces('switch')}
+                aria-label={
+                  inbox.count > 0
+                    ? `${tWorkspaces('switch')}. ${tNotifications('inbox.unreadLabel', { count: inbox.count })}`
+                    : tWorkspaces('switch')
+                }
                 className={cn(
                   'group/workspace hover:bg-sidebar-row relative flex cursor-pointer items-center gap-2 rounded-md px-1',
                   'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
@@ -338,12 +372,25 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                     so that gap read as "I picked an icon and nothing changed". */}
                 {project ? (
                   <>
-                    <EntityAvatar
-                      label={project.name}
-                      glyph={project.icon_glyph}
-                      emoji={project.icon}
-                      size="sm"
-                    />
+                    {/* The Inbox lives in this menu, not in the sidebar. While
+                        an unread question, permission request or failure
+                        waits, a dot on the tile says "open me"; a plain
+                        unread update does not. */}
+                    <span className="relative shrink-0">
+                      <EntityAvatar
+                        label={project.name}
+                        glyph={project.icon_glyph}
+                        emoji={project.icon}
+                        size="sm"
+                      />
+                      {inbox.needsYou ? (
+                        <span
+                          data-testid="workspace-inbox-dot"
+                          aria-hidden
+                          className="bg-kortix-yellow ring-sidebar absolute -top-0.5 -right-0.5 size-2 rounded-full ring-2"
+                        />
+                      ) : null}
+                    </span>
                     <span className="text-foreground min-w-0 flex-1 truncate text-left text-sm font-medium tracking-tight group-data-[collapsible=icon]:hidden">
                       {project.name}
                     </span>

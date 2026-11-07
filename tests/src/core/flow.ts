@@ -198,6 +198,11 @@ export function maxAttemptBound(policy: AttemptPolicy): number {
 
 const registry = new Map<string, RegisteredFlow>();
 
+/** The `FlowMeta` of a flow that needs the database: `extra` adds or overrides fields (`timeoutMs`, `tags`). */
+export function flowMeta(domain: string, routes: string[], extra: Partial<FlowMeta> = {}): FlowMeta {
+  return { domain, requires: ['database'], routes, ...extra };
+}
+
 /**
  * Register a flow. Duplicate IDs throw immediately (caught at import time).
  * Validity against the spec ID set is enforced separately by the coverage gate.

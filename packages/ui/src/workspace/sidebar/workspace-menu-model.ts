@@ -5,7 +5,8 @@
  *  1. the workspace header (icon, name, the caller's role);
  *  2. Invite people to {name} · Workspace settings;
  *  3. Switch workspace (the list, with the pending-invitation count) · Create workspace;
- *  4. Preferences (the person's own settings; Mod+,) · Apps and extensions ·
+ *  4. Inbox (the person's notifications from every workspace, KRTX-1742) ·
+ *     Preferences (the person's own settings; Mod+,) · Apps and extensions ·
  *     Appearance · Help · Download app;
  *  5. Leave {name} · Log out.
  *
@@ -18,6 +19,7 @@ export type WorkspaceMenuRow =
   | 'settings'
   | 'switch'
   | 'create'
+  | 'inbox'
   | 'preferences'
   | 'apps'
   | 'appearance'
@@ -35,6 +37,8 @@ export interface WorkspaceMenuGates {
   canCreate: boolean;
   /** Not the last owner (`useLeaveWorkspace`). */
   canLeave: boolean;
+  /** The host serves an Inbox page (`useInboxSummary(...).href` is set). */
+  hasInbox: boolean;
 }
 
 /** The menu's groups, top to bottom; a separator sits between two non-empty groups. */
@@ -43,7 +47,7 @@ export function workspaceMenuGroups(gates: WorkspaceMenuGates): WorkspaceMenuRow
     ['header'],
     [...(gates.canInvite ? (['invite'] as const) : []), ...(gates.canOpenSettings ? (['settings'] as const) : [])],
     ['switch', ...(gates.canCreate ? (['create'] as const) : [])],
-    ['preferences', 'apps', 'appearance', 'help', 'download'],
+    [...(gates.hasInbox ? (['inbox'] as const) : []), 'preferences', 'apps', 'appearance', 'help', 'download'],
     [...(gates.canLeave ? (['leave'] as const) : []), 'logout'],
   ];
   return groups.filter((group) => group.length > 0);
