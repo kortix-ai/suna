@@ -94,11 +94,9 @@ agents:
 What an agent may do to the workspace through the CLI, the API and Git.
 
 - `kortix validate --scopes` prints every grantable value. Write the
-  `workspace.*` names (`workspace.session.start`, `workspace.members.manage`).
-  `"*"` (alias `all`) is every grantable value.
-- The older `project.*` names (`project.session.start`) are aliases: they still
-  validate and grant the same action. `kortix validate --fix` rewrites them to
-  their `workspace.*` names and keeps `"*"`.
+  `workspace.*` names. `"*"` (alias `all`) is every grantable value. The older
+  `project.*` names still validate and grant the same action; `kortix validate
+  --fix` rewrites them to their `workspace.*` names and keeps `"*"`.
 - Every workspace action is grantable except the people-only ones: minting
   credentials (`workspace.token.create`, `workspace.token.personal.create`,
   `workspace.credentials.issue`, `workspace.gateway.keys.manage`) and moving
