@@ -1,17 +1,12 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { readWorkflow } from '../src/fixtures/repo';
 
-const workflowPaths = [
-  '../../.github/workflows/ci.yml',
-  '../../.github/workflows/deploy-dev.yml',
-  '../../.github/workflows/security-scan.yml',
-] as const;
+const workflows = ['ci.yml', 'deploy-dev.yml', 'security-scan.yml'] as const;
 
 describe('app runtime workflow coverage', () => {
-  it.each(workflowPaths)('%s watches the app runtime build inputs', (workflowPath) => {
-    const workflow = readFileSync(resolve(import.meta.dirname, workflowPath), 'utf8');
+  // The title keeps the path these cases have always been reported under.
+  it.each(workflows)('../../.github/workflows/%s watches the app runtime build inputs', (name) => {
+    const workflow = readWorkflow(name);
 
     expect(workflow).toContain('apps/kortix-app-runtime/**');
   });
