@@ -1447,7 +1447,7 @@ describe("another member's queued prompt", () => {
 // the session-start agent scope and capability, a visible session, no tombstone.
 // Pinned per route so collapsing the four copies into one helper moves nothing.
 describe('the runnable-session gate of DELETE, PATCH, retry and hold', () => {
-  const routes: Array<[string, () => Promise<Response>]> = [
+  const routes: Array<[string, () => Response | Promise<Response>]> = [
     ['DELETE', () => app().request(`${base()}/${PROMPT_ID}`, { method: 'DELETE' })],
     [
       'PATCH',

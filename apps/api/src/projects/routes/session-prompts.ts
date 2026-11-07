@@ -26,6 +26,7 @@ import { annotateAuditEvent } from '../../shared/audit-scope';
 import { autoWatchSession } from '../../notifications/watchers';
 import { logger } from '../../lib/logger';
 import { personUserId } from './session-watch';
+import { loadRunnableSession } from './lib/route-bindings';
 import { collectMessageLinksInBackground } from '../lib/project-space-links';
 import {
   deleteInboxPrompt,
@@ -581,18 +582,9 @@ export function registerSessionPromptsRoutes(): void {
 
       // Floor 'session' — see the POST /prompts gate comment. Un-queuing your own
       // pending message is running the session, not editing the project.
-      const loaded = await loadProjectForUser(c, projectId, 'session');
-      if (!loaded) return c.json({ error: 'Not found' }, 404);
-      assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
-      await assertProjectCapability(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_SESSION_START,
-      );
-      const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+      const gate = await loadRunnableSession(c, projectId, sessionId);
+      if (gate.kind === 'error') return gate.response as never;
+      const { loaded, visible } = gate;
 
       // The session AND inbox scopes are in the DELETE's own predicate, so
       // neither a prompt id from another session nor an automation's
@@ -694,18 +686,9 @@ export function registerSessionPromptsRoutes(): void {
 
       // Floor 'session' — see the POST /prompts gate comment. Editing your own
       // queued message is running the session, not editing the project.
-      const loaded = await loadProjectForUser(c, projectId, 'session');
-      if (!loaded) return c.json({ error: 'Not found' }, 404);
-      assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
-      await assertProjectCapability(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_SESSION_START,
-      );
-      const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+      const gate = await loadRunnableSession(c, projectId, sessionId);
+      if (gate.kind === 'error') return gate.response as never;
+      const { loaded, visible } = gate;
 
       const body = await readJsonObject(c);
       if (body.delivery !== undefined && body.delivery !== 'interrupt') {
@@ -779,18 +762,9 @@ export function registerSessionPromptsRoutes(): void {
 
       // Floor 'session' — see the POST /prompts gate comment. "Retry"/"send now"
       // on your own queued message is running the session, not editing the project.
-      const loaded = await loadProjectForUser(c, projectId, 'session');
-      if (!loaded) return c.json({ error: 'Not found' }, 404);
-      assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
-      await assertProjectCapability(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_SESSION_START,
-      );
-      const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+      const gate = await loadRunnableSession(c, projectId, sessionId);
+      if (gate.kind === 'error') return gate.response as never;
+      const { loaded, visible } = gate;
 
       // ONE primitive for "retry" and for "send now": both are the user pointing
       // at a row and asking for THAT message. `retryInboxPrompt` promotes it past
@@ -848,18 +822,9 @@ export function registerSessionPromptsRoutes(): void {
 
       // Floor 'session' — see the POST /prompts gate comment. Stop/hold is the
       // counterpart of send; a member who can send must be able to hold.
-      const loaded = await loadProjectForUser(c, projectId, 'session');
-      if (!loaded) return c.json({ error: 'Not found' }, 404);
-      assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
-      await assertProjectCapability(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_SESSION_START,
-      );
-      const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+      const gate = await loadRunnableSession(c, projectId, sessionId);
+      if (gate.kind === 'error') return gate.response as never;
+      const { loaded, visible } = gate;
 
       const body = await readJsonObject(c);
       if (typeof body.held !== 'boolean') {

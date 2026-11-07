@@ -70,7 +70,10 @@ const ModelDefaultBody = z.object({
 async function loadModelDefaultsWriter(
   c: any,
   projectId: string,
-): Promise<Response | { ownerAccountId: string; userId: string; row: ProjectRow }> {
+): Promise<
+  | Response
+  | { ownerAccountId: string; userId: string; row: ProjectRow; loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>> }
+> {
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(
@@ -80,7 +83,24 @@ async function loadModelDefaultsWriter(
     projectId,
     PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
   );
-  return { ownerAccountId: loaded.row.accountId, userId: loaded.userId, row: loaded.row };
+  return { ownerAccountId: loaded.row.accountId, userId: loaded.userId, row: loaded.row, loaded };
+}
+
+// The preference row a /model-defaults scope names, or the 400 body when scope=agent has no agent.
+function modelPreferenceTarget(
+  scope: 'account' | 'agent' | 'project',
+  agentName: string | undefined,
+  projectId: string,
+): { scopeKey: string | undefined; projectId: string | undefined } | { error: { error: string; code: string } } {
+  if (scope === 'agent' && !agentName) {
+    return { error: { error: 'agentName is required for scope=agent', code: 'agent_name_required' } };
+  }
+  return {
+    // agent → agent name; project → the project id; account → '' (in the repo).
+    scopeKey: scope === 'agent' ? agentName : scope === 'project' ? projectId : undefined,
+    // agent-scope pins are project-scoped — see repositories/model-preferences.ts.
+    projectId: scope === 'agent' ? projectId : undefined,
+  };
 }
 
 // The default that model-access reports and protects from a disable: a configured
@@ -243,9 +263,9 @@ export function registerModelsRoutes(): void {
     responses: { 200: { description: 'OK', content: { 'application/json': { schema: z.any() } } }, ...errors(400, 403, 404, 409) },
   }), async (c: any) => {
     const projectId = workspaceIdParam(c);
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MODEL_WRITE);
+    const writer = await loadModelDefaultsWriter(c, projectId);
+    if (writer instanceof Response) return writer;
+    const { loaded } = writer;
     const parsed = modelAccessChangeBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
     const change = parsed.data;
@@ -286,16 +306,9 @@ export function registerModelsRoutes(): void {
     }),
     async (c: any) => {
       const projectId = workspaceIdParam(c);
-      const loaded = await loadProjectForUser(c, projectId, 'read');
-      if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertProjectCapability(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
-      );
-      const accountId = loaded.row.accountId as string;
+      const writer = await loadModelDefaultsWriter(c, projectId);
+      if (writer instanceof Response) return writer;
+      const accountId = writer.ownerAccountId;
       const userId = c.get('userId') as string;
 
       const parsed = modelEnablementBody.safeParse(await c.req.json().catch(() => null));
@@ -466,12 +479,8 @@ export function registerModelsRoutes(): void {
         return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
       }
       const { scope, agentName, model } = parsed.data;
-      if (scope === 'agent' && !agentName) {
-        return c.json(
-          { error: 'agentName is required for scope=agent', code: 'agent_name_required' },
-          400,
-        );
-      }
+      const target = modelPreferenceTarget(scope, agentName, projectId);
+      if ('error' in target) return c.json(target.error, 400);
 
       if (scope === 'agent') {
         // The pin's subject must exist: an agent name the manifest does not
@@ -522,10 +531,7 @@ export function registerModelsRoutes(): void {
       await upsertAccountModelPreference({
         accountId: ownerAccountId,
         scope,
-        // agent → agent name; project → the project id; account → '' (in the repo).
-        scopeKey: scope === 'agent' ? agentName : scope === 'project' ? projectId : undefined,
-        // agent-scope pins are project-scoped — see repositories/model-preferences.ts.
-        projectId: scope === 'agent' ? projectId : undefined,
+        ...target,
         model,
         updatedBy: userId,
       });
@@ -575,18 +581,12 @@ export function registerModelsRoutes(): void {
           400,
         );
       }
-      if (scope === 'agent' && !agentName) {
-        return c.json(
-          { error: 'agentName is required for scope=agent', code: 'agent_name_required' },
-          400,
-        );
-      }
-      const scopeKey = scope === 'agent' ? agentName : scope === 'project' ? projectId : undefined;
+      const target = modelPreferenceTarget(scope, agentName, projectId);
+      if ('error' in target) return c.json(target.error, 400);
       await deleteAccountModelPreference({
         accountId: ownerAccountId,
         scope,
-        scopeKey,
-        projectId: scope === 'agent' ? projectId : undefined,
+        ...target,
       });
       invalidateAccountModelDefaults(ownerAccountId);
       return c.json({ ok: true, scope, agentName: scope === 'agent' ? agentName : undefined });

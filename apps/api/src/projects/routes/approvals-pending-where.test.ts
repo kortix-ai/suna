@@ -6,7 +6,7 @@
  * nothing the database sees.
  */
 import { beforeEach, expect, mock, test } from 'bun:test';
-import type { SQL } from 'drizzle-orm';
+import type { QueryWithTypings, SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
@@ -58,14 +58,14 @@ beforeEach(() => {
 });
 
 const T = '"kortix"."connector_calls"';
-const PENDING_APPROVAL = {
+const PENDING_APPROVAL: QueryWithTypings = {
   sql:
     `(${T}."project_id" = $1 and ${T}."status" = $2 and ${T}."approved_by" is null and ` +
     `${T}."resolved_at" is null and (${T}."expires_at" is null or ${T}."expires_at" > now()))`,
   params: [PROJECT_ID, 'pending_approval'],
   typings: ['uuid', 'none'],
 };
-const openAsk = (table: string, resolved: string) => ({
+const openAsk = (table: string, resolved: string): QueryWithTypings => ({
   sql:
     `("kortix"."${table}"."project_id" = $1 and "kortix"."${table}"."${resolved}" is null and ` +
     `("kortix"."${table}"."expires_at" is null or "kortix"."${table}"."expires_at" > NOW()))`,

@@ -1,7 +1,7 @@
 /** Session runtime: start (the unified open), restart, stop, and the current turn. */
 import { assertRepositoryConnected } from '../lib/git';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
-import { resolveSessionBinding } from './lib/route-bindings';
+import { loadLifecycleSession, resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
@@ -195,19 +195,17 @@ export function registerSessionRuntimeRoutes(): void {
       assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
 
       // Restart is reserved for the session owner or an account owner/admin.
-      const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
       // Same tombstone rule as /start: a deleted session's restart used to 202
       // and silently do nothing the UI could see.
-      if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
-      if (!visible.canManageLifecycle) {
-        return c.json(
-          {
-            error: 'Only the session owner or an account owner/admin can restart this session',
-          },
-          403,
-        );
-      }
+      const gate = await loadLifecycleSession(
+        c,
+        loaded,
+        sessionId,
+        'Only the session owner or an account owner/admin can restart this session',
+        { rejectTombstoned: true },
+      );
+      if (gate.kind === 'error') return gate.response as never;
+      const { visible } = gate;
       const result = await restartSession({
         loaded,
         session: visible.row,
@@ -256,11 +254,14 @@ export function registerSessionRuntimeRoutes(): void {
       const { loaded } = binding;
       // A new computer is compute: a scoped agent token needs project.session.start.
       assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
-      const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
-      if (!visible.canManageLifecycle) {
-        return c.json({ error: 'Only the session owner or an account owner/admin can continue this session' }, 403);
-      }
+      const gate = await loadLifecycleSession(
+        c,
+        loaded,
+        sessionId,
+        'Only the session owner or an account owner/admin can continue this session',
+        { rejectTombstoned: true },
+      );
+      if (gate.kind === 'error') return gate.response as never;
       const result = await recoverLostSession({ projectId, sessionId, accountId: loaded.row.accountId });
       if ('ok' in result) return c.json({ ok: true as const }, 200);
       return c.json({ error: result.error, ...(result.code ? { code: result.code } : {}) }, result.status);
@@ -308,14 +309,14 @@ export function registerSessionRuntimeRoutes(): void {
 
       // Stop is reserved for the session owner or an account owner/admin, same policy
       // as restart.
-      const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
-      if (!visible.canManageLifecycle) {
-        return c.json(
-          { error: 'Only the session owner or an account owner/admin can stop this session' },
-          403,
-        );
-      }
+      const gate = await loadLifecycleSession(
+        c,
+        loaded,
+        sessionId,
+        'Only the session owner or an account owner/admin can stop this session',
+        { rejectTombstoned: false },
+      );
+      if (gate.kind === 'error') return gate.response as never;
 
       // Read before the stop ends the turn: a background subagent's parent hears it.
       const parentNotice = await stoppedSubagentNotice(sessionId, callerKortixSessionId(c));
