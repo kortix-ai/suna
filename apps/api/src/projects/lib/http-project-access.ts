@@ -29,7 +29,9 @@ export async function resolveProjectAccount(c: Context<AppEnv>, body?: Record<st
   // A workspace-bound key with no account named acts in its own workspace's
   // account (the fence's `reach: 'credential'`), never the person's first one.
   const bound = c.get('tokenProjectId') ? (c.get('accountId') as string | undefined) : undefined;
-  const scope = await resolveRequestedProjectAccount(userId, requested ?? bound ?? null);
+  // A service account acts in the account its credential belongs to, never another.
+  const serviceAccountOf = c.get('authType') === 'service_account' ? (c.get('accountId') ?? '') : null;
+  const scope = await resolveRequestedProjectAccount(userId, requested ?? bound ?? null, serviceAccountOf);
   c.set('accountId', scope.accountId);
   return scope;
 }

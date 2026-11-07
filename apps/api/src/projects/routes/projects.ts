@@ -365,6 +365,11 @@ export function registerProjectsRoutes(): void {
     }),
     async (c) => {
       const scope = await resolveProjectAccount(c);
+      // Membership is a person's gate here. A service account has none, so it
+      // reads the create pre-check only when it may create.
+      if (c.get('authType') === 'service_account') {
+        await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
+      }
       return c.json(await projectQuotaState(scope.accountId));
     },
   );
