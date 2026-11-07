@@ -17,6 +17,7 @@
  */
 
 import { cn } from '@kortix/ui';
+import { FileTextIcon, FolderSimpleIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 
 /* ── builds ─────────────────────────────────────────────────────────────── */
@@ -303,4 +304,80 @@ export function Mono({ children, className }: { children: ReactNode; className?:
 /** The muted half of a two-tone line, inline. */
 export function Dim({ children }: { children: ReactNode }) {
   return <span className="text-muted-foreground">{children}</span>;
+}
+
+/* ── a project tree ─────────────────────────────────────────────────────── */
+
+export type TreeRow = {
+  /** The file or folder name. A folder ends in `/`. */
+  readonly name: string;
+  /** Nesting depth: 0 under the root. */
+  readonly depth: number;
+  /** One short note, muted, in the right column. */
+  readonly note?: ReactNode;
+  /** A muted row, such as "+7 more". */
+  readonly quiet?: boolean;
+};
+
+/**
+ * A repository as a file tree: the root name on top, one row per file or
+ * folder, an indent guide per level, and a note column. Folder and file
+ * glyphs come from Phosphor, as on the landing.
+ */
+export function Tree({
+  root,
+  meta,
+  rows,
+  className,
+}: {
+  root: string;
+  meta?: ReactNode;
+  rows: readonly TreeRow[];
+  className?: string;
+}) {
+  return (
+    <div className={cn('border-border bg-background overflow-hidden rounded-sm border', className)}>
+      <div className="border-border flex items-center justify-between gap-4 border-b px-5 py-3">
+        <span className="text-foreground flex items-center gap-2 font-mono text-sm">
+          <FolderSimpleIcon aria-hidden className="text-muted-foreground size-4" />
+          {root}
+        </span>
+        {meta ? <span className="text-muted-foreground font-mono text-xs">{meta}</span> : null}
+      </div>
+      <ul className="py-2">
+        {rows.map((row) => {
+          const folder = row.name.endsWith('/');
+          const Glyph = folder ? FolderSimpleIcon : FileTextIcon;
+          return (
+            <li
+              key={`${row.depth}:${row.name}`}
+              className="grid grid-cols-12 items-center gap-6 px-5 py-1.5"
+            >
+              <span className="col-span-5 flex items-center">
+                {Array.from({ length: row.depth + 1 }, (_, i) => (
+                  <span key={i} aria-hidden className="border-border h-7 w-5 shrink-0 border-l" />
+                ))}
+                {row.quiet ? (
+                  <span aria-hidden className="mr-2 size-4 shrink-0" />
+                ) : (
+                  <Glyph aria-hidden className="text-muted-foreground mr-2 size-4 shrink-0" />
+                )}
+                <span
+                  className={cn(
+                    'truncate font-mono text-base',
+                    row.quiet ? 'text-muted-foreground' : 'text-foreground',
+                  )}
+                >
+                  {row.name}
+                </span>
+              </span>
+              <span className="text-muted-foreground col-span-7 text-sm text-pretty">
+                {row.note}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
 }

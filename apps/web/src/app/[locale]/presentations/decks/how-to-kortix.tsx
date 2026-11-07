@@ -61,7 +61,7 @@ import {
   type LoopDiagramContent,
   type LoopRingContent,
 } from '../engine/diagram';
-import { Cell, Cells, Code, Mono, Reveal, Rows, Slide } from '../engine/frame';
+import { Cell, Cells, Code, Mono, Reveal, Rows, Slide, Tree, type TreeRow } from '../engine/frame';
 
 /* ── the validated kortix.yaml, cropped ─────────────────────────────────── */
 
@@ -87,6 +87,23 @@ const CONNECTOR_YAML = [
   '    connectors: [x]',
   '    …',
 ] as const;
+
+/**
+ * The repository `kortix init my-company` writes, as it was on 2026-11-07:
+ * kortix.yaml, agents/worker.md, 11 skill folders, memory/MEMORY.md,
+ * AGENTS.md, README.md (and the hidden .agents/ link for local tools).
+ */
+const PROJECT_TREE: readonly TreeRow[] = [
+  { name: 'kortix.yaml', depth: 0, note: 'Agents, triggers, connectors, secret names and the sandbox image.' },
+  { name: 'agents/', depth: 0 },
+  { name: 'worker.md', depth: 1, note: 'The agent’s prompt. Every new session runs pi.' },
+  { name: 'skills/', depth: 0, note: 'How your company does each job. Markdown plus scripts.' },
+  { name: 'pdf/  docx/  xlsx/  webapp/  +7 more', depth: 1, quiet: true },
+  { name: 'memory/', depth: 0 },
+  { name: 'MEMORY.md', depth: 1, note: 'The project memory. Plain files today.' },
+  { name: 'AGENTS.md', depth: 0, note: 'Points your local coding agent at the same skills.' },
+  { name: 'README.md', depth: 0 },
+];
 
 /** What `kortix init` writes: the starter template (packages/starter/templates/base). */
 const REPO: readonly { readonly path: string; readonly body: ReactNode }[] = [
@@ -213,20 +230,20 @@ export function useSlides(): SlideDef[] {
       id: 'title',
       label: 'How to Kortix',
       notes:
-        'Hi, we are Kortix. In the next five minutes I will show you how to put agents in a loop.\n\nThe whole idea fits on this screen. These six lines live in a file called kortix.yaml. Every hour, Kortix starts a fresh session of worker, the agent every new project starts with, and tells it to take the next task and ship it.\n\nKortix is an open-source CompanyOS. Your company is a git repository, and agents work inside it. Four parts. Let me show you.',
+        'Hi, we are Kortix. In the next five minutes I will show you how to put agents in a loop.\n\nThis is a Kortix project: one git repository that kortix init writes for you. kortix.yaml wires it together. agents holds the prompt of worker, the agent every new project starts with. skills is how your company does each job, and memory is what the agents remember.\n\nKortix is an open-source CompanyOS. Your company is a git repository, and agents work inside it. Four parts. Let me show you.',
       node: (
         <Slide
           size="cover"
           title="How to Kortix."
           titleMuted="Put your agents in a loop."
-          sub="Kortix runs this from your repository. Every hour, a fresh session starts on its own sandbox and its own branch."
+          sub={
+            <>
+              <Mono className="text-foreground">kortix init</Mono> makes this git repository. Your
+              agents, skills and memory are files in it, and Kortix runs them on cloud computers.
+            </>
+          }
         >
-          <Code
-            title="kortix.yaml"
-            lines={TRIGGER_YAML}
-            className="max-w-3xl"
-            textClassName="text-base lg:text-lg"
-          />
+          <Tree root="my-company/" meta="git init -b main" rows={PROJECT_TREE} className="max-w-5xl" />
         </Slide>
       ),
     },
@@ -378,12 +395,14 @@ export function useSlides(): SlideDef[] {
           titleMuted="Open source. Read it, fork it, audit it."
           sub="On Free, connect your own model key or a ChatGPT subscription first."
         >
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Code title="zsh" lines={START_SHELL} />
-            <div className="flex flex-col gap-4">
+          <div className="grid items-start gap-4 lg:grid-cols-12">
+            <Code title="zsh" lines={START_SHELL} className="lg:col-span-6" />
+            <div className="flex flex-col gap-4 lg:col-span-6">
+              <Code title="kortix.yaml" lines={TRIGGER_YAML} />
               <Code
                 title="inside a session"
                 lines={['$ kortix loop "Is CI green? Fix it if not." --every 30m']}
+                textClassName="text-xs lg:text-sm"
               />
               <p className="text-muted-foreground text-sm">
                 A loop prompts the same session again. A trigger starts a new one.
