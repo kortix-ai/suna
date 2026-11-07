@@ -1,4 +1,7 @@
+'use client';
+
 import Link from '@/components/site-link';
+import { TopicTabs } from '@/features/marketing/kit/topic-tabs';
 
 import { useTranslations } from '@/i18n/use-translations';
 
@@ -141,7 +144,7 @@ function NeedsPanel() {
   );
 }
 
-export const TOPIC_PANELS: Record<TopicId, () => ReactNode> = {
+const TOPIC_PANELS: Record<TopicId, () => ReactNode> = {
   where: () => <WherePanel />,
   reach: () => <ReachPanel />,
   setup: () => <SetupPanel />,
@@ -157,3 +160,18 @@ export const TOPIC_PANELS: Record<TopicId, () => ReactNode> = {
   enterprise: () => <EnterprisePanel />,
   needs: () => <NeedsPanel />,
 };
+
+/** The how-it-works tabs, one per topic. */
+export function SelfHostedTopics() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { topics } = localizeModel(tMarketing);
+
+  return (
+    <TopicTabs
+      topics={topics}
+      panels={TOPIC_PANELS}
+      label={tMarketing('textf4ab7bdc99b2')}
+      idPrefix="selfhost"
+    />
+  );
+}

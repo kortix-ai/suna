@@ -7,9 +7,9 @@ import { CodePanel } from '@/features/marketing/code-panel';
 import { ArrowRightIcon } from '@phosphor-icons/react/dist/ssr';
 import type { ReactNode } from 'react';
 
+import { TopicTabs } from '@/features/marketing/kit/topic-tabs';
 import { localizeMarketingContent as localizeContent, type TopicId } from './content';
 import { Window } from './parts';
-import { TopicTabs } from './topic-tabs';
 
 /*
  * One focused visual per buyer topic. Each fits the tab's panel at 390 px:

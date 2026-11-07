@@ -1,4 +1,7 @@
+'use client';
+
 import { CodePanel } from '@/features/marketing/code-panel';
+import { TopicTabs } from '@/features/marketing/kit/topic-tabs';
 
 import { useTranslations } from '@/i18n/use-translations';
 
@@ -99,7 +102,7 @@ const terminal = (title: string, lines: readonly string[]) => (
   </Window>
 );
 
-export const TOPIC_PANELS: Record<TopicId, () => ReactNode> = {
+const TOPIC_PANELS: Record<TopicId, () => ReactNode> = {
   where: () => <WherePanel />,
   install: function InstallPanel() {
     const tMarketing = useTranslations('hardcodedUi.i18nComplete');
@@ -122,3 +125,11 @@ export const TOPIC_PANELS: Record<TopicId, () => ReactNode> = {
     return <CodePanel title={secretsYaml.title} lines={secretsYaml.lines} lang="yaml" />;
   },
 };
+
+/** The how-it-works tabs, one per topic. */
+export function SovereignTopics() {
+  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
+  const { topics } = localizeContent(tMarketing);
+
+  return <TopicTabs topics={topics} panels={TOPIC_PANELS} label={tMarketing('text20c0a1a03b2b')} />;
+}

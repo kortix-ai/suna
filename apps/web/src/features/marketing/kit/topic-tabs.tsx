@@ -1,21 +1,30 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
+import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
-import { useRef, useState, type KeyboardEvent } from 'react';
-
-import { localizeMarketingContent as localizeModel } from './model';
-import { TOPIC_PANELS } from './topic-panels';
+export type Topic = {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly body: readonly string[];
+};
 
 /**
  * One tab per topic, in the home page's HowItWorksTabs shape: the heading and
  * the tabs on the left, the selected topic on the right as two short
- * sentences over one visual.
+ * sentences over one visual. `idPrefix` names the tab and panel DOM ids.
  */
-export function TopicTabs() {
-  const tMarketing = useTranslations('hardcodedUi.i18nComplete');
-  const { topics } = localizeModel(tMarketing);
-
+export function TopicTabs({
+  topics,
+  panels,
+  label,
+  idPrefix = 'topic',
+}: {
+  topics: { readonly title: string; readonly titleMuted: string; readonly tabs: readonly Topic[] };
+  panels: Record<string, () => ReactNode>;
+  label: string;
+  idPrefix?: string;
+}) {
   const [selected, setSelected] = useState(0);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const tabs = topics.tabs;
@@ -31,7 +40,7 @@ export function TopicTabs() {
 
   const tab = tabs[selected];
 
-  const Panel = TOPIC_PANELS[tab.id];
+  const Panel = panels[tab.id];
   return (
     <section id="how-it-works" className="scroll-mt-16 py-14 lg:py-20">
       <div className="kx-rail-fade relative border-y px-4 lg:px-17">
@@ -44,7 +53,7 @@ export function TopicTabs() {
 
             <div
               role="tablist"
-              aria-label={tMarketing('textf4ab7bdc99b2')}
+              aria-label={label}
               aria-orientation="vertical"
               onKeyDown={onKeyDown}
               className="mt-10 flex flex-col gap-6"
@@ -57,8 +66,8 @@ export function TopicTabs() {
                   }}
                   type="button"
                   role="tab"
-                  id={`selfhost-tab-${item.id}`}
-                  aria-controls="selfhost-panel"
+                  id={`${idPrefix}-tab-${item.id}`}
+                  aria-controls={`${idPrefix}-panel`}
                   aria-selected={i === selected}
                   tabIndex={i === selected ? 0 : -1}
                   onClick={() => setSelected(i)}
@@ -77,8 +86,8 @@ export function TopicTabs() {
 
           <div
             role="tabpanel"
-            id="selfhost-panel"
-            aria-labelledby={`selfhost-tab-${tab.id}`}
+            id={`${idPrefix}-panel`}
+            aria-labelledby={`${idPrefix}-tab-${tab.id}`}
             className="bg-card flex items-center justify-center border-t p-6 sm:p-8 lg:border-t-0 lg:border-l lg:p-12"
           >
             <div

@@ -7,7 +7,7 @@ import { ArrowRightIcon } from '@phosphor-icons/react/dist/ssr';
 import type { ReactNode } from 'react';
 
 import { Window } from '@/features/marketing/enterprise/parts';
-import { TopicTabs } from '@/features/marketing/enterprise/topic-tabs';
+import { TopicTabs } from '@/features/marketing/kit/topic-tabs';
 import { localizeMarketingContent as localizeContent, type TopicId } from './content';
 
 /*
