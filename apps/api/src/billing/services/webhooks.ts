@@ -470,21 +470,17 @@ async function tryRestoreOtherActiveSubscription(
     : deletedSubscription.customer?.id;
   if (!customerId) return false;
 
-  let otherSubs: Stripe.Subscription[];
-  try {
-    const stripe = getStripe();
-    const list = await stripe.subscriptions.list({
-      customer: customerId,
-      status: 'all',
-      limit: 10,
-    });
-    otherSubs = list.data.filter(
-      (s) => s.id !== deletedSubscription.id && (s.status === 'active' || s.status === 'trialing'),
-    );
-  } catch (err) {
-    console.error(`[Webhook] tryRestoreOtherActiveSubscription: failed to list subscriptions for ${accountId}:`, err);
-    return false;
-  }
+  // A failed list is not "no other subscription": swallowing it would revert a
+  // paying account to free on a transient Stripe error (rate limit, 5xx). Let
+  // it throw so the webhook answers 5xx and Stripe redelivers the event.
+  const list = await getStripe().subscriptions.list({
+    customer: customerId,
+    status: 'all',
+    limit: 10,
+  });
+  const otherSubs = list.data.filter(
+    (s) => s.id !== deletedSubscription.id && (s.status === 'active' || s.status === 'trialing'),
+  );
 
   if (otherSubs.length === 0) return false;
 
