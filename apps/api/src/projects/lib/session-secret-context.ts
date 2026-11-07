@@ -2,10 +2,10 @@ import { eq } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
 
 import { db } from '../../shared/db';
+import { loadGitProjectRow } from './project-git-row';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionPersonalOwner } from './personal-resources';
 import { resolveSessionSecretGrant } from './secret-grant';
-import { projectsView } from '../../workspaces/rows';
 
 /**
  * What decides a session's secret delivery, read once.
@@ -44,16 +44,7 @@ export async function loadSessionSecretContext(
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1)
       .then((rows) => rows[0]),
-    db
-      .select({
-        repoUrl: projectsView.repoUrl,
-        defaultBranch: projectsView.defaultBranch,
-        manifestPath: projectsView.manifestPath,
-      })
-      .from(projectsView)
-      .where(eq(projectsView.projectId, projectId))
-      .limit(1)
-      .then((rows) => rows[0]),
+    loadGitProjectRow(projectId),
   ]);
   let grantEnv: Promise<string[] | 'all' | undefined> | undefined;
   let personalUserId: Promise<string | null> | undefined;

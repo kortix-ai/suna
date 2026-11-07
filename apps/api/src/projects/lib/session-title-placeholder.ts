@@ -52,3 +52,14 @@ export function runtimeRootTitleFromSnapshot(
   if (!title || isPlaceholderSessionTitle(title)) return null;
   return title;
 }
+
+/**
+ * `custom_name`, else the generated `name` (as the session lists read it); a
+ * blank value is no title. `fallback` when neither is set.
+ */
+export function sessionTitleFromMetadata(metadata: unknown): string | null;
+export function sessionTitleFromMetadata(metadata: unknown, fallback: string): string;
+export function sessionTitleFromMetadata(metadata: unknown, fallback: string | null = null): string | null {
+  const meta = (metadata && typeof metadata === 'object' ? metadata : {}) as Record<string, unknown>;
+  return [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string' && !!v.trim()) ?? fallback;
+}

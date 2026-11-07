@@ -10,6 +10,7 @@ import { projectsApp } from '../lib/app';
 import { projectReadView } from '../lib/project-read-view';
 import { splitLlmSpend } from '../../shared/llm-spend';
 import { normalizeString } from '../lib/serializers';
+import { sessionTitleFromMetadata } from '../lib/session-title-placeholder';
 import { classifyGatewayLogReference } from './gateway-log-reference';
 import { workspaceIdParam } from '../../shared/route-params';
 
@@ -120,12 +121,6 @@ function serializeLogRow(r: Record<string, any>) {
   };
 }
 
-/** `custom_name`, else the generated `name`; null when neither is set. */
-function sessionTitle(metadata: unknown): string | null {
-  const meta = (metadata && typeof metadata === 'object' ? metadata : {}) as Record<string, unknown>;
-  return [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string' && !!v.trim()) ?? null;
-}
-
 /** Titles of the sessions a page of logs names, in one read. A deleted session has none. */
 async function sessionTitles(projectId: string, sessionIds: (string | null | undefined)[]) {
   const ids = [...new Set(sessionIds.filter((id): id is string => !!id))];
@@ -134,7 +129,7 @@ async function sessionTitles(projectId: string, sessionIds: (string | null | und
     .select({ sessionId: projectSessions.sessionId, metadata: projectSessions.metadata })
     .from(projectSessions)
     .where(and(eq(projectSessions.projectId, projectId), inArray(projectSessions.sessionId, ids)));
-  return new Map(rows.map((row) => [row.sessionId, sessionTitle(row.metadata)]));
+  return new Map(rows.map((row) => [row.sessionId, sessionTitleFromMetadata(row.metadata)]));
 }
 
 /** `%` and `_` match themselves in an ILIKE pattern. */
