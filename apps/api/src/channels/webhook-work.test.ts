@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 
 const deleted: number[] = [];
 mock.module('../shared/db', () => ({
@@ -14,6 +14,9 @@ mock.module('../shared/db', () => ({
 
 const { runWebhookWork, recordClaim } = await import('./webhook-work');
 const { inflightCount, resetDrainForTests } = await import('../shared/drain');
+const { getDiagnosticFields, runWithContext } = await import('../lib/request-context');
+const { logger } = await import('../lib/logger');
+const { timeStage } = await import('../lib/server-timing');
 
 beforeEach(() => {
   deleted.length = 0;
@@ -66,5 +69,105 @@ describe('runWebhookWork', () => {
   test('ackWaitMs 0 returns at once', async () => {
     const outcome = await runWebhookWork('t', () => new Promise<void>(() => {}), { ackWaitMs: 0 });
     expect(outcome).toBe('pending');
+  });
+
+  test('the ack deadline names itself on the request line', async () => {
+    let diagnostic: Record<string, string> = {};
+    await runWithContext('POST', '/v1/webhooks/slack', async () => {
+      await runWebhookWork('t', () => new Promise<void>(() => {}), { ackWaitMs: 20 });
+      diagnostic = getDiagnosticFields();
+    });
+    expect(diagnostic["webhook_ack"]).toBe('deadline');
+  });
+
+  test('work that finishes first does not name a deadline', async () => {
+    let diagnostic: Record<string, string> = {};
+    await runWithContext('POST', '/v1/webhooks/slack', async () => {
+      const outcome = await runWebhookWork('t', async () => {}, { ackWaitMs: 10_000 });
+      expect(outcome).toBe('done');
+      diagnostic = getDiagnosticFields();
+    });
+    expect(diagnostic["webhook_ack"]).toBeUndefined();
+  });
+
+  test('returning without waiting names no deadline either', async () => {
+    let diagnostic: Record<string, string> = {};
+    await runWithContext('POST', '/v1/webhooks/slack', async () => {
+      await runWebhookWork('t', () => new Promise<void>(() => {}), { ackWaitMs: 0 });
+      diagnostic = getDiagnosticFields();
+    });
+    expect(diagnostic["webhook_ack"]).toBeUndefined();
+  });
+
+  test('work that outlasts the ack logs its own duration and db stage when it finishes (KRTX-4015)', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => {});
+    try {
+      await runWithContext('POST', '/v1/webhooks/slack', async () => {
+        const outcome = await runWebhookWork(
+          'slack-test',
+          () => timeStage('db', () => Bun.sleep(60)),
+          { ackWaitMs: 10 },
+        );
+        expect(outcome).toBe('pending');
+        expect(info).not.toHaveBeenCalled();
+        await Bun.sleep(120);
+      });
+      expect(info).toHaveBeenCalledTimes(1);
+      const [message, fields] = info.mock.calls[0] as [string, Record<string, unknown>];
+      expect(message).toBe('[slack-test] detached work done');
+      expect(Number(fields.duration_ms)).toBeGreaterThanOrEqual(50);
+      expect(String(fields.server_timing)).toMatch(/^db;dur=\d+;desc="n=1"$/);
+      expect(fields.db_pool_wait_suspected).toBeUndefined();
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  test('detached work that fails reports its outcome and a db stage that reads as pool wait', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => {});
+    const error = spyOn(logger, 'error').mockImplementation(() => {});
+    try {
+      const stageMs = 1_100;
+      await runWithContext('POST', '/v1/webhooks/slack', async () => {
+        await runWebhookWork(
+          'slack-test',
+          () => timeStage('db', async () => { await Bun.sleep(stageMs); throw new Error('stalled'); }),
+          { ackWaitMs: 10 },
+        );
+        await Bun.sleep(stageMs + 100);
+      });
+      const [message, fields] = info.mock.calls[0] as [string, Record<string, unknown>];
+      expect(message).toBe('[slack-test] detached work failed');
+      expect(fields.db_pool_wait_suspected).toBe(true);
+    } finally {
+      info.mockRestore();
+      error.mockRestore();
+    }
+  });
+
+  test('fire-and-forget work (ackWaitMs 0, Teams) logs no detached line, finished or not (KRTX-4015)', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => {});
+    try {
+      await runWithContext('POST', '/v1/webhooks/teams', async () => {
+        await runWebhookWork('teams-test', () => Bun.sleep(20), { ackWaitMs: 0 });
+        await Bun.sleep(60);
+      });
+      expect(info).not.toHaveBeenCalled();
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  test('work that finishes inside the ack wait logs no detached line', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => {});
+    try {
+      await runWithContext('POST', '/v1/webhooks/slack', async () => {
+        await runWebhookWork('slack-test', async () => {}, { ackWaitMs: 500 });
+        await runWebhookWork('slack-test', async () => { throw new Error('fast'); }, { ackWaitMs: 500 });
+      });
+      expect(info).not.toHaveBeenCalled();
+    } finally {
+      info.mockRestore();
+    }
   });
 });
