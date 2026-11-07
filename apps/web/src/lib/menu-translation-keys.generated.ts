@@ -1,5 +1,6 @@
 // Generated from the user-visible labels and search terms in menu-registry.ts.
 export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
+  'Inbox': 'text94835ea2fcf7',
   'Workspace settings': 'text2590cd62a747',
   'workspace settings organizations teams manage': 'text276261b1e03d',
   'Workspace · API keys': 'text634ebc515b7f',
