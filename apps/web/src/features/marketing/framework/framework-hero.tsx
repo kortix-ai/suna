@@ -6,6 +6,7 @@ import { localizeUiCatalog } from '@kortix/ui/i18n';
 import Link from '@/components/site-link';
 import { YamlLine } from '@/features/marketing/code-panel';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { useWalkthrough, WalkPanel, WalkTabs } from '@/features/marketing/kit/walkthrough';
 import { cn } from '@kortix/ui';
 import {
   ArrowDownIcon,
@@ -17,8 +18,7 @@ import {
   RobotIcon,
   TerminalIcon,
 } from '@phosphor-icons/react/dist/ssr';
-import { useReducedMotion } from 'motion/react';
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 import { localizeMarketingContent as localizeModel, type Excerpt, type WalkStep } from './model';
 
@@ -285,30 +285,7 @@ function Walkthrough() {
   );
   const { shipTerminal, walk, walkFiles } = localizeModel(tMarketing);
 
-  const reduced = Boolean(useReducedMotion());
-  const [selected, setSelected] = useState(0);
-  const [held, setHeld] = useState(false);
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
-
-  useEffect(() => {
-    if (reduced || held) return;
-    const timer = setInterval(() => setSelected((n) => (n + 1) % walk.length), STEP_MS);
-    return () => clearInterval(timer);
-  }, [reduced, held]);
-
-  const pick = (i: number) => {
-    setHeld(true);
-    setSelected(i);
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
-    if (!step) return;
-    event.preventDefault();
-    const next = (selected + step + walk.length) % walk.length;
-    pick(next);
-    tabRefs.current[next]?.focus();
-  };
+  const { selected, pick } = useWalkthrough(walk.length, STEP_MS);
 
   const step = walk[selected];
   const result = RESULT[step.id];
@@ -316,32 +293,13 @@ function Walkthrough() {
   return (
     <div className="flex w-full max-w-6xl flex-col gap-8 lg:gap-10">
       <div className="flex flex-col items-center gap-5">
-        <div
-          role="tablist"
-          aria-label={tMarketing('textdf4e708536e6')}
-          onKeyDown={onKeyDown}
-          className="flex flex-wrap justify-center gap-2"
-        >
-          {walk.map((s, i) => (
-            <button
-              key={s.id}
-              ref={(el) => {
-                tabRefs.current[i] = el;
-              }}
-              type="button"
-              role="tab"
-              id={`framework-walk-${s.id}`}
-              aria-controls="framework-walk-panel"
-              aria-selected={i === selected}
-              tabIndex={i === selected ? 0 : -1}
-              onClick={() => pick(i)}
-              className="text-muted-foreground hover:text-foreground aria-selected:bg-background aria-selected:text-foreground outline-ring duration-normal aria-selected:border-border flex items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm transition-colors ease-out focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              <span className="font-mono text-xs tabular-nums">{i + 1}</span>
-              {s.label}
-            </button>
-          ))}
-        </div>
+        <WalkTabs
+          steps={walk}
+          idPrefix="framework-walk"
+          label={tMarketing('textdf4e708536e6')}
+          selected={selected}
+          pick={pick}
+        />
         <p
           key={step.id}
           className={cn(
@@ -353,10 +311,9 @@ function Walkthrough() {
         </p>
       </div>
 
-      <div
-        role="tabpanel"
-        id="framework-walk-panel"
-        aria-labelledby={`framework-walk-${step.id}`}
+      <WalkPanel
+        idPrefix="framework-walk"
+        stepId={step.id}
         className="grid grid-cols-1 lg:min-h-96 lg:grid-cols-[minmax(0,1.4fr)_auto_minmax(0,1fr)] lg:items-stretch"
       >
         <div key={`file-${step.id}`} className={cn('flex min-w-0', fade)}>
@@ -385,7 +342,7 @@ function Walkthrough() {
             {result.body()}
           </Pane>
         </div>
-      </div>
+      </WalkPanel>
     </div>
   );
 }

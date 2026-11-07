@@ -5,10 +5,10 @@ import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { MarketingButton } from '@/features/marketing/kit/marketing-button';
+import { useWalkthrough, WalkPanel, WalkTabs } from '@/features/marketing/kit/walkthrough';
 import { cn } from '@kortix/ui';
 import { UsersThreeIcon } from '@phosphor-icons/react/dist/ssr';
-import { useReducedMotion } from 'motion/react';
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 import { Status, Window } from '@/features/marketing/enterprise/parts';
 import { localizeMarketingContent as localizeContent, type StepId } from './content';
@@ -187,30 +187,7 @@ function Walkthrough() {
   const tMarketing = useTranslations('hardcodedUi.i18nComplete');
   const { steps } = localizeContent(tMarketing);
 
-  const reduced = Boolean(useReducedMotion());
-  const [selected, setSelected] = useState(0);
-  const [held, setHeld] = useState(false);
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
-
-  useEffect(() => {
-    if (reduced || held) return;
-    const timer = setInterval(() => setSelected((n) => (n + 1) % steps.length), STEP_MS);
-    return () => clearInterval(timer);
-  }, [reduced, held]);
-
-  const pick = (i: number) => {
-    setHeld(true);
-    setSelected(i);
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
-    if (!step) return;
-    event.preventDefault();
-    const next = (selected + step + steps.length) % steps.length;
-    pick(next);
-    tabRefs.current[next]?.focus();
-  };
+  const { selected, pick } = useWalkthrough(steps.length, STEP_MS);
 
   const step = steps[selected];
   // An element, not a call: a call runs the view's hooks here, and their count changes per step.
@@ -219,37 +196,17 @@ function Walkthrough() {
 
   return (
     <div className="flex w-full flex-col items-center gap-8 lg:gap-10">
-      <div
-        role="tablist"
-        aria-label={tMarketing('text109e9aeb5205')}
-        onKeyDown={onKeyDown}
-        className="flex flex-wrap justify-center gap-2"
-      >
-        {steps.map((s, i) => (
-          <button
-            key={s.id}
-            ref={(el) => {
-              tabRefs.current[i] = el;
-            }}
-            type="button"
-            role="tab"
-            id={`compliance-walk-${s.id}`}
-            aria-controls="compliance-walk-panel"
-            aria-selected={i === selected}
-            tabIndex={i === selected ? 0 : -1}
-            onClick={() => pick(i)}
-            className="text-muted-foreground hover:text-foreground aria-selected:bg-background aria-selected:text-foreground outline-ring duration-normal aria-selected:border-border flex items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm transition-colors ease-out focus-visible:outline-2 focus-visible:outline-offset-2"
-          >
-            <span className="font-mono text-xs tabular-nums">{i + 1}</span>
-            {s.label}
-          </button>
-        ))}
-      </div>
+      <WalkTabs
+        steps={steps}
+        idPrefix="compliance-walk"
+        label={tMarketing('text109e9aeb5205')}
+        selected={selected}
+        pick={pick}
+      />
 
-      <div
-        role="tabpanel"
-        id="compliance-walk-panel"
-        aria-labelledby={`compliance-walk-${step.id}`}
+      <WalkPanel
+        idPrefix="compliance-walk"
+        stepId={step.id}
         className="flex w-full max-w-3xl flex-col gap-6"
       >
         {/* A fixed height, set by the tallest step, keeps the band still while the steps change. */}
@@ -262,7 +219,7 @@ function Walkthrough() {
         >
           {step.line}
         </p>
-      </div>
+      </WalkPanel>
     </div>
   );
 }
