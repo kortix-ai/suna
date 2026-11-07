@@ -15,9 +15,17 @@
 # ECS). Production stays on "ecs-fargate" until the database cutover. Check
 # the selected value in the Worker binding; responses do not disclose it.
 
-# Gateway control-plane gate: `wrangler secret put INTERNAL_EDGE_KEY --env <env>` makes
-# the API host answer 404 to /internal/* unless the caller sends the same value in
-# x-kortix-internal-edge-key. Set KORTIX_INTERNAL_EDGE_KEY on the gateway FIRST.
+# Gateway control-plane gate: while the Worker carries the INTERNAL_EDGE_KEY
+# secret, the API host answers 404 to /internal/* unless the caller sends the
+# same value in x-kortix-internal-edge-key. The env blob (KORTIX_INTERNAL_EDGE_KEY
+# in kortix-<env>-env) is the source of truth: Deploy Prod reads it with the
+# aws-env action and runs infra/scripts/sync-worker-edge-key.mjs after this
+# deploy (set when the blob names the key, delete when it does not), then proves
+# the public origin answers 404 keyless. Manual fallback: `wrangler secret put
+# INTERNAL_EDGE_KEY --env <env>`. Engage the gateway and API first — they
+# hydrate the key from the same blob. Deploy Prod rolls the API, then the
+# gateway (a call that lacks the header 404s once the API carries the key), and
+# this secret lands only after both rolls.
 main = "worker.mjs"
 compatibility_date = "2026-06-01"
 workers_dev = false
