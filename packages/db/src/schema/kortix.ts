@@ -4277,6 +4277,12 @@ export const accountTokens = kortixSchema.table(
     /** A renewing expiry (the CLI device login): each use sets `expires_at` to
      *  now + this many days. NULL = a fixed expiry. */
     expiryRenewDays: integer('expiry_renew_days'),
+    /** The person who minted the key. A key that acts as an agent or a bot
+     *  stores the service account in `user_id` (it is the principal) and the
+     *  person here, so the list says who created it and the person leaving the
+     *  workspace does not revoke it. NULL = `user_id` minted it (every key
+     *  minted before 2026-11-07). */
+    createdBy: uuid('created_by'),
   },
   (table) => [
     uniqueIndex('idx_account_tokens_public_key').on(table.publicKey),
@@ -7488,6 +7494,12 @@ export const serviceAccounts = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     disabledAt: timestamp('disabled_at', { withTimezone: true }),
     disabledBy: uuid('disabled_by'),
+    /** False for a service account whose own `kortix_sa_` bearer was never
+     *  handed out: a bot created from Workspace settings › API keys (its
+     *  credentials are workspace keys in `account_tokens`). True for every
+     *  service account created before 2026-11-07 and from the service-account
+     *  route, whose bearer is the credential. */
+    bearerIssued: boolean('bearer_issued').default(true).notNull(),
   },
   (table) => [
     index('idx_service_accounts_account').on(table.accountId),
