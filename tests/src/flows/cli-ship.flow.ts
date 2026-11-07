@@ -187,8 +187,8 @@ flow('SHIP-8', { domain: 'cli', routes: [] }, async (ctx) => {
       const r = await sb.run(['ship']);
       check('exit 1', r.exitCode === 1, 1, r.exitCode);
       check(
-        'says not a Kortix project',
-        /not a kortix project/i.test(r.all),
+        'says not a Kortix workspace',
+        /not a kortix workspace/i.test(r.all),
         true,
         r.stderr.slice(0, 200),
       );

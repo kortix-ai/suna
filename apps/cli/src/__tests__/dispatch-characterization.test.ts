@@ -133,6 +133,6 @@ describe('root dispatch characterization (KRTX-1341)', () => {
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('unknown command `zersons`');
     expect(result.stderr).not.toContain('Did you mean');
-    expect(result.stderr).toContain('kortix init <name>');
+    expect(result.stderr).toContain('kortix workspaces create <name>');
   });
 });

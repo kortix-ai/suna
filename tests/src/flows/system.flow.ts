@@ -102,7 +102,7 @@ flow("DOCS-1", { domain: "system", tags: ["smoke"], routes: ["GET /v1/openapi.js
       ["/v1/workspaces/{workspaceId}/review/items", ["limit", "cursor"]],
       ["/v1/workspaces/{workspaceId}/gateway/logs", ["limit", "offset"]],
       // The legacy names stay in the spec, marked deprecated, with the same parameters.
-      ["/v1/projects/{workspaceId}/change-requests", ["limit", "cursor"]],
+      ["/v1/projects/{projectId}/change-requests", ["limit", "cursor"]],
     ] as const) {
       const query = (spec.paths[path]?.get?.parameters ?? []).filter((p) => p.in === "query");
       for (const name of names) {

@@ -214,8 +214,8 @@ flow('CREATE-1', { domain: 'cli', routes: [] }, async (ctx) => {
         const r = await sb.run(['mywidget']);
         check('exit 2', r.exitCode === 2, 2, r.exitCode);
         check(
-          'explains explicit init command',
-          /kortix init <name>/i.test(r.all),
+          'names the explicit create command',
+          /kortix workspaces create <name>/i.test(r.all),
           true,
           r.stderr.slice(0, 240),
         );

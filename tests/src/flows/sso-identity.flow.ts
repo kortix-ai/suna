@@ -592,7 +592,9 @@ async function auditAfters(ctx: FlowContext, accountId: string, action: string, 
         query: { action, limit: '50' },
       });
       r.status(200);
-      return r.json<{ events: Array<{ action: string; after: Record<string, unknown> | null }> }>().events.filter((e) => e.action === action);
+      // The handler's domain event carries `after`; the request row of the same
+      // route (its audit label) carries none and is not what these steps count.
+      return r.json<{ events: Array<{ action: string; after: Record<string, unknown> | null }> }>().events.filter((e) => e.action === action && e.after !== null);
     },
     { until: (found) => found.length >= count, timeoutMs: 15_000, intervalMs: 500, description: `${count} ${action} audit event(s)` },
   );

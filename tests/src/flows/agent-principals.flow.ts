@@ -1327,7 +1327,7 @@ flow(
       await ctx.step('real CLI, scope denial: `kortix secrets ls` fails and the hint names agents.scoped.kortix_permissions', async () => {
         const r = await sandbox.run(['secrets', 'ls'], { env: cliEnv(ctx, scoped, project.id) });
         if (r.exitCode === 0) throw new Error(`secrets ls succeeded: ${r.all.slice(0, 400)}`);
-        if (!r.stderr.includes('agents.scoped.kortix_permissions') || !r.all.includes('project.secret.read')) {
+        if (!r.stderr.includes('agents.scoped.kortix_permissions') || !r.all.includes('workspace.secret.read')) {
           throw new Error(`scope hint missing: ${r.all.slice(0, 800)}`);
         }
       });
